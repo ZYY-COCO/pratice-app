@@ -2,15 +2,9 @@
   <view class="page home-page">
     <template v-if="activeTab === 'home'">
       <AppTopBar
-        :exam-code="examCode"
         :user-name="dashboard.userName"
         :status-text="dashboard.statusText"
-        @change-exam="changeExam"
       />
-
-      <view class="segment-wrap">
-        <ExamSegment v-model="examCode" :options="examOptions" />
-      </view>
 
       <HeroStudyCard
         :tag="dashboard.heroTag"
@@ -198,7 +192,7 @@
       />
 
       <template v-if="isAuthed">
-        <ProfileSummaryCard :profile="profile" />
+        <ProfileSummaryCard :profile="profile" :exam-options="examOptions" @change-exam="changeExam" />
         <view class="profile-actions">
           <button class="primary-button" @tap="goPractice">进入专项刷题</button>
           <button class="primary-button pro-entry" @tap="goPro">会员中心 / Pro 功能预览</button>
@@ -236,7 +230,6 @@ import { onShow } from '@dcloudio/uni-app'
 import AppTopBar from '../../components/AppTopBar.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
-import ExamSegment from '../../components/ExamSegment.vue'
 import HeroStudyCard from '../../components/HeroStudyCard.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
@@ -254,13 +247,14 @@ import {
   getProfileMock,
   getReportMock
 } from '../../mock/appMock'
-import { clearAuthSession, getAuthUser, isLoggedIn } from '../../utils/auth'
+import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
 
 const examOptions = EXAM_OPTIONS
-const examCode = ref(uni.getStorageSync('examCode') || 'Z001')
+const initialAuthUser = getAuthUser()
+const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
 const activeTab = ref('home')
-const authUser = ref(getAuthUser())
+const authUser = ref(initialAuthUser)
 const authed = ref(isLoggedIn())
 const wrongItems = ref([])
 const wrongLoading = ref(false)
@@ -381,7 +375,7 @@ const profile = computed(() => {
     subtitle: authUser.value?.email || base.subtitle,
     badge: '已登录',
     stats: [
-      { label: '目标版本', value: authUser.value?.exam_target || examCode.value },
+      { label: '目标版本', value: examCode.value },
       { label: '累计刷题', value: `${totalAnswers} 题` },
       { label: '总正确率', value: totalAnswers ? `${Math.round(accuracy)}%` : '暂无数据' },
       { label: '错题数', value: `${wrongCount} 题` }
@@ -404,7 +398,13 @@ onShow(() => {
 })
 
 function changeExam(code) {
+  if (!EXAM_OPTIONS.some((item) => item.code === code)) return
   examCode.value = code
+  const nextUser = updateAuthUser({ exam_target: code })
+  if (nextUser) {
+    authUser.value = nextUser
+  }
+  uni.showToast({ title: `目标版本已切换为 ${code}`, icon: 'none' })
 }
 
 function goModule(subject) {
@@ -723,10 +723,6 @@ function formatDateTime(value) {
 <style scoped>
 .home-page {
   padding-bottom: calc(env(safe-area-inset-bottom) + 170rpx);
-}
-
-.segment-wrap {
-  margin-top: 20rpx;
 }
 
 .module-list {

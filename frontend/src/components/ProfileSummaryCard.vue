@@ -14,7 +14,19 @@
     <view class="rows">
       <view v-for="item in profile.stats" :key="item.label" class="row">
         <text class="label">{{ item.label }}</text>
-        <text class="value">{{ item.value }}</text>
+        <picker
+          v-if="item.label === '目标版本'"
+          class="target-picker"
+          :range="examRange"
+          :value="targetIndex"
+          @change="handleTargetChange"
+        >
+          <view class="target-value">
+            {{ targetLabel }}
+            <text class="target-arrow">切换</text>
+          </view>
+        </picker>
+        <text v-else class="value">{{ item.value }}</text>
       </view>
     </view>
   </view>
@@ -27,10 +39,28 @@ const props = defineProps({
   profile: {
     type: Object,
     required: true
+  },
+  examOptions: {
+    type: Array,
+    default: () => []
   }
 })
 
+const emit = defineEmits(['changeExam'])
+
 const avatarText = computed(() => props.profile.userName.slice(0, 1))
+const targetValue = computed(() => props.profile.stats?.find((item) => item.label === '目标版本')?.value || 'Z001')
+const examRange = computed(() => props.examOptions.map((item) => item.title || item.shortLabel || item.code))
+const targetIndex = computed(() => Math.max(0, props.examOptions.findIndex((item) => item.code === targetValue.value)))
+const targetLabel = computed(() => props.examOptions[targetIndex.value]?.shortLabel || targetValue.value)
+
+function handleTargetChange(event) {
+  const nextIndex = Number(event.detail.value)
+  const nextExam = props.examOptions[nextIndex]
+  if (nextExam?.code) {
+    emit('changeExam', nextExam.code)
+  }
+}
 </script>
 
 <style scoped>
@@ -113,5 +143,27 @@ const avatarText = computed(() => props.profile.userName.slice(0, 1))
   color: #172033;
   font-size: 25rpx;
   font-weight: 800;
+}
+
+.target-picker {
+  margin-left: auto;
+}
+
+.target-value {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 16rpx;
+  background: #edf3ff;
+  color: #2563eb;
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.target-arrow {
+  color: #667085;
+  font-size: 21rpx;
+  font-weight: 600;
 }
 </style>

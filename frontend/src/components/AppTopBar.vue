@@ -8,21 +8,13 @@
       </view>
     </view>
 
-    <picker class="picker" :range="examRange" :value="pickerIndex" @change="handleChange">
-      <view class="picker-box">{{ currentLabel }}</view>
-    </picker>
   </view>
 </template>
 
 <script setup>
 import { computed } from 'vue'
-import { EXAM_OPTIONS } from '../utils/exam'
 
 const props = defineProps({
-  examCode: {
-    type: String,
-    default: 'Z001'
-  },
   userName: {
     type: String,
     default: '小钟'
@@ -33,18 +25,7 @@ const props = defineProps({
   }
 })
 
-const emit = defineEmits(['changeExam'])
-
-const examRange = EXAM_OPTIONS.map((item) => item.title)
-const pickerIndex = computed(() => Math.max(0, EXAM_OPTIONS.findIndex((item) => item.code === props.examCode)))
-const currentLabel = computed(() => EXAM_OPTIONS[pickerIndex.value]?.shortLabel || 'Z001')
 const avatarText = computed(() => props.userName.slice(0, 1))
-
-function handleChange(event) {
-  const nextIndex = Number(event.detail.value)
-  const nextExam = EXAM_OPTIONS[nextIndex]
-  emit('changeExam', nextExam.code)
-}
 </script>
 
 <style scoped>
@@ -92,15 +73,4 @@ function handleChange(event) {
   font-size: 22rpx;
 }
 
-.picker-box {
-  min-width: 152rpx;
-  padding: 18rpx 20rpx;
-  border-radius: 24rpx;
-  border: 2rpx solid #e6ebf5;
-  background: #ffffff;
-  color: #2563eb;
-  text-align: center;
-  font-size: 24rpx;
-  font-weight: 800;
-}
 </style>

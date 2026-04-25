@@ -20,6 +20,18 @@ export function getAuthUser() {
   return uni.getStorageSync(AUTH_USER_KEY) || null
 }
 
+export function updateAuthUser(patch) {
+  const currentUser = getAuthUser()
+  if (!currentUser) return null
+
+  const nextUser = {
+    ...currentUser,
+    ...patch
+  }
+  uni.setStorageSync(AUTH_USER_KEY, nextUser)
+  return nextUser
+}
+
 export function isLoggedIn() {
   return Boolean(getAccessToken())
 }
