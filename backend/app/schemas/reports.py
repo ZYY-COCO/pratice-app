@@ -25,3 +25,6 @@ class LearningSummaryResponse(BaseModel):
     correct_answers: int
     accuracy: float
     wrong_question_count: int
+    weekly_answers: int = 0
+    weekly_correct_answers: int = 0
+    weekly_accuracy: float = 0

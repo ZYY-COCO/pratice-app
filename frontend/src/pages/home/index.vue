@@ -301,14 +301,23 @@ const dashboard = computed(() => {
       ...base,
       userName: '游客',
       statusText: '登录后可直接刷真实题目并同步错题本',
+      heroTitle: '登录后开启本周刷题统计',
       heroSubtitle: '当前可以先浏览界面与 mock 内容；登录后即可直接使用真实题库、提交答案和能力统计。'
     }
   }
 
+  const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
+  const totalAnswers = Number(learningSummary.value?.total_answers || 0)
+  const accuracy = Number(learningSummary.value?.accuracy || 0)
+
   return {
     ...base,
     userName: authUser.value?.nickname || authUser.value?.email || base.userName,
-    statusText: '今日学习状态：已登录，可直连真实题库'
+    statusText: '今日学习状态：已登录，可直连真实题库',
+    heroTitle: `本周已刷真题：${weeklyAnswers} 道`,
+    heroSubtitle: totalAnswers
+      ? `累计已完成 ${totalAnswers} 道，当前总正确率 ${Math.round(accuracy)}%。继续刷题后，错题本和能力报告会自动同步。`
+      : '你已经登录成功。本周刷题数暂为 0，完成第一轮练习后这里会自动更新真实数据。'
   }
 })
 
@@ -384,6 +393,7 @@ watch(examCode, (value) => {
   uni.setStorageSync('examCode', value)
   if (isAuthed.value) {
     loadAbilityReport()
+    loadLearningSummary()
   }
 })
 
