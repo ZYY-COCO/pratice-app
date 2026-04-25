@@ -24,6 +24,10 @@ class ResetPasswordRequest(BaseModel):
     new_password: str = Field(min_length=6)
 
 
+class ProfileUpdateRequest(BaseModel):
+    exam_target: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+
+
 class MessageResponse(BaseModel):
     detail: str
 

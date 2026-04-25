@@ -237,6 +237,7 @@ import PageHeader from '../../components/PageHeader.vue'
 import ProfileSummaryCard from '../../components/ProfileSummaryCard.vue'
 import ReportRadarMock from '../../components/ReportRadarMock.vue'
 import SectionCard from '../../components/SectionCard.vue'
+import { updateProfile } from '../../api/auth'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
@@ -397,14 +398,30 @@ onShow(() => {
   refreshLearningData()
 })
 
-function changeExam(code) {
+async function changeExam(code) {
   if (!EXAM_OPTIONS.some((item) => item.code === code)) return
+  const previousCode = examCode.value
   examCode.value = code
   const nextUser = updateAuthUser({ exam_target: code })
   if (nextUser) {
     authUser.value = nextUser
   }
-  uni.showToast({ title: `目标版本已切换为 ${code}`, icon: 'none' })
+
+  try {
+    const remoteUser = await updateProfile({ exam_target: code })
+    const syncedUser = updateAuthUser(remoteUser)
+    if (syncedUser) {
+      authUser.value = syncedUser
+    }
+    uni.showToast({ title: `目标版本已切换为 ${code}`, icon: 'none' })
+  } catch (error) {
+    examCode.value = previousCode
+    const revertedUser = updateAuthUser({ exam_target: previousCode })
+    if (revertedUser) {
+      authUser.value = revertedUser
+    }
+    uni.showToast({ title: '目标版本同步失败，请稍后重试', icon: 'none' })
+  }
 }
 
 function goModule(subject) {

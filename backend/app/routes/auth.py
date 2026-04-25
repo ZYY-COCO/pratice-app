@@ -1,13 +1,15 @@
 import logging
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from app.db import get_supabase_admin, get_supabase_anon
+from app.dependencies import get_current_user_id
 from app.schemas.auth import (
     AuthResponse,
     AuthUser,
     LoginRequest,
     MessageResponse,
+    ProfileUpdateRequest,
     RegisterRequest,
     ResetPasswordRequest,
     SendEmailCodeRequest,
@@ -206,6 +208,56 @@ def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
         ) from exc
 
     return MessageResponse(detail="Password reset successful")
+
+
+@router.patch("/profile", response_model=AuthUser)
+def update_profile(
+    payload: ProfileUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> AuthUser:
+    supabase_admin = get_supabase_admin()
+    update_data = {}
+    if payload.exam_target is not None:
+        update_data["exam_target"] = payload.exam_target
+
+    if not update_data:
+        profile_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+        if not profile_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+        return AuthUser(**profile_response.data[0])
+
+    try:
+        (
+            supabase_admin.table("users")
+            .update(update_data)
+            .eq("id", user_id)
+            .execute()
+        )
+        profile_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+        if not profile_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+        profile = profile_response.data[0]
+        supabase_admin.auth.admin.update_user_by_id(
+            user_id,
+            {
+                "user_metadata": {
+                    "nickname": profile.get("nickname"),
+                    "exam_target": profile.get("exam_target"),
+                }
+            },
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Update profile failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Update profile failed: {error_summary}",
+        ) from exc
+
+    return AuthUser(**profile)
 
 
 @router.post("/login", response_model=AuthResponse)

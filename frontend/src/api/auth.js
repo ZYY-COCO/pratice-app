@@ -44,3 +44,11 @@ export function sendResetCode(payload) {
 export function resetPasswordWithCode(payload) {
   return buildNoAuthRequest('/auth/reset-password', payload, 25000)
 }
+
+export function updateProfile(payload) {
+  return request({
+    url: '/auth/profile',
+    method: 'PATCH',
+    data: payload
+  })
+}
