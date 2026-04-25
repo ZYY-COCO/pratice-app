@@ -1,0 +1,47 @@
+{
+  "pages": [
+    {
+      "path": "pages/home/index",
+      "style": {
+        "navigationBarTitleText": "港澳台考研刷题"
+      }
+    },
+    {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "邮箱登录"
+      }
+    },
+    {
+      "path": "pages/version/index",
+      "style": {
+        "navigationBarTitleText": "选择考试版本"
+      }
+    },
+    {
+      "path": "pages/subjects/index",
+      "style": {
+        "navigationBarTitleText": "选择科目"
+      }
+    },
+    {
+      "path": "pages/practice/index",
+      "style": {
+        "navigationBarTitleText": "专项刷题",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/pro/index",
+      "style": {
+        "navigationBarTitleText": "会员中心"
+      }
+    }
+  ],
+  "globalStyle": {
+    "navigationBarTextStyle": "black",
+    "navigationBarTitleText": "港澳台考研刷题",
+    "navigationBarBackgroundColor": "#f5f7fb",
+    "backgroundColor": "#f5f7fb"
+  }
+}

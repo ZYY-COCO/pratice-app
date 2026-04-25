@@ -1,0 +1,11 @@
+{
+  "name": "港澳台考研初试刷题",
+  "appid": "__UNI__GATS_MVP",
+  "description": "面向港澳台考研初试用户的刷题 MVP",
+  "versionName": "0.1.0",
+  "versionCode": "1",
+  "transformPx": false,
+  "app-plus": {
+    "usingComponents": true
+  }
+}

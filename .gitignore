@@ -1,0 +1,36 @@
+# Secrets and local env files
+.env
+.env.*
+!.env.example
+!.env.*.example
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+*.log
+
+# Node / uni-app
+node_modules/
+dist/
+.hbuilderx/
+
+# Local build and cache files
+.DS_Store
+Thumbs.db
+.cache/
+.vite/
+
+# Temporary extraction/download artifacts
+obj_*.bin
+partial_*.bin
+partial_*.txt
+extracted.txt
+univsport_page.html
+
+# Large source documents generated during question extraction
+data/logic_sources/*.pdf
+data/logic_sources/*_ocr/
+data/logic_sources/*_pages/
+data/logic_sources/*_pages_fast/

@@ -1,0 +1,254 @@
+import logging
+
+from fastapi import APIRouter, HTTPException, status
+
+from app.db import get_supabase_admin, get_supabase_anon
+from app.schemas.auth import (
+    AuthResponse,
+    AuthUser,
+    LoginRequest,
+    MessageResponse,
+    RegisterRequest,
+    ResetPasswordRequest,
+    SendEmailCodeRequest,
+)
+from app.services.auth_codes import (
+    check_send_cooldown,
+    generate_verification_code,
+    normalize_email,
+    store_verification_code,
+    verify_code_or_raise,
+)
+from app.utils.email_sender import send_email_code
+
+router = APIRouter(prefix="/auth", tags=["认证"])
+logger = logging.getLogger(__name__)
+
+
+def _safe_error_summary(exc: Exception) -> str:
+    message = getattr(exc, "message", None)
+    if isinstance(message, str) and message.strip():
+        return message.strip()
+
+    args = getattr(exc, "args", ())
+    if args:
+        first = args[0]
+        if isinstance(first, str) and first.strip():
+            return first.strip()
+        if isinstance(first, dict):
+            for key in ("message", "msg", "error_description", "error"):
+                value = first.get(key)
+                if isinstance(value, str) and value.strip():
+                    return value.strip()
+
+    text = str(exc).strip()
+    return text or "Unknown auth error"
+
+
+def _get_profile_by_email(email: str) -> dict | None:
+    supabase_admin = get_supabase_admin()
+    response = (
+        supabase_admin.table("users")
+        .select("*")
+        .eq("email", normalize_email(email))
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def _send_code(email: str, purpose: str) -> None:
+    supabase_admin = get_supabase_admin()
+    normalized_email = normalize_email(email)
+    check_send_cooldown(supabase_admin, normalized_email, purpose)
+    code = generate_verification_code()
+    store_verification_code(supabase_admin, normalized_email, purpose, code)
+    send_email_code(normalized_email, code, purpose)
+
+
+@router.post("/send-register-code", response_model=MessageResponse)
+def send_register_code(payload: SendEmailCodeRequest) -> MessageResponse:
+    normalized_email = normalize_email(payload.email)
+    if _get_profile_by_email(normalized_email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    try:
+        _send_code(normalized_email, "register")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send register code failed for email=%s: %s", normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Send register code failed: {error_summary}",
+        ) from exc
+
+    return MessageResponse(detail="Verification code sent")
+
+
+@router.post("/send-reset-code", response_model=MessageResponse)
+def send_reset_code(payload: SendEmailCodeRequest) -> MessageResponse:
+    normalized_email = normalize_email(payload.email)
+    if not _get_profile_by_email(normalized_email):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not registered")
+
+    try:
+        _send_code(normalized_email, "reset_password")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send reset code failed for email=%s: %s", normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Send reset code failed: {error_summary}",
+        ) from exc
+
+    return MessageResponse(detail="Reset code sent")
+
+
+@router.post("/register", response_model=AuthResponse)
+def register(payload: RegisterRequest) -> AuthResponse:
+    supabase_auth = get_supabase_anon()
+    supabase_admin = get_supabase_admin()
+    normalized_email = normalize_email(payload.email)
+
+    if _get_profile_by_email(normalized_email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    verify_code_or_raise(
+        supabase=supabase_admin,
+        email=normalized_email,
+        purpose="register",
+        code=payload.verification_code,
+    )
+
+    try:
+        create_response = supabase_admin.auth.admin.create_user(
+            {
+                "email": normalized_email,
+                "password": payload.password,
+                "email_confirm": True,
+                "user_metadata": {
+                    "nickname": payload.nickname,
+                    "exam_target": payload.exam_target,
+                },
+            }
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Register failed for email=%s: %s", normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Register failed: {error_summary}",
+        ) from exc
+
+    user = create_response.user
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Register failed")
+
+    profile = {
+        "id": user.id,
+        "email": normalized_email,
+        "nickname": payload.nickname,
+        "exam_target": payload.exam_target,
+    }
+    supabase_admin.table("users").upsert(profile).execute()
+
+    try:
+        auth_response = supabase_auth.auth.sign_in_with_password(
+            {"email": normalized_email, "password": payload.password}
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Auto login after register failed for email=%s: %s", normalized_email, error_summary)
+        return AuthResponse(
+            access_token="",
+            refresh_token=None,
+            user=AuthUser(**profile),
+        )
+
+    session = auth_response.session
+    return AuthResponse(
+        access_token=session.access_token if session else "",
+        refresh_token=session.refresh_token if session else None,
+        user=AuthUser(**profile),
+    )
+
+
+@router.post("/reset-password", response_model=MessageResponse)
+def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
+    supabase_admin = get_supabase_admin()
+    normalized_email = normalize_email(payload.email)
+    profile = _get_profile_by_email(normalized_email)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Email not registered")
+
+    verify_code_or_raise(
+        supabase=supabase_admin,
+        email=normalized_email,
+        purpose="reset_password",
+        code=payload.verification_code,
+    )
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            profile["id"],
+            {"password": payload.new_password},
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Reset password failed for email=%s: %s", normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Reset password failed: {error_summary}",
+        ) from exc
+
+    return MessageResponse(detail="Password reset successful")
+
+
+@router.post("/login", response_model=AuthResponse)
+def login(payload: LoginRequest) -> AuthResponse:
+    supabase_auth = get_supabase_anon()
+    normalized_email = normalize_email(payload.email)
+
+    try:
+        auth_response = supabase_auth.auth.sign_in_with_password(
+            {"email": normalized_email, "password": payload.password}
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password") from exc
+
+    user = auth_response.user
+    session = auth_response.session
+    if not user or not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password")
+
+    user_metadata = getattr(user, "user_metadata", {}) or {}
+    profile = {
+        "id": user.id,
+        "email": user.email,
+        "nickname": user_metadata.get("nickname"),
+        "exam_target": user_metadata.get("exam_target"),
+    }
+
+    if not profile["nickname"] or not profile["exam_target"]:
+        supabase_admin = get_supabase_admin()
+        profile_response = supabase_admin.table("users").select("*").eq("id", user.id).limit(1).execute()
+        if profile_response.data:
+            db_profile = profile_response.data[0]
+            profile["email"] = db_profile.get("email") or profile["email"]
+            profile["nickname"] = db_profile.get("nickname") or profile["nickname"]
+            profile["exam_target"] = db_profile.get("exam_target") or profile["exam_target"]
+
+    return AuthResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        user=AuthUser(
+            id=profile["id"],
+            email=profile["email"],
+            nickname=profile.get("nickname"),
+            exam_target=profile.get("exam_target"),
+        ),
+    )

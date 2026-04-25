@@ -1,0 +1,22 @@
+{
+  "questions": [
+    {
+      "exam_code": "Z001",
+      "subject": "中华文化",
+      "module": "中国哲学常识",
+      "submodule": "儒家",
+      "question_type": "single_choice",
+      "stem": "",
+      "option_a": "",
+      "option_b": "",
+      "option_c": "",
+      "option_d": "",
+      "answer": "A",
+      "explanation": "",
+      "difficulty": 2,
+      "source_type": "ai_generated",
+      "source_year": 2026,
+      "passage_id": null
+    }
+  ]
+}

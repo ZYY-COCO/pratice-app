@@ -1,0 +1,22 @@
+{
+  "questions": [
+    {
+      "exam_code": "Z002",
+      "subject": "中华文化",
+      "module": "中国文学常识",
+      "submodule": "代表作家及作品",
+      "question_type": "single_choice",
+      "stem": "“文章合为时而著，歌诗合为事而作”这一文学主张通常与哪位作家相关？",
+      "option_a": "韩愈",
+      "option_b": "白居易",
+      "option_c": "欧阳修",
+      "option_d": "柳宗元",
+      "answer": "B",
+      "explanation": "这是白居易的著名文学主张，强调文学应关注现实、反映社会。",
+      "difficulty": 2,
+      "source_type": "ai_generated_true_style",
+      "source_year": 2026,
+      "passage_id": null
+    }
+  ]
+}
