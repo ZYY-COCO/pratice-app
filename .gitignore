@@ -35,3 +35,6 @@ data/logic_sources/*.pdf
 data/logic_sources/*_ocr/
 data/logic_sources/*_pages/
 data/logic_sources/*_pages_fast/
+data/culture_sources/*.pdf
+data/culture_sources/*_extracted.txt
+data/culture_sources/*_ocr/

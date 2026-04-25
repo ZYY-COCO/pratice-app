@@ -1,10 +1,10 @@
 <template>
   <view class="page login-page">
-    <PageHeader
-      eyebrow="账户中心"
-      title="登录 / 注册 / 找回密码"
-      subtitle="当前采用后端自建邮箱验证码方案：注册和找回密码都需要先发送验证码，再完成后续操作。"
-    />
+    <view class="auth-hero">
+      <view class="hero-badge">账户中心</view>
+      <view class="hero-title">{{ heroTitle }}</view>
+      <view class="hero-sub">{{ heroSubtitle }}</view>
+    </view>
 
     <view class="segment-wrap">
       <view class="segment">
@@ -159,7 +159,7 @@
         {{ submitButtonText }}
       </button>
 
-      <button class="ghost-button back-btn" @tap="goBackHome">返回首页</button>
+      <button class="ghost-button home-btn" @tap="goBackHome">返回首页</button>
     </view>
 
     <view v-if="tipText" class="tip-card" :class="{ success: tipType === 'success' }">
@@ -180,7 +180,6 @@ import {
   sendRegisterCode,
   sendResetCode
 } from '../../api/auth'
-import PageHeader from '../../components/PageHeader.vue'
 import { saveAuthSession } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
 
@@ -219,6 +218,18 @@ const examLabels = EXAM_OPTIONS.map((item) => item.title)
 const registerExamIndex = computed(() =>
   Math.max(0, EXAM_OPTIONS.findIndex((item) => item.code === registerForm.examTarget))
 )
+
+const heroTitle = computed(() => {
+  if (mode.value === 'register') return '创建你的刷题账号'
+  if (mode.value === 'reset') return '通过邮箱找回密码'
+  return '欢迎回来，继续刷题'
+})
+
+const heroSubtitle = computed(() => {
+  if (mode.value === 'register') return '先接收邮箱验证码，再设置密码和目标版本。'
+  if (mode.value === 'reset') return '验证邮箱后即可重新设置密码。'
+  return '登录后会自动保存会话，错题本和能力报告会同步更新。'
+})
 
 const submitButtonText = computed(() => {
   if (submitting.value) {
@@ -517,27 +528,68 @@ function goBackHome() {
 </script>
 
 <style scoped>
-.segment-wrap {
+.login-page {
+  padding: calc(var(--status-bar-height) + 28rpx) 24rpx calc(env(safe-area-inset-bottom) + 40rpx);
+}
+
+.auth-hero {
+  padding: 34rpx 30rpx;
+  border-radius: 36rpx;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 44%);
+  border: 2rpx solid rgba(219, 228, 245, 0.92);
+  box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.08);
+}
+
+.hero-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #edf3ff;
+  color: #2563eb;
+  font-size: 23rpx;
+  font-weight: 900;
+}
+
+.hero-title {
   margin-top: 18rpx;
+  color: #101828;
+  font-size: 44rpx;
+  line-height: 1.22;
+  font-weight: 900;
+}
+
+.hero-sub {
+  margin-top: 14rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+
+.segment-wrap {
+  margin-top: 22rpx;
 }
 
 .segment {
   display: flex;
-  gap: 8rpx;
-  padding: 8rpx;
-  border-radius: 28rpx;
-  background: #eef3ff;
+  gap: 10rpx;
+  padding: 10rpx;
+  border-radius: 32rpx;
+  background: rgba(238, 243, 255, 0.94);
+  border: 2rpx solid #dbe7ff;
 }
 
 .segment-btn {
   flex: 1;
-  min-height: 76rpx;
+  min-height: 84rpx;
   border: 0;
-  border-radius: 22rpx;
+  border-radius: 26rpx;
   background: transparent;
   color: #667085;
-  font-size: 24rpx;
-  font-weight: 800;
+  font-size: 25rpx;
+  font-weight: 900;
 }
 
 .segment-btn.active {
@@ -548,32 +600,32 @@ function goBackHome() {
 
 .login-card {
   margin-top: 24rpx;
-  padding: 30rpx;
-  border-radius: 32rpx;
+  padding: 30rpx 26rpx;
+  border-radius: 36rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  box-shadow: 0 18rpx 42rpx rgba(20, 31, 66, 0.06);
 }
 
 .field + .field {
-  margin-top: 22rpx;
+  margin-top: 24rpx;
 }
 
 .label {
   color: #344054;
-  font-size: 24rpx;
-  font-weight: 700;
+  font-size: 25rpx;
+  font-weight: 900;
 }
 
 .input,
 .picker-box {
   margin-top: 12rpx;
-  min-height: 88rpx;
-  padding: 0 24rpx;
-  border-radius: 24rpx;
+  min-height: 98rpx;
+  padding: 0 26rpx;
+  border-radius: 28rpx;
   border: 2rpx solid #dbe3f2;
   background: #fbfcff;
-  font-size: 28rpx;
+  font-size: 30rpx;
   color: #172033;
   display: flex;
   align-items: center;
@@ -581,8 +633,8 @@ function goBackHome() {
 
 .code-row {
   display: flex;
-  gap: 16rpx;
-  align-items: center;
+  gap: 14rpx;
+  align-items: flex-end;
 }
 
 .code-input {
@@ -590,14 +642,14 @@ function goBackHome() {
 }
 
 .code-btn {
-  min-width: 190rpx;
-  min-height: 88rpx;
+  min-width: 200rpx;
+  min-height: 98rpx;
   border: 0;
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   background: #edf3ff;
   color: #2563eb;
   font-size: 24rpx;
-  font-weight: 800;
+  font-weight: 900;
 }
 
 .code-btn[disabled] {
@@ -605,17 +657,22 @@ function goBackHome() {
 }
 
 .submit-btn {
-  margin-top: 30rpx;
+  margin-top: 34rpx;
+  min-height: 98rpx;
+  border-radius: 30rpx;
+  font-size: 30rpx;
 }
 
-.back-btn {
+.home-btn {
   margin-top: 16rpx;
+  min-height: 92rpx;
+  border-radius: 30rpx;
 }
 
 .tip-card {
-  margin-top: 20rpx;
-  padding: 24rpx;
-  border-radius: 28rpx;
+  margin-top: 22rpx;
+  padding: 26rpx;
+  border-radius: 32rpx;
   background: #fff8eb;
   border: 2rpx solid #fde7b0;
 }
@@ -627,8 +684,8 @@ function goBackHome() {
 
 .tip-title {
   color: #8a5a13;
-  font-size: 24rpx;
-  font-weight: 800;
+  font-size: 25rpx;
+  font-weight: 900;
 }
 
 .tip-card.success .tip-title,
@@ -639,7 +696,18 @@ function goBackHome() {
 .tip-text {
   margin-top: 10rpx;
   color: #8a5a13;
-  font-size: 24rpx;
+  font-size: 25rpx;
   line-height: 1.7;
+}
+
+@media (max-width: 380px) {
+  .code-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .code-btn {
+    width: 100%;
+  }
 }
 </style>

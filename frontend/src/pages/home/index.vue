@@ -1,18 +1,41 @@
 <template>
   <view class="page home-page">
     <template v-if="activeTab === 'home'">
-      <AppTopBar
-        :user-name="dashboard.userName"
-        :status-text="dashboard.statusText"
-      />
+      <view class="mobile-hero">
+        <view class="home-topline">
+          <view class="home-user">
+            <view class="avatar-large">{{ avatarText }}</view>
+            <view class="home-copy">
+              <text class="home-eyebrow">港澳台考研刷题</text>
+              <text class="home-title">{{ dashboard.userName }}，今天刷一组题吧</text>
+              <text class="home-status">{{ dashboard.statusText }}</text>
+            </view>
+          </view>
+          <view class="exam-pill">{{ examCode }}</view>
+        </view>
 
-      <HeroStudyCard
-        :tag="dashboard.heroTag"
-        :title="dashboard.heroTitle"
-        :subtitle="dashboard.heroSubtitle"
-        :action-text="isAuthed ? '查看最新诊断' : '先登录再体验真实题库'"
-        @action="handleHeroAction"
-      />
+        <view class="overview-card">
+          <view class="overview-item">
+            <text class="overview-value">{{ homeStats.weeklyAnswers }}</text>
+            <text class="overview-label">本周刷题</text>
+          </view>
+          <view class="overview-divider"></view>
+          <view class="overview-item">
+            <text class="overview-value">{{ homeStats.accuracy }}</text>
+            <text class="overview-label">总正确率</text>
+          </view>
+          <view class="overview-divider"></view>
+          <view class="overview-item">
+            <text class="overview-value">{{ homeStats.wrongCount }}</text>
+            <text class="overview-label">错题数</text>
+          </view>
+        </view>
+
+        <view class="hero-actions">
+          <button class="hero-primary" @tap="startTodayTraining">开始今日训练</button>
+          <button class="hero-secondary" @tap="handleHeroAction">{{ isAuthed ? '能力诊断' : '登录账号' }}</button>
+        </view>
+      </view>
 
       <view class="section-title">选择学习模块</view>
       <view class="module-list">
@@ -23,7 +46,13 @@
       <SectionCard right-text="自动聚合">
         <view v-if="wrongLoading" class="state-box">正在同步你的错题本...</view>
         <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
-        <view v-else-if="isAuthed && realMistakes.length === 0" class="state-box">暂无错题，先完成一轮练习试试。</view>
+        <view v-else-if="isAuthed && realMistakes.length === 0" class="empty-mistake">
+          <view>
+            <view class="empty-title">还没有错题</view>
+            <view class="empty-desc">完成一次练习后，这里会自动汇总需要复盘的题目。</view>
+          </view>
+          <button class="empty-action" @tap="startTodayTraining">去刷题</button>
+        </view>
         <MistakeList :items="compactMistakes" @select="openWrongDetail" />
       </SectionCard>
 
@@ -226,10 +255,8 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import AppTopBar from '../../components/AppTopBar.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
-import HeroStudyCard from '../../components/HeroStudyCard.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import PageHeader from '../../components/PageHeader.vue'
@@ -274,10 +301,10 @@ const reviewingWrong = ref(false)
 const reviewResultText = ref('')
 const reviewMastered = ref(false)
 const tabs = [
-  { key: 'home', label: '首页' },
-  { key: 'mistakes', label: '错题本' },
-  { key: 'report', label: 'AI 报告' },
-  { key: 'profile', label: '我的' }
+  { key: 'home', label: '首页', icon: '⌂' },
+  { key: 'mistakes', label: '错题', icon: '✎' },
+  { key: 'report', label: '报告', icon: '◌' },
+  { key: 'profile', label: '我的', icon: '☺' }
 ]
 const proPreviewItems = [
   'AI 薄弱诊断：把低正确率知识点转成更清晰的错因总结',
@@ -287,6 +314,7 @@ const proPreviewItems = [
 ]
 
 const isAuthed = computed(() => authed.value)
+const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 
 const dashboard = computed(() => {
   const base = getHomeDashboard(examCode.value)
@@ -312,6 +340,27 @@ const dashboard = computed(() => {
     heroSubtitle: totalAnswers
       ? `累计已完成 ${totalAnswers} 道，当前总正确率 ${Math.round(accuracy)}%。继续刷题后，错题本和能力报告会自动同步。`
       : '你已经登录成功。本周刷题数暂为 0，完成第一轮练习后这里会自动更新真实数据。'
+  }
+})
+
+const homeStats = computed(() => {
+  if (!isAuthed.value) {
+    return {
+      weeklyAnswers: '0',
+      accuracy: '--',
+      wrongCount: '--'
+    }
+  }
+
+  const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
+  const totalAnswers = Number(learningSummary.value?.total_answers || 0)
+  const accuracy = Number(learningSummary.value?.accuracy || 0)
+  const wrongCount = Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0)
+
+  return {
+    weeklyAnswers: String(weeklyAnswers),
+    accuracy: totalAnswers ? `${Math.round(accuracy)}%` : '--',
+    wrongCount: String(wrongCount)
   }
 })
 
@@ -430,6 +479,11 @@ function goModule(subject) {
 
 function goPractice() {
   uni.navigateTo({ url: '/pages/practice/index' })
+}
+
+function startTodayTraining() {
+  const defaultSubject = moduleCards.value[0]?.key || '中华文化'
+  goModule(defaultSubject)
 }
 
 function goTaskPractice(task) {
@@ -738,13 +792,198 @@ function formatDateTime(value) {
 
 <style scoped>
 .home-page {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 170rpx);
+  padding: 18rpx 22rpx calc(env(safe-area-inset-bottom) + 184rpx);
+}
+
+.mobile-hero {
+  padding: 26rpx 24rpx 24rpx;
+  border-radius: 34rpx;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(238, 244, 255, 0.94)),
+    radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.14), transparent 42%);
+  border: 2rpx solid rgba(219, 228, 245, 0.9);
+  box-shadow: 0 20rpx 52rpx rgba(20, 31, 66, 0.08);
+}
+
+.home-topline,
+.home-user,
+.hero-actions,
+.overview-card,
+.empty-mistake {
+  display: flex;
+  align-items: center;
+}
+
+.home-topline {
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.home-user {
+  min-width: 0;
+  flex: 1;
+  gap: 18rpx;
+}
+
+.avatar-large {
+  width: 84rpx;
+  height: 84rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #2563eb, #7aa2ff);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 32rpx;
+  font-weight: 900;
+  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.22);
+}
+
+.home-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.home-eyebrow {
+  color: #2563eb;
+  font-size: 22rpx;
+  font-weight: 900;
+}
+
+.home-title {
+  margin-top: 6rpx;
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.24;
+  font-weight: 900;
+}
+
+.home-status {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.exam-pill {
+  min-width: 104rpx;
+  height: 64rpx;
+  padding: 0 20rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #2563eb;
+  border: 2rpx solid #dbe7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
+}
+
+.overview-card {
+  margin-top: 26rpx;
+  padding: 24rpx 18rpx;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #1e50d4, #5f8dff);
+  color: #ffffff;
+  box-shadow: 0 18rpx 36rpx rgba(37, 99, 235, 0.2);
+}
+
+.overview-item {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.overview-value {
+  font-size: 38rpx;
+  line-height: 1.1;
+  font-weight: 900;
+}
+
+.overview-label {
+  margin-top: 10rpx;
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.overview-divider {
+  width: 2rpx;
+  height: 54rpx;
+  background: rgba(255, 255, 255, 0.24);
+}
+
+.hero-actions {
+  margin-top: 22rpx;
+  gap: 16rpx;
+}
+
+.hero-primary,
+.hero-secondary {
+  flex: 1;
+  min-height: 92rpx;
+  border: 0;
+  border-radius: 26rpx;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.hero-primary {
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 16rpx 28rpx rgba(37, 99, 235, 0.2);
+}
+
+.hero-secondary {
+  background: #ffffff;
+  color: #2563eb;
+  border: 2rpx solid #dbe7ff;
 }
 
 .module-list {
   display: flex;
   flex-direction: column;
+  gap: 20rpx;
+}
+
+.empty-mistake {
+  justify-content: space-between;
   gap: 18rpx;
+  padding: 24rpx;
+  border-radius: 26rpx;
+  background: #f8fbff;
+  border: 2rpx dashed #c8d8ff;
+}
+
+.empty-title {
+  color: #172033;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.empty-desc {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.empty-action {
+  min-width: 132rpx;
+  min-height: 72rpx;
+  border: 0;
+  border-radius: 22rpx;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
 }
 
 .state-box {

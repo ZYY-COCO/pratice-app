@@ -49,12 +49,14 @@ const optionClass = computed(() => {
 <style scoped>
 .option {
   display: flex;
-  gap: 18rpx;
+  gap: 20rpx;
   align-items: flex-start;
-  padding: 26rpx;
-  border-radius: 26rpx;
+  min-height: 102rpx;
+  padding: 28rpx 26rpx;
+  border-radius: 30rpx;
   border: 2rpx solid #e6ebf5;
   background: #ffffff;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.04);
 }
 
 .option.selected {
@@ -73,23 +75,25 @@ const optionClass = computed(() => {
 }
 
 .letter {
-  width: 52rpx;
-  height: 52rpx;
-  border-radius: 18rpx;
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 20rpx;
   background: #eef3ff;
   color: #2563eb;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 24rpx;
-  font-weight: 800;
+  font-size: 26rpx;
+  font-weight: 900;
   flex-shrink: 0;
+  margin-top: 2rpx;
 }
 
 .text {
   flex: 1;
   color: #172033;
-  font-size: 27rpx;
+  font-size: 30rpx;
   line-height: 1.6;
+  font-weight: 700;
 }
 </style>

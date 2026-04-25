@@ -9,11 +9,11 @@
     </view>
 
     <template v-if="mode === 'tags'">
-      <PageHeader
-        eyebrow="刷题模式"
-        title="选择本轮练习方式"
-        subtitle="专项刷题按知识点训练；综合刷题会从当前科目全部知识点随机组卷。"
-      />
+      <view class="setup-hero">
+        <view class="setup-eyebrow">刷题模式</view>
+        <view class="setup-title">选择本轮练习方式</view>
+        <view class="setup-sub">专项刷题按知识点训练；综合刷题会从当前科目全部知识点随机组卷。</view>
+      </view>
 
       <view class="mode-card">
         <view
@@ -67,7 +67,7 @@
       />
 
       <view class="sticky-bar">
-        <view>
+        <view class="sticky-copy">
           <view class="sticky-title">{{ stickyTitle }}</view>
           <view class="sticky-sub">{{ stickySub }}</view>
           <view class="sticky-tip">本轮将加载 {{ plannedQuestionLimit }} 道题</view>
@@ -105,15 +105,17 @@
       </template>
 
       <template v-else>
-      <view class="quiz-top">
-        <view class="badge">{{ quizProgressText }}</view>
-        <view class="timer">⏱ {{ formattedTimer }}</view>
-      </view>
+      <view class="quiz-shell">
+        <view class="quiz-top">
+          <view class="badge">{{ quizProgressText }}</view>
+          <view class="timer">⏱ {{ formattedTimer }}</view>
+        </view>
 
-      <view class="question-card">
-        <view class="badge plain">{{ questionBadgeText }}</view>
-        <view class="question-title">{{ currentQuestion.stem }}</view>
-        <view class="helper-box">{{ questionHelperText }}</view>
+        <view class="question-card">
+          <view class="badge plain">{{ questionBadgeText }}</view>
+          <view class="question-title">{{ currentQuestion.stem }}</view>
+          <view class="helper-box">{{ questionHelperText }}</view>
+        </view>
       </view>
 
       <view class="options">
@@ -177,7 +179,6 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { request } from '../../api/http'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
-import PageHeader from '../../components/PageHeader.vue'
 import QuestionOption from '../../components/QuestionOption.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
@@ -994,31 +995,31 @@ function scrollToResultSection() {
 
 <style scoped>
 .practice-page {
-  padding-top: calc(var(--status-bar-height) + 28rpx);
-  padding-bottom: calc(env(safe-area-inset-bottom) + 180rpx);
+  padding: calc(var(--status-bar-height) + 18rpx) 22rpx calc(env(safe-area-inset-bottom) + 190rpx);
 }
 
 .top-nav {
   display: flex;
   align-items: center;
-  gap: 18rpx;
-  margin-bottom: 14rpx;
+  gap: 16rpx;
+  margin-bottom: 18rpx;
 }
 
 .back-btn {
-  width: 72rpx;
-  height: 72rpx;
+  width: 82rpx;
+  height: 82rpx;
   padding: 0;
   border: 2rpx solid #e6ebf5;
-  border-radius: 22rpx;
+  border-radius: 28rpx;
   background: #ffffff;
   color: #172033;
-  font-size: 38rpx;
+  font-size: 44rpx;
   font-weight: 700;
-  line-height: 72rpx;
+  line-height: 82rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
 }
 
 .top-copy {
@@ -1027,51 +1028,88 @@ function scrollToResultSection() {
 
 .top-title {
   color: #172033;
-  font-size: 34rpx;
-  font-weight: 800;
+  font-size: 36rpx;
+  font-weight: 900;
 }
 
 .top-sub {
   margin-top: 8rpx;
   color: #667085;
+  font-size: 24rpx;
+}
+
+.setup-hero {
+  margin-bottom: 20rpx;
+  padding: 30rpx 28rpx;
+  border-radius: 34rpx;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
+    radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.14), transparent 46%);
+  border: 2rpx solid rgba(219, 228, 245, 0.92);
+  box-shadow: 0 18rpx 42rpx rgba(20, 31, 66, 0.07);
+}
+
+.setup-eyebrow {
+  color: #2563eb;
   font-size: 23rpx;
+  font-weight: 900;
+}
+
+.setup-title {
+  margin-top: 8rpx;
+  color: #101828;
+  font-size: 42rpx;
+  line-height: 1.22;
+  font-weight: 900;
+}
+
+.setup-sub {
+  margin-top: 14rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.65;
 }
 
 .mode-card,
 .count-card,
 .comprehensive-card {
-  margin-bottom: 20rpx;
+  margin-bottom: 22rpx;
   padding: 24rpx;
-  border-radius: 28rpx;
+  border-radius: 32rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.04);
+  box-shadow: 0 14rpx 32rpx rgba(20, 31, 66, 0.05);
 }
 
 .mode-card {
   display: flex;
-  gap: 16rpx;
+  flex-direction: column;
+  gap: 18rpx;
 }
 
 .mode-option {
-  flex: 1;
-  padding: 22rpx;
-  border-radius: 22rpx;
+  min-height: 116rpx;
+  padding: 26rpx;
+  border-radius: 28rpx;
   border: 2rpx solid #dbe4f5;
   background: #f8fbff;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
 }
 
 .mode-option.active {
   border-color: #2563eb;
   background: #edf3ff;
+  box-shadow: inset 0 0 0 2rpx rgba(37, 99, 235, 0.08);
 }
 
 .mode-title,
 .count-title,
 .comprehensive-title {
   color: #172033;
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 900;
 }
 
 .mode-sub,
@@ -1079,7 +1117,7 @@ function scrollToResultSection() {
 .comprehensive-line {
   margin-top: 8rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 24rpx;
   line-height: 1.6;
 }
 
@@ -1103,18 +1141,18 @@ function scrollToResultSection() {
 .count-options {
   display: flex;
   gap: 16rpx;
-  margin-top: 18rpx;
+  margin-top: 22rpx;
 }
 
 .count-option {
   flex: 1;
-  min-height: 82rpx;
-  border-radius: 22rpx;
+  min-height: 96rpx;
+  border-radius: 26rpx;
   border: 2rpx solid #dbe4f5;
   background: #f8fbff;
   color: #476089;
-  font-size: 26rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 900;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1129,23 +1167,29 @@ function scrollToResultSection() {
 
 .sticky-bar {
   position: fixed;
-  left: 24rpx;
-  right: 24rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  left: 20rpx;
+  right: 20rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 18rpx);
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18rpx;
-  padding: 22rpx 24rpx;
-  border-radius: 30rpx;
+  gap: 16rpx;
+  padding: 22rpx;
+  border-radius: 34rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.08);
+  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.12);
+  backdrop-filter: blur(16rpx);
+}
+
+.sticky-copy {
+  min-width: 0;
+  flex: 1;
 }
 
 .sticky-title {
   font-size: 28rpx;
-  font-weight: 800;
+  font-weight: 900;
   color: #172033;
 }
 
@@ -1154,6 +1198,7 @@ function scrollToResultSection() {
   margin-top: 8rpx;
   color: #667085;
   font-size: 22rpx;
+  line-height: 1.35;
 }
 
 .sticky-tip {
@@ -1161,13 +1206,16 @@ function scrollToResultSection() {
 }
 
 .sticky-btn {
-  padding: 20rpx 26rpx;
+  min-width: 180rpx;
+  min-height: 92rpx;
+  padding: 0 24rpx;
   border: 0;
-  border-radius: 22rpx;
+  border-radius: 28rpx;
   background: #2563eb;
   color: #ffffff;
-  font-size: 24rpx;
-  font-weight: 800;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.2);
 }
 
 .sticky-btn[disabled] {
@@ -1179,7 +1227,17 @@ function scrollToResultSection() {
   justify-content: space-between;
   align-items: center;
   gap: 16rpx;
-  margin-bottom: 18rpx;
+  margin-bottom: 16rpx;
+}
+
+.quiz-shell {
+  padding: 22rpx 20rpx 20rpx;
+  border-radius: 34rpx;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(245, 248, 255, 0.94)),
+    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 42%);
+  border: 2rpx solid rgba(230, 235, 245, 0.9);
+  box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
 }
 
 .badge {
@@ -1189,8 +1247,8 @@ function scrollToResultSection() {
   border-radius: 999rpx;
   background: #edf3ff;
   color: #2563eb;
-  font-size: 22rpx;
-  font-weight: 800;
+  font-size: 23rpx;
+  font-weight: 900;
 }
 
 .badge.plain {
@@ -1203,27 +1261,28 @@ function scrollToResultSection() {
   background: #fff8eb;
   color: #b7791f;
   border: 2rpx solid #fde7b0;
-  font-size: 22rpx;
-  font-weight: 800;
+  font-size: 23rpx;
+  font-weight: 900;
 }
 
 .question-card {
-  padding: 28rpx;
-  border-radius: 30rpx;
+  padding: 28rpx 6rpx 4rpx;
+  border-radius: 0;
   background: #ffffff;
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  border: 0;
+  box-shadow: none;
+  background: transparent;
 }
 
 .question-title {
   color: #172033;
-  font-size: 38rpx;
-  line-height: 1.6;
-  font-weight: 800;
+  font-size: 40rpx;
+  line-height: 1.55;
+  font-weight: 900;
 }
 
 .helper-box {
-  margin-top: 18rpx;
+  margin-top: 22rpx;
   padding: 22rpx;
   border-radius: 24rpx;
   border: 2rpx dashed #c8d3ea;
@@ -1237,20 +1296,20 @@ function scrollToResultSection() {
 .options {
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
-  margin: 18rpx 0;
+  gap: 18rpx;
+  margin: 22rpx 0;
 }
 
 .submit-btn {
   width: 100%;
-  min-height: 90rpx;
+  min-height: 98rpx;
   border: 0;
-  border-radius: 26rpx;
+  border-radius: 28rpx;
   background: #2563eb;
   color: #ffffff;
-  font-size: 28rpx;
-  font-weight: 800;
-  box-shadow: 0 12rpx 24rpx rgba(37, 99, 235, 0.18);
+  font-size: 30rpx;
+  font-weight: 900;
+  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.2);
 }
 
 .submit-btn[disabled] {
@@ -1259,8 +1318,8 @@ function scrollToResultSection() {
 }
 
 .summary-card {
-  padding: 32rpx;
-  border-radius: 30rpx;
+  padding: 34rpx;
+  border-radius: 34rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
@@ -1292,17 +1351,17 @@ function scrollToResultSection() {
   gap: 16rpx;
   margin-top: 20rpx;
   padding: 24rpx;
-  border-radius: 30rpx;
+  border-radius: 34rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
 }
 
 .summary-dot {
-  height: 74rpx;
+  min-height: 82rpx;
   border: 0;
-  border-radius: 18rpx;
+  border-radius: 22rpx;
   color: #ffffff;
-  font-size: 26rpx;
+  font-size: 28rpx;
   font-weight: 900;
   display: flex;
   align-items: center;
@@ -1347,13 +1406,13 @@ function scrollToResultSection() {
 .next-btn {
   flex: 1;
   width: 100%;
-  min-height: 88rpx;
+  min-height: 96rpx;
   border: 0;
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   background: #172033;
   color: #ffffff;
-  font-size: 26rpx;
-  font-weight: 800;
+  font-size: 28rpx;
+  font-weight: 900;
 }
 
 .next-btn.done {
@@ -1378,6 +1437,6 @@ function scrollToResultSection() {
 }
 
 .back-tags {
-  margin-top: 18rpx;
+  margin-top: 20rpx;
 }
 </style>

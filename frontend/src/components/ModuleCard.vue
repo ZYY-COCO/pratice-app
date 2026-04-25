@@ -24,23 +24,24 @@ defineProps({
 .module-card {
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  padding: 28rpx;
-  border-radius: 30rpx;
+  gap: 22rpx;
+  min-height: 128rpx;
+  padding: 30rpx 28rpx;
+  border-radius: 32rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  box-shadow: 0 14rpx 32rpx rgba(20, 31, 66, 0.06);
 }
 
 .icon {
-  width: 92rpx;
-  height: 92rpx;
-  border-radius: 26rpx;
+  width: 98rpx;
+  height: 98rpx;
+  border-radius: 30rpx;
   background: #eef4ff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 42rpx;
+  font-size: 46rpx;
   flex-shrink: 0;
 }
 
@@ -49,7 +50,7 @@ defineProps({
 }
 
 .title {
-  font-size: 30rpx;
+  font-size: 32rpx;
   font-weight: 800;
   color: #172033;
 }
@@ -57,13 +58,13 @@ defineProps({
 .desc {
   margin-top: 10rpx;
   color: #667085;
-  font-size: 23rpx;
+  font-size: 24rpx;
   line-height: 1.5;
 }
 
 .arrow {
-  color: #98a2b3;
-  font-size: 40rpx;
+  color: #b2bccd;
+  font-size: 46rpx;
   font-weight: 700;
 }
 </style>

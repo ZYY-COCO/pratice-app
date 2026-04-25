@@ -56,15 +56,15 @@ defineEmits(['toggle-open', 'toggle-tag'])
 .accordion-group {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 20rpx;
 }
 
 .accordion {
   overflow: hidden;
-  border-radius: 30rpx;
+  border-radius: 32rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.04);
+  box-shadow: 0 14rpx 32rpx rgba(20, 31, 66, 0.05);
 }
 
 .accordion-header {
@@ -72,6 +72,7 @@ defineEmits(['toggle-open', 'toggle-tag'])
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
+  min-height: 108rpx;
   padding: 28rpx;
 }
 
@@ -80,21 +81,21 @@ defineEmits(['toggle-open', 'toggle-tag'])
 }
 
 .title {
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 900;
   color: #172033;
 }
 
 .sub {
   margin-top: 8rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 23rpx;
   line-height: 1.5;
 }
 
 .arrow {
   color: #98a2b3;
-  font-size: 30rpx;
+  font-size: 34rpx;
 }
 
 .accordion-body {
@@ -106,7 +107,8 @@ defineEmits(['toggle-open', 'toggle-tag'])
 .check-row {
   display: flex;
   align-items: center;
-  gap: 18rpx;
+  gap: 20rpx;
+  min-height: 104rpx;
   padding: 22rpx 0;
   border-bottom: 2rpx dashed #edf1f7;
 }
@@ -116,9 +118,9 @@ defineEmits(['toggle-open', 'toggle-tag'])
 }
 
 .check-box {
-  width: 36rpx;
-  height: 36rpx;
-  border-radius: 12rpx;
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 14rpx;
   border: 2rpx solid #c7d2fe;
   background: #ffffff;
   display: flex;
@@ -140,14 +142,14 @@ defineEmits(['toggle-open', 'toggle-tag'])
 }
 
 .check-title {
-  font-size: 26rpx;
+  font-size: 28rpx;
   color: #172033;
-  font-weight: 700;
+  font-weight: 800;
 }
 
 .check-sub {
   margin-top: 8rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 23rpx;
 }
 </style>
