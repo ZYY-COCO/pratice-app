@@ -194,7 +194,6 @@
       <template v-if="isAuthed">
         <ProfileSummaryCard :profile="profile" :exam-options="examOptions" @change-exam="changeExam" />
         <view class="profile-actions">
-          <button class="primary-button" @tap="goPractice">进入专项刷题</button>
           <button class="primary-button pro-entry" @tap="goPro">会员中心 / Pro 功能预览</button>
           <button class="ghost-button" @tap="logout">退出登录</button>
         </view>
