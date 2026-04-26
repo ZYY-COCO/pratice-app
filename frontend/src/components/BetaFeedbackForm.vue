@@ -113,7 +113,7 @@ async function submit() {
 .feedback-form {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 22rpx;
 }
 
 .label {
@@ -125,11 +125,11 @@ async function submit() {
 .input,
 .picker-box,
 .textarea {
-  margin-top: 12rpx;
+  margin-top: 14rpx;
   width: 100%;
-  border-radius: 24rpx;
+  border-radius: 28rpx;
   border: 2rpx solid #dbe3f2;
-  background: #fbfcff;
+  background: #f8fbff;
   color: #172033;
   font-size: 26rpx;
   box-sizing: border-box;
@@ -137,29 +137,29 @@ async function submit() {
 
 .input,
 .picker-box {
-  min-height: 84rpx;
-  padding: 0 22rpx;
+  min-height: 96rpx;
+  padding: 0 26rpx;
   display: flex;
   align-items: center;
 }
 
 .textarea {
-  min-height: 180rpx;
-  padding: 22rpx;
+  min-height: 200rpx;
+  padding: 24rpx;
   line-height: 1.6;
 }
 
 .pay-row {
   display: flex;
-  gap: 12rpx;
-  margin-top: 12rpx;
+  gap: 14rpx;
+  margin-top: 14rpx;
 }
 
 .choice-btn {
   flex: 1;
-  min-height: 74rpx;
+  min-height: 84rpx;
   border: 2rpx solid #dbe4f5;
-  border-radius: 22rpx;
+  border-radius: 26rpx;
   background: #f8fbff;
   color: #476089;
   font-size: 23rpx;
@@ -170,5 +170,6 @@ async function submit() {
   border-color: #2563eb;
   background: #edf3ff;
   color: #2563eb;
+  box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.12);
 }
 </style>

@@ -56,15 +56,15 @@ defineEmits(['toggle-open', 'toggle-tag'])
 .accordion-group {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
+  gap: 22rpx;
 }
 
 .accordion {
   overflow: hidden;
-  border-radius: 32rpx;
+  border-radius: 36rpx;
   background: #ffffff;
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 14rpx 32rpx rgba(20, 31, 66, 0.05);
+  border: 2rpx solid rgba(230, 235, 245, 0.96);
+  box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
 }
 
 .accordion-header {
@@ -72,8 +72,8 @@ defineEmits(['toggle-open', 'toggle-tag'])
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  min-height: 108rpx;
-  padding: 28rpx;
+  min-height: 118rpx;
+  padding: 30rpx;
 }
 
 .header-copy {
@@ -81,13 +81,13 @@ defineEmits(['toggle-open', 'toggle-tag'])
 }
 
 .title {
-  font-size: 30rpx;
+  font-size: 31rpx;
   font-weight: 900;
   color: #172033;
 }
 
 .sub {
-  margin-top: 8rpx;
+  margin-top: 10rpx;
   color: #667085;
   font-size: 23rpx;
   line-height: 1.5;
@@ -99,28 +99,31 @@ defineEmits(['toggle-open', 'toggle-tag'])
 }
 
 .accordion-body {
-  padding: 0 28rpx 16rpx;
+  padding: 10rpx 24rpx 22rpx;
   border-top: 2rpx solid #edf1f7;
-  background: #fcfdff;
+  background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
 }
 
 .check-row {
   display: flex;
   align-items: center;
   gap: 20rpx;
-  min-height: 104rpx;
-  padding: 22rpx 0;
-  border-bottom: 2rpx dashed #edf1f7;
+  min-height: 108rpx;
+  margin-top: 12rpx;
+  padding: 20rpx;
+  border: 2rpx solid #edf1f7;
+  border-radius: 26rpx;
+  background: #ffffff;
 }
 
 .check-row:last-child {
-  border-bottom: 0;
+  border-bottom: 2rpx solid #edf1f7;
 }
 
 .check-box {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 14rpx;
+  width: 48rpx;
+  height: 48rpx;
+  border-radius: 16rpx;
   border: 2rpx solid #c7d2fe;
   background: #ffffff;
   display: flex;
@@ -135,6 +138,7 @@ defineEmits(['toggle-open', 'toggle-tag'])
 .check-box.checked {
   border-color: #2563eb;
   background: #2563eb;
+  box-shadow: 0 8rpx 16rpx rgba(37, 99, 235, 0.18);
 }
 
 .check-copy {

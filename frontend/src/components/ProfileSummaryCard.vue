@@ -59,68 +59,81 @@ function handleTargetChange(code) {
 
 <style scoped>
 .profile-card {
-  padding: 28rpx;
-  border-radius: 30rpx;
-  background: #ffffff;
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  padding: 34rpx 30rpx;
+  border-radius: 40rpx;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.98)),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 44%);
+  border: 2rpx solid rgba(230, 235, 245, 0.96);
+  box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.07);
 }
 
 .header {
   display: flex;
+  align-items: flex-start;
   justify-content: space-between;
-  gap: 12rpx;
+  gap: 18rpx;
 }
 
 .user-wrap {
   display: flex;
   align-items: center;
-  gap: 18rpx;
+  gap: 20rpx;
+  min-width: 0;
 }
 
 .avatar {
-  width: 80rpx;
-  height: 80rpx;
+  width: 96rpx;
+  height: 96rpx;
   border-radius: 999rpx;
   background: linear-gradient(135deg, #2563eb, #7aa2ff);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30rpx;
+  font-size: 34rpx;
   font-weight: 800;
+  box-shadow: 0 14rpx 26rpx rgba(37, 99, 235, 0.24);
 }
 
 .name {
-  font-size: 28rpx;
-  font-weight: 800;
+  color: #101828;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.2;
 }
 
 .subtitle {
-  margin-top: 8rpx;
+  margin-top: 10rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 24rpx;
+  line-height: 1.45;
 }
 
 .badge {
-  padding: 12rpx 18rpx;
-  border-radius: 18rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 22rpx;
   background: #edf3ff;
   color: #2563eb;
-  font-size: 22rpx;
-  font-weight: 800;
+  font-size: 23rpx;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .rows {
-  margin-top: 18rpx;
+  margin-top: 28rpx;
+  padding: 4rpx 0;
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.72);
 }
 
 .row {
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  gap: 16rpx;
-  padding: 18rpx 0;
-  border-bottom: 2rpx dashed #edf1f7;
+  gap: 18rpx;
+  padding: 22rpx 4rpx;
+  border-bottom: 2rpx solid rgba(237, 241, 247, 0.86);
 }
 
 .row:last-child {
@@ -131,12 +144,13 @@ function handleTargetChange(code) {
 .label {
   color: #475467;
   font-size: 25rpx;
+  font-weight: 700;
 }
 
 .value {
-  color: #172033;
-  font-size: 25rpx;
-  font-weight: 800;
+  color: #101828;
+  font-size: 28rpx;
+  font-weight: 900;
 }
 
 .target-options {
@@ -148,17 +162,17 @@ function handleTargetChange(code) {
 }
 
 .target-option {
-  min-width: 112rpx;
-  min-height: 56rpx;
+  min-width: 116rpx;
+  min-height: 62rpx;
   margin: 0;
-  padding: 0 18rpx;
+  padding: 0 20rpx;
   border: 2rpx solid #d7e3fb;
-  border-radius: 18rpx;
-  background: #edf3ff;
+  border-radius: 22rpx;
+  background: #ffffff;
   color: #2563eb;
   font-size: 24rpx;
-  font-weight: 700;
-  line-height: 56rpx;
+  font-weight: 900;
+  line-height: 62rpx;
 }
 
 .target-option.active {

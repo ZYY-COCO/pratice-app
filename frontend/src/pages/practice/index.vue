@@ -995,31 +995,36 @@ function scrollToResultSection() {
 
 <style scoped>
 .practice-page {
-  padding: calc(var(--status-bar-height) + 18rpx) 22rpx calc(env(safe-area-inset-bottom) + 190rpx);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(var(--status-bar-height) + 16rpx) 28rpx calc(env(safe-area-inset-bottom) + 188rpx);
+  background:
+    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
 }
 
 .top-nav {
   display: flex;
   align-items: center;
-  gap: 16rpx;
-  margin-bottom: 18rpx;
+  gap: 18rpx;
+  margin-bottom: 22rpx;
 }
 
 .back-btn {
-  width: 82rpx;
-  height: 82rpx;
+  width: 76rpx;
+  height: 76rpx;
   padding: 0;
-  border: 2rpx solid #e6ebf5;
-  border-radius: 28rpx;
+  border: 0;
+  border-radius: 26rpx;
   background: #ffffff;
   color: #172033;
-  font-size: 44rpx;
+  font-size: 42rpx;
   font-weight: 700;
-  line-height: 82rpx;
+  line-height: 76rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
 }
 
 .top-copy {
@@ -1028,25 +1033,25 @@ function scrollToResultSection() {
 
 .top-title {
   color: #172033;
-  font-size: 36rpx;
+  font-size: 38rpx;
   font-weight: 900;
 }
 
 .top-sub {
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: #667085;
   font-size: 24rpx;
 }
 
 .setup-hero {
-  margin-bottom: 20rpx;
-  padding: 30rpx 28rpx;
-  border-radius: 34rpx;
+  margin-bottom: 22rpx;
+  padding: 34rpx 30rpx;
+  border-radius: 36rpx;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
     radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.14), transparent 46%);
   border: 2rpx solid rgba(219, 228, 245, 0.92);
-  box-shadow: 0 18rpx 42rpx rgba(20, 31, 66, 0.07);
+  box-shadow: 0 20rpx 46rpx rgba(20, 31, 66, 0.08);
 }
 
 .setup-eyebrow {
@@ -1058,7 +1063,7 @@ function scrollToResultSection() {
 .setup-title {
   margin-top: 8rpx;
   color: #101828;
-  font-size: 42rpx;
+  font-size: 44rpx;
   line-height: 1.22;
   font-weight: 900;
 }
@@ -1073,23 +1078,23 @@ function scrollToResultSection() {
 .mode-card,
 .count-card,
 .comprehensive-card {
-  margin-bottom: 22rpx;
-  padding: 24rpx;
-  border-radius: 32rpx;
+  margin-bottom: 24rpx;
+  padding: 26rpx;
+  border-radius: 34rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 14rpx 32rpx rgba(20, 31, 66, 0.05);
+  box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
 }
 
 .mode-card {
-  display: flex;
-  flex-direction: column;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 18rpx;
 }
 
 .mode-option {
-  min-height: 116rpx;
-  padding: 26rpx;
+  min-height: 138rpx;
+  padding: 26rpx 22rpx;
   border-radius: 28rpx;
   border: 2rpx solid #dbe4f5;
   background: #f8fbff;
@@ -1100,8 +1105,8 @@ function scrollToResultSection() {
 
 .mode-option.active {
   border-color: #2563eb;
-  background: #edf3ff;
-  box-shadow: inset 0 0 0 2rpx rgba(37, 99, 235, 0.08);
+  background: linear-gradient(180deg, #f4f8ff 0%, #edf3ff 100%);
+  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.12);
 }
 
 .mode-title,
@@ -1141,13 +1146,13 @@ function scrollToResultSection() {
 .count-options {
   display: flex;
   gap: 16rpx;
-  margin-top: 22rpx;
+  margin-top: 24rpx;
 }
 
 .count-option {
   flex: 1;
-  min-height: 96rpx;
-  border-radius: 26rpx;
+  min-height: 100rpx;
+  border-radius: 28rpx;
   border: 2rpx solid #dbe4f5;
   background: #f8fbff;
   color: #476089;
@@ -1167,15 +1172,15 @@ function scrollToResultSection() {
 
 .sticky-bar {
   position: fixed;
-  left: 20rpx;
-  right: 20rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 18rpx);
+  left: 28rpx;
+  right: 28rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 22rpx);
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 16rpx;
-  padding: 22rpx;
-  border-radius: 34rpx;
+  padding: 22rpx 24rpx;
+  border-radius: 36rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.12);
@@ -1206,7 +1211,7 @@ function scrollToResultSection() {
 }
 
 .sticky-btn {
-  min-width: 180rpx;
+  min-width: 196rpx;
   min-height: 92rpx;
   padding: 0 24rpx;
   border: 0;
@@ -1231,8 +1236,8 @@ function scrollToResultSection() {
 }
 
 .quiz-shell {
-  padding: 22rpx 20rpx 20rpx;
-  border-radius: 34rpx;
+  padding: 24rpx 22rpx 22rpx;
+  border-radius: 36rpx;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(245, 248, 255, 0.94)),
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 42%);
@@ -1266,7 +1271,7 @@ function scrollToResultSection() {
 }
 
 .question-card {
-  padding: 28rpx 6rpx 4rpx;
+  padding: 30rpx 8rpx 6rpx;
   border-radius: 0;
   background: #ffffff;
   border: 0;
@@ -1276,7 +1281,7 @@ function scrollToResultSection() {
 
 .question-title {
   color: #172033;
-  font-size: 40rpx;
+  font-size: 38rpx;
   line-height: 1.55;
   font-weight: 900;
 }
@@ -1296,13 +1301,13 @@ function scrollToResultSection() {
 .options {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
-  margin: 22rpx 0;
+  gap: 20rpx;
+  margin: 24rpx 0;
 }
 
 .submit-btn {
   width: 100%;
-  min-height: 98rpx;
+  min-height: 104rpx;
   border: 0;
   border-radius: 28rpx;
   background: #2563eb;
@@ -1318,8 +1323,8 @@ function scrollToResultSection() {
 }
 
 .summary-card {
-  padding: 34rpx;
-  border-radius: 34rpx;
+  padding: 36rpx 32rpx;
+  border-radius: 36rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
@@ -1347,17 +1352,17 @@ function scrollToResultSection() {
 
 .summary-grid {
   display: grid;
-  grid-template-columns: repeat(5, 1fr);
-  gap: 16rpx;
-  margin-top: 20rpx;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-top: 22rpx;
   padding: 24rpx;
-  border-radius: 34rpx;
+  border-radius: 32rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
 }
 
 .summary-dot {
-  min-height: 82rpx;
+  min-height: 78rpx;
   border: 0;
   border-radius: 22rpx;
   color: #ffffff;
@@ -1406,7 +1411,7 @@ function scrollToResultSection() {
 .next-btn {
   flex: 1;
   width: 100%;
-  min-height: 96rpx;
+  min-height: 102rpx;
   border: 0;
   border-radius: 28rpx;
   background: #172033;

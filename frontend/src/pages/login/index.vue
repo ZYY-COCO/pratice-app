@@ -529,17 +529,22 @@ function goBackHome() {
 
 <style scoped>
 .login-page {
-  padding: calc(var(--status-bar-height) + 28rpx) 24rpx calc(env(safe-area-inset-bottom) + 40rpx);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: calc(var(--status-bar-height) + 28rpx) 30rpx calc(env(safe-area-inset-bottom) + 48rpx);
+  background:
+    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
+    linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
 }
 
 .auth-hero {
-  padding: 34rpx 30rpx;
-  border-radius: 36rpx;
+  padding: 40rpx 34rpx;
+  border-radius: 40rpx;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
     radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 44%);
   border: 2rpx solid rgba(219, 228, 245, 0.92);
-  box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.08);
+  box-shadow: 0 22rpx 52rpx rgba(20, 31, 66, 0.08);
 }
 
 .hero-badge {
@@ -554,9 +559,9 @@ function goBackHome() {
 }
 
 .hero-title {
-  margin-top: 18rpx;
+  margin-top: 20rpx;
   color: #101828;
-  font-size: 44rpx;
+  font-size: 46rpx;
   line-height: 1.22;
   font-weight: 900;
 }
@@ -564,28 +569,29 @@ function goBackHome() {
 .hero-sub {
   margin-top: 14rpx;
   color: #667085;
-  font-size: 25rpx;
+  font-size: 26rpx;
   line-height: 1.65;
 }
 
 .segment-wrap {
-  margin-top: 22rpx;
+  margin-top: 24rpx;
 }
 
 .segment {
   display: flex;
-  gap: 10rpx;
-  padding: 10rpx;
-  border-radius: 32rpx;
-  background: rgba(238, 243, 255, 0.94);
-  border: 2rpx solid #dbe7ff;
+  gap: 12rpx;
+  padding: 12rpx;
+  border-radius: 34rpx;
+  background: rgba(255, 255, 255, 0.92);
+  border: 2rpx solid #e6ebf5;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
 }
 
 .segment-btn {
   flex: 1;
-  min-height: 84rpx;
+  min-height: 88rpx;
   border: 0;
-  border-radius: 26rpx;
+  border-radius: 28rpx;
   background: transparent;
   color: #667085;
   font-size: 25rpx;
@@ -593,22 +599,22 @@ function goBackHome() {
 }
 
 .segment-btn.active {
-  background: #ffffff;
-  color: #2563eb;
-  box-shadow: 0 6rpx 16rpx rgba(37, 99, 235, 0.12);
+  background: #2563eb;
+  color: #ffffff;
+  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.18);
 }
 
 .login-card {
-  margin-top: 24rpx;
-  padding: 30rpx 26rpx;
-  border-radius: 36rpx;
+  margin-top: 26rpx;
+  padding: 34rpx 30rpx;
+  border-radius: 40rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 18rpx 42rpx rgba(20, 31, 66, 0.06);
+  box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.07);
 }
 
 .field + .field {
-  margin-top: 24rpx;
+  margin-top: 26rpx;
 }
 
 .label {
@@ -619,12 +625,12 @@ function goBackHome() {
 
 .input,
 .picker-box {
-  margin-top: 12rpx;
-  min-height: 98rpx;
-  padding: 0 26rpx;
-  border-radius: 28rpx;
+  margin-top: 14rpx;
+  min-height: 104rpx;
+  padding: 0 28rpx;
+  border-radius: 30rpx;
   border: 2rpx solid #dbe3f2;
-  background: #fbfcff;
+  background: #f8fbff;
   font-size: 30rpx;
   color: #172033;
   display: flex;
@@ -633,7 +639,7 @@ function goBackHome() {
 
 .code-row {
   display: flex;
-  gap: 14rpx;
+  gap: 16rpx;
   align-items: flex-end;
 }
 
@@ -642,12 +648,12 @@ function goBackHome() {
 }
 
 .code-btn {
-  min-width: 200rpx;
-  min-height: 98rpx;
+  min-width: 208rpx;
+  min-height: 104rpx;
   border: 0;
-  border-radius: 28rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  border-radius: 30rpx;
+  background: #eaf2ff;
+  color: #1677ff;
   font-size: 24rpx;
   font-weight: 900;
 }
@@ -657,22 +663,22 @@ function goBackHome() {
 }
 
 .submit-btn {
-  margin-top: 34rpx;
-  min-height: 98rpx;
-  border-radius: 30rpx;
+  margin-top: 36rpx;
+  min-height: 106rpx;
+  border-radius: 32rpx;
   font-size: 30rpx;
 }
 
 .home-btn {
-  margin-top: 16rpx;
-  min-height: 92rpx;
-  border-radius: 30rpx;
+  margin-top: 18rpx;
+  min-height: 98rpx;
+  border-radius: 32rpx;
 }
 
 .tip-card {
-  margin-top: 22rpx;
-  padding: 26rpx;
-  border-radius: 32rpx;
+  margin-top: 24rpx;
+  padding: 28rpx;
+  border-radius: 34rpx;
   background: #fff8eb;
   border: 2rpx solid #fde7b0;
 }

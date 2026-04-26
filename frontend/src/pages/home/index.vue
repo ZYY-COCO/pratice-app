@@ -1258,12 +1258,16 @@ function formatDateTime(value) {
 }
 
 .beta-item {
+  padding: 18rpx 20rpx;
+  border-radius: 24rpx;
+  background: #f8fbff;
   color: #344054;
   font-size: 24rpx;
   line-height: 1.7;
 }
 
 .beta-item.muted {
+  background: #f4f8ff;
   color: #667085;
 }
 
@@ -1539,20 +1543,23 @@ function formatDateTime(value) {
 }
 
 .profile-actions {
-  margin-top: 18rpx;
+  margin-top: 22rpx;
   display: flex;
   flex-direction: column;
-  gap: 14rpx;
+  gap: 16rpx;
 }
 
 .auth-copy {
-  margin-bottom: 18rpx;
+  margin-bottom: 22rpx;
+  padding: 22rpx;
+  border-radius: 28rpx;
+  background: #f8fbff;
 }
 
 .auth-title {
   color: #172033;
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 900;
   line-height: 1.6;
 }
 

@@ -30,11 +30,11 @@ defineProps({
 
 <style scoped>
 .section-card {
-  padding: 28rpx;
-  border-radius: 30rpx;
+  padding: 30rpx;
+  border-radius: 36rpx;
   background: #ffffff;
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  border: 2rpx solid rgba(230, 235, 245, 0.96);
+  box-shadow: 0 18rpx 42rpx rgba(20, 31, 66, 0.06);
 }
 
 .head {
@@ -45,15 +45,16 @@ defineProps({
 }
 
 .title {
-  font-size: 28rpx;
-  font-weight: 800;
+  font-size: 30rpx;
+  font-weight: 900;
   color: #172033;
 }
 
 .subtitle {
-  margin-top: 8rpx;
+  margin-top: 10rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 23rpx;
+  line-height: 1.55;
 }
 
 .right {
