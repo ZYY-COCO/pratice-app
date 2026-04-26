@@ -843,13 +843,18 @@ function formatDateTime(value) {
 
 <style scoped>
 .home-page {
-  padding: 36rpx 32rpx calc(env(safe-area-inset-bottom) + 180rpx);
+  min-height: 100vh;
+  min-height: 100dvh;
+  padding: 34rpx 32rpx calc(env(safe-area-inset-bottom) + 142rpx);
 }
 
 .home-dashboard {
+  min-height: calc(100vh - env(safe-area-inset-bottom) - 208rpx);
+  min-height: calc(100dvh - env(safe-area-inset-bottom) - 208rpx);
   display: flex;
   flex-direction: column;
-  gap: 34rpx;
+  gap: 28rpx;
+  justify-content: space-between;
 }
 
 .home-header,
@@ -919,7 +924,7 @@ function formatDateTime(value) {
 }
 
 .welcome-card {
-  padding: 34rpx 30rpx;
+  padding: 36rpx 30rpx;
   overflow: hidden;
   position: relative;
 }
@@ -1053,7 +1058,7 @@ function formatDateTime(value) {
 }
 
 .plan-card {
-  padding: 28rpx;
+  padding: 30rpx;
 }
 
 .panel-head,
@@ -1143,12 +1148,14 @@ function formatDateTime(value) {
 
 .module-grid {
   display: flex;
+  flex-wrap: wrap;
   gap: 22rpx;
 }
 
 .shortcut-grid {
   gap: 22rpx;
   align-items: stretch;
+  margin-top: -4rpx;
 }
 
 .shortcut-card {

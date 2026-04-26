@@ -30,9 +30,10 @@ defineProps({
 
 <style scoped>
 .module-card {
-  flex: 1;
+  flex: 0 0 calc(50% - 11rpx);
+  width: calc(50% - 11rpx);
   min-width: 0;
-  min-height: 330rpx;
+  min-height: 300rpx;
   padding: 28rpx 24rpx 24rpx;
   border-radius: 32rpx;
   background: #ffffff;
@@ -40,6 +41,15 @@ defineProps({
   box-shadow: 0 18rpx 42rpx rgba(25, 48, 89, 0.08);
   display: flex;
   flex-direction: column;
+}
+
+.module-card:nth-child(3) {
+  flex-basis: 100%;
+  width: 100%;
+  min-height: 246rpx;
+  flex-direction: row;
+  align-items: center;
+  gap: 24rpx;
 }
 
 .icon {
@@ -58,6 +68,23 @@ defineProps({
   min-width: 0;
   display: flex;
   flex-direction: column;
+}
+
+.module-card:nth-child(3) .content {
+  min-height: 0;
+}
+
+.module-card:nth-child(3) .title {
+  margin-top: 0;
+}
+
+.module-card:nth-child(3) .desc {
+  min-height: 0;
+  margin-top: 14rpx;
+}
+
+.module-card:nth-child(3) .divider {
+  margin-top: 24rpx;
 }
 
 .title {

@@ -12,6 +12,8 @@ export default {
 <style>
 page {
   min-height: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
   background:
     radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
     linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
@@ -21,6 +23,7 @@ page {
 
 .page {
   min-height: 100vh;
+  min-height: 100dvh;
   box-sizing: border-box;
   padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 36rpx);
 }

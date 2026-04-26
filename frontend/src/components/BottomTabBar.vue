@@ -33,10 +33,10 @@ defineEmits(['update:modelValue'])
   position: fixed;
   left: 32rpx;
   right: 32rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 22rpx);
+  bottom: calc(env(safe-area-inset-bottom) + 16rpx);
   display: flex;
   gap: 18rpx;
-  padding: 18rpx 24rpx;
+  padding: 16rpx 24rpx;
   border-radius: 38rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 2rpx solid #edf2fb;
@@ -47,8 +47,8 @@ defineEmits(['update:modelValue'])
 
 .tab-item {
   flex: 1;
-  min-height: 100rpx;
-  padding: 14rpx 8rpx;
+  min-height: 92rpx;
+  padding: 12rpx 8rpx;
   border-radius: 28rpx;
   text-align: center;
   display: flex;
