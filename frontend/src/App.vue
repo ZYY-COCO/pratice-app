@@ -13,9 +13,8 @@ export default {
 page {
   min-height: 100%;
   background:
-    radial-gradient(circle at top left, rgba(203, 172, 111, 0.14), transparent 24%),
-    radial-gradient(circle at bottom right, rgba(37, 99, 235, 0.07), transparent 26%),
-    #f7f3ea;
+    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
+    linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
   color: #172033;
   font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
 }
@@ -53,7 +52,7 @@ page {
   width: 100%;
   min-height: 102rpx;
   border-radius: 28rpx;
-  background: #2563eb;
+  background: #1677ff;
   color: #ffffff;
   font-size: 32rpx;
   font-weight: 900;
@@ -69,7 +68,7 @@ page {
   border-radius: 28rpx;
   border: 2rpx solid #e6ebf5;
   background: #ffffff;
-  color: #2563eb;
+  color: #1677ff;
   font-size: 30rpx;
   font-weight: 800;
 }

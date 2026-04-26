@@ -1,60 +1,109 @@
 <template>
   <view class="page home-page">
     <template v-if="activeTab === 'home'">
-      <view class="mobile-hero">
-        <view class="home-topline">
-          <view class="home-user">
-            <view class="avatar-large">{{ avatarText }}</view>
-            <view class="home-copy">
-              <text class="home-eyebrow">港澳台考研刷题</text>
-              <text class="home-title">{{ dashboard.userName }}，今天刷一组题吧</text>
-              <text class="home-status">{{ dashboard.statusText }}</text>
+      <view class="home-dashboard">
+        <view class="home-header">
+          <view class="brand-line">
+            <text class="brand-title">港澳台考研刷题</text>
+            <text class="brand-badge">{{ examCode }}</text>
+          </view>
+          <view class="profile-entry" @tap="activeTab = 'profile'">
+            <text>{{ avatarText }}</text>
+          </view>
+        </view>
+
+        <view class="welcome-card">
+          <view class="welcome-main">
+            <view class="wave-icon">👋</view>
+            <view class="welcome-copy">
+              <text class="welcome-title">{{ dashboard.userName }}，今天刷一组题吧</text>
+              <text class="welcome-subtitle">登录后可直接刷真题并同步错题本</text>
+            </view>
+            <view class="hero-illustration">📋</view>
+          </view>
+
+          <view class="stats-card">
+            <view class="stat-item">
+              <text class="stat-value">{{ homeStats.weeklyAnswers }}</text>
+              <text class="stat-label">本周刷题</text>
+            </view>
+            <view class="stat-divider"></view>
+            <view class="stat-item">
+              <text class="stat-value">{{ homeStats.accuracy }}</text>
+              <text class="stat-label">总正确率</text>
+            </view>
+            <view class="stat-divider"></view>
+            <view class="stat-item">
+              <text class="stat-value">{{ homeStats.wrongCount }}</text>
+              <text class="stat-label">错题数</text>
             </view>
           </view>
-          <view class="exam-pill">{{ examCode }}</view>
-        </view>
 
-        <view class="overview-card">
-          <view class="overview-item">
-            <text class="overview-value">{{ homeStats.weeklyAnswers }}</text>
-            <text class="overview-label">本周刷题</text>
-          </view>
-          <view class="overview-divider"></view>
-          <view class="overview-item">
-            <text class="overview-value">{{ homeStats.accuracy }}</text>
-            <text class="overview-label">总正确率</text>
-          </view>
-          <view class="overview-divider"></view>
-          <view class="overview-item">
-            <text class="overview-value">{{ homeStats.wrongCount }}</text>
-            <text class="overview-label">错题数</text>
+          <view class="hero-actions">
+            <button class="hero-primary" @tap="startTodayTraining">
+              <text class="button-icon">◎</text>
+              <text>开始今日训练</text>
+            </button>
+            <button class="hero-secondary" @tap="handleHeroAction">
+              <text class="button-icon">●</text>
+              <text>{{ isAuthed ? '能力诊断' : '登录账号' }}</text>
+            </button>
           </view>
         </view>
 
-        <view class="hero-actions">
-          <button class="hero-primary" @tap="startTodayTraining">开始今日训练</button>
-          <button class="hero-secondary" @tap="handleHeroAction">{{ isAuthed ? '能力诊断' : '登录账号' }}</button>
+        <view class="plan-card">
+          <view class="panel-head">
+            <view class="panel-title-wrap">
+              <view class="panel-icon">☑</view>
+              <text class="panel-title">今日计划</text>
+            </view>
+            <view class="panel-link" @tap="startTodayTraining">查看全部 ›</view>
+          </view>
+          <view class="plan-list">
+            <view v-for="item in planCards" :key="item.key" class="plan-item" @tap="goModule(item.key)">
+              <view class="plan-icon">{{ item.icon }}</view>
+              <view>
+                <view class="plan-title">{{ item.title }}</view>
+                <view class="plan-count">10题</view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="section-head">
+          <text class="section-title-text">学习模块</text>
+          <text class="section-more">全部模块 ›</text>
+        </view>
+        <view class="module-grid">
+          <ModuleCard
+            v-for="(item, index) in moduleCards"
+            :key="item.key"
+            :item="item"
+            :index="index + 1"
+            @select="goModule"
+          />
+        </view>
+
+        <view class="shortcut-grid">
+          <view class="shortcut-card mistake-shortcut" @tap="openMistakes">
+            <view class="shortcut-icon">🎯</view>
+            <view class="shortcut-copy">
+              <view class="shortcut-title">最近错题</view>
+              <view class="shortcut-value">{{ wrongSummaryCount }}题</view>
+            </view>
+            <view class="shortcut-button orange">查看 <text>›</text></view>
+          </view>
+
+          <view class="shortcut-card report-shortcut" @tap="openReport">
+            <view class="shortcut-icon blue">▮</view>
+            <view class="shortcut-copy">
+              <view class="shortcut-title">能力报告</view>
+              <view class="shortcut-value muted">{{ reportStatus }}</view>
+            </view>
+            <view class="shortcut-button blue">生成报告 <text>›</text></view>
+          </view>
         </view>
       </view>
-
-      <view class="section-title">选择学习模块</view>
-      <view class="module-list">
-        <ModuleCard
-          v-for="(item, index) in moduleCards"
-          :key="item.key"
-          :item="item"
-          :index="index + 1"
-          @select="goModule"
-        />
-      </view>
-
-      <SectionCard title="内测版说明" subtitle="当前版本适合 3-5 位同学试用核心刷题链路。">
-        <view class="beta-grid">
-          <view class="beta-item">已开放：注册登录、专项刷题、综合刷题、错题本、能力报告</view>
-          <view class="beta-item muted">暂未开放：支付、会员、AI 深度诊断、正式部署</view>
-          <view class="beta-item">反馈方式：请将问题、截图和操作路径反馈给开发者。</view>
-        </view>
-      </SectionCard>
     </template>
 
     <template v-else-if="activeTab === 'mistakes'">
@@ -293,8 +342,6 @@ const reviewResultText = ref('')
 const reviewMastered = ref(false)
 const tabs = [
   { key: 'home', label: '首页', icon: '⌂' },
-  { key: 'mistakes', label: '错题', icon: '✎' },
-  { key: 'report', label: '报告', icon: '◌' },
   { key: 'profile', label: '我的', icon: '☺' }
 ]
 const proPreviewItems = [
@@ -356,7 +403,13 @@ const homeStats = computed(() => {
 })
 
 const moduleCards = computed(() => getHomeModules(examCode.value))
+const planCards = computed(() => moduleCards.value.slice(0, 3))
 const realMistakes = computed(() => wrongItems.value.map(formatWrongQuestion))
+const wrongSummaryCount = computed(() => {
+  if (!isAuthed.value) return '0'
+  return String(Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0))
+})
+const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const filteredMistakes = computed(() =>
   realMistakes.value.filter((item) => {
     if (wrongFilters.value.subject && item.subject !== wrongFilters.value.subject) return false
@@ -514,6 +567,14 @@ function handleHeroAction() {
     return
   }
   goLogin()
+}
+
+function openMistakes() {
+  activeTab.value = 'mistakes'
+}
+
+function openReport() {
+  activeTab.value = 'report'
 }
 
 function showMockToast() {
@@ -782,108 +843,150 @@ function formatDateTime(value) {
 
 <style scoped>
 .home-page {
-  padding: 22rpx 24rpx calc(env(safe-area-inset-bottom) + 210rpx);
+  padding: 36rpx 32rpx calc(env(safe-area-inset-bottom) + 180rpx);
 }
 
-.mobile-hero {
-  padding: 26rpx 24rpx 24rpx;
-  border-radius: 34rpx;
-  background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.92), rgba(238, 244, 255, 0.94)),
-    radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.14), transparent 42%);
-  border: 2rpx solid rgba(219, 228, 245, 0.9);
-  box-shadow: 0 20rpx 52rpx rgba(20, 31, 66, 0.08);
+.home-dashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 34rpx;
 }
 
-.home-topline,
-.home-user,
+.home-header,
+.brand-line,
+.welcome-main,
 .hero-actions,
-.overview-card,
-.empty-mistake {
+.panel-head,
+.panel-title-wrap,
+.plan-list,
+.shortcut-grid {
   display: flex;
   align-items: center;
 }
 
-.home-topline {
+.home-header {
   justify-content: space-between;
-  gap: 18rpx;
+  gap: 24rpx;
+  padding: 8rpx 4rpx 0;
 }
 
-.home-user {
+.brand-line {
   min-width: 0;
   flex: 1;
   gap: 18rpx;
 }
 
-.avatar-large {
-  width: 84rpx;
-  height: 84rpx;
-  border-radius: 28rpx;
-  background: linear-gradient(135deg, #2563eb, #7aa2ff);
-  color: #ffffff;
+.brand-title {
+  color: #101828;
+  font-size: 48rpx;
+  line-height: 1.15;
+  font-weight: 900;
+  letter-spacing: -1rpx;
+}
+
+.brand-badge {
+  padding: 10rpx 20rpx;
+  border-radius: 18rpx;
+  background: #edf4ff;
+  color: #1677ff;
+  font-size: 28rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.profile-entry {
+  width: 88rpx;
+  height: 88rpx;
+  border-radius: 44rpx;
+  background: linear-gradient(180deg, #f2f5fb, #e3e9f4);
+  color: #8b95a8;
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   font-size: 32rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.22);
+  box-shadow: inset 0 -4rpx 8rpx rgba(20, 31, 66, 0.04);
 }
 
-.home-copy {
-  min-width: 0;
-  display: flex;
-  flex-direction: column;
+.welcome-card,
+.plan-card,
+.shortcut-card {
+  border-radius: 34rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border: 2rpx solid #e8effc;
+  box-shadow: 0 18rpx 48rpx rgba(25, 48, 89, 0.08);
 }
 
-.home-eyebrow {
-  color: #2563eb;
-  font-size: 22rpx;
-  font-weight: 900;
+.welcome-card {
+  padding: 34rpx 30rpx;
+  overflow: hidden;
+  position: relative;
 }
 
-.home-title {
-  margin-top: 6rpx;
-  color: #101828;
-  font-size: 36rpx;
-  line-height: 1.24;
-  font-weight: 900;
+.welcome-main {
+  position: relative;
+  z-index: 1;
+  gap: 22rpx;
 }
 
-.home-status {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.5;
-}
-
-.exam-pill {
-  min-width: 104rpx;
-  height: 64rpx;
-  padding: 0 20rpx;
-  border-radius: 999rpx;
-  background: #ffffff;
-  color: #2563eb;
-  border: 2rpx solid #dbe7ff;
+.wave-icon {
+  width: 78rpx;
+  height: 78rpx;
+  border-radius: 24rpx;
+  background: #edf4ff;
   display: flex;
   align-items: center;
   justify-content: center;
+  font-size: 44rpx;
   flex-shrink: 0;
-  font-size: 26rpx;
+}
+
+.welcome-copy {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.welcome-title {
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.28;
   font-weight: 900;
-  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
 }
 
-.overview-card {
-  margin-top: 26rpx;
-  padding: 24rpx 18rpx;
-  border-radius: 28rpx;
-  background: linear-gradient(135deg, #1e50d4, #5f8dff);
-  color: #ffffff;
-  box-shadow: 0 18rpx 36rpx rgba(37, 99, 235, 0.2);
+.welcome-subtitle {
+  color: #8a95a8;
+  font-size: 26rpx;
+  line-height: 1.5;
+  font-weight: 600;
 }
 
-.overview-item {
+.hero-illustration {
+  position: absolute;
+  right: 6rpx;
+  top: -18rpx;
+  color: rgba(22, 119, 255, 0.12);
+  font-size: 138rpx;
+  transform: rotate(-10deg);
+  z-index: -1;
+}
+
+.stats-card {
+  position: relative;
+  z-index: 1;
+  margin-top: 34rpx;
+  padding: 28rpx 12rpx;
+  border-radius: 30rpx;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  box-shadow: 0 16rpx 38rpx rgba(25, 48, 89, 0.08);
+}
+
+.stat-item {
   flex: 1;
   min-width: 0;
   display: flex;
@@ -891,56 +994,226 @@ function formatDateTime(value) {
   align-items: center;
 }
 
-.overview-value {
-  font-size: 38rpx;
-  line-height: 1.1;
+.stat-value {
+  color: #1677ff;
+  font-size: 44rpx;
+  line-height: 1;
   font-weight: 900;
 }
 
-.overview-label {
-  margin-top: 10rpx;
-  color: rgba(255, 255, 255, 0.84);
-  font-size: 22rpx;
-  font-weight: 700;
+.stat-label {
+  margin-top: 16rpx;
+  color: #8a95a8;
+  font-size: 25rpx;
+  font-weight: 600;
 }
 
-.overview-divider {
+.stat-divider {
   width: 2rpx;
-  height: 54rpx;
-  background: rgba(255, 255, 255, 0.24);
+  height: 70rpx;
+  background: #e6edf8;
 }
 
 .hero-actions {
-  margin-top: 22rpx;
-  gap: 16rpx;
+  position: relative;
+  z-index: 1;
+  margin-top: 30rpx;
+  gap: 24rpx;
 }
 
 .hero-primary,
 .hero-secondary {
   flex: 1;
-  min-height: 92rpx;
+  min-height: 96rpx;
   border: 0;
   border-radius: 26rpx;
-  font-size: 28rpx;
+  font-size: 30rpx;
   font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
 }
 
 .hero-primary {
-  background: #2563eb;
+  background: linear-gradient(180deg, #1677ff, #0f6bf3);
   color: #ffffff;
-  box-shadow: 0 16rpx 28rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 16rpx 30rpx rgba(22, 119, 255, 0.24);
 }
 
 .hero-secondary {
   background: #ffffff;
-  color: #2563eb;
-  border: 2rpx solid #dbe7ff;
+  color: #1677ff;
+  border: 2rpx solid #1677ff;
 }
 
-.module-list {
+.button-icon {
+  font-size: 32rpx;
+  line-height: 1;
+}
+
+.plan-card {
+  padding: 28rpx;
+}
+
+.panel-head,
+.section-head {
+  justify-content: space-between;
+}
+
+.panel-title-wrap {
+  gap: 14rpx;
+}
+
+.panel-icon {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 12rpx;
+  color: #1677ff;
+  background: #edf4ff;
   display: flex;
-  flex-direction: column;
-  gap: 26rpx;
+  align-items: center;
+  justify-content: center;
+  font-weight: 900;
+}
+
+.panel-title,
+.section-title-text {
+  color: #101828;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.panel-link,
+.section-more {
+  color: #8a95a8;
+  font-size: 26rpx;
+  font-weight: 700;
+}
+
+.plan-list {
+  margin-top: 26rpx;
+  gap: 18rpx;
+}
+
+.plan-item {
+  flex: 1;
+  min-width: 0;
+  min-height: 98rpx;
+  padding: 18rpx 16rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  border: 2rpx solid #edf2fb;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.plan-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
+  background: #f2f7ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 34rpx;
+}
+
+.plan-title {
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.plan-count {
+  margin-top: 8rpx;
+  color: #8a95a8;
+  font-size: 24rpx;
+  font-weight: 600;
+}
+
+.section-head {
+  display: flex;
+  align-items: center;
+  margin-top: 2rpx;
+}
+
+.module-grid {
+  display: flex;
+  gap: 22rpx;
+}
+
+.shortcut-grid {
+  gap: 22rpx;
+  align-items: stretch;
+}
+
+.shortcut-card {
+  flex: 1;
+  min-width: 0;
+  padding: 28rpx 24rpx;
+}
+
+.shortcut-icon {
+  width: 74rpx;
+  height: 74rpx;
+  border-radius: 22rpx;
+  background: #fff3e8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 42rpx;
+}
+
+.shortcut-icon.blue {
+  color: #1677ff;
+  background: #edf4ff;
+  font-size: 38rpx;
+  font-weight: 900;
+}
+
+.shortcut-title {
+  margin-top: 20rpx;
+  color: #101828;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.shortcut-value {
+  margin-top: 10rpx;
+  color: #101828;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.shortcut-value.muted {
+  color: #8a95a8;
+  font-size: 28rpx;
+}
+
+.shortcut-button {
+  margin-top: 26rpx;
+  min-height: 70rpx;
+  border-radius: 999rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  font-size: 27rpx;
+  font-weight: 900;
+}
+
+.shortcut-button.orange {
+  color: #ff6b2c;
+  background: #fff2e9;
+}
+
+.shortcut-button.blue {
+  color: #1677ff;
+  background: #edf4ff;
 }
 
 .state-box {

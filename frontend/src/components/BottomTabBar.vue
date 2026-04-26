@@ -31,25 +31,25 @@ defineEmits(['update:modelValue'])
 <style scoped>
 .tabbar {
   position: fixed;
-  left: 18rpx;
-  right: 18rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 18rpx);
+  left: 32rpx;
+  right: 32rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 22rpx);
   display: flex;
-  gap: 12rpx;
-  padding: 16rpx;
-  border-radius: 36rpx;
-  background: rgba(255, 255, 255, 0.94);
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 20rpx 46rpx rgba(20, 31, 66, 0.14);
+  gap: 18rpx;
+  padding: 18rpx 24rpx;
+  border-radius: 38rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2rpx solid #edf2fb;
+  box-shadow: 0 20rpx 52rpx rgba(25, 48, 89, 0.12);
   z-index: 20;
   backdrop-filter: blur(16rpx);
 }
 
 .tab-item {
   flex: 1;
-  min-height: 106rpx;
+  min-height: 100rpx;
   padding: 14rpx 8rpx;
-  border-radius: 26rpx;
+  border-radius: 28rpx;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -59,8 +59,7 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active {
-  background: linear-gradient(180deg, #2563eb, #4f82ff);
-  box-shadow: 0 12rpx 26rpx rgba(37, 99, 235, 0.24);
+  background: #edf4ff;
 }
 
 .tab-icon {
@@ -78,10 +77,10 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active .tab-icon {
-  color: #ffffff;
+  color: #1677ff;
 }
 
 .tab-item.active .tab-label {
-  color: #ffffff;
+  color: #1677ff;
 }
 </style>

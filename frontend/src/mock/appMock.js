@@ -225,7 +225,7 @@ export function getHomeModules(examCode) {
       key: '中华文化',
       icon: '📚',
       title: '中华文化',
-      desc: '哲学 / 历史 / 文学 / 艺术 / 典籍常识'
+      desc: '哲学 / 历史 / 文学 / 艺术'
     },
     {
       key: '英语运用',
@@ -237,7 +237,7 @@ export function getHomeModules(examCode) {
       key: exam.thirdSubject,
       icon: exam.thirdIcon,
       title: exam.thirdSubject,
-      desc: examCode === 'Z001' ? '形式逻辑 / 论证分析 / 推理题型专项' : '函数 / 极限 / 导数 / 积分 / 基础运算'
+      desc: examCode === 'Z001' ? '形式逻辑 / 论证分析 / 推理题型' : '函数 / 极限 / 导数 / 积分'
     }
   ]
 }
