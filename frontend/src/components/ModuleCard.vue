@@ -30,36 +30,29 @@ defineProps({
 
 <style scoped>
 .module-card {
-  flex: 0 0 calc(50% - 11rpx);
-  width: calc(50% - 11rpx);
+  width: 100%;
   min-width: 0;
-  min-height: 300rpx;
-  padding: 28rpx 24rpx 24rpx;
+  min-height: 202rpx;
+  padding: 26rpx 28rpx;
   border-radius: 32rpx;
   background: #ffffff;
   border: 2rpx solid #e8effc;
   box-shadow: 0 18rpx 42rpx rgba(25, 48, 89, 0.08);
   display: flex;
-  flex-direction: column;
-}
-
-.module-card:nth-child(3) {
-  flex-basis: 100%;
-  width: 100%;
-  min-height: 246rpx;
   flex-direction: row;
   align-items: center;
-  gap: 24rpx;
+  gap: 26rpx;
 }
 
 .icon {
-  width: 82rpx;
-  height: 82rpx;
-  border-radius: 22rpx;
+  width: 92rpx;
+  height: 92rpx;
+  border-radius: 26rpx;
   background: #f1f6ff;
   display: flex;
   align-items: center;
   justify-content: center;
+  flex-shrink: 0;
   font-size: 46rpx;
 }
 
@@ -70,48 +63,30 @@ defineProps({
   flex-direction: column;
 }
 
-.module-card:nth-child(3) .content {
-  min-height: 0;
-}
-
-.module-card:nth-child(3) .title {
-  margin-top: 0;
-}
-
-.module-card:nth-child(3) .desc {
-  min-height: 0;
-  margin-top: 14rpx;
-}
-
-.module-card:nth-child(3) .divider {
-  margin-top: 24rpx;
-}
-
 .title {
-  margin-top: 28rpx;
   color: #101828;
-  font-size: 30rpx;
+  font-size: 32rpx;
   line-height: 1.25;
   font-weight: 900;
 }
 
 .desc {
-  margin-top: 22rpx;
-  min-height: 74rpx;
+  margin-top: 12rpx;
+  min-height: 0;
   color: #8a95a8;
-  font-size: 23rpx;
+  font-size: 24rpx;
   line-height: 1.55;
   font-weight: 600;
 }
 
 .divider {
-  margin-top: auto;
+  margin-top: 22rpx;
   height: 2rpx;
   background: #edf2fb;
 }
 
 .entry-row {
-  margin-top: 22rpx;
+  margin-top: 16rpx;
   color: #1677ff;
   font-size: 27rpx;
   font-weight: 900;

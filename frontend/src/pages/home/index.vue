@@ -845,7 +845,7 @@ function formatDateTime(value) {
 .home-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 34rpx 32rpx calc(env(safe-area-inset-bottom) + 142rpx);
+  padding: 20rpx 32rpx calc(env(safe-area-inset-bottom) + 188rpx);
 }
 
 .home-dashboard {
@@ -853,8 +853,7 @@ function formatDateTime(value) {
   min-height: calc(100dvh - env(safe-area-inset-bottom) - 208rpx);
   display: flex;
   flex-direction: column;
-  gap: 28rpx;
-  justify-content: space-between;
+  gap: 24rpx;
 }
 
 .home-header,
@@ -872,7 +871,7 @@ function formatDateTime(value) {
 .home-header {
   justify-content: space-between;
   gap: 24rpx;
-  padding: 8rpx 4rpx 0;
+  padding: 0 4rpx;
 }
 
 .brand-line {
@@ -883,7 +882,7 @@ function formatDateTime(value) {
 
 .brand-title {
   color: #101828;
-  font-size: 48rpx;
+  font-size: 46rpx;
   line-height: 1.15;
   font-weight: 900;
   letter-spacing: -1rpx;
@@ -924,7 +923,7 @@ function formatDateTime(value) {
 }
 
 .welcome-card {
-  padding: 36rpx 30rpx;
+  padding: 40rpx 32rpx;
   overflow: hidden;
   position: relative;
 }
@@ -982,8 +981,8 @@ function formatDateTime(value) {
 .stats-card {
   position: relative;
   z-index: 1;
-  margin-top: 34rpx;
-  padding: 28rpx 12rpx;
+  margin-top: 36rpx;
+  padding: 32rpx 12rpx;
   border-radius: 30rpx;
   background: #ffffff;
   display: flex;
@@ -1022,14 +1021,14 @@ function formatDateTime(value) {
 .hero-actions {
   position: relative;
   z-index: 1;
-  margin-top: 30rpx;
+  margin-top: 32rpx;
   gap: 24rpx;
 }
 
 .hero-primary,
 .hero-secondary {
   flex: 1;
-  min-height: 96rpx;
+  min-height: 104rpx;
   border: 0;
   border-radius: 26rpx;
   font-size: 30rpx;
@@ -1058,7 +1057,7 @@ function formatDateTime(value) {
 }
 
 .plan-card {
-  padding: 30rpx;
+  padding: 28rpx;
 }
 
 .panel-head,
@@ -1097,8 +1096,8 @@ function formatDateTime(value) {
 }
 
 .plan-list {
-  margin-top: 26rpx;
-  gap: 18rpx;
+  margin-top: 22rpx;
+  gap: 16rpx;
 }
 
 .plan-item {
@@ -1143,19 +1142,19 @@ function formatDateTime(value) {
 .section-head {
   display: flex;
   align-items: center;
-  margin-top: 2rpx;
+  margin-top: 0;
 }
 
 .module-grid {
   display: flex;
-  flex-wrap: wrap;
-  gap: 22rpx;
+  flex-direction: column;
+  gap: 18rpx;
 }
 
 .shortcut-grid {
-  gap: 22rpx;
+  gap: 18rpx;
   align-items: stretch;
-  margin-top: -4rpx;
+  margin-top: 0;
 }
 
 .shortcut-card {
