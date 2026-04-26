@@ -31,24 +31,25 @@ defineEmits(['update:modelValue'])
 <style scoped>
 .tabbar {
   position: fixed;
-  left: 20rpx;
-  right: 20rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 16rpx);
+  left: 18rpx;
+  right: 18rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 18rpx);
   display: flex;
-  padding: 14rpx 12rpx;
-  border-radius: 34rpx;
+  gap: 12rpx;
+  padding: 16rpx;
+  border-radius: 36rpx;
   background: rgba(255, 255, 255, 0.94);
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.12);
+  box-shadow: 0 20rpx 46rpx rgba(20, 31, 66, 0.14);
   z-index: 20;
   backdrop-filter: blur(16rpx);
 }
 
 .tab-item {
   flex: 1;
-  min-height: 82rpx;
-  padding: 10rpx 6rpx;
-  border-radius: 24rpx;
+  min-height: 106rpx;
+  padding: 14rpx 8rpx;
+  border-radius: 26rpx;
   text-align: center;
   display: flex;
   flex-direction: column;
@@ -58,28 +59,29 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active {
-  background: linear-gradient(180deg, #edf3ff, #e7efff);
+  background: linear-gradient(180deg, #2563eb, #4f82ff);
+  box-shadow: 0 12rpx 26rpx rgba(37, 99, 235, 0.24);
 }
 
 .tab-icon {
   color: #98a2b3;
-  font-size: 30rpx;
+  font-size: 34rpx;
   line-height: 1;
   font-weight: 900;
 }
 
 .tab-label {
   color: #8a94a6;
-  font-size: 24rpx;
+  font-size: 25rpx;
   line-height: 1.2;
   font-weight: 800;
 }
 
 .tab-item.active .tab-icon {
-  color: #2563eb;
+  color: #ffffff;
 }
 
 .tab-item.active .tab-label {
-  color: #2563eb;
+  color: #ffffff;
 }
 </style>

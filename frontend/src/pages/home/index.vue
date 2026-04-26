@@ -39,22 +39,14 @@
 
       <view class="section-title">选择学习模块</view>
       <view class="module-list">
-        <ModuleCard v-for="item in moduleCards" :key="item.key" :item="item" @select="goModule" />
+        <ModuleCard
+          v-for="(item, index) in moduleCards"
+          :key="item.key"
+          :item="item"
+          :index="index + 1"
+          @select="goModule"
+        />
       </view>
-
-      <view class="section-title">最近错题提醒</view>
-      <SectionCard right-text="自动聚合">
-        <view v-if="wrongLoading" class="state-box">正在同步你的错题本...</view>
-        <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
-        <view v-else-if="isAuthed && realMistakes.length === 0" class="empty-mistake">
-          <view>
-            <view class="empty-title">还没有错题</view>
-            <view class="empty-desc">完成一次练习后，这里会自动汇总需要复盘的题目。</view>
-          </view>
-          <button class="empty-action" @tap="startTodayTraining">去刷题</button>
-        </view>
-        <MistakeList :items="compactMistakes" @select="openWrongDetail" />
-      </SectionCard>
 
       <SectionCard title="内测版说明" subtitle="当前版本适合 3-5 位同学试用核心刷题链路。">
         <view class="beta-grid">
@@ -267,7 +259,6 @@ import { updateProfile } from '../../api/auth'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
-  getCompactMistakes,
   getFullMistakes,
   getHomeDashboard,
   getHomeModules,
@@ -374,7 +365,6 @@ const filteredMistakes = computed(() =>
     return true
   })
 )
-const compactMistakes = computed(() => (isAuthed.value ? realMistakes.value.slice(0, 2) : getCompactMistakes()))
 const fullMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : getFullMistakes()))
 const subjectFilters = computed(() => ['', '中华文化', '英语运用', '逻辑推理', '数学基础'])
 const moduleFilters = computed(() => buildFilterOptions(realMistakes.value, 'module', { subject: wrongFilters.value.subject }))
@@ -792,7 +782,7 @@ function formatDateTime(value) {
 
 <style scoped>
 .home-page {
-  padding: 18rpx 22rpx calc(env(safe-area-inset-bottom) + 184rpx);
+  padding: 22rpx 24rpx calc(env(safe-area-inset-bottom) + 210rpx);
 }
 
 .mobile-hero {
@@ -950,40 +940,7 @@ function formatDateTime(value) {
 .module-list {
   display: flex;
   flex-direction: column;
-  gap: 20rpx;
-}
-
-.empty-mistake {
-  justify-content: space-between;
-  gap: 18rpx;
-  padding: 24rpx;
-  border-radius: 26rpx;
-  background: #f8fbff;
-  border: 2rpx dashed #c8d8ff;
-}
-
-.empty-title {
-  color: #172033;
-  font-size: 28rpx;
-  font-weight: 900;
-}
-
-.empty-desc {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.5;
-}
-
-.empty-action {
-  min-width: 132rpx;
-  min-height: 72rpx;
-  border: 0;
-  border-radius: 22rpx;
-  background: #2563eb;
-  color: #ffffff;
-  font-size: 24rpx;
-  font-weight: 900;
+  gap: 26rpx;
 }
 
 .state-box {
