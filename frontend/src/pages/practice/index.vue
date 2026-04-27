@@ -57,7 +57,7 @@
       <view v-if="shortageTip" class="state-box">{{ shortageTip }}</view>
 
       <TagAccordion
-        v-else
+        v-if="practiceMode === 'special'"
         :sections="subjectTree"
         :selected-tags="selectedTags"
         :open-map="openMap"
