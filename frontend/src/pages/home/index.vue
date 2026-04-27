@@ -54,84 +54,177 @@
     </template>
 
     <template v-else-if="activeTab === 'mistakes'">
-      <PageHeader
-        eyebrow="错题本"
-        title="自动归档的高频错题"
-        :subtitle="mistakeSubtitle"
-      />
-      <SectionCard title="最近需要重刷" subtitle="按薄弱标签自动聚合">
-        <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
-        <view v-else class="filter-card">
-          <scroll-view scroll-x class="filter-scroll">
-            <button
-              v-for="item in subjectFilters"
-              :key="item"
-              class="filter-chip"
-              :class="{ active: wrongFilters.subject === item }"
-              @tap="setWrongFilter('subject', item)"
-            >
-              {{ item || '全部科目' }}
-            </button>
-          </scroll-view>
-          <scroll-view scroll-x class="filter-scroll">
-            <button
-              v-for="item in moduleFilters"
-              :key="item"
-              class="filter-chip"
-              :class="{ active: wrongFilters.module === item }"
-              @tap="setWrongFilter('module', item)"
-            >
-              {{ item || '全部模块' }}
-            </button>
-          </scroll-view>
-          <scroll-view scroll-x class="filter-scroll">
-            <button
-              v-for="item in submoduleFilters"
-              :key="item"
-              class="filter-chip"
-              :class="{ active: wrongFilters.submodule === item }"
-              @tap="setWrongFilter('submodule', item)"
-            >
-              {{ item || '全部子模块' }}
-            </button>
-          </scroll-view>
+      <view class="mistake-page-head">
+        <button class="icon-back-btn" @tap="handleMistakeBack">‹</button>
+        <view class="mistake-head-copy">
+          <view class="head-eyebrow">错题本</view>
+          <view class="head-title">{{ retestMode ? '错题重测' : '自动归档的高频错题' }}</view>
+          <view class="head-subtitle">{{ retestMode ? '随机排序复测全部错题，可随时退出。' : mistakeSubtitle }}</view>
         </view>
-        <view v-if="wrongLoading" class="state-box">正在读取真实错题记录...</view>
-        <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
-        <view v-else-if="isAuthed && filteredMistakes.length === 0" class="state-box">当前筛选条件下还没有错题。</view>
-        <MistakeList :items="fullMistakes" @select="openWrongDetail" />
-      </SectionCard>
+        <button
+          v-if="!retestMode"
+          class="retest-entry-btn"
+          :disabled="!isAuthed || realMistakes.length === 0"
+          @tap="startWrongRetest"
+        >
+          重测错题
+        </button>
+        <button v-else class="retest-entry-btn ghost" @tap="confirmExitRetest">退出</button>
+      </view>
 
-      <SectionCard v-if="selectedWrongDetail" title="错题详情" subtitle="查看完整题目、最近选择、正确答案与解析。">
-        <view class="wrong-detail">
-          <view class="wrong-stem">{{ selectedWrongDetail.question.stem }}</view>
-          <view class="wrong-meta">
-            {{ selectedWrongDetail.question.subject }} / {{ selectedWrongDetail.question.module }} / {{ selectedWrongDetail.question.submodule }}
+      <template v-if="retestMode">
+        <SectionCard v-if="retestCompleted" title="重测完成" subtitle="本轮错题复盘结果">
+          <view class="retest-summary-card">
+            <view class="summary-score">{{ retestCorrectCount }} / {{ retestTotal }}</view>
+            <view class="summary-copy">
+              本轮共重测 {{ retestTotal }} 道错题，答对 {{ retestCorrectCount }} 道。
+              建议优先回看红色题目，再进行一次短组复盘。
+            </view>
+            <view class="answer-map">
+              <button
+                v-for="(item, index) in retestResults"
+                :key="item.question_id || index"
+                class="answer-dot"
+                :class="{ correct: item.is_correct, wrong: !item.is_correct }"
+                @tap="jumpRetestReview(index)"
+              >
+                {{ index + 1 }}
+              </button>
+            </view>
+            <view class="detail-actions">
+              <button class="task-btn" @tap="restartWrongRetest">再测一遍</button>
+              <button class="task-btn ghost" @tap="exitWrongRetest">返回错题本</button>
+            </view>
           </view>
-          <view class="wrong-options">
-            <button
-              v-for="option in wrongDetailOptions"
-              :key="option.key"
-              class="wrong-option"
-              :class="getWrongOptionClass(option.key)"
-              @tap="selectReviewAnswer(option.key)"
-            >
-              <text class="option-key">{{ option.key }}</text>
-              <text>{{ option.text }}</text>
-            </button>
+        </SectionCard>
+
+        <view v-else-if="retestLoading" class="state-box">正在加载本题...</view>
+
+        <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`" subtitle="作答后立即查看本题解析。">
+          <view class="wrong-detail retest-detail">
+            <view class="wrong-stem">{{ retestDetail.question.stem }}</view>
+            <view class="wrong-options">
+              <button
+                v-for="option in retestOptions"
+                :key="option.key"
+                class="wrong-option"
+                :class="getRetestOptionClass(option.key)"
+                @tap="selectRetestAnswer(option.key)"
+              >
+                <text class="option-key">{{ option.key }}</text>
+                <text>{{ option.text }}</text>
+              </button>
+            </view>
+            <view v-if="retestResultText" class="state-box" :class="{ mastered: retestMastered }">{{ retestResultText }}</view>
+            <view v-if="retestResultText" class="answer-line">正确答案：{{ retestDetail.question.answer }}</view>
+            <view v-if="retestResultText" class="explain-text">{{ retestDetail.question.explanation }}</view>
+            <view class="detail-actions">
+              <button
+                v-if="!retestResultText"
+                class="task-btn"
+                :disabled="!retestAnswer || retestSubmitting"
+                @tap="submitRetestAnswer"
+              >
+                {{ retestSubmitting ? '提交中...' : '提交本题' }}
+              </button>
+              <button v-else class="task-btn" @tap="nextRetestQuestion">
+                {{ retestIndex + 1 >= retestItems.length ? '查看重测结果' : '下一题' }}
+              </button>
+              <button class="task-btn ghost" @tap="confirmExitRetest">退出重测</button>
+            </view>
           </view>
-          <view class="answer-line">最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}</view>
-          <view class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
-          <view class="explain-text">{{ selectedWrongDetail.question.explanation }}</view>
-          <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
-          <view class="detail-actions">
-            <button class="task-btn" :disabled="!reviewAnswer || reviewingWrong" @tap="submitWrongReview">
-              {{ reviewingWrong ? '提交中...' : '重做错题' }}
-            </button>
-            <button class="task-btn ghost" @tap="closeWrongDetail">收起详情</button>
+        </SectionCard>
+      </template>
+
+      <template v-else>
+        <SectionCard title="最近需要重刷" subtitle="按薄弱标签自动聚合">
+          <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
+          <view v-else class="filter-card">
+            <scroll-view scroll-x class="filter-scroll">
+              <button
+                v-for="item in subjectFilters"
+                :key="item"
+                class="filter-chip"
+                :class="{ active: wrongFilters.subject === item }"
+                @tap="setWrongFilter('subject', item)"
+              >
+                {{ item || '全部科目' }}
+              </button>
+            </scroll-view>
+            <scroll-view scroll-x class="filter-scroll">
+              <button
+                v-for="item in moduleFilters"
+                :key="item"
+                class="filter-chip"
+                :class="{ active: wrongFilters.module === item }"
+                @tap="setWrongFilter('module', item)"
+              >
+                {{ item || '全部模块' }}
+              </button>
+            </scroll-view>
+            <scroll-view scroll-x class="filter-scroll">
+              <button
+                v-for="item in submoduleFilters"
+                :key="item"
+                class="filter-chip"
+                :class="{ active: wrongFilters.submodule === item }"
+                @tap="setWrongFilter('submodule', item)"
+              >
+                {{ item || '全部子模块' }}
+              </button>
+            </scroll-view>
           </view>
+          <view v-if="wrongLoading" class="state-box">正在读取真实错题记录...</view>
+          <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
+          <view v-else-if="isAuthed && filteredMistakes.length === 0" class="state-box">当前筛选条件下还没有错题。</view>
+          <MistakeList :items="fullMistakes" @select="openWrongDetail" />
+        </SectionCard>
+      </template>
+
+      <view v-if="selectedWrongDetail" class="wrong-modal-mask" @tap="closeWrongDetail">
+        <view class="wrong-modal-panel" @tap.stop>
+          <view class="wrong-modal-head">
+            <view>
+              <view class="wrong-modal-title">重做错题</view>
+              <view class="wrong-modal-sub">
+                {{ selectedWrongDetail.question.subject }} / {{ selectedWrongDetail.question.module }}
+              </view>
+            </view>
+            <button class="wrong-modal-close" @tap="closeWrongDetail">×</button>
+          </view>
+          <scroll-view scroll-y class="wrong-modal-scroll">
+            <view class="wrong-detail">
+              <view class="wrong-stem">{{ selectedWrongDetail.question.stem }}</view>
+              <view class="wrong-options">
+                <button
+                  v-for="option in wrongDetailOptions"
+                  :key="option.key"
+                  class="wrong-option"
+                  :class="getWrongOptionClass(option.key)"
+                  @tap="selectReviewAnswer(option.key)"
+                >
+                  <text class="option-key">{{ option.key }}</text>
+                  <text>{{ option.text }}</text>
+                </button>
+              </view>
+              <view class="answer-line">最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}</view>
+              <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
+              <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
+              <view v-if="reviewResultText" class="explain-text">{{ selectedWrongDetail.question.explanation }}</view>
+              <view class="detail-actions">
+                <button
+                  class="task-btn"
+                  :disabled="!reviewAnswer || reviewingWrong || Boolean(reviewResultText)"
+                  @tap="submitWrongReview"
+                >
+                  {{ reviewResultText ? '已提交' : reviewingWrong ? '提交中...' : '提交并查看解析' }}
+                </button>
+                <button class="task-btn ghost" @tap="closeWrongDetail">关闭</button>
+              </view>
+            </view>
+          </scroll-view>
         </view>
-      </SectionCard>
+      </view>
     </template>
 
     <template v-else-if="activeTab === 'report'">
@@ -326,6 +419,17 @@ const reviewAnswer = ref('')
 const reviewingWrong = ref(false)
 const reviewResultText = ref('')
 const reviewMastered = ref(false)
+const retestMode = ref(false)
+const retestItems = ref([])
+const retestIndex = ref(0)
+const retestDetail = ref(null)
+const retestAnswer = ref('')
+const retestSubmitting = ref(false)
+const retestResultText = ref('')
+const retestMastered = ref(false)
+const retestResults = ref([])
+const retestLoading = ref(false)
+const retestCompleted = ref(false)
 const tabs = [
   { key: 'home', label: '首页', icon: '⌂' },
   { key: 'profile', label: '我的', icon: '☺' }
@@ -423,6 +527,13 @@ const filteredMistakes = computed(() =>
   })
 )
 const fullMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : getFullMistakes()))
+const retestTotal = computed(() => retestItems.value.length)
+const retestCorrectCount = computed(() => retestResults.value.filter((item) => item.is_correct).length)
+const retestProgressLabel = computed(() => {
+  if (!retestTotal.value) return '0 / 0'
+  return `${Math.min(retestIndex.value + 1, retestTotal.value)} / ${retestTotal.value}`
+})
+const retestOptions = computed(() => buildQuestionOptions(retestDetail.value?.question))
 const subjectFilters = computed(() => ['', '中华文化', '英语运用', '逻辑推理', '数学基础'])
 const moduleFilters = computed(() => buildFilterOptions(realMistakes.value, 'module', { subject: wrongFilters.value.subject }))
 const submoduleFilters = computed(() =>
@@ -495,6 +606,15 @@ watch(examCode, (value) => {
   if (isAuthed.value) {
     loadAbilityReport()
     loadLearningSummary()
+  }
+})
+
+watch(activeTab, (value) => {
+  if (value !== 'mistakes') {
+    selectedWrongDetail.value = null
+    if (retestMode.value) {
+      exitWrongRetest()
+    }
   }
 })
 
@@ -803,6 +923,14 @@ function setWrongFilter(field, value) {
   }
 }
 
+function handleMistakeBack() {
+  if (retestMode.value) {
+    confirmExitRetest()
+    return
+  }
+  activeTab.value = 'profile'
+}
+
 async function openWrongDetail(item) {
   if (!isAuthed.value || !item?.id) {
     return
@@ -827,19 +955,18 @@ function closeWrongDetail() {
 }
 
 const wrongDetailOptions = computed(() => {
-  const question = selectedWrongDetail.value?.question
-  if (!question) return []
-  const options = [
-    { key: 'A', text: question.option_a },
-    { key: 'B', text: question.option_b },
-    { key: 'C', text: question.option_c },
-    { key: 'D', text: question.option_d }
-  ]
-  if (question.option_e) {
-    options.push({ key: 'E', text: question.option_e })
-  }
-  return options
+  return buildQuestionOptions(selectedWrongDetail.value?.question)
 })
+
+function buildQuestionOptions(question) {
+  if (!question) return []
+  return ['A', 'B', 'C', 'D', 'E']
+    .map((key) => ({
+      key,
+      text: question[`option_${key.toLowerCase()}`]
+    }))
+    .filter((option) => option.text)
+}
 
 function selectReviewAnswer(key) {
   if (reviewingWrong.value) return
@@ -857,6 +984,10 @@ function getWrongOptionClass(key) {
   }
 }
 
+function getDetailQuestionId(detail) {
+  return detail?.question_id || detail?.question?.id || ''
+}
+
 async function submitWrongReview() {
   if (!selectedWrongDetail.value || !reviewAnswer.value) {
     return
@@ -865,7 +996,7 @@ async function submitWrongReview() {
   reviewingWrong.value = true
   try {
     const result = await reviewWrongQuestion({
-      question_id: selectedWrongDetail.value.question_id,
+      question_id: getDetailQuestionId(selectedWrongDetail.value),
       selected_answer: reviewAnswer.value,
       used_time: 0,
       exam_code: examCode.value
@@ -878,6 +1009,153 @@ async function submitWrongReview() {
   } finally {
     reviewingWrong.value = false
   }
+}
+
+function shuffleMistakes(items) {
+  const result = items.slice()
+  for (let index = result.length - 1; index > 0; index -= 1) {
+    const randomIndex = Math.floor(Math.random() * (index + 1))
+    const current = result[index]
+    result[index] = result[randomIndex]
+    result[randomIndex] = current
+  }
+  return result
+}
+
+async function startWrongRetest() {
+  if (!isAuthed.value) {
+    uni.showToast({ title: '登录后才能重测错题', icon: 'none' })
+    return
+  }
+  if (realMistakes.value.length === 0) {
+    uni.showToast({ title: '当前还没有可重测的错题', icon: 'none' })
+    return
+  }
+
+  selectedWrongDetail.value = null
+  retestItems.value = shuffleMistakes(realMistakes.value)
+  retestIndex.value = 0
+  retestResults.value = []
+  retestCompleted.value = false
+  retestMode.value = true
+  await loadRetestQuestion()
+}
+
+async function loadRetestQuestion() {
+  const item = retestItems.value[retestIndex.value]
+  if (!item?.id) {
+    retestCompleted.value = true
+    return
+  }
+
+  retestLoading.value = true
+  retestDetail.value = null
+  retestAnswer.value = ''
+  retestResultText.value = ''
+  retestMastered.value = false
+  try {
+    retestDetail.value = await fetchWrongQuestionDetail(item.id)
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '重测题目读取失败'), icon: 'none' })
+  } finally {
+    retestLoading.value = false
+  }
+}
+
+function selectRetestAnswer(key) {
+  if (retestSubmitting.value || retestResultText.value) return
+  retestAnswer.value = key
+}
+
+function getRetestOptionClass(key) {
+  const correct = retestDetail.value?.question?.answer
+  return {
+    selected: retestAnswer.value === key,
+    correct: retestResultText.value && correct === key,
+    wrong: retestResultText.value && retestAnswer.value === key && correct !== key
+  }
+}
+
+async function submitRetestAnswer() {
+  if (!retestDetail.value || !retestAnswer.value || retestResultText.value) {
+    return
+  }
+
+  retestSubmitting.value = true
+  try {
+    const result = await reviewWrongQuestion({
+      question_id: getDetailQuestionId(retestDetail.value),
+      selected_answer: retestAnswer.value,
+      used_time: 0,
+      exam_code: examCode.value
+    })
+    const isCorrect = Boolean(result.is_correct)
+    const correctAnswer = result.correct_answer || retestDetail.value?.question?.answer || ''
+    retestMastered.value = isCorrect
+    retestResultText.value = isCorrect ? '本题答对，继续保持。' : `本题答错，正确答案是 ${correctAnswer}。`
+    retestResults.value[retestIndex.value] = {
+      question_id: getDetailQuestionId(retestDetail.value),
+      selected_answer: retestAnswer.value,
+      correct_answer: correctAnswer,
+      is_correct: isCorrect
+    }
+    await loadLearningSummary()
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '重测提交失败'), icon: 'none' })
+  } finally {
+    retestSubmitting.value = false
+  }
+}
+
+async function nextRetestQuestion() {
+  if (retestIndex.value + 1 >= retestItems.value.length) {
+    retestCompleted.value = true
+    await loadWrongQuestions()
+    await loadLearningSummary()
+    return
+  }
+  retestIndex.value += 1
+  await loadRetestQuestion()
+}
+
+function jumpRetestReview(index) {
+  if (index < 0 || index >= retestItems.value.length) return
+  retestCompleted.value = false
+  retestIndex.value = index
+  loadRetestQuestion()
+}
+
+function restartWrongRetest() {
+  startWrongRetest()
+}
+
+function exitWrongRetest() {
+  retestMode.value = false
+  retestItems.value = []
+  retestIndex.value = 0
+  retestDetail.value = null
+  retestAnswer.value = ''
+  retestResultText.value = ''
+  retestMastered.value = false
+  retestResults.value = []
+  retestLoading.value = false
+  retestCompleted.value = false
+  loadWrongQuestions()
+  loadLearningSummary()
+}
+
+function confirmExitRetest() {
+  uni.showModal({
+    title: '退出重测？',
+    content: '本轮重测进度不会继续保存，但已经提交的题目会同步到错题统计。',
+    confirmText: '退出',
+    cancelText: '继续做题',
+    success: (res) => {
+      if (res.confirm) {
+        exitWrongRetest()
+      }
+    }
+  })
 }
 
 function levelClass(level) {
@@ -1170,6 +1448,75 @@ function formatDateTime(value) {
   color: #2563eb;
 }
 
+.mistake-page-head {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  margin: 2rpx auto 22rpx;
+  width: 100%;
+  max-width: 760rpx;
+}
+
+.icon-back-btn {
+  width: 72rpx;
+  height: 72rpx;
+  flex: 0 0 72rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: #ffffff;
+  color: #172033;
+  font-size: 42rpx;
+  line-height: 72rpx;
+  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
+}
+
+.mistake-head-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.head-eyebrow {
+  color: #2563eb;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.head-title {
+  margin-top: 6rpx;
+  color: #101828;
+  font-size: 38rpx;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.head-subtitle {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.45;
+}
+
+.retest-entry-btn {
+  flex: 0 0 auto;
+  min-width: 150rpx;
+  min-height: 64rpx;
+  padding: 0 22rpx;
+  border: 0;
+  border-radius: 22rpx;
+  background: #2563eb;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
+  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.22);
+}
+
+.retest-entry-btn.ghost,
+.retest-entry-btn:disabled {
+  background: #eef3ff;
+  color: #7a8aa6;
+  box-shadow: none;
+}
+
 .wrong-stem {
   color: #172033;
   font-size: 30rpx;
@@ -1230,6 +1577,118 @@ function formatDateTime(value) {
   background: #ffffff;
   color: #475467;
   border: 2rpx solid #dbe4f5;
+}
+
+.wrong-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-end;
+  padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  background: rgba(17, 24, 39, 0.42);
+}
+
+.wrong-modal-panel {
+  width: 100%;
+  max-height: 86vh;
+  border-radius: 38rpx;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 46rpx rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.wrong-modal-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 34rpx 34rpx 20rpx;
+  border-bottom: 2rpx solid #eef2f8;
+}
+
+.wrong-modal-title {
+  color: #101828;
+  font-size: 38rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.wrong-modal-sub {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.wrong-modal-close {
+  width: 70rpx;
+  height: 70rpx;
+  flex: 0 0 70rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: #f3f6fb;
+  color: #667085;
+  font-size: 44rpx;
+  line-height: 66rpx;
+  font-weight: 900;
+}
+
+.wrong-modal-scroll {
+  max-height: 70vh;
+  padding: 28rpx 34rpx 34rpx;
+  box-sizing: border-box;
+}
+
+.retest-summary-card {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.summary-score {
+  color: #2563eb;
+  font-size: 58rpx;
+  line-height: 1;
+  font-weight: 950;
+  text-align: center;
+}
+
+.summary-copy {
+  color: #475467;
+  font-size: 26rpx;
+  line-height: 1.7;
+  text-align: center;
+}
+
+.answer-map {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14rpx;
+  justify-content: center;
+}
+
+.answer-dot {
+  width: 58rpx;
+  height: 58rpx;
+  border: 0;
+  border-radius: 18rpx;
+  color: #ffffff;
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 58rpx;
+}
+
+.answer-dot.correct {
+  background: #16a34a;
+}
+
+.answer-dot.wrong {
+  background: #ef4444;
 }
 
 .daily-card {
