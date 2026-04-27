@@ -21,7 +21,6 @@
           </view>
           <view class="check-copy">
             <view class="check-title">{{ submodule }}</view>
-            <view class="check-sub">真题 {{ getCount(submodule) }} 道</view>
           </view>
         </view>
       </view>
@@ -108,7 +107,7 @@ defineEmits(['toggle-open', 'toggle-tag'])
   display: flex;
   align-items: center;
   gap: 20rpx;
-  min-height: 108rpx;
+  min-height: 92rpx;
   margin-top: 12rpx;
   padding: 20rpx;
   border: 2rpx solid #edf1f7;
@@ -151,9 +150,4 @@ defineEmits(['toggle-open', 'toggle-tag'])
   font-weight: 800;
 }
 
-.check-sub {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 23rpx;
-}
 </style>
