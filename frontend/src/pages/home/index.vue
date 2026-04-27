@@ -204,22 +204,25 @@
                   @tap="selectReviewAnswer(option.key)"
                 >
                   <text class="option-key">{{ option.key }}</text>
-                  <text>{{ option.text }}</text>
+                  <text class="option-text">{{ option.text }}</text>
                 </button>
               </view>
-              <view class="answer-line">最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}</view>
+              <view v-if="!reviewResultText" class="review-hint">
+                最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}。请选择一个答案后提交查看解析。
+              </view>
               <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
               <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
               <view v-if="reviewResultText" class="explain-text">{{ selectedWrongDetail.question.explanation }}</view>
               <view class="detail-actions">
                 <button
-                  class="task-btn"
-                  :disabled="!reviewAnswer || reviewingWrong || Boolean(reviewResultText)"
+                  v-if="!reviewResultText"
+                  class="modal-submit-btn"
+                  :disabled="!reviewAnswer || reviewingWrong"
                   @tap="submitWrongReview"
                 >
-                  {{ reviewResultText ? '已提交' : reviewingWrong ? '提交中...' : '提交并查看解析' }}
+                  {{ reviewingWrong ? '提交中...' : reviewAnswer ? '提交并查看解析' : '请选择答案' }}
                 </button>
-                <button class="task-btn ghost" @tap="closeWrongDetail">关闭</button>
+                <button v-else class="modal-submit-btn done" @tap="closeWrongDetail">我知道了</button>
               </view>
             </view>
           </scroll-view>
@@ -969,10 +972,8 @@ function buildQuestionOptions(question) {
 }
 
 function selectReviewAnswer(key) {
-  if (reviewingWrong.value) return
+  if (reviewingWrong.value || reviewResultText.value) return
   reviewAnswer.value = key
-  reviewResultText.value = ''
-  reviewMastered.value = false
 }
 
 function getWrongOptionClass(key) {
@@ -1594,7 +1595,7 @@ function formatDateTime(value) {
 
 .wrong-modal-panel {
   width: 100%;
-  max-height: 86vh;
+  max-height: 88vh;
   border-radius: 38rpx;
   background: #ffffff;
   box-shadow: 0 -18rpx 46rpx rgba(15, 23, 42, 0.18);
@@ -1640,8 +1641,85 @@ function formatDateTime(value) {
 
 .wrong-modal-scroll {
   max-height: 70vh;
-  padding: 28rpx 34rpx 34rpx;
+  padding: 30rpx 34rpx 36rpx;
   box-sizing: border-box;
+}
+
+.wrong-modal-panel .wrong-detail {
+  gap: 24rpx;
+}
+
+.wrong-modal-panel .wrong-stem {
+  padding: 24rpx 24rpx 4rpx;
+  border-radius: 26rpx;
+  background: #fbfcff;
+  font-size: 32rpx;
+  line-height: 1.65;
+}
+
+.wrong-modal-panel .wrong-options {
+  gap: 18rpx;
+  width: 100%;
+}
+
+.wrong-modal-panel .wrong-option {
+  width: 100%;
+  min-height: 96rpx;
+  margin: 0;
+  padding: 22rpx 24rpx;
+  border-radius: 26rpx;
+  box-sizing: border-box;
+  box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.04);
+}
+
+.wrong-modal-panel .option-key {
+  width: 52rpx;
+  height: 52rpx;
+  flex: 0 0 52rpx;
+  border-radius: 18rpx;
+  font-size: 26rpx;
+}
+
+.option-text {
+  flex: 1;
+  min-width: 0;
+  color: #263247;
+  font-size: 28rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.review-hint {
+  padding: 18rpx 22rpx;
+  border-radius: 22rpx;
+  background: #f8fafc;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.6;
+}
+
+.modal-submit-btn {
+  width: 100%;
+  min-height: 92rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 28rpx;
+  background: linear-gradient(135deg, #2563eb, #4f86ff);
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 900;
+  box-shadow: 0 16rpx 30rpx rgba(37, 99, 235, 0.22);
+}
+
+.modal-submit-btn:disabled {
+  background: #e8edf7;
+  color: #98a2b3;
+  box-shadow: none;
+}
+
+.modal-submit-btn.done {
+  background: #111827;
+  box-shadow: 0 16rpx 30rpx rgba(17, 24, 39, 0.18);
 }
 
 .retest-summary-card {
