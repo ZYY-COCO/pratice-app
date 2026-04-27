@@ -31,13 +31,13 @@ defineEmits(['update:modelValue'])
 <style scoped>
 .tabbar {
   position: fixed;
-  left: 32rpx;
-  right: 32rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 18rpx);
+  left: 26rpx;
+  right: 26rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 28rpx);
   display: flex;
-  gap: 18rpx;
-  padding: 16rpx 24rpx;
-  border-radius: 38rpx;
+  gap: 14rpx;
+  padding: 12rpx 16rpx;
+  border-radius: 34rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 2rpx solid #edf2fb;
   box-shadow: 0 20rpx 52rpx rgba(25, 48, 89, 0.12);
@@ -47,9 +47,9 @@ defineEmits(['update:modelValue'])
 
 .tab-item {
   flex: 1;
-  min-height: 94rpx;
+  min-height: 82rpx;
   padding: 12rpx 8rpx;
-  border-radius: 28rpx;
+  border-radius: 26rpx;
   text-align: center;
   display: flex;
   flex-direction: column;

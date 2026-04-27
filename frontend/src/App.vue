@@ -11,9 +11,11 @@ export default {
 
 <style>
 page {
+  width: 100%;
   min-height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
+  overflow-x: hidden;
   background:
     radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
     linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
@@ -22,9 +24,12 @@ page {
 }
 
 .page {
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
   min-height: 100dvh;
   box-sizing: border-box;
+  overflow-x: hidden;
   padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 36rpx);
 }
 

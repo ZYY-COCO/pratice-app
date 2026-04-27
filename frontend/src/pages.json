@@ -3,7 +3,8 @@
     {
       "path": "pages/home/index",
       "style": {
-        "navigationBarTitleText": "港澳台考研刷题"
+        "navigationBarTitleText": "港澳台考研刷题",
+        "navigationStyle": "custom"
       }
     },
     {

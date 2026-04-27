@@ -59,15 +59,17 @@
             </view>
             <view class="panel-link" @tap="startTodayTraining">查看全部 ›</view>
           </view>
-          <view class="plan-list">
-            <view v-for="item in planCards" :key="item.key" class="plan-item" @tap="goModule(item.key)">
-              <view class="plan-icon">{{ item.icon }}</view>
-              <view>
-                <view class="plan-title">{{ item.title }}</view>
-                <view class="plan-count">10题</view>
+          <scroll-view scroll-x class="plan-scroll" :show-scrollbar="false">
+            <view class="plan-list">
+              <view v-for="item in planCards" :key="item.key" class="plan-item" @tap="goModule(item.key)">
+                <view class="plan-icon">{{ item.icon }}</view>
+                <view>
+                  <view class="plan-title">{{ item.title }}</view>
+                  <view class="plan-count">10题</view>
+                </view>
               </view>
             </view>
-          </view>
+          </scroll-view>
         </view>
 
         <view class="section-head">
@@ -844,17 +846,31 @@ function formatDateTime(value) {
 
 <style scoped>
 .home-page {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100vw;
   min-height: 100vh;
   min-height: 100dvh;
-  padding: 20rpx 32rpx calc(env(safe-area-inset-bottom) + 188rpx);
+  overflow-x: hidden;
+  padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
 }
 
 .home-dashboard {
-  min-height: calc(100vh - env(safe-area-inset-bottom) - 208rpx);
-  min-height: calc(100dvh - env(safe-area-inset-bottom) - 208rpx);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760rpx;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 24rpx;
+  gap: 20rpx;
+  overflow-x: hidden;
+}
+
+.home-dashboard view,
+.home-dashboard text,
+.home-dashboard button,
+.home-dashboard scroll-view {
+  box-sizing: border-box;
 }
 
 .home-header,
@@ -871,8 +887,8 @@ function formatDateTime(value) {
 
 .home-header {
   justify-content: space-between;
-  gap: 24rpx;
-  padding: 0 4rpx;
+  gap: 18rpx;
+  padding: 0 2rpx;
 }
 
 .brand-line {
@@ -883,10 +899,11 @@ function formatDateTime(value) {
 
 .brand-title {
   color: #101828;
-  font-size: 46rpx;
+  font-size: 42rpx;
   line-height: 1.15;
   font-weight: 900;
   letter-spacing: -1rpx;
+  white-space: nowrap;
 }
 
 .brand-badge {
@@ -900,9 +917,9 @@ function formatDateTime(value) {
 }
 
 .profile-entry {
-  width: 88rpx;
-  height: 88rpx;
-  border-radius: 44rpx;
+  width: 78rpx;
+  height: 78rpx;
+  border-radius: 39rpx;
   background: linear-gradient(180deg, #f2f5fb, #e3e9f4);
   color: #8b95a8;
   display: flex;
@@ -924,7 +941,7 @@ function formatDateTime(value) {
 }
 
 .welcome-card {
-  padding: 40rpx 32rpx;
+  padding: 32rpx 26rpx 28rpx;
   overflow: hidden;
   position: relative;
 }
@@ -932,13 +949,13 @@ function formatDateTime(value) {
 .welcome-main {
   position: relative;
   z-index: 1;
-  gap: 22rpx;
+  gap: 18rpx;
 }
 
 .wave-icon {
-  width: 78rpx;
-  height: 78rpx;
-  border-radius: 24rpx;
+  width: 70rpx;
+  height: 70rpx;
+  border-radius: 22rpx;
   background: #edf4ff;
   display: flex;
   align-items: center;
@@ -957,24 +974,24 @@ function formatDateTime(value) {
 
 .welcome-title {
   color: #101828;
-  font-size: 36rpx;
+  font-size: 32rpx;
   line-height: 1.28;
   font-weight: 900;
 }
 
 .welcome-subtitle {
   color: #8a95a8;
-  font-size: 26rpx;
+  font-size: 24rpx;
   line-height: 1.5;
   font-weight: 600;
 }
 
 .hero-illustration {
   position: absolute;
-  right: 6rpx;
-  top: -18rpx;
+  right: -12rpx;
+  top: -8rpx;
   color: rgba(22, 119, 255, 0.12);
-  font-size: 138rpx;
+  font-size: 118rpx;
   transform: rotate(-10deg);
   z-index: -1;
 }
@@ -982,9 +999,9 @@ function formatDateTime(value) {
 .stats-card {
   position: relative;
   z-index: 1;
-  margin-top: 36rpx;
-  padding: 32rpx 12rpx;
-  border-radius: 30rpx;
+  margin-top: 26rpx;
+  padding: 24rpx 8rpx;
+  border-radius: 28rpx;
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -1001,13 +1018,13 @@ function formatDateTime(value) {
 
 .stat-value {
   color: #1677ff;
-  font-size: 44rpx;
+  font-size: 40rpx;
   line-height: 1;
   font-weight: 900;
 }
 
 .stat-label {
-  margin-top: 16rpx;
+  margin-top: 12rpx;
   color: #8a95a8;
   font-size: 25rpx;
   font-weight: 600;
@@ -1022,17 +1039,18 @@ function formatDateTime(value) {
 .hero-actions {
   position: relative;
   z-index: 1;
-  margin-top: 32rpx;
-  gap: 24rpx;
+  margin-top: 24rpx;
+  gap: 18rpx;
 }
 
 .hero-primary,
 .hero-secondary {
   flex: 1;
-  min-height: 104rpx;
+  min-width: 0;
+  min-height: 92rpx;
   border: 0;
   border-radius: 26rpx;
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 900;
   display: flex;
   align-items: center;
@@ -1058,7 +1076,7 @@ function formatDateTime(value) {
 }
 
 .plan-card {
-  padding: 28rpx;
+  padding: 24rpx 22rpx;
 }
 
 .panel-head,
@@ -1096,15 +1114,26 @@ function formatDateTime(value) {
   font-weight: 700;
 }
 
+.plan-scroll {
+  margin-top: 18rpx;
+  width: 100%;
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
 .plan-list {
-  margin-top: 22rpx;
   gap: 16rpx;
+  display: inline-flex;
+  min-width: 0;
+  max-width: none;
+  padding-right: 2rpx;
 }
 
 .plan-item {
-  flex: 1;
-  min-width: 0;
-  min-height: 98rpx;
+  flex: 0 0 214rpx;
+  min-width: 214rpx;
+  min-height: 104rpx;
   padding: 18rpx 16rpx;
   border-radius: 24rpx;
   background: #ffffff;
@@ -1153,15 +1182,17 @@ function formatDateTime(value) {
 }
 
 .shortcut-grid {
-  gap: 18rpx;
+  flex-direction: column;
+  gap: 16rpx;
   align-items: stretch;
   margin-top: 0;
 }
 
 .shortcut-card {
-  flex: 1;
+  width: 100%;
+  flex: none;
   min-width: 0;
-  padding: 28rpx 24rpx;
+  padding: 26rpx 26rpx;
 }
 
 .shortcut-icon {
