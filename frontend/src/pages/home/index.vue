@@ -86,25 +86,6 @@
           />
         </view>
 
-        <view class="shortcut-grid">
-          <view class="shortcut-card mistake-shortcut" @tap="openMistakes">
-            <view class="shortcut-icon">🎯</view>
-            <view class="shortcut-copy">
-              <view class="shortcut-title">最近错题</view>
-              <view class="shortcut-value">{{ wrongSummaryCount }}题</view>
-            </view>
-            <view class="shortcut-button orange">查看 <text>›</text></view>
-          </view>
-
-          <view class="shortcut-card report-shortcut" @tap="openReport">
-            <view class="shortcut-icon blue">▮</view>
-            <view class="shortcut-copy">
-              <view class="shortcut-title">能力报告</view>
-              <view class="shortcut-value muted">{{ reportStatus }}</view>
-            </view>
-            <view class="shortcut-button blue">生成报告 <text>›</text></view>
-          </view>
-        </view>
       </view>
     </template>
 
@@ -993,8 +974,7 @@ function formatDateTime(value) {
 .hero-actions,
 .panel-head,
 .panel-title-wrap,
-.plan-list,
-.shortcut-grid {
+.plan-list {
   display: flex;
   align-items: center;
 }
@@ -1046,8 +1026,7 @@ function formatDateTime(value) {
 }
 
 .welcome-card,
-.plan-card,
-.shortcut-card {
+.plan-card {
   border-radius: 34rpx;
   background: rgba(255, 255, 255, 0.94);
   border: 2rpx solid #e8effc;
@@ -1293,79 +1272,6 @@ function formatDateTime(value) {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
-}
-
-.shortcut-grid {
-  flex-direction: column;
-  gap: 16rpx;
-  align-items: stretch;
-  margin-top: 0;
-}
-
-.shortcut-card {
-  width: 100%;
-  flex: none;
-  min-width: 0;
-  padding: 26rpx 26rpx;
-}
-
-.shortcut-icon {
-  width: 74rpx;
-  height: 74rpx;
-  border-radius: 22rpx;
-  background: #fff3e8;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 42rpx;
-}
-
-.shortcut-icon.blue {
-  color: #1677ff;
-  background: #edf4ff;
-  font-size: 38rpx;
-  font-weight: 900;
-}
-
-.shortcut-title {
-  margin-top: 20rpx;
-  color: #101828;
-  font-size: 30rpx;
-  font-weight: 900;
-}
-
-.shortcut-value {
-  margin-top: 10rpx;
-  color: #101828;
-  font-size: 34rpx;
-  font-weight: 900;
-}
-
-.shortcut-value.muted {
-  color: #8a95a8;
-  font-size: 28rpx;
-}
-
-.shortcut-button {
-  margin-top: 26rpx;
-  min-height: 70rpx;
-  border-radius: 999rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-  font-size: 27rpx;
-  font-weight: 900;
-}
-
-.shortcut-button.orange {
-  color: #ff6b2c;
-  background: #fff2e9;
-}
-
-.shortcut-button.blue {
-  color: #1677ff;
-  background: #edf4ff;
 }
 
 .state-box {
