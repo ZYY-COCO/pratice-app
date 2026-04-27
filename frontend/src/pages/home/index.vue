@@ -257,38 +257,79 @@
     </template>
 
     <template v-else>
-      <PageHeader
-        eyebrow="我的"
-        title="学习数据与账号状态"
-        :subtitle="isAuthed ? '登录状态已持久化保存，可直接进入真实题库练习。' : '当前尚未登录，登录后就不用手动在控制台写 token。'"
-      />
+      <view class="profile-dashboard">
+        <view class="profile-top-title">港澳台考研刷题</view>
 
-      <template v-if="isAuthed">
-        <ProfileSummaryCard :profile="profile" :exam-options="examOptions" @change-exam="changeExam" />
-        <view class="profile-actions">
-          <button class="primary-button pro-entry" @tap="goPro">会员中心 / Pro 功能预览</button>
-          <button class="ghost-button" @tap="logout">退出登录</button>
+        <view class="account-card" @tap="isAuthed ? null : goLogin()">
+          <view class="account-avatar">{{ profileAvatarText }}</view>
+          <view class="account-main">
+            <view class="account-name-row">
+              <text class="account-name">{{ profile.userName }}</text>
+              <text class="account-badge">{{ profile.badge }}</text>
+            </view>
+            <view class="account-desc">{{ isAuthed ? profile.subtitle : '登录后同步学习进度与数据' }}</view>
+            <view class="exam-switch">
+              <button
+                v-for="option in examOptions"
+                :key="option.code"
+                class="exam-pill"
+                :class="{ active: option.code === examCode }"
+                @tap.stop="changeExam(option.code)"
+              >
+                {{ option.code }}
+              </button>
+            </view>
+          </view>
+          <view class="account-arrow">›</view>
         </view>
-        <SectionCard title="内测反馈" subtitle="你的使用反馈会直接影响下一版优先级。">
-          <view class="beta-grid">
-            <view class="beta-item">当前版本：内测版</view>
-            <view class="beta-item">请重点反馈：题目质量、刷题速度、错题本是否有用、报告是否看得懂。</view>
-            <view class="beta-item muted">暂未开放支付、会员和 AI 深度诊断，看到相关入口均为占位说明。</view>
-          </view>
-          <BetaFeedbackForm source-page="profile" />
-          <button class="ghost-button feedback-btn" @tap="copyFeedbackTemplate">复制反馈模板</button>
-        </SectionCard>
-      </template>
 
-      <template v-else>
-        <SectionCard title="登录真实题库" subtitle="使用你已经注册并确认邮箱的账号登录。">
-          <view class="auth-copy">
-            <view class="auth-title">邮箱登录后可直接使用真实题库与作答接口</view>
-            <view class="auth-desc">登录成功后会自动保存 accessToken、refreshToken 和用户信息，后续无需再手动写入浏览器存储。</view>
+        <view class="member-card">
+          <view class="member-copy">
+            <view class="member-title">{{ isAuthed ? '学习数据已云端同步' : '登录享受完整功能' }}</view>
+            <view class="member-subtitle">{{ isAuthed ? '错题本、能力报告和练习记录会持续更新' : '高效刷题，科学备考上岸' }}</view>
+            <button class="member-login-btn" @tap="isAuthed ? openReport() : goLogin()">
+              {{ isAuthed ? '查看报告' : '登录 / 注册' }}
+            </button>
           </view>
-          <button class="primary-button auth-btn" @tap="goLogin">去登录</button>
-        </SectionCard>
-      </template>
+          <view class="shield-art">✓</view>
+          <view class="benefit-row">
+            <view v-for="item in profileBenefits" :key="item.label" class="benefit-item" @tap="handleBenefit(item)">
+              <view class="benefit-icon">{{ item.icon }}</view>
+              <view class="benefit-label">{{ item.label }}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="profile-section-card">
+          <view class="profile-section-title">练习工具</view>
+          <view class="menu-list">
+            <view v-for="item in practiceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
+              <view class="menu-icon" :class="item.tone">{{ item.icon }}</view>
+              <view class="menu-copy">
+                <view class="menu-title">{{ item.label }}</view>
+                <view class="menu-subtitle">{{ item.desc }}</view>
+              </view>
+              <view class="menu-arrow">›</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="profile-section-card">
+          <view class="profile-section-title">其他服务</view>
+          <view class="menu-list">
+            <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
+              <view class="menu-icon" :class="item.tone">{{ item.icon }}</view>
+              <view class="menu-copy">
+                <view class="menu-title">{{ item.label }}</view>
+                <view class="menu-subtitle">{{ item.desc }}</view>
+              </view>
+              <view class="menu-arrow">›</view>
+            </view>
+          </view>
+        </view>
+
+        <view v-if="isAuthed" class="logout-card" @tap="logout">退出登录</view>
+      </view>
     </template>
 
     <BottomTabBar v-model="activeTab" :items="tabs" />
@@ -298,12 +339,10 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import PageHeader from '../../components/PageHeader.vue'
-import ProfileSummaryCard from '../../components/ProfileSummaryCard.vue'
 import ReportRadarMock from '../../components/ReportRadarMock.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { updateProfile } from '../../api/auth'
@@ -352,9 +391,17 @@ const proPreviewItems = [
   '每日训练计划：每天 10-20 题，优先补最低正确率模块',
   '每周提分报告：总结正确率变化、刷题量和下周重点'
 ]
+const profileBenefits = [
+  { label: '云端同步', icon: '☁', action: 'sync' },
+  { label: '错题收藏', icon: '☆', action: 'mistakes' },
+  { label: '学习报告', icon: '▥', action: 'report' },
+  { label: 'AI 解析', icon: '⌘', action: 'soon' },
+  { label: '专属推荐', icon: '👍', action: 'soon' }
+]
 
 const isAuthed = computed(() => authed.value)
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
+const profileAvatarText = computed(() => (profile.value.userName || examCode.value || '游').slice(0, 1))
 
 const dashboard = computed(() => {
   const base = getHomeDashboard(examCode.value)
@@ -412,6 +459,17 @@ const wrongSummaryCount = computed(() => {
   return String(Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0))
 })
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
+const practiceTools = computed(() => [
+  { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
+  { label: '收藏夹', desc: '收藏题目功能即将开放', icon: '☆', tone: 'blue', action: 'soon' },
+  { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'soon' },
+  { label: '能力报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' }
+])
+const serviceTools = computed(() => [
+  { label: '会员中心 / Pro 预览', desc: '查看 AI 诊断、同类加练与训练计划', icon: '◇', tone: 'dark', action: 'pro' },
+  { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
+  { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
+])
 const filteredMistakes = computed(() =>
   realMistakes.value.filter((item) => {
     if (wrongFilters.value.subject && item.subject !== wrongFilters.value.subject) return false
@@ -456,7 +514,18 @@ const reportSubtitle = computed(() => {
 const profile = computed(() => {
   const base = getProfileMock()
   if (!isAuthed.value) {
-    return base
+    return {
+      ...base,
+      userName: examCode.value,
+      subtitle: '登录后同步学习进度与数据',
+      badge: '游客',
+      stats: [
+        { label: '目标版本', value: examCode.value },
+        { label: '累计刷题', value: '0 题' },
+        { label: '总正确率', value: '--' },
+        { label: '错题数', value: '0 题' }
+      ]
+    }
   }
 
   const totalAnswers = Number(learningSummary.value?.total_answers || 0)
@@ -577,6 +646,51 @@ function openMistakes() {
 
 function openReport() {
   activeTab.value = 'report'
+}
+
+function handleBenefit(item) {
+  if (!item) return
+  if (item.action === 'mistakes') {
+    openMistakes()
+    return
+  }
+  if (item.action === 'report') {
+    openReport()
+    return
+  }
+  if (item.action === 'sync') {
+    uni.showToast({
+      title: isAuthed.value ? '学习数据已自动同步' : '登录后开启云端同步',
+      icon: 'none'
+    })
+    return
+  }
+  showMockToast()
+}
+
+function handleMenu(item) {
+  if (!item) return
+  if (item.action === 'mistakes') {
+    openMistakes()
+    return
+  }
+  if (item.action === 'report') {
+    openReport()
+    return
+  }
+  if (item.action === 'pro') {
+    goPro()
+    return
+  }
+  if (item.action === 'feedback') {
+    copyFeedbackTemplate()
+    return
+  }
+  if (item.action === 'about') {
+    uni.showToast({ title: '当前版本：内测版，专注刷题闭环验证', icon: 'none' })
+    return
+  }
+  showMockToast()
 }
 
 function showMockToast() {
@@ -1574,35 +1688,314 @@ function formatDateTime(value) {
   box-shadow: 0 16rpx 30rpx rgba(17, 24, 39, 0.22);
 }
 
-.profile-actions {
-  margin-top: 22rpx;
+.profile-dashboard {
+  width: 100%;
+  max-width: 760rpx;
+  margin: 0 auto;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  gap: 20rpx;
+  overflow-x: hidden;
 }
 
-.auth-copy {
-  margin-bottom: 22rpx;
-  padding: 22rpx;
-  border-radius: 28rpx;
-  background: #f8fbff;
+.profile-top-title {
+  padding: 2rpx 0 4rpx;
+  color: #101828;
+  text-align: center;
+  font-size: 30rpx;
+  line-height: 1.3;
+  font-weight: 900;
 }
 
-.auth-title {
-  color: #172033;
+.account-card,
+.member-card,
+.profile-section-card,
+.logout-card {
+  background: rgba(255, 255, 255, 0.96);
+  border: 2rpx solid #e8effc;
+  border-radius: 30rpx;
+  box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
+}
+
+.account-card {
+  padding: 26rpx 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+}
+
+.account-avatar {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 999rpx;
+  background: linear-gradient(135deg, #4f7dff, #87aaff);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 36rpx;
+  font-weight: 900;
+  box-shadow: 0 14rpx 26rpx rgba(37, 99, 235, 0.22);
+}
+
+.account-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.account-name-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.account-name {
+  color: #101828;
+  font-size: 34rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.account-badge {
+  padding: 6rpx 12rpx;
+  border-radius: 14rpx;
+  background: #edf4ff;
+  color: #1677ff;
+  font-size: 21rpx;
+  font-weight: 900;
+}
+
+.account-desc {
+  margin-top: 10rpx;
+  color: #8a95a8;
+  font-size: 23rpx;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.exam-switch {
+  margin-top: 16rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+}
+
+.exam-pill {
+  min-width: 100rpx;
+  min-height: 54rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 2rpx solid #dbe7ff;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #1677ff;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 54rpx;
+}
+
+.exam-pill.active {
+  color: #ffffff;
+  border-color: #1677ff;
+  background: #1677ff;
+  box-shadow: 0 8rpx 18rpx rgba(22, 119, 255, 0.18);
+}
+
+.account-arrow,
+.menu-arrow {
+  color: #98a2b3;
+  font-size: 42rpx;
+  font-weight: 800;
+}
+
+.member-card {
+  position: relative;
+  overflow: hidden;
+  padding: 30rpx 24rpx 24rpx;
+  background:
+    radial-gradient(circle at 82% 26%, rgba(22, 119, 255, 0.16), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
+}
+
+.member-copy {
+  position: relative;
+  z-index: 1;
+  max-width: 430rpx;
+}
+
+.member-title {
+  color: #101828;
   font-size: 30rpx;
   font-weight: 900;
-  line-height: 1.6;
+  line-height: 1.35;
 }
 
-.auth-desc {
+.member-subtitle {
   margin-top: 10rpx;
   color: #667085;
   font-size: 24rpx;
-  line-height: 1.7;
+  line-height: 1.5;
+  font-weight: 600;
 }
 
-.auth-btn {
+.member-login-btn {
+  margin: 24rpx 0 0;
+  width: 210rpx;
+  min-height: 72rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: #1677ff;
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 900;
+  line-height: 72rpx;
+}
+
+.shield-art {
+  position: absolute;
+  right: 40rpx;
+  top: 28rpx;
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 42rpx;
+  background: linear-gradient(145deg, #72a5ff, #1677ff);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 82rpx;
+  font-weight: 900;
+  transform: rotate(-8deg);
+  box-shadow: 0 18rpx 36rpx rgba(22, 119, 255, 0.28);
+  opacity: 0.92;
+}
+
+.benefit-row {
+  position: relative;
+  z-index: 1;
+  margin-top: 28rpx;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 10rpx;
+}
+
+.benefit-item {
+  min-width: 0;
+  text-align: center;
+}
+
+.benefit-icon {
+  width: 54rpx;
+  height: 54rpx;
+  margin: 0 auto 10rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #1677ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 28rpx;
+  font-weight: 900;
+  box-shadow: 0 8rpx 20rpx rgba(25, 48, 89, 0.08);
+}
+
+.benefit-label {
+  color: #344054;
+  font-size: 21rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.profile-section-card {
+  padding: 28rpx 24rpx 8rpx;
+}
+
+.profile-section-title {
+  margin-bottom: 8rpx;
+  color: #101828;
+  font-size: 29rpx;
+  font-weight: 900;
+}
+
+.menu-list {
+  display: flex;
+  flex-direction: column;
+}
+
+.menu-row {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid #edf2fb;
+}
+
+.menu-row:last-child {
+  border-bottom: 0;
+}
+
+.menu-icon {
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 18rpx;
+  background: #edf4ff;
+  color: #1677ff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.menu-icon.green {
+  background: #eafbf1;
+  color: #16a34a;
+}
+
+.menu-icon.purple {
+  background: #f0edff;
+  color: #6d5dfc;
+}
+
+.menu-icon.orange {
+  background: #fff3e8;
+  color: #f97316;
+}
+
+.menu-icon.dark {
+  background: #eef2f7;
+  color: #344054;
+}
+
+.menu-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.menu-title {
+  color: #101828;
+  font-size: 27rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.menu-subtitle {
   margin-top: 8rpx;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.logout-card {
+  min-height: 84rpx;
+  color: #ef4444;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27rpx;
+  font-weight: 900;
 }
 </style>
