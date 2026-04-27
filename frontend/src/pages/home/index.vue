@@ -38,38 +38,6 @@
               <text class="stat-label">错题数</text>
             </view>
           </view>
-
-          <view class="hero-actions">
-            <button class="hero-primary" @tap="startTodayTraining">
-              <text class="button-icon">◎</text>
-              <text>开始今日训练</text>
-            </button>
-            <button class="hero-secondary" @tap="handleHeroAction">
-              <text class="button-icon">●</text>
-              <text>{{ isAuthed ? '能力诊断' : '登录账号' }}</text>
-            </button>
-          </view>
-        </view>
-
-        <view class="plan-card">
-          <view class="panel-head">
-            <view class="panel-title-wrap">
-              <view class="panel-icon">☑</view>
-              <text class="panel-title">今日计划</text>
-            </view>
-            <view class="panel-link" @tap="startTodayTraining">查看全部 ›</view>
-          </view>
-          <scroll-view scroll-x class="plan-scroll" :show-scrollbar="false">
-            <view class="plan-list">
-              <view v-for="item in planCards" :key="item.key" class="plan-item" @tap="goModule(item.key)">
-                <view class="plan-icon">{{ item.icon }}</view>
-                <view>
-                  <view class="plan-title">{{ item.title }}</view>
-                  <view class="plan-count">10题</view>
-                </view>
-              </view>
-            </view>
-          </scroll-view>
         </view>
 
         <view class="section-head">
@@ -433,7 +401,6 @@ const homeStats = computed(() => {
 })
 
 const moduleCards = computed(() => getHomeModules(examCode.value))
-const planCards = computed(() => moduleCards.value.slice(0, 3))
 const realMistakes = computed(() => wrongItems.value.map(formatWrongQuestion))
 const wrongSummaryCount = computed(() => {
   if (!isAuthed.value) return '0'
@@ -576,11 +543,6 @@ function goPractice() {
   uni.navigateTo({ url: '/pages/practice/index' })
 }
 
-function startTodayTraining() {
-  const defaultSubject = moduleCards.value[0]?.key || '中华文化'
-  goModule(defaultSubject)
-}
-
 function goTaskPractice(task) {
   if (task?.subject) {
     uni.setStorageSync('subject', task.subject)
@@ -611,14 +573,6 @@ function logout() {
   authUser.value = null
   authed.value = false
   uni.showToast({ title: '已退出登录', icon: 'none' })
-}
-
-function handleHeroAction() {
-  if (isAuthed.value) {
-    activeTab.value = 'report'
-    return
-  }
-  goLogin()
 }
 
 function openMistakes() {
@@ -970,11 +924,7 @@ function formatDateTime(value) {
 
 .home-header,
 .brand-line,
-.welcome-main,
-.hero-actions,
-.panel-head,
-.panel-title-wrap,
-.plan-list {
+.welcome-main {
   display: flex;
   align-items: center;
 }
@@ -1025,8 +975,7 @@ function formatDateTime(value) {
   box-shadow: inset 0 -4rpx 8rpx rgba(20, 31, 66, 0.04);
 }
 
-.welcome-card,
-.plan-card {
+.welcome-card {
   border-radius: 34rpx;
   background: rgba(255, 255, 255, 0.94);
   border: 2rpx solid #e8effc;
@@ -1129,137 +1078,20 @@ function formatDateTime(value) {
   background: #e6edf8;
 }
 
-.hero-actions {
-  position: relative;
-  z-index: 1;
-  margin-top: 24rpx;
-  gap: 18rpx;
-}
-
-.hero-primary,
-.hero-secondary {
-  flex: 1;
-  min-width: 0;
-  min-height: 92rpx;
-  border: 0;
-  border-radius: 26rpx;
-  font-size: 28rpx;
-  font-weight: 900;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-}
-
-.hero-primary {
-  background: linear-gradient(180deg, #1677ff, #0f6bf3);
-  color: #ffffff;
-  box-shadow: 0 16rpx 30rpx rgba(22, 119, 255, 0.24);
-}
-
-.hero-secondary {
-  background: #ffffff;
-  color: #1677ff;
-  border: 2rpx solid #1677ff;
-}
-
-.button-icon {
-  font-size: 32rpx;
-  line-height: 1;
-}
-
-.plan-card {
-  padding: 24rpx 22rpx;
-}
-
-.panel-head,
 .section-head {
   justify-content: space-between;
 }
 
-.panel-title-wrap {
-  gap: 14rpx;
-}
-
-.panel-icon {
-  width: 44rpx;
-  height: 44rpx;
-  border-radius: 12rpx;
-  color: #1677ff;
-  background: #edf4ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-}
-
-.panel-title,
 .section-title-text {
   color: #101828;
   font-size: 34rpx;
   font-weight: 900;
 }
 
-.panel-link,
 .section-more {
   color: #8a95a8;
   font-size: 26rpx;
   font-weight: 700;
-}
-
-.plan-scroll {
-  margin-top: 18rpx;
-  width: 100%;
-  max-width: 100%;
-  white-space: nowrap;
-  overflow: hidden;
-}
-
-.plan-list {
-  gap: 16rpx;
-  display: inline-flex;
-  min-width: 0;
-  max-width: none;
-  padding-right: 2rpx;
-}
-
-.plan-item {
-  flex: 0 0 214rpx;
-  min-width: 214rpx;
-  min-height: 104rpx;
-  padding: 18rpx 16rpx;
-  border-radius: 24rpx;
-  background: #ffffff;
-  border: 2rpx solid #edf2fb;
-  display: flex;
-  align-items: center;
-  gap: 14rpx;
-}
-
-.plan-icon {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 18rpx;
-  background: #f2f7ff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  font-size: 34rpx;
-}
-
-.plan-title {
-  color: #101828;
-  font-size: 25rpx;
-  line-height: 1.2;
-  font-weight: 900;
-}
-
-.plan-count {
-  margin-top: 8rpx;
-  color: #8a95a8;
-  font-size: 24rpx;
-  font-weight: 600;
 }
 
 .section-head {
