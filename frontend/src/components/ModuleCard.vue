@@ -3,7 +3,6 @@
     <view class="icon">{{ item.icon }}</view>
     <view class="content">
       <view class="title">{{ item.title }}</view>
-      <view class="desc">{{ item.desc }}</view>
       <view class="divider"></view>
       <view class="entry-row">
         <text>进入练习</text>
@@ -33,7 +32,7 @@ defineProps({
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 216rpx;
+  min-height: 184rpx;
   padding: 28rpx 28rpx;
   border-radius: 36rpx;
   background: #ffffff;
@@ -71,17 +70,8 @@ defineProps({
   font-weight: 900;
 }
 
-.desc {
-  margin-top: 12rpx;
-  min-height: 0;
-  color: #8a95a8;
-  font-size: 26rpx;
-  line-height: 1.55;
-  font-weight: 600;
-}
-
 .divider {
-  margin-top: 20rpx;
+  margin-top: 24rpx;
   height: 2rpx;
   background: #edf2fb;
 }

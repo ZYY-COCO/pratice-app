@@ -40,10 +40,6 @@
           </view>
         </view>
 
-        <view class="section-head">
-          <text class="section-title-text">学习模块</text>
-          <text class="section-more">全部模块 ›</text>
-        </view>
         <view class="module-grid">
           <ModuleCard
             v-for="(item, index) in moduleCards"
@@ -1080,28 +1076,6 @@ function formatDateTime(value) {
   width: 2rpx;
   height: 70rpx;
   background: #e6edf8;
-}
-
-.section-head {
-  justify-content: space-between;
-}
-
-.section-title-text {
-  color: #101828;
-  font-size: 34rpx;
-  font-weight: 900;
-}
-
-.section-more {
-  color: #8a95a8;
-  font-size: 26rpx;
-  font-weight: 700;
-}
-
-.section-head {
-  display: flex;
-  align-items: center;
-  margin-top: 0;
 }
 
 .module-grid {
