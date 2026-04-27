@@ -77,6 +77,14 @@ create table if not exists public.wrong_questions (
   unique (user_id, question_id)
 );
 
+create table if not exists public.favorite_questions (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  question_id uuid not null references public.questions(id) on delete cascade,
+  created_at timestamptz not null default now(),
+  unique (user_id, question_id)
+);
+
 create table if not exists public.ability_stats (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
@@ -113,6 +121,12 @@ create index if not exists idx_user_answers_user_created
 create index if not exists idx_wrong_questions_user_last
   on public.wrong_questions (user_id, last_wrong_at desc);
 
+create index if not exists idx_favorite_questions_user_created
+  on public.favorite_questions (user_id, created_at desc);
+
+create index if not exists idx_favorite_questions_question
+  on public.favorite_questions (question_id);
+
 create index if not exists idx_ability_stats_user_exam
   on public.ability_stats (user_id, exam_code, subject, module, submodule);
 
@@ -122,6 +136,7 @@ alter table public.passages enable row level security;
 alter table public.questions enable row level security;
 alter table public.user_answers enable row level security;
 alter table public.wrong_questions enable row level security;
+alter table public.favorite_questions enable row level security;
 alter table public.ability_stats enable row level security;
 
 drop policy if exists "users can read own profile" on public.users;
@@ -170,6 +185,17 @@ create policy "users can read own wrong questions"
 drop policy if exists "users can upsert own wrong questions" on public.wrong_questions;
 create policy "users can upsert own wrong questions"
   on public.wrong_questions for all
+  using (auth.uid() = user_id)
+  with check (auth.uid() = user_id);
+
+drop policy if exists "users can read own favorite questions" on public.favorite_questions;
+create policy "users can read own favorite questions"
+  on public.favorite_questions for select
+  using (auth.uid() = user_id);
+
+drop policy if exists "users can manage own favorite questions" on public.favorite_questions;
+create policy "users can manage own favorite questions"
+  on public.favorite_questions for all
   using (auth.uid() = user_id)
   with check (auth.uid() = user_id);
 

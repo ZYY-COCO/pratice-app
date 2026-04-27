@@ -112,7 +112,17 @@
         </view>
 
         <view class="question-card">
-          <view class="badge plain">{{ questionBadgeText }}</view>
+          <view class="question-head">
+            <view class="badge plain">{{ questionBadgeText }}</view>
+            <button
+              class="favorite-btn"
+              :class="{ active: currentFavorited }"
+              :disabled="favoriteLoading || !canFavoriteCurrent"
+              @tap.stop="toggleCurrentFavorite"
+            >
+              {{ currentFavorited ? '★' : '☆' }}
+            </button>
+          </view>
           <view class="question-title">{{ currentQuestion.stem }}</view>
           <view class="helper-box">{{ questionHelperText }}</view>
         </view>
@@ -177,6 +187,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import QuestionOption from '../../components/QuestionOption.vue'
@@ -218,6 +229,9 @@ const correctAnswer = ref('')
 const answerExplanation = ref('')
 const resultTag = ref('')
 const abilityAccuracy = ref(null)
+const currentFavorited = ref(false)
+const favoriteLoading = ref(false)
+const favoriteQuestionId = ref('')
 const questionMeta = ref({
   questionId: '',
   module: '',
@@ -240,6 +254,10 @@ const currentQuestionKey = computed(() => currentQuestion.value.questionId || cu
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
+const canFavoriteCurrent = computed(() => {
+  const questionId = questionMeta.value.questionId
+  return Boolean(questionId) && !String(questionId).startsWith('mock-')
+})
 const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
 const pageTitle = computed(() => {
   if (mode.value === 'tags') {
@@ -629,6 +647,7 @@ function applyQuestionAt(index) {
   submitting.value = false
   abilityAccuracy.value = null
   timerSeconds.value = 0
+  loadCurrentFavoriteStatus()
   startTimer()
   scrollToQuestionTop()
 }
@@ -883,6 +902,7 @@ function applyReviewAt(index) {
   resultTag.value = result.isCorrect ? '本题答对。' : '本题答错，已纳入错题统计。'
   submitted.value = true
   abilityAccuracy.value = null
+  loadCurrentFavoriteStatus()
 }
 
 function openReviewQuestion(index) {
@@ -895,7 +915,59 @@ function openReviewQuestion(index) {
 }
 
 function isRealQuestion() {
-  return Boolean(questionMeta.value.questionId) && !String(questionMeta.value.questionId).startsWith('mock-')
+  return canFavoriteCurrent.value
+}
+
+async function loadCurrentFavoriteStatus() {
+  syncAccessToken()
+  const questionId = questionMeta.value.questionId
+  favoriteQuestionId.value = questionId
+  currentFavorited.value = false
+
+  if (!hasAccessToken.value || !isRealQuestion()) {
+    return
+  }
+
+  favoriteLoading.value = true
+  try {
+    const result = await fetchFavoriteStatus(questionId)
+    if (favoriteQuestionId.value === questionId) {
+      currentFavorited.value = Boolean(result.is_favorited)
+    }
+  } catch (error) {
+    if (favoriteQuestionId.value === questionId) {
+      currentFavorited.value = false
+    }
+  } finally {
+    if (favoriteQuestionId.value === questionId) {
+      favoriteLoading.value = false
+    }
+  }
+}
+
+async function toggleCurrentFavorite() {
+  syncAccessToken()
+
+  if (!hasAccessToken.value) {
+    uni.showToast({ title: '登录后才能收藏题目', icon: 'none' })
+    return
+  }
+
+  if (!isRealQuestion() || favoriteLoading.value) {
+    return
+  }
+
+  const questionId = questionMeta.value.questionId
+  favoriteLoading.value = true
+  try {
+    const result = await toggleFavorite(questionId)
+    currentFavorited.value = Boolean(result.is_favorited)
+    uni.showToast({ title: result.is_favorited ? '已收藏' : '已取消收藏', icon: 'none' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '收藏状态更新失败', icon: 'none' })
+  } finally {
+    favoriteLoading.value = false
+  }
 }
 
 function goPrevQuestion() {
@@ -1259,7 +1331,41 @@ function scrollToResultSection() {
 }
 
 .badge.plain {
+  margin-bottom: 0;
+}
+
+.question-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
   margin-bottom: 18rpx;
+}
+
+.favorite-btn {
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22rpx;
+  background: #f3f6fb;
+  color: #98a2b3;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favorite-btn.active {
+  background: #fff7e8;
+  color: #f59e0b;
+}
+
+.favorite-btn[disabled] {
+  opacity: 0.55;
 }
 
 .timer {

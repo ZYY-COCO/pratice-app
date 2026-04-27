@@ -35,9 +35,9 @@
     </scroll-view>
 
     <view class="summary-card">
-      <view class="summary-icon">▣</view>
+      <view class="summary-icon">★</view>
       <view>
-        <view class="summary-number">{{ filteredItems.length }}</view>
+        <view class="summary-number">{{ favoriteCards.length }}</view>
         <view class="summary-label">总收藏</view>
       </view>
     </view>
@@ -47,19 +47,21 @@
       <text class="list-note">按收藏时间展示</text>
     </view>
 
-    <view v-if="filteredItems.length === 0" class="empty-card">
-      当前没有匹配的收藏题目。后续做题时点击收藏，这里会自动归档。
+    <view v-if="loading" class="empty-card">正在同步你的收藏题目...</view>
+    <view v-else-if="error" class="empty-card warning">{{ error }}</view>
+    <view v-else-if="filteredItems.length === 0" class="empty-card">
+      当前没有匹配的收藏题目。刷题时点亮五角星，这里会自动归档。
     </view>
 
     <view v-else class="favorite-list">
-      <view v-for="item in filteredItems" :key="item.id" class="favorite-card" @tap="openDetail(item)">
+      <view v-for="item in filteredItems" :key="item.favorite_id" class="favorite-card" @tap="openDetail(item)">
         <view class="tag-row">
           <text class="subject-tag">{{ item.subject }}</text>
           <text class="module-tag">{{ item.module }}</text>
         </view>
         <view class="stem">{{ item.stem }}</view>
         <view class="card-footer">
-          <text class="saved-time">收藏于 {{ item.saved_at }}</text>
+          <text class="saved-time">收藏于 {{ formatTime(item.saved_at) }}</text>
           <text class="view-link">查看 ›</text>
         </view>
       </view>
@@ -68,22 +70,31 @@
     <view v-if="selectedItem" class="detail-mask" @tap="closeDetail">
       <view class="detail-panel" @tap.stop>
         <view class="detail-head">
-          <view>
+          <view class="detail-copy">
             <view class="detail-title">收藏题目</view>
             <view class="detail-sub">{{ selectedItem.subject }} / {{ selectedItem.module }}</view>
           </view>
-          <view class="close-btn" @tap="closeDetail">×</view>
+          <view class="detail-actions">
+            <button class="star-btn active" :disabled="toggling" @tap="toggleSelectedFavorite">★</button>
+            <button class="close-btn" @tap="closeDetail">×</button>
+          </view>
         </view>
+
         <view class="detail-stem">{{ selectedItem.stem }}</view>
         <view class="option-list">
-          <view v-for="option in selectedOptions" :key="option.key" class="option-row">
+          <view
+            v-for="option in selectedOptions"
+            :key="option.key"
+            class="option-row"
+            :class="{ correct: option.key === selectedItem.answer }"
+          >
             <text class="option-key">{{ option.key }}</text>
             <text class="option-text">{{ option.text }}</text>
           </view>
         </view>
         <view class="answer-box">
           <view class="answer-title">正确答案：{{ selectedItem.answer }}</view>
-          <view class="answer-text">{{ selectedItem.explanation }}</view>
+          <view class="answer-text">{{ selectedItem.explanation || '暂无解析' }}</view>
         </view>
       </view>
     </view>
@@ -92,77 +103,53 @@
 
 <script setup>
 import { computed, ref } from 'vue'
+import { onShow } from '@dcloudio/uni-app'
+import { fetchFavorites, toggleFavorite } from '../../api/favorites'
 
 const keyword = ref('')
 const activeSubject = ref('全部')
 const selectedItem = ref(null)
+const favoriteRows = ref([])
+const loading = ref(false)
+const error = ref('')
+const toggling = ref(false)
 
 const subjects = ['全部', '中华文化', '英语运用', '逻辑推理', '数学基础']
 
-const favoriteItems = [
-  {
-    id: 1,
-    subject: '中华文化',
-    module: '中国哲学常识',
-    stem: '“天人合一”是中国古代哲学的重要思想之一，下列哪一观点最能体现这一思想？',
-    option_a: '人与自然相互隔绝',
-    option_b: '自然规律与人的活动可以相互协调',
-    option_c: '人应完全征服自然',
-    option_d: '自然变化不影响人事',
-    answer: 'B',
-    explanation: '“天人合一”强调人与自然、宇宙秩序之间的协调统一。',
-    saved_at: '2026-04-27 21:10'
-  },
-  {
-    id: 2,
-    subject: '英语运用',
-    module: '阅读理解',
-    stem: 'The manager insisted that the report ______ before the meeting.',
-    option_a: 'submitted',
-    option_b: 'be submitted',
-    option_c: 'was submitted',
-    option_d: 'submitting',
-    answer: 'B',
-    explanation: 'insist 表示“坚持要求”时，宾语从句常用虚拟语气 should do，should 可省略。',
-    saved_at: '2026-04-26 18:35'
-  },
-  {
-    id: 3,
-    subject: '逻辑推理',
-    module: '演绎推理',
-    stem: '所有金属都导电，铜是金属，所以铜导电。以下哪项最能说明上述推理形式？',
-    option_a: '归纳推理',
-    option_b: '演绎推理',
-    option_c: '类比推理',
-    option_d: '因果推断',
-    answer: 'B',
-    explanation: '从一般命题推出个别结论，是典型演绎推理。',
-    saved_at: '2026-04-25 16:02'
-  },
-  {
-    id: 4,
-    subject: '中华文化',
-    module: '中国历史学常识',
-    stem: '明清时期，科举制度在发展过程中出现了新的特点，下列说法正确的是？',
-    option_a: '废除了八股取士',
-    option_b: '科举完全脱离儒家经典',
-    option_c: '八股文成为重要考试文体',
-    option_d: '考试不再分级',
-    answer: 'C',
-    explanation: '明清时期八股文成为科举考试的重要文体，对士人学习产生深远影响。',
-    saved_at: '2026-04-24 20:45'
-  }
-]
+const favoriteCards = computed(() =>
+  favoriteRows.value
+    .map((row) => {
+      const question = row.question || {}
+      return {
+        favorite_id: row.id,
+        question_id: row.question_id,
+        saved_at: row.created_at,
+        subject: question.subject || '',
+        module: question.module || '',
+        submodule: question.submodule || '',
+        stem: question.stem || '题目内容暂不可用',
+        option_a: question.option_a,
+        option_b: question.option_b,
+        option_c: question.option_c,
+        option_d: question.option_d,
+        option_e: question.option_e,
+        answer: question.answer || '',
+        explanation: question.explanation || ''
+      }
+    })
+    .filter((item) => item.question_id)
+)
 
 const filteredItems = computed(() => {
   const word = keyword.value.trim().toLowerCase()
-  return favoriteItems.filter((item) => {
+  return favoriteCards.value.filter((item) => {
     const subjectMatched = activeSubject.value === '全部' || item.subject === activeSubject.value
     const keywordMatched =
       !word ||
       item.stem.toLowerCase().includes(word) ||
       item.subject.toLowerCase().includes(word) ||
-      item.module.toLowerCase().includes(word)
+      item.module.toLowerCase().includes(word) ||
+      item.submodule.toLowerCase().includes(word)
     return subjectMatched && keywordMatched
   })
 })
@@ -174,9 +161,27 @@ const selectedOptions = computed(() => {
     { key: 'A', text: item.option_a },
     { key: 'B', text: item.option_b },
     { key: 'C', text: item.option_c },
-    { key: 'D', text: item.option_d }
-  ]
+    { key: 'D', text: item.option_d },
+    { key: 'E', text: item.option_e }
+  ].filter((option) => option.text)
 })
+
+onShow(() => {
+  loadFavorites()
+})
+
+async function loadFavorites() {
+  loading.value = true
+  error.value = ''
+  try {
+    const response = await fetchFavorites({ limit: 200 })
+    favoriteRows.value = response.items || []
+  } catch (err) {
+    error.value = err?.detail || '收藏夹读取失败，请稍后重试'
+  } finally {
+    loading.value = false
+  }
+}
 
 function openDetail(item) {
   selectedItem.value = item
@@ -184,6 +189,30 @@ function openDetail(item) {
 
 function closeDetail() {
   selectedItem.value = null
+}
+
+async function toggleSelectedFavorite() {
+  if (!selectedItem.value?.question_id || toggling.value) return
+  toggling.value = true
+  try {
+    const result = await toggleFavorite(selectedItem.value.question_id)
+    if (!result.is_favorited) {
+      favoriteRows.value = favoriteRows.value.filter((row) => row.question_id !== selectedItem.value.question_id)
+      selectedItem.value = null
+      uni.showToast({ title: '已取消收藏', icon: 'none' })
+    }
+  } catch (err) {
+    uni.showToast({ title: err?.detail || '收藏状态更新失败', icon: 'none' })
+  } finally {
+    toggling.value = false
+  }
+}
+
+function formatTime(value) {
+  if (!value) return '暂无时间'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return String(value).slice(0, 16)
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
 function goBack() {
@@ -215,7 +244,8 @@ function goBack() {
 
 .back-btn,
 .top-placeholder,
-.close-btn {
+.close-btn,
+.star-btn {
   width: 60rpx;
   height: 60rpx;
   border-radius: 22rpx;
@@ -324,12 +354,12 @@ function goBack() {
   width: 68rpx;
   height: 68rpx;
   border-radius: 22rpx;
-  background: #edf4ff;
-  color: #1677ff;
+  background: #fff7e8;
+  color: #f59e0b;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34rpx;
+  font-size: 36rpx;
   font-weight: 900;
 }
 
@@ -385,6 +415,12 @@ function goBack() {
   color: #667085;
   font-size: 26rpx;
   line-height: 1.7;
+}
+
+.empty-card.warning {
+  color: #9a6510;
+  background: #fff8eb;
+  border-color: #fde7b0;
 }
 
 .tag-row {
@@ -468,6 +504,17 @@ function goBack() {
   margin-bottom: 24rpx;
 }
 
+.detail-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.detail-actions {
+  display: flex;
+  gap: 10rpx;
+  flex-shrink: 0;
+}
+
 .detail-title {
   color: #101828;
   font-size: 32rpx;
@@ -481,11 +528,25 @@ function goBack() {
   font-weight: 700;
 }
 
-.close-btn {
+.close-btn,
+.star-btn {
+  margin: 0;
+  padding: 0;
+  border: 0;
   background: #f3f6fb;
   color: #667085;
   font-size: 34rpx;
   font-weight: 900;
+  line-height: 60rpx;
+}
+
+.star-btn.active {
+  background: #fff7e8;
+  color: #f59e0b;
+}
+
+.star-btn[disabled] {
+  opacity: 0.55;
 }
 
 .detail-stem {
@@ -511,6 +572,11 @@ function goBack() {
   gap: 16rpx;
 }
 
+.option-row.correct {
+  border-color: rgba(22, 163, 74, 0.42);
+  background: rgba(22, 163, 74, 0.1);
+}
+
 .option-key {
   width: 44rpx;
   height: 44rpx;
@@ -523,6 +589,11 @@ function goBack() {
   font-size: 24rpx;
   font-weight: 900;
   flex-shrink: 0;
+}
+
+.option-row.correct .option-key {
+  background: #dcfce7;
+  color: #16a34a;
 }
 
 .option-text {
