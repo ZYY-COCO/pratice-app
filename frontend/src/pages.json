@@ -44,6 +44,13 @@
         "navigationBarTitleText": "练习历史",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/favorites/index",
+      "style": {
+        "navigationBarTitleText": "收藏夹",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {

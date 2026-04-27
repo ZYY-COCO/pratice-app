@@ -338,7 +338,7 @@ const proPreviewItems = [
 ]
 const profileBenefits = [
   { label: '云端同步', icon: '☁', action: 'sync' },
-  { label: '错题收藏', icon: '☆', action: 'mistakes' },
+  { label: '收藏夹', icon: '☆', action: 'favorites' },
   { label: '学习报告', icon: '▥', action: 'report' },
   { label: 'AI 解析', icon: '⌘', action: 'soon' },
   { label: '专属推荐', icon: '👍', action: 'soon' }
@@ -405,7 +405,7 @@ const wrongSummaryCount = computed(() => {
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const practiceTools = computed(() => [
   { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
-  { label: '收藏夹', desc: '收藏题目功能即将开放', icon: '☆', tone: 'blue', action: 'soon' },
+  { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '☆', tone: 'blue', action: 'favorites' },
   { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
   { label: '能力报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' }
 ])
@@ -589,6 +589,10 @@ function handleBenefit(item) {
     openReport()
     return
   }
+  if (item.action === 'favorites') {
+    uni.navigateTo({ url: '/pages/favorites/index' })
+    return
+  }
   if (item.action === 'sync') {
     uni.showToast({
       title: isAuthed.value ? '学习数据已自动同步' : '登录后开启云端同步',
@@ -615,6 +619,10 @@ function handleMenu(item) {
   }
   if (item.action === 'history') {
     uni.navigateTo({ url: '/pages/history/index' })
+    return
+  }
+  if (item.action === 'favorites') {
+    uni.navigateTo({ url: '/pages/favorites/index' })
     return
   }
   if (item.action === 'feedback') {
