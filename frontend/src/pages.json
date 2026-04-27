@@ -37,6 +37,13 @@
       "style": {
         "navigationBarTitleText": "会员中心"
       }
+    },
+    {
+      "path": "pages/history/index",
+      "style": {
+        "navigationBarTitleText": "练习历史",
+        "navigationStyle": "custom"
+      }
     }
   ],
   "globalStyle": {

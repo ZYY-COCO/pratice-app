@@ -1,11 +1,31 @@
-from fastapi import APIRouter, BackgroundTasks, Depends
+from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
-from app.schemas.answers import SubmitAnswerRequest, SubmitAnswerResponse
-from app.services.answers import persist_answer_submission, submit_answer
+from app.schemas.answers import AnswerHistoryResponse, SubmitAnswerRequest, SubmitAnswerResponse
+from app.services.answers import list_answer_history, persist_answer_submission, submit_answer
 
 router = APIRouter(prefix="/answers", tags=["作答"])
+
+
+@router.get("/history", response_model=AnswerHistoryResponse)
+def history(
+    user_id: str = Depends(get_current_user_id),
+    status_filter: str = Query(default="all", alias="status", pattern="^(all|correct|wrong)$"),
+    subject: str | None = None,
+    limit: int = Query(default=30, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+) -> AnswerHistoryResponse:
+    supabase = get_supabase_admin()
+    result = list_answer_history(
+        supabase=supabase,
+        user_id=user_id,
+        status_filter=status_filter,
+        subject=subject,
+        limit=limit,
+        offset=offset,
+    )
+    return AnswerHistoryResponse(**result)
 
 
 @router.post("/submit", response_model=SubmitAnswerResponse)

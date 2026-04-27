@@ -172,3 +172,47 @@ def submit_answer(
         "added_to_wrong_questions": not is_correct,
         "ability_accuracy": calculate_next_accuracy(current_ability, is_correct),
     }
+
+
+def list_answer_history(
+    supabase: Client,
+    user_id: str,
+    status_filter: str = "all",
+    subject: str | None = None,
+    limit: int = 30,
+    offset: int = 0,
+) -> dict:
+    """Return recent answer records with question details for the practice history page."""
+
+    query = (
+        supabase.table("user_answers")
+        .select("id, question_id, selected_answer, is_correct, used_time, created_at, questions(*)")
+        .eq("user_id", user_id)
+        .order("created_at", desc=True)
+        .range(offset, offset + limit - 1)
+    )
+
+    if status_filter == "correct":
+        query = query.eq("is_correct", True)
+    elif status_filter == "wrong":
+        query = query.eq("is_correct", False)
+
+    response = query.execute()
+    items: list[dict] = []
+    for row in response.data or []:
+        question = row.get("questions")
+        if subject and question and question.get("subject") != subject:
+            continue
+        items.append(
+            {
+                "id": row["id"],
+                "question_id": row["question_id"],
+                "selected_answer": row["selected_answer"],
+                "is_correct": row["is_correct"],
+                "used_time": row.get("used_time", 0),
+                "created_at": row["created_at"],
+                "question": question,
+            }
+        )
+
+    return {"items": items, "count": len(items)}

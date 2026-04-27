@@ -410,7 +410,7 @@ const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.item
 const practiceTools = computed(() => [
   { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
   { label: '收藏夹', desc: '收藏题目功能即将开放', icon: '☆', tone: 'blue', action: 'soon' },
-  { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'soon' },
+  { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
   { label: '能力报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' }
 ])
 const serviceTools = computed(() => [
@@ -615,6 +615,10 @@ function handleMenu(item) {
   }
   if (item.action === 'pro') {
     goPro()
+    return
+  }
+  if (item.action === 'history') {
+    uni.navigateTo({ url: '/pages/history/index' })
     return
   }
   if (item.action === 'feedback') {
