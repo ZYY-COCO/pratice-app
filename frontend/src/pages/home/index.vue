@@ -112,25 +112,25 @@
                 @tap="selectRetestAnswer(option.key)"
               >
                 <text class="option-key">{{ option.key }}</text>
-                <text>{{ option.text }}</text>
+                <text class="option-text">{{ option.text }}</text>
               </button>
             </view>
+            <view v-if="!retestResultText" class="review-hint">请选择一个答案后提交，本题会立即显示正误和解析。</view>
             <view v-if="retestResultText" class="state-box" :class="{ mastered: retestMastered }">{{ retestResultText }}</view>
             <view v-if="retestResultText" class="answer-line">正确答案：{{ retestDetail.question.answer }}</view>
             <view v-if="retestResultText" class="explain-text">{{ retestDetail.question.explanation }}</view>
             <view class="detail-actions">
               <button
                 v-if="!retestResultText"
-                class="task-btn"
+                class="modal-submit-btn"
                 :disabled="!retestAnswer || retestSubmitting"
                 @tap="submitRetestAnswer"
               >
-                {{ retestSubmitting ? '提交中...' : '提交本题' }}
+                {{ retestSubmitting ? '提交中...' : retestAnswer ? '提交本题' : '请选择答案' }}
               </button>
-              <button v-else class="task-btn" @tap="nextRetestQuestion">
+              <button v-else class="modal-submit-btn done" @tap="nextRetestQuestion">
                 {{ retestIndex + 1 >= retestItems.length ? '查看重测结果' : '下一题' }}
               </button>
-              <button class="task-btn ghost" @tap="confirmExitRetest">退出重测</button>
             </view>
           </view>
         </SectionCard>
@@ -373,7 +373,7 @@
       </view>
     </template>
 
-    <BottomTabBar v-model="activeTab" :items="tabs" />
+    <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
   </view>
 </template>
 
@@ -1678,6 +1678,44 @@ function formatDateTime(value) {
   flex: 0 0 52rpx;
   border-radius: 18rpx;
   font-size: 26rpx;
+}
+
+.retest-detail {
+  gap: 24rpx;
+}
+
+.retest-detail .wrong-stem {
+  padding: 18rpx 2rpx 8rpx;
+  font-size: 32rpx;
+  line-height: 1.65;
+}
+
+.retest-detail .wrong-options {
+  width: 100%;
+  gap: 18rpx;
+}
+
+.retest-detail .wrong-option {
+  width: 100%;
+  min-height: 98rpx;
+  margin: 0;
+  padding: 22rpx 24rpx;
+  border-radius: 28rpx;
+  box-sizing: border-box;
+  background: #ffffff;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.05);
+}
+
+.retest-detail .option-key {
+  width: 52rpx;
+  height: 52rpx;
+  flex: 0 0 52rpx;
+  border-radius: 18rpx;
+  font-size: 26rpx;
+}
+
+.retest-detail .detail-actions {
+  margin-top: 6rpx;
 }
 
 .option-text {
