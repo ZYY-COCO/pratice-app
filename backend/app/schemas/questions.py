@@ -38,7 +38,7 @@ class QuestionListResponse(BaseModel):
 
 
 class ByModuleQuery(BaseModel):
-    exam_code: str = Field(pattern="^(Z001|Z002)$")
+    exam_code: str = Field(pattern="^(Z001|Z002|COMMON)$")
     subject: str
     module: str
     submodule: str

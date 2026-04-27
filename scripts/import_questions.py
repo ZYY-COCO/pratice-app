@@ -66,7 +66,7 @@ KNOWLEDGE_TREE = {
     },
 }
 
-ALLOWED_EXAM_CODES = {"Z001", "Z002"}
+ALLOWED_EXAM_CODES = {"Z001", "Z002", "COMMON"}
 ALLOWED_ANSWERS = {"A", "B", "C", "D", "E"}
 ALLOWED_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
 REQUIRED_FIELDS = [

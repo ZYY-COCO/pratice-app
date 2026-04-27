@@ -5,12 +5,34 @@ from supabase import Client
 
 from app.db import get_supabase_admin
 
+VERSION_EXAM_CODES = {"Z001", "Z002"}
+
 
 def get_question_or_404(supabase: Client, question_id: str) -> dict:
     response = supabase.table("questions").select("*").eq("id", question_id).limit(1).execute()
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
     return response.data[0]
+
+
+def resolve_stats_exam_code(
+    supabase: Client,
+    user_id: str,
+    question: dict,
+    requested_exam_code: str | None = None,
+) -> str:
+    """COMMON 公共题按用户当前版本写入能力统计，避免报告里出现 COMMON 分组。"""
+    question_exam_code = question["exam_code"]
+    if question_exam_code != "COMMON":
+        return question_exam_code
+
+    if requested_exam_code in VERSION_EXAM_CODES:
+        return requested_exam_code
+
+    response = supabase.table("users").select("exam_target").eq("id", user_id).limit(1).execute()
+    profile = response.data[0] if response.data else {}
+    exam_target = profile.get("exam_target")
+    return exam_target if exam_target in VERSION_EXAM_CODES else "Z001"
 
 
 def record_wrong_question(supabase: Client, user_id: str, question_id: str) -> None:
@@ -129,14 +151,17 @@ def submit_answer(
     question_id: str,
     selected_answer: str,
     used_time: int,
+    requested_exam_code: str | None = None,
 ) -> dict:
     question = get_question_or_404(supabase, question_id)
+    stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
+    stats_question = {**question, "exam_code": stats_exam_code}
     is_correct = selected_answer == question["answer"]
-    current_ability = get_current_ability_stats(supabase, user_id, question)
+    current_ability = get_current_ability_stats(supabase, user_id, stats_question)
 
     return {
         "question_id": question_id,
-        "exam_code": question["exam_code"],
+        "exam_code": stats_exam_code,
         "subject": question["subject"],
         "module": question["module"],
         "submodule": question["submodule"],

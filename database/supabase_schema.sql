@@ -26,7 +26,7 @@ create table if not exists public.users (
 
 create table if not exists public.passages (
   id uuid primary key default gen_random_uuid(),
-  exam_code text not null check (exam_code in ('Z001', 'Z002')),
+  exam_code text not null check (exam_code in ('Z001', 'Z002', 'COMMON')),
   subject text not null,
   title text,
   content text not null,
@@ -37,7 +37,7 @@ create table if not exists public.passages (
 
 create table if not exists public.questions (
   id uuid primary key default gen_random_uuid(),
-  exam_code text not null check (exam_code in ('Z001', 'Z002')),
+  exam_code text not null check (exam_code in ('Z001', 'Z002', 'COMMON')),
   subject text not null,
   module text not null,
   submodule text not null,

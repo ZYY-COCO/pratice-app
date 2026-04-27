@@ -808,7 +808,8 @@ async function submitWrongReview() {
     const result = await reviewWrongQuestion({
       question_id: selectedWrongDetail.value.question_id,
       selected_answer: reviewAnswer.value,
-      used_time: 0
+      used_time: 0,
+      exam_code: examCode.value
     })
     reviewMastered.value = Boolean(result.is_correct)
     reviewResultText.value = result.is_correct ? '本次重做答对，已掌握。' : `本次仍需复盘，正确答案是 ${result.correct_answer}。`

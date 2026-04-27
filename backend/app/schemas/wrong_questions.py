@@ -29,3 +29,4 @@ class ReviewWrongQuestionRequest(BaseModel):
     question_id: str
     selected_answer: str = Field(pattern="^[ABCDE]$")
     used_time: int = Field(default=0, ge=0)
+    exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")

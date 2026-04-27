@@ -780,7 +780,8 @@ async function submitComprehensiveAnswers() {
             data: {
               question_id: question.questionId,
               selected_answer: selected,
-              used_time: timerSeconds.value
+              used_time: timerSeconds.value,
+              exam_code: examCode.value
             }
           })
 
@@ -838,7 +839,8 @@ async function submitAnswer() {
         data: {
           question_id: questionMeta.value.questionId,
           selected_answer: selectedOption.value,
-          used_time: timerSeconds.value
+          used_time: timerSeconds.value,
+          exam_code: examCode.value
         }
       })
 

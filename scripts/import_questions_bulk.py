@@ -23,7 +23,7 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def fetch_existing_keys(supabase, exam_code: str, subject: str) -> set[tuple[str, str, str, str]]:
+def fetch_existing_keys(supabase, subject: str) -> set[tuple[str, str, str, str]]:
     keys: set[tuple[str, str, str, str]] = set()
     offset = 0
     page_size = 1000
@@ -31,7 +31,6 @@ def fetch_existing_keys(supabase, exam_code: str, subject: str) -> set[tuple[str
         response = (
             supabase.table("questions")
             .select("stem,subject,module,submodule")
-            .eq("exam_code", exam_code)
             .eq("subject", subject)
             .range(offset, offset + page_size - 1)
             .execute()
@@ -79,13 +78,13 @@ def main() -> int:
             print(f"  ... {len(invalid) - 20} more")
         return 1
 
-    groups: dict[tuple[str, str], list[dict]] = {}
+    groups: dict[str, list[dict]] = {}
     for question in valid_questions:
-        groups.setdefault((question["exam_code"], question["subject"]), []).append(question)
+        groups.setdefault(question["subject"], []).append(question)
 
     existing_keys: set[tuple[str, str, str, str]] = set()
-    for exam_code, subject in groups:
-        existing_keys.update(fetch_existing_keys(supabase, exam_code, subject))
+    for subject in groups:
+        existing_keys.update(fetch_existing_keys(supabase, subject))
 
     seen: set[tuple[str, str, str, str]] = set()
     rows_to_insert: list[dict] = []

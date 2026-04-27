@@ -105,6 +105,7 @@ def review_wrong_question(
         question_id=payload.question_id,
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,
+        requested_exam_code=payload.exam_code,
     )
     background_tasks.add_task(
         persist_answer_submission,
