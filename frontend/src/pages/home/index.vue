@@ -355,16 +355,16 @@
           <view class="account-arrow">›</view>
         </view>
 
-        <view class="member-card">
+        <view class="member-card" :class="{ active: isProMember }">
           <view class="member-copy">
-            <view class="member-kicker">Pro 功能预览</view>
+            <view class="member-kicker">{{ isProMember ? 'Pro 会员 · 已开通' : 'Pro 功能预览' }}</view>
             <view class="member-title">Pro 会员中心</view>
-            <view class="member-subtitle">未来将开放无限存储、AI 生题解析与更完整的学习报告。</view>
-            <button class="member-login-btn" @tap="isAuthed ? goPro() : goLogin()">
-              {{ isAuthed ? '查看权益' : '登录 / 注册' }}
+            <view class="member-subtitle">{{ memberCardSubtitle }}</view>
+            <button class="member-login-btn" @tap="handleProEntry">
+              {{ isAuthed ? (isProMember ? '会员中心' : '查看权益') : '登录 / 注册' }}
             </button>
           </view>
-          <view class="shield-art">✓</view>
+          <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item" @tap="handleBenefit(item)">
               <view class="benefit-icon">{{ item.icon }}</view>
@@ -510,6 +510,37 @@
       </view>
     </view>
 
+    <view v-if="showProModal" class="pro-modal-mask" @tap="handleCloseProModal">
+      <view class="pro-modal-sheet" @tap.stop>
+        <view class="pro-modal-handle"></view>
+        <button class="pro-modal-close" @tap="handleCloseProModal">×</button>
+        <view class="pro-modal-head">
+          <view class="pro-modal-title">Pro 会员权益</view>
+          <view class="pro-modal-subtitle">解锁更多学习功能，提升刷题效率</view>
+          <view class="pro-status-pill">当前状态：未开通</view>
+        </view>
+
+        <view class="pro-benefit-list">
+          <view
+            v-for="item in proBenefits"
+            :key="item.title"
+            class="pro-benefit-item"
+          >
+            <view class="pro-benefit-icon" :class="item.tone">{{ item.icon }}</view>
+            <view class="pro-benefit-copy">
+              <view class="pro-benefit-title">{{ item.title }}</view>
+              <view class="pro-benefit-desc">{{ item.desc }}</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="pro-modal-actions">
+          <button class="pro-later-btn" @tap="handleCloseProModal">稍后再说</button>
+          <button class="pro-open-btn" @tap="handleProComingSoon">敬请期待</button>
+        </view>
+      </view>
+    </view>
+
     <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
   </view>
 </template>
@@ -570,6 +601,7 @@ const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
+const showProModal = ref(false)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
@@ -592,6 +624,32 @@ const proPreviewItems = [
   '每日训练计划：每天 10-20 题，优先补最低正确率模块',
   '每周提分报告：总结正确率变化、刷题量和下周重点'
 ]
+const proBenefits = [
+  {
+    icon: '∞',
+    title: '无限存储',
+    desc: '收藏、错题和练习记录长期保存',
+    tone: 'blue'
+  },
+  {
+    icon: 'AI',
+    title: 'AI 生题及解析',
+    desc: '根据薄弱点智能生成题目与解析',
+    tone: 'green'
+  },
+  {
+    icon: '▥',
+    title: '完整学习报告',
+    desc: '查看更详细的正确率与能力分析',
+    tone: 'purple'
+  },
+  {
+    icon: '☆',
+    title: '专属训练建议',
+    desc: '自动推荐更适合你的训练内容',
+    tone: 'orange'
+  }
+]
 const profileBenefits = [
   { label: '无限存储', icon: '∞', action: 'pro' },
   { label: '错题本', icon: '▣', action: 'mistakes' },
@@ -600,6 +658,19 @@ const profileBenefits = [
 ]
 
 const isAuthed = computed(() => authed.value)
+const isProMember = computed(() => getMembershipStatus(authUser.value) === 'active')
+const membershipExpiresAt = computed(() => getMembershipExpiresAt(authUser.value))
+const memberCardSubtitle = computed(() => {
+  if (!isAuthed.value) {
+    return '登录后可查看会员权益与开通状态。'
+  }
+  if (isProMember.value) {
+    return membershipExpiresAt.value
+      ? `会员权益使用中，有效期至 ${membershipExpiresAt.value}。`
+      : '会员权益使用中，可进入会员中心查看专属功能。'
+  }
+  return '未来将开放无限存储、AI 生题解析与更完整的学习报告。'
+})
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const profileAvatarText = computed(() => (profile.value.userName || examCode.value || '游').slice(0, 1))
 
@@ -986,6 +1057,30 @@ function goPro() {
   uni.navigateTo({ url: '/pages/pro/index' })
 }
 
+function handleProEntry() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  if (isProMember.value) {
+    goPro()
+    return
+  }
+  handleOpenProModal()
+}
+
+function handleOpenProModal() {
+  showProModal.value = true
+}
+
+function handleCloseProModal() {
+  showProModal.value = false
+}
+
+function handleProComingSoon() {
+  uni.showToast({ title: '内测阶段暂未开放支付', icon: 'none' })
+}
+
 function logout() {
   clearAuthSession()
   authUser.value = null
@@ -1023,7 +1118,7 @@ function handleBenefit(item) {
     return
   }
   if (item.action === 'pro') {
-    goPro()
+    handleProEntry()
     return
   }
   showMockToast()
@@ -1040,7 +1135,7 @@ function handleMenu(item) {
     return
   }
   if (item.action === 'pro') {
-    goPro()
+    handleProEntry()
     return
   }
   if (item.action === 'history') {
@@ -1052,6 +1147,10 @@ function handleMenu(item) {
     return
   }
   if (item.action === 'ai-generator') {
+    if (isProMember.value) {
+      goPro()
+      return
+    }
     uni.showToast({ title: 'AI 专项出题为 Pro 预览功能，后续开通后解锁', icon: 'none' })
     return
   }
@@ -1516,6 +1615,31 @@ function formatDateTime(value) {
     return String(value).slice(0, 10)
   }
   return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
+}
+
+function getMembershipStatus(user) {
+  const status = String(
+    user?.membership_status ||
+    user?.pro_status ||
+    user?.subscription_status ||
+    user?.vip_status ||
+    uni.getStorageSync('proMembershipStatus') ||
+    ''
+  ).toLowerCase()
+  if (user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
+    return 'active'
+  }
+  return 'inactive'
+}
+
+function getMembershipExpiresAt(user) {
+  const rawValue = user?.membership_expires_at || user?.pro_expires_at || user?.vip_expires_at || ''
+  if (!rawValue) return ''
+  const date = new Date(rawValue)
+  if (Number.isNaN(date.getTime())) {
+    return String(rawValue).slice(0, 10)
+  }
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
 }
 </script>
 
@@ -2516,6 +2640,191 @@ function formatDateTime(value) {
   box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
 }
 
+.pro-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 82;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.pro-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 88vh;
+  padding: 16rpx 40rpx calc(env(safe-area-inset-bottom) + 30rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.pro-modal-handle {
+  width: 74rpx;
+  height: 8rpx;
+  margin: 0 auto 18rpx;
+  border-radius: 999rpx;
+  background: #d8deea;
+}
+
+.pro-modal-close {
+  position: absolute;
+  top: 20rpx;
+  right: 28rpx;
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f5f7fb;
+  color: #8a95a8;
+  font-size: 36rpx;
+  line-height: 56rpx;
+  font-weight: 800;
+}
+
+.pro-modal-head {
+  padding: 0 58rpx;
+  text-align: center;
+}
+
+.pro-modal-title {
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.pro-modal-subtitle {
+  margin-top: 10rpx;
+  color: #8a95a8;
+  font-size: 23rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.pro-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  margin-top: 12rpx;
+  padding: 8rpx 18rpx;
+  border-radius: 999rpx;
+  background: #f6f8fc;
+  color: #667085;
+  font-size: 21rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.pro-benefit-list {
+  margin-top: 26rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.pro-benefit-item {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  min-height: 92rpx;
+  padding: 18rpx 22rpx;
+  border: 2rpx solid #edf1f7;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-shadow: 0 8rpx 24rpx rgba(25, 48, 89, 0.04);
+}
+
+.pro-benefit-icon {
+  width: 72rpx;
+  height: 72rpx;
+  flex: 0 0 72rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 27rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.pro-benefit-icon.blue {
+  color: #3478f6;
+  background: #eef5ff;
+}
+
+.pro-benefit-icon.green {
+  color: #10b981;
+  background: #edfdf6;
+}
+
+.pro-benefit-icon.purple {
+  color: #7c3aed;
+  background: #f2edff;
+}
+
+.pro-benefit-icon.orange {
+  color: #f59e0b;
+  background: #fff7e8;
+}
+
+.pro-benefit-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.pro-benefit-title {
+  color: #172033;
+  font-size: 26rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.pro-benefit-desc {
+  margin-top: 6rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.pro-modal-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18rpx;
+  margin-top: 24rpx;
+}
+
+.pro-later-btn,
+.pro-open-btn {
+  min-height: 84rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 18rpx;
+  font-size: 27rpx;
+  line-height: 84rpx;
+  font-weight: 900;
+}
+
+.pro-later-btn {
+  background: #f6f8fb;
+  color: #475467;
+  border: 2rpx solid #e1e8f4;
+}
+
+.pro-open-btn {
+  background: linear-gradient(135deg, #3478f6, #4f86ff);
+  color: #ffffff;
+  box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
+}
+
 .mistake-page-head {
   display: flex;
   align-items: center;
@@ -3184,6 +3493,12 @@ function formatDateTime(value) {
     linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
 }
 
+.member-card.active {
+  background:
+    radial-gradient(circle at 82% 26%, rgba(16, 185, 129, 0.16), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, #ecfdf5 100%);
+}
+
 .member-copy {
   position: relative;
   z-index: 1;
@@ -3200,6 +3515,11 @@ function formatDateTime(value) {
   font-size: 21rpx;
   line-height: 1.2;
   font-weight: 900;
+}
+
+.member-card.active .member-kicker {
+  background: rgba(16, 185, 129, 0.12);
+  color: #059669;
 }
 
 .member-title {
@@ -3247,6 +3567,14 @@ function formatDateTime(value) {
   transform: rotate(-8deg);
   box-shadow: 0 18rpx 36rpx rgba(22, 119, 255, 0.28);
   opacity: 0.92;
+}
+
+.shield-art.active {
+  background: linear-gradient(145deg, #34d399, #10b981);
+  font-size: 42rpx;
+  letter-spacing: 0;
+  transform: rotate(-6deg);
+  box-shadow: 0 18rpx 36rpx rgba(16, 185, 129, 0.24);
 }
 
 .benefit-row {
