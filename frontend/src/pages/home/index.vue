@@ -5,7 +5,7 @@
         <view class="home-header">
           <view class="brand-line">
             <text class="brand-title">港研通</text>
-            <text class="brand-badge">{{ examCode }}</text>
+            <text v-if="isAuthed" class="brand-badge">{{ examCode }}</text>
           </view>
           <view class="profile-entry" @tap="activeTab = 'profile'">
             <text>{{ avatarText }}</text>
@@ -368,7 +368,9 @@
           <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
-              <view class="benefit-icon">{{ item.icon }}</view>
+              <view class="benefit-icon" :class="item.iconClass">
+                <text v-if="!item.iconClass">{{ item.icon }}</text>
+              </view>
               <view class="benefit-label">{{ item.label }}</view>
             </view>
           </view>
@@ -384,7 +386,9 @@
               :class="{ locked: item.locked }"
               @tap="handleMenu(item)"
             >
-              <view class="menu-icon" :class="item.tone">{{ item.icon }}</view>
+              <view class="menu-icon" :class="[item.tone, item.iconClass]">
+                <text v-if="!item.iconClass">{{ item.icon }}</text>
+              </view>
               <view class="menu-copy">
                 <view class="menu-title-row">
                   <text class="menu-title">{{ item.label }}</text>
@@ -675,8 +679,8 @@ const proBenefits = [
 ]
 const profileBenefits = [
   { label: '无限存储', icon: '∞' },
-  { label: '错题本', icon: '▣' },
-  { label: '学习报告', icon: '▥' },
+  { label: '错题本', icon: '', iconClass: 'book-icon' },
+  { label: '学习报告', icon: '', iconClass: 'report-icon' },
   { label: 'AI生题及解析', icon: 'AI' }
 ]
 
@@ -763,7 +767,8 @@ const practiceTools = computed(() => {
     {
       label: '错题本',
       desc: proLocked ? 'Pro 开放：查看与重刷你的错题' : `查看与重刷 ${wrongSummaryCount.value} 道错题`,
-      icon: '▣',
+      icon: '',
+      iconClass: 'book-icon',
       tone: proLocked ? 'locked' : 'blue',
       action: 'mistakes',
       proOnly: true,
@@ -772,7 +777,8 @@ const practiceTools = computed(() => {
     {
       label: '学习报告',
       desc: proLocked ? 'Pro 开放：查看能力分析与提升建议' : (reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告'),
-      icon: '▧',
+      icon: '',
+      iconClass: 'report-icon',
       tone: proLocked ? 'locked' : 'purple',
       action: 'report',
       proOnly: true,
@@ -3788,6 +3794,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .benefit-icon {
+  position: relative;
   width: 54rpx;
   height: 54rpx;
   margin: 0 auto 10rpx;
@@ -3800,6 +3807,67 @@ function getMembershipExpiresAt(user) {
   font-size: 28rpx;
   font-weight: 900;
   box-shadow: 0 8rpx 20rpx rgba(25, 48, 89, 0.08);
+}
+
+.benefit-icon.book-icon,
+.benefit-icon.report-icon,
+.menu-icon.book-icon,
+.menu-icon.report-icon {
+  font-size: 0;
+}
+
+.benefit-icon.book-icon::before,
+.menu-icon.book-icon::before {
+  content: '';
+  position: absolute;
+  width: 25rpx;
+  height: 31rpx;
+  border: 4rpx solid currentColor;
+  border-radius: 6rpx 10rpx 10rpx 6rpx;
+  background: rgba(255, 255, 255, 0.62);
+  box-sizing: border-box;
+  transform: translateX(2rpx);
+}
+
+.benefit-icon.book-icon::after,
+.menu-icon.book-icon::after {
+  content: '';
+  position: absolute;
+  width: 12rpx;
+  height: 3rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+  opacity: 0.48;
+  transform: translate(4rpx, -8rpx);
+  box-shadow: 0 8rpx 0 currentColor, 0 16rpx 0 currentColor;
+}
+
+.benefit-icon.report-icon::before,
+.menu-icon.report-icon::before {
+  content: '';
+  position: absolute;
+  left: 16rpx;
+  bottom: 15rpx;
+  width: 5rpx;
+  height: 18rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+  box-shadow: 11rpx -7rpx 0 currentColor, 22rpx -14rpx 0 currentColor;
+}
+
+.benefit-icon.report-icon::after,
+.menu-icon.report-icon::after {
+  content: '';
+  position: absolute;
+  left: 14rpx;
+  bottom: 13rpx;
+  width: 31rpx;
+  height: 28rpx;
+  border-left: 3rpx solid currentColor;
+  border-bottom: 3rpx solid currentColor;
+  border-radius: 0 0 0 5rpx;
+  opacity: 0.34;
+  box-sizing: border-box;
 }
 
 .benefit-label {
@@ -3842,6 +3910,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .menu-icon {
+  position: relative;
   width: 58rpx;
   height: 58rpx;
   border-radius: 18rpx;
