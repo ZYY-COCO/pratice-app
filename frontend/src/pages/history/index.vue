@@ -276,14 +276,21 @@ async function loadHistory() {
   try {
     const response = await fetchAnswerHistory({
       status: activeFilter.value,
-      limit: 120
+      limit: 100
     })
     items.value = response.items || []
   } catch (err) {
-    error.value = err?.detail || '练习历史读取失败，请稍后重试'
+    error.value = getHistoryErrorMessage(err)
   } finally {
     loading.value = false
   }
+}
+
+function getHistoryErrorMessage(err) {
+  const detail = err?.detail
+  if (typeof detail === 'string') return detail
+  if (Array.isArray(detail)) return '练习历史读取失败，请稍后重试'
+  return err?.message || '练习历史读取失败，请稍后重试'
 }
 
 function uniqueQuestionValues(field) {
