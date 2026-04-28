@@ -553,6 +553,7 @@ import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { updateProfile } from '../../api/auth'
+import { fetchMembershipStatus } from '../../api/membership'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
@@ -939,6 +940,7 @@ watch(wrongItems, () => {
 onShow(() => {
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
+  refreshMembershipStatus()
   refreshLearningData()
 })
 
@@ -971,6 +973,19 @@ async function changeExam(code) {
       authUser.value = revertedUser
     }
     uni.showToast({ title: '目标版本同步失败，请稍后重试', icon: 'none' })
+  }
+}
+
+async function refreshMembershipStatus() {
+  if (!isLoggedIn()) return
+  try {
+    const membership = await fetchMembershipStatus()
+    const nextUser = updateAuthUser(membership)
+    if (nextUser) {
+      authUser.value = nextUser
+    }
+  } catch (error) {
+    // Membership tables may not be migrated yet; keep the current cached user state.
   }
 }
 
@@ -1626,7 +1641,7 @@ function getMembershipStatus(user) {
     uni.getStorageSync('proMembershipStatus') ||
     ''
   ).toLowerCase()
-  if (user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
+  if (user?.membership_active || user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
     return 'active'
   }
   return 'inactive'

@@ -25,6 +25,13 @@ from app.utils.email_sender import send_email_code
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 logger = logging.getLogger(__name__)
+MEMBERSHIP_FIELDS = (
+    "membership_status",
+    "membership_plan",
+    "membership_started_at",
+    "membership_expires_at",
+    "membership_updated_at",
+)
 
 
 def _safe_error_summary(exc: Exception) -> str:
@@ -57,6 +64,19 @@ def _get_profile_by_email(email: str) -> dict | None:
         .execute()
     )
     return response.data[0] if response.data else None
+
+
+def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
+    merged = {
+        **profile,
+        "email": db_profile.get("email") or profile.get("email"),
+        "nickname": db_profile.get("nickname") or profile.get("nickname"),
+        "exam_target": db_profile.get("exam_target") or profile.get("exam_target"),
+    }
+    for field in MEMBERSHIP_FIELDS:
+        if field in db_profile:
+            merged[field] = db_profile.get(field)
+    return merged
 
 
 def _send_code(email: str, purpose: str) -> None:
@@ -283,24 +303,19 @@ def login(payload: LoginRequest) -> AuthResponse:
         "email": user.email,
         "nickname": user_metadata.get("nickname"),
         "exam_target": user_metadata.get("exam_target"),
+        "membership_status": "inactive",
     }
 
-    if not profile["nickname"] or not profile["exam_target"]:
-        supabase_admin = get_supabase_admin()
+    supabase_admin = get_supabase_admin()
+    try:
         profile_response = supabase_admin.table("users").select("*").eq("id", user.id).limit(1).execute()
         if profile_response.data:
-            db_profile = profile_response.data[0]
-            profile["email"] = db_profile.get("email") or profile["email"]
-            profile["nickname"] = db_profile.get("nickname") or profile["nickname"]
-            profile["exam_target"] = db_profile.get("exam_target") or profile["exam_target"]
+            profile = _merge_profile_data(profile, profile_response.data[0])
+    except Exception as exc:
+        logger.warning("Read profile after login failed for user_id=%s: %s", user.id, _safe_error_summary(exc))
 
     return AuthResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
-        user=AuthUser(
-            id=profile["id"],
-            email=profile["email"],
-            nickname=profile.get("nickname"),
-            exam_target=profile.get("exam_target"),
-        ),
+        user=AuthUser(**profile),
     )

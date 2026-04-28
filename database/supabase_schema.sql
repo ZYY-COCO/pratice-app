@@ -21,8 +21,53 @@ create table if not exists public.users (
   email text not null unique,
   nickname text,
   exam_target text check (exam_target in ('Z001', 'Z002')),
+  membership_status text not null default 'inactive'
+    check (membership_status in ('inactive', 'active', 'expired', 'cancelled')),
+  membership_plan text,
+  membership_started_at timestamptz,
+  membership_expires_at timestamptz,
+  membership_updated_at timestamptz,
   created_at timestamptz not null default now()
 );
+
+create table if not exists public.membership_orders (
+  id uuid primary key default gen_random_uuid(),
+  user_id uuid not null references public.users(id) on delete cascade,
+  provider text not null,
+  provider_order_id text,
+  plan_code text not null,
+  amount_cents integer,
+  currency text not null default 'CNY',
+  status text not null default 'pending'
+    check (status in ('pending', 'paid', 'failed', 'cancelled', 'refunded')),
+  paid_at timestamptz,
+  raw_payload jsonb,
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
+create unique index if not exists idx_membership_orders_provider_order
+  on public.membership_orders (provider, provider_order_id)
+  where provider_order_id is not null;
+
+create index if not exists idx_membership_orders_user_created
+  on public.membership_orders (user_id, created_at desc);
+
+revoke insert (
+  membership_status,
+  membership_plan,
+  membership_started_at,
+  membership_expires_at,
+  membership_updated_at
+) on public.users from anon, authenticated;
+
+revoke update (
+  membership_status,
+  membership_plan,
+  membership_started_at,
+  membership_expires_at,
+  membership_updated_at
+) on public.users from anon, authenticated;
 
 create table if not exists public.passages (
   id uuid primary key default gen_random_uuid(),
@@ -138,6 +183,7 @@ alter table public.user_answers enable row level security;
 alter table public.wrong_questions enable row level security;
 alter table public.favorite_questions enable row level security;
 alter table public.ability_stats enable row level security;
+alter table public.membership_orders enable row level security;
 
 drop policy if exists "users can read own profile" on public.users;
 create policy "users can read own profile"
@@ -154,6 +200,11 @@ drop policy if exists "users can insert own profile" on public.users;
 create policy "users can insert own profile"
   on public.users for insert
   with check (auth.uid() = id);
+
+drop policy if exists "users can read own membership orders" on public.membership_orders;
+create policy "users can read own membership orders"
+  on public.membership_orders for select
+  using (auth.uid() = user_id);
 
 drop policy if exists "authenticated users can read passages" on public.passages;
 create policy "authenticated users can read passages"

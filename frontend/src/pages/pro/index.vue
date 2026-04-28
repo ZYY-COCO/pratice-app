@@ -151,7 +151,8 @@ import { onShow } from '@dcloudio/uni-app'
 import PageHeader from '../../components/PageHeader.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
-import { getAuthUser } from '../../utils/auth'
+import { fetchMembershipStatus } from '../../api/membership'
+import { getAuthUser, updateAuthUser } from '../../utils/auth'
 
 const authUser = ref(getAuthUser())
 
@@ -223,10 +224,24 @@ const memberUntilText = computed(() =>
 
 onShow(() => {
   authUser.value = getAuthUser()
+  refreshMembershipStatus()
 })
 
 function showPaymentClosed() {
   uni.showToast({ title: '内测阶段暂未开放支付', icon: 'none' })
+}
+
+async function refreshMembershipStatus() {
+  if (!uni.getStorageSync('accessToken')) return
+  try {
+    const membership = await fetchMembershipStatus()
+    const nextUser = updateAuthUser(membership)
+    if (nextUser) {
+      authUser.value = nextUser
+    }
+  } catch (error) {
+    // The membership migration may not be applied yet; keep the cached user state.
+  }
 }
 
 function showComingSoon(title) {
@@ -277,7 +292,7 @@ function getMembershipStatus(user) {
     uni.getStorageSync('proMembershipStatus') ||
     ''
   ).toLowerCase()
-  if (user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
+  if (user?.membership_active || user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
     return 'active'
   }
   return 'inactive'

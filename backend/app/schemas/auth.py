@@ -37,6 +37,11 @@ class AuthUser(BaseModel):
     email: str
     nickname: str | None = None
     exam_target: str | None = None
+    membership_status: str | None = "inactive"
+    membership_plan: str | None = None
+    membership_started_at: str | None = None
+    membership_expires_at: str | None = None
+    membership_updated_at: str | None = None
 
 
 class AuthResponse(BaseModel):
