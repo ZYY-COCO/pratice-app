@@ -3,7 +3,7 @@
     {
       "path": "pages/home/index",
       "style": {
-        "navigationBarTitleText": "港澳台考研刷题",
+        "navigationBarTitleText": "港研通",
         "navigationStyle": "custom"
       }
     },
@@ -39,6 +39,19 @@
       }
     },
     {
+      "path": "pages/profile/index",
+      "style": {
+        "navigationBarTitleText": "个人资料"
+      }
+    },
+    {
+      "path": "pages/leaderboard/index",
+      "style": {
+        "navigationBarTitleText": "排行榜",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/history/index",
       "style": {
         "navigationBarTitleText": "练习历史",
@@ -55,7 +68,7 @@
   ],
   "globalStyle": {
     "navigationBarTextStyle": "black",
-    "navigationBarTitleText": "港澳台考研刷题",
+    "navigationBarTitleText": "港研通",
     "navigationBarBackgroundColor": "#f5f7fb",
     "backgroundColor": "#f5f7fb"
   }

@@ -17,6 +17,8 @@ def send_email_code(email: str, code: str, purpose: str) -> None:
     subject = "港澳台考研刷题验证码"
     if purpose == "reset_password":
         intro = "你正在重置登录密码。"
+    elif purpose == "change_email":
+        intro = "你正在更换绑定邮箱。"
     else:
         intro = "你正在注册港澳台考研刷题账号。"
 

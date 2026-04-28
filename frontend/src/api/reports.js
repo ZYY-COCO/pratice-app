@@ -21,3 +21,14 @@ export function fetchLearningSummary(params = {}) {
     url: query ? `/report/summary?${query}` : '/report/summary'
   })
 }
+
+export function fetchLeaderboard(params = {}) {
+  const query = Object.keys(params)
+    .filter((key) => params[key] !== undefined && params[key] !== '')
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+    .join('&')
+
+  return request({
+    url: query ? `/report/leaderboard?${query}` : '/report/leaderboard'
+  })
+}

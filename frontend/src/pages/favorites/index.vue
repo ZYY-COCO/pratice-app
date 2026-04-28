@@ -3,7 +3,7 @@
     <view class="topbar">
       <view class="back-btn" @tap="goBack">‹</view>
       <view>
-        <view class="app-name">港澳台考研刷题</view>
+        <view class="app-name">港研通</view>
         <view class="page-title">收藏夹</view>
       </view>
       <view class="top-placeholder"></view>

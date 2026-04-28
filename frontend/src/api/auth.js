@@ -45,6 +45,24 @@ export function resetPasswordWithCode(payload) {
   return buildNoAuthRequest('/auth/reset-password', payload, 25000)
 }
 
+export function sendChangeEmailCode(payload) {
+  return request({
+    url: '/auth/send-change-email-code',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
+export function changeEmailWithCode(payload) {
+  return request({
+    url: '/auth/change-email',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
 export function updateProfile(payload) {
   return request({
     url: '/auth/profile',

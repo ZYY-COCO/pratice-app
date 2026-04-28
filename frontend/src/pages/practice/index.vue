@@ -23,19 +23,39 @@
       </view>
 
       <view class="count-card">
-        <view class="count-title">本轮题量</view>
-        <view class="count-sub">
-          {{ practiceMode === 'comprehensive' ? '综合刷题会从全部知识点随机抽题。' : '进入刷题前先选择数量，当前会按你选择的题量整组加载。' }}
+        <view class="count-head">
+          <view class="count-copy">
+            <view class="count-title">本轮题量</view>
+            <view class="count-sub">
+              {{ practiceMode === 'comprehensive' ? '综合刷题会从全部知识点随机抽题。' : '进入刷题前先选择数量，当前会按你选择的题量整组加载。' }}
+            </view>
+          </view>
+          <view class="count-value">{{ selectedQuestionSize }}题</view>
         </view>
-        <view class="count-options">
-          <view
-            v-for="count in questionCountOptions"
-            :key="count"
-            class="count-option"
-            :class="{ active: selectedQuestionSize === count }"
-            @tap="selectedQuestionSize = count"
-          >
-            {{ count }}题
+
+        <view class="count-slider-wrap">
+          <slider
+            class="count-slider"
+            :value="selectedQuestionSize"
+            :min="questionCountOptions[0]"
+            :max="questionCountOptions[questionCountOptions.length - 1]"
+            :step="5"
+            activeColor="#3478f6"
+            backgroundColor="#e6ebf5"
+            block-color="#ffffff"
+            block-size="26"
+            @changing="handleQuestionSizeChange"
+            @change="handleQuestionSizeChange"
+          />
+          <view class="count-scale">
+            <text
+              v-for="count in questionCountOptions"
+              :key="count"
+              class="scale-value"
+              :class="{ active: selectedQuestionSize === count }"
+            >
+              {{ count }}
+            </text>
           </view>
         </view>
       </view>
@@ -528,6 +548,18 @@ function switchPracticeMode(value) {
   practiceMode.value = value
   selectedTags.value = []
   resetQuizState()
+}
+
+function normalizeQuestionSize(value) {
+  const numeric = Number(value || selectedQuestionSize.value || 10)
+  const min = questionCountOptions[0]
+  const max = questionCountOptions[questionCountOptions.length - 1]
+  const snapped = Math.round(numeric / 5) * 5
+  return Math.min(max, Math.max(min, snapped))
+}
+
+function handleQuestionSizeChange(event) {
+  selectedQuestionSize.value = normalizeQuestionSize(event?.detail?.value)
 }
 
 function toggleOpen(module) {
@@ -1235,31 +1267,77 @@ function scrollToResultSection() {
   color: #9a6510;
 }
 
-.count-options {
+.count-head {
   display: flex;
-  gap: 16rpx;
-  margin-top: 24rpx;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 22rpx;
 }
 
-.count-option {
+.count-copy {
   flex: 1;
-  min-height: 100rpx;
-  border-radius: 28rpx;
-  border: 2rpx solid #dbe4f5;
-  background: #f8fbff;
-  color: #476089;
-  font-size: 30rpx;
+  min-width: 0;
+}
+
+.count-value {
+  min-width: 104rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #edf4ff;
+  color: #2563eb;
+  font-size: 26rpx;
+  line-height: 1.2;
   font-weight: 900;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.count-slider-wrap {
+  margin-top: 26rpx;
+  padding: 8rpx 2rpx 0;
+}
+
+.count-slider {
+  margin: 0;
+}
+
+.count-scale {
   display: flex;
   align-items: center;
-  justify-content: center;
+  justify-content: space-between;
+  padding: 0 20rpx;
+  margin-top: 2rpx;
 }
 
-.count-option.active {
-  border-color: #2563eb;
-  background: #edf3ff;
+.scale-value {
+  min-width: 38rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  text-align: center;
+}
+
+.scale-value.active {
   color: #2563eb;
-  box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.12);
+  font-size: 23rpx;
+  font-weight: 950;
+}
+
+.scale-value::before {
+  content: '';
+  width: 6rpx;
+  height: 6rpx;
+  margin: 0 auto 10rpx;
+  border-radius: 50%;
+  background: #c9d3e5;
+  display: block;
+}
+
+.scale-value.active::before {
+  width: 8rpx;
+  height: 8rpx;
+  background: #2563eb;
 }
 
 .sticky-bar {

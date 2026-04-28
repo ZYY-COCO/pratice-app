@@ -10,7 +10,7 @@
 defineProps({
   eyebrow: {
     type: String,
-    default: '港澳台考研刷题'
+    default: '港研通'
   },
   title: {
     type: String,

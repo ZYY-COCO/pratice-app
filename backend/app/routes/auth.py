@@ -7,6 +7,7 @@ from app.dependencies import get_current_user_id
 from app.schemas.auth import (
     AuthResponse,
     AuthUser,
+    ChangeEmailRequest,
     LoginRequest,
     MessageResponse,
     ProfileUpdateRequest,
@@ -71,6 +72,8 @@ def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
         **profile,
         "email": db_profile.get("email") or profile.get("email"),
         "nickname": db_profile.get("nickname") or profile.get("nickname"),
+        "avatar_url": db_profile.get("avatar_url") or profile.get("avatar_url"),
+        "gender": db_profile.get("gender") or profile.get("gender"),
         "exam_target": db_profile.get("exam_target") or profile.get("exam_target"),
     }
     for field in MEMBERSHIP_FIELDS:
@@ -128,6 +131,35 @@ def send_reset_code(payload: SendEmailCodeRequest) -> MessageResponse:
         ) from exc
 
     return MessageResponse(detail="Reset code sent")
+
+
+@router.post("/send-change-email-code", response_model=MessageResponse)
+def send_change_email_code(
+    payload: SendEmailCodeRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MessageResponse:
+    supabase_admin = get_supabase_admin()
+    normalized_email = normalize_email(payload.email)
+    profile_response = supabase_admin.table("users").select("email").eq("id", user_id).limit(1).execute()
+    current_email = normalize_email(profile_response.data[0]["email"]) if profile_response.data else ""
+    if normalized_email == current_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New email is the same as current email")
+    if _get_profile_by_email(normalized_email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    try:
+        _send_code(normalized_email, "change_email")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send change email code failed for user_id=%s email=%s: %s", user_id, normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Send change email code failed: {error_summary}",
+        ) from exc
+
+    return MessageResponse(detail="Change email code sent")
 
 
 @router.post("/register", response_model=AuthResponse)
@@ -237,6 +269,12 @@ def update_profile(
 ) -> AuthUser:
     supabase_admin = get_supabase_admin()
     update_data = {}
+    if payload.nickname is not None:
+        update_data["nickname"] = payload.nickname.strip() or None
+    if payload.avatar_url is not None:
+        update_data["avatar_url"] = payload.avatar_url.strip() or None
+    if payload.gender is not None:
+        update_data["gender"] = payload.gender
     if payload.exam_target is not None:
         update_data["exam_target"] = payload.exam_target
 
@@ -263,6 +301,8 @@ def update_profile(
             {
                 "user_metadata": {
                     "nickname": profile.get("nickname"),
+                    "avatar_url": profile.get("avatar_url"),
+                    "gender": profile.get("gender"),
                     "exam_target": profile.get("exam_target"),
                 }
             },
@@ -278,6 +318,61 @@ def update_profile(
         ) from exc
 
     return AuthUser(**profile)
+
+
+@router.post("/change-email", response_model=AuthUser)
+def change_email(
+    payload: ChangeEmailRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> AuthUser:
+    supabase_admin = get_supabase_admin()
+    normalized_email = normalize_email(payload.email)
+    profile_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+    if not profile_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    profile = profile_response.data[0]
+    current_email = normalize_email(profile.get("email") or "")
+    if normalized_email == current_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="New email is the same as current email")
+    if _get_profile_by_email(normalized_email):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Email already registered")
+
+    verify_code_or_raise(
+        supabase=supabase_admin,
+        email=normalized_email,
+        purpose="change_email",
+        code=payload.verification_code,
+    )
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            user_id,
+            {
+                "email": normalized_email,
+                "email_confirm": True,
+                "user_metadata": {
+                    "nickname": profile.get("nickname"),
+                    "avatar_url": profile.get("avatar_url"),
+                    "gender": profile.get("gender"),
+                    "exam_target": profile.get("exam_target"),
+                },
+            },
+        )
+        supabase_admin.table("users").update({"email": normalized_email}).eq("id", user_id).execute()
+        updated_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+        if not updated_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Change email failed for user_id=%s email=%s: %s", user_id, normalized_email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Change email failed: {error_summary}",
+        ) from exc
+
+    return AuthUser(**updated_response.data[0])
 
 
 @router.post("/login", response_model=AuthResponse)
@@ -302,6 +397,8 @@ def login(payload: LoginRequest) -> AuthResponse:
         "id": user.id,
         "email": user.email,
         "nickname": user_metadata.get("nickname"),
+        "avatar_url": user_metadata.get("avatar_url"),
+        "gender": user_metadata.get("gender"),
         "exam_target": user_metadata.get("exam_target"),
         "membership_status": "inactive",
     }

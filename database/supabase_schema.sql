@@ -20,6 +20,8 @@ create table if not exists public.users (
   id uuid primary key references auth.users(id) on delete cascade,
   email text not null unique,
   nickname text,
+  avatar_url text,
+  gender text check (gender is null or gender in ('male', 'female')),
   exam_target text check (exam_target in ('Z001', 'Z002')),
   membership_status text not null default 'inactive'
     check (membership_status in ('inactive', 'active', 'expired', 'cancelled')),

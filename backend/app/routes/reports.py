@@ -1,16 +1,23 @@
 from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, Query
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
-from app.schemas.reports import AbilityReportResponse, AbilityStatItem, LearningSummaryResponse
+from app.schemas.reports import (
+    AbilityReportResponse,
+    AbilityStatItem,
+    LeaderboardItem,
+    LeaderboardResponse,
+    LearningSummaryResponse,
+)
 from app.services.reports import build_ability_item
 
 router = APIRouter(prefix="/report", tags=["能力报告"])
 
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
+PAGE_SIZE = 1000
 
 
 def belongs_to_exam(question: dict | None, exam_code: str | None) -> bool:
@@ -21,6 +28,76 @@ def belongs_to_exam(question: dict | None, exam_code: str | None) -> bool:
     if question_exam_code == exam_code:
         return True
     return question_exam_code == "COMMON" and question.get("subject") in PUBLIC_SUBJECTS
+
+
+def safe_int(value: object) -> int:
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        return 0
+
+
+def get_display_name(profile: dict) -> str:
+    nickname = profile.get("nickname")
+    if isinstance(nickname, str) and nickname.strip():
+        return nickname.strip()
+    email = str(profile.get("email") or "")
+    prefix = email.split("@", maxsplit=1)[0]
+    if prefix:
+        return f"{prefix[:2]}***"
+    return "学习用户"
+
+
+def fetch_user_profiles(supabase) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("users")
+            .select("id, email, nickname, avatar_url")
+            .order("created_at")
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+            .data
+            or []
+        )
+        rows.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
+
+
+def fetch_ability_rows(supabase, exam_code: str | None) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        query = supabase.table("ability_stats").select("user_id, total_count, correct_count")
+        if exam_code:
+            query = query.eq("exam_code", exam_code)
+        chunk = query.range(offset, offset + PAGE_SIZE - 1).execute().data or []
+        rows.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
+
+
+def fetch_weekly_answer_rows(supabase, week_start: datetime) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        chunk = (
+            supabase.table("user_answers")
+            .select("user_id, questions(exam_code, subject)")
+            .gte("created_at", week_start.isoformat())
+            .range(offset, offset + PAGE_SIZE - 1)
+            .execute()
+            .data
+            or []
+        )
+        rows.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
 
 
 @router.get("/ability", response_model=AbilityReportResponse)
@@ -97,3 +174,77 @@ def learning_summary(
         weekly_correct_answers=weekly_correct_answers,
         weekly_accuracy=weekly_accuracy,
     )
+
+
+@router.get("/leaderboard", response_model=LeaderboardResponse)
+def leaderboard(
+    _user_id: str = Depends(get_current_user_id),
+    exam_code: str | None = None,
+    limit: int = Query(default=50, ge=1, le=100),
+) -> LeaderboardResponse:
+    supabase = get_supabase_admin()
+    users = fetch_user_profiles(supabase)
+    ability_rows = fetch_ability_rows(supabase, exam_code)
+
+    stats_by_user: dict[str, dict[str, int]] = {}
+    for row in ability_rows:
+        row_user_id = row.get("user_id")
+        if not row_user_id:
+            continue
+        current = stats_by_user.setdefault(str(row_user_id), {"total": 0, "correct": 0})
+        current["total"] += safe_int(row.get("total_count"))
+        current["correct"] += safe_int(row.get("correct_count"))
+
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    week_start = datetime.combine(
+        (now - timedelta(days=now.weekday())).date(),
+        datetime.min.time(),
+        tzinfo=ZoneInfo("Asia/Shanghai"),
+    ).astimezone(timezone.utc)
+    weekly_rows = fetch_weekly_answer_rows(supabase, week_start)
+    weekly_by_user: dict[str, int] = {}
+    for row in weekly_rows:
+        if exam_code and not belongs_to_exam(row.get("questions"), exam_code):
+            continue
+        row_user_id = row.get("user_id")
+        if not row_user_id:
+            continue
+        row_user_id = str(row_user_id)
+        weekly_by_user[row_user_id] = weekly_by_user.get(row_user_id, 0) + 1
+
+    ranking_rows = []
+    for profile in users:
+        row_user_id = str(profile.get("id") or "")
+        if not row_user_id:
+            continue
+        stats = stats_by_user.get(row_user_id, {"total": 0, "correct": 0})
+        total_answers = stats["total"]
+        correct_answers = stats["correct"]
+        accuracy = round(correct_answers / total_answers * 100, 2) if total_answers else 0
+        nickname = get_display_name(profile)
+        ranking_rows.append(
+            {
+                "user_id": row_user_id,
+                "nickname": nickname,
+                "avatar_url": profile.get("avatar_url"),
+                "total_answers": total_answers,
+                "correct_answers": correct_answers,
+                "accuracy": accuracy,
+                "weekly_answers": weekly_by_user.get(row_user_id, 0),
+            }
+        )
+
+    ranking_rows.sort(
+        key=lambda row: (
+            -row["accuracy"],
+            -row["weekly_answers"],
+            -row["total_answers"],
+            row["nickname"],
+        )
+    )
+
+    items = [
+        LeaderboardItem(rank=index + 1, **row)
+        for index, row in enumerate(ranking_rows[:limit])
+    ]
+    return LeaderboardResponse(items=items, total_users=len(ranking_rows))

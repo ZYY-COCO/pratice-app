@@ -17,39 +17,11 @@
             <view class="member-meta-value">使用中</view>
           </view>
           <view class="member-meta-item">
-            <view class="member-meta-label">今日建议</view>
-            <view class="member-meta-value">10 题</view>
-          </view>
-          <view class="member-meta-item">
             <view class="member-meta-label">AI 功能</view>
             <view class="member-meta-value">已解锁</view>
           </view>
         </view>
       </view>
-
-      <view class="member-action-grid">
-        <view
-          v-for="item in memberFeatureCards"
-          :key="item.title"
-          class="member-action-card"
-          @tap="handleMemberFeature(item)"
-        >
-          <view class="member-action-icon" :class="item.tone">{{ item.icon }}</view>
-          <view class="member-action-title">{{ item.title }}</view>
-          <view class="member-action-desc">{{ item.desc }}</view>
-        </view>
-      </view>
-
-      <SectionCard title="专属训练建议" subtitle="根据近期错题与正确率，优先安排更值得做的一组。">
-        <view class="training-plan-card">
-          <view class="plan-main">
-            <view class="plan-kicker">今日推荐</view>
-            <view class="member-plan-title">逻辑推理 · 判断关系</view>
-            <view class="plan-desc">当前正确率偏低，建议完成一组 10 题标准提升训练，再回看错题解析。</view>
-          </view>
-          <button class="primary-button plan-btn" @tap="startMemberTraining">开始训练</button>
-        </view>
-      </SectionCard>
 
       <SectionCard title="已解锁权益" subtitle="这些能力会随会员状态保持可用。">
         <view class="unlock-list">
@@ -81,38 +53,6 @@
     </template>
 
     <template v-else>
-      <PageHeader
-        eyebrow="Pro 会员预览"
-        title="会员中心"
-        subtitle="先展示权益、定价和开通意向，真实支付暂未开放。"
-      />
-
-      <view class="hero-card">
-        <view class="hero-topline">
-          <view class="hero-tag">内测权益 · 付费意向收集中</view>
-          <view class="hero-status">未开通</view>
-        </view>
-        <view class="hero-title">把刷题结果变成下一步行动</view>
-        <view class="hero-sub">
-          Pro 将围绕 AI 薄弱诊断、错题同类加练、每日训练计划和每周提分报告展开，帮助你更快知道下一组该练什么。
-        </view>
-        <view class="hero-metrics">
-          <view class="hero-metric">
-            <view class="hero-metric-value">9.9</view>
-            <view class="hero-metric-label">月卡</view>
-          </view>
-          <view class="hero-metric">
-            <view class="hero-metric-value">24.9</view>
-            <view class="hero-metric-label">季卡</view>
-          </view>
-          <view class="hero-metric">
-            <view class="hero-metric-value">4项</view>
-            <view class="hero-metric-label">核心权益</view>
-          </view>
-        </view>
-        <button class="hero-btn" @tap="showPaymentClosed">查看内测说明</button>
-      </view>
-
       <SectionCard title="免费版 / Pro 版差异" subtitle="当前不限制功能，只用于验证用户是否认可会员价值。">
         <view class="compare-grid">
           <view class="compare-card free">
@@ -122,18 +62,6 @@
           <view class="compare-card pro">
             <view class="plan-title">Pro 会员</view>
             <view v-for="item in proFeatures" :key="item" class="feature-line strong">{{ item }}</view>
-          </view>
-        </view>
-      </SectionCard>
-
-      <SectionCard title="计划开放的 Pro 能力" subtitle="先做体验设计，后续再逐步接入真实能力。">
-        <view class="feature-list">
-          <view v-for="item in previewFeatures" :key="item.title" class="preview-item">
-            <view class="preview-icon">{{ item.icon }}</view>
-            <view>
-              <view class="preview-title">{{ item.title }}</view>
-              <view class="preview-desc">{{ item.desc }}</view>
-            </view>
           </view>
         </view>
       </SectionCard>
@@ -162,14 +90,6 @@
           </view>
         </view>
       </SectionCard>
-
-      <SectionCard title="内测反馈" subtitle="如果你愿意付费，欢迎把原因和可接受价格反馈给开发者。">
-        <view class="feedback-text">
-          反馈模板：我是否愿意为 Pro 付费？最想要哪个功能？能接受的价格是多少？当前页面哪里让我不清楚？
-        </view>
-        <BetaFeedbackForm source-page="pro" />
-        <button class="ghost-button" @tap="copyFeedbackTemplate">复制反馈模板</button>
-      </SectionCard>
     </template>
   </view>
 </template>
@@ -177,9 +97,7 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import PageHeader from '../../components/PageHeader.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
 
@@ -200,40 +118,10 @@ const proFeatures = [
   '每周提分报告'
 ]
 
-const previewFeatures = [
-  {
-    icon: '诊',
-    title: 'AI 薄弱诊断',
-    desc: '根据正确率、错题标签和近期训练记录，生成更像老师点评的薄弱项总结。'
-  },
-  {
-    icon: '练',
-    title: '错题同类加练',
-    desc: '围绕错题的 module / submodule 自动推荐同类题，减少“看懂解析但下次还错”。'
-  },
-  {
-    icon: '日',
-    title: '每日训练计划',
-    desc: '每天给出 10-20 题的小任务，优先覆盖最低正确率知识点。'
-  },
-  {
-    icon: '周',
-    title: '每周提分报告',
-    desc: '按周总结刷题量、正确率变化、薄弱项变化和下周训练重点。'
-  }
-]
-
 const pricePlans = ref([
   { code: 'pro_monthly', name: '月卡', price: '9.9元/月', desc: '适合短期试用 Pro 功能', note: '先体验学习报告和推荐训练', hot: false },
   { code: 'pro_quarterly', name: '季卡', price: '24.9元/季', desc: '适合一轮系统复习', note: '覆盖阶段复习和持续错题复盘', hot: true }
 ])
-
-const memberFeatureCards = [
-  { icon: 'AI', title: 'AI 生题', desc: '按薄弱点生成专项题', tone: 'green', action: 'ai' },
-  { icon: '析', title: '完整报告', desc: '查看更细能力分析', tone: 'blue', action: 'report' },
-  { icon: '练', title: '专属训练', desc: '自动匹配训练内容', tone: 'purple', action: 'training' },
-  { icon: '∞', title: '长期保存', desc: '收藏与记录更安心', tone: 'orange', action: 'storage' }
-]
 
 const unlockedBenefits = [
   '收藏、错题和练习记录长期保存',
@@ -256,10 +144,6 @@ onShow(() => {
   loadMembershipPlans()
   refreshMembershipStatus()
 })
-
-function showPaymentClosed() {
-  uni.showToast({ title: '真实支付暂未开放，可先做内测登记', icon: 'none' })
-}
 
 async function loadMembershipPlans() {
   try {
@@ -316,41 +200,6 @@ async function handleCreateOrder(plan) {
   } finally {
     creatingOrderCode.value = ''
   }
-}
-
-function handleMemberFeature(item) {
-  if (!item) return
-  const messageMap = {
-    ai: 'AI 生题入口将在下一步接入',
-    report: '完整报告会复用能力报告并增加 Pro 指标',
-    training: '专属训练已具备推荐训练入口雏形',
-    storage: '长期保存能力会随会员状态开放'
-  }
-  showComingSoon(messageMap[item.action] || '功能准备中')
-}
-
-function startMemberTraining() {
-  uni.setStorageSync('recommendedTrainingConfig', {
-    trainingMode: 'member',
-    subject: '逻辑推理',
-    module: '判断',
-    submodule: '判断关系',
-    difficulty: '标准提升',
-    questionCount: 10
-  })
-  uni.navigateTo({
-    url: `/pages/practice/index?subject=${encodeURIComponent('逻辑推理')}&module=${encodeURIComponent('判断')}&submodule=${encodeURIComponent('判断关系')}&count=10&trainingMode=member`
-  })
-}
-
-function copyFeedbackTemplate() {
-  const text = 'Pro反馈：我是否愿意为 Pro 付费？最想要哪个功能？能接受的价格是多少？当前页面哪里让我不清楚？'
-  uni.setClipboardData({
-    data: text,
-    success() {
-      uni.showToast({ title: '反馈模板已复制', icon: 'none' })
-    }
-  })
 }
 
 function getMembershipStatus(user) {
@@ -452,7 +301,7 @@ function getMembershipExpiresAt(user) {
 .member-meta-grid {
   margin-top: 28rpx;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14rpx;
 }
 
@@ -478,111 +327,8 @@ function getMembershipExpiresAt(user) {
   font-weight: 950;
 }
 
-.member-action-grid {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
-}
-
-.member-action-card {
-  padding: 24rpx;
-  border-radius: 26rpx;
-  border: 2rpx solid #e8eef7;
-  background: #ffffff;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.06);
-}
-
-.member-action-icon {
-  width: 58rpx;
-  height: 58rpx;
-  border-radius: 18rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 25rpx;
-  line-height: 1;
-  font-weight: 950;
-}
-
-.member-action-icon.green {
-  color: #10b981;
-  background: #edfdf6;
-}
-
-.member-action-icon.blue {
-  color: #2563eb;
-  background: #edf3ff;
-}
-
-.member-action-icon.purple {
-  color: #7c3aed;
-  background: #f2edff;
-}
-
-.member-action-icon.orange {
-  color: #f59e0b;
-  background: #fff7e8;
-}
-
-.member-action-title {
-  margin-top: 18rpx;
-  color: #172033;
-  font-size: 27rpx;
-  line-height: 1.35;
-  font-weight: 950;
-}
-
-.member-action-desc {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 22rpx;
-  line-height: 1.5;
-  font-weight: 650;
-}
-
-.training-plan-card {
-  display: flex;
-  align-items: flex-end;
-  gap: 18rpx;
-}
-
-.plan-main {
-  flex: 1;
-  min-width: 0;
-}
-
-.plan-kicker {
-  color: #10b981;
-  font-size: 22rpx;
-  line-height: 1.3;
-  font-weight: 900;
-}
-
-.member-plan-title {
-  margin-top: 8rpx;
-  color: #172033;
-  font-size: 31rpx;
-  line-height: 1.35;
-  font-weight: 950;
-}
-
-.plan-desc {
-  margin-top: 10rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.65;
-  font-weight: 650;
-}
-
-.plan-btn {
-  width: 176rpx;
-  flex: 0 0 176rpx;
-  margin: 0;
-}
-
 .unlock-list,
 .service-list,
-.feature-list,
 .price-list {
   display: flex;
   flex-direction: column;
@@ -650,105 +396,6 @@ function getMembershipExpiresAt(user) {
   font-weight: 800;
 }
 
-.hero-card {
-  position: relative;
-  overflow: hidden;
-  padding: 34rpx;
-  border-radius: 36rpx;
-  background:
-    radial-gradient(circle at 92% 12%, rgba(16, 185, 129, 0.28), transparent 28%),
-    linear-gradient(135deg, #111827 0%, #2449b7 62%, #5b8cff 100%);
-  color: #ffffff;
-  box-shadow: 0 18rpx 38rpx rgba(37, 99, 235, 0.2);
-}
-
-.hero-card::after {
-  content: "";
-  position: absolute;
-  right: -86rpx;
-  bottom: -96rpx;
-  width: 260rpx;
-  height: 260rpx;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.09);
-}
-
-.hero-topline {
-  position: relative;
-  z-index: 1;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.hero-status {
-  flex: 0 0 auto;
-  padding: 9rpx 18rpx;
-  border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 21rpx;
-  line-height: 1.2;
-  font-weight: 900;
-}
-
-.hero-title {
-  position: relative;
-  z-index: 1;
-  margin-top: 22rpx;
-  font-size: 44rpx;
-  font-weight: 900;
-  line-height: 1.25;
-}
-
-.hero-sub {
-  position: relative;
-  z-index: 1;
-  margin-top: 16rpx;
-  color: rgba(255, 255, 255, 0.9);
-  font-size: 25rpx;
-  line-height: 1.8;
-}
-
-.hero-metrics {
-  position: relative;
-  z-index: 1;
-  margin-top: 24rpx;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12rpx;
-}
-
-.hero-metric {
-  padding: 18rpx 10rpx;
-  border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.13);
-  text-align: center;
-}
-
-.hero-metric-value {
-  color: #ffffff;
-  font-size: 32rpx;
-  line-height: 1.1;
-  font-weight: 950;
-}
-
-.hero-metric-label {
-  margin-top: 8rpx;
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 20rpx;
-  line-height: 1.2;
-  font-weight: 800;
-}
-
-.hero-btn,
-.pay-btn {
-  position: relative;
-  z-index: 1;
-  margin-top: 24rpx;
-}
-
 .compare-grid {
   display: grid;
   grid-template-columns: repeat(2, 1fr);
@@ -756,8 +403,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .compare-card,
-.price-card,
-.preview-item {
+.price-card {
   padding: 22rpx;
   border-radius: 26rpx;
   border: 2rpx solid #e6ebf5;
@@ -770,8 +416,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .plan-title,
-.price-name,
-.preview-title {
+.price-name {
   color: #172033;
   font-size: 27rpx;
   font-weight: 900;
@@ -789,27 +434,7 @@ function getMembershipExpiresAt(user) {
   font-weight: 800;
 }
 
-.preview-item {
-  display: flex;
-  gap: 18rpx;
-  align-items: flex-start;
-}
-
-.preview-icon {
-  width: 58rpx;
-  height: 58rpx;
-  border-radius: 20rpx;
-  background: #edf3ff;
-  color: #2563eb;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-weight: 900;
-}
-
-.preview-desc,
-.price-desc,
-.feedback-text {
+.price-desc {
   margin-top: 8rpx;
   color: #667085;
   font-size: 23rpx;
@@ -896,19 +521,8 @@ function getMembershipExpiresAt(user) {
 
 @media (max-width: 380px) {
   .compare-grid,
-  .member-action-grid,
   .member-meta-grid {
     grid-template-columns: 1fr;
-  }
-
-  .training-plan-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .plan-btn {
-    width: 100%;
-    flex-basis: auto;
   }
 
   .price-card {

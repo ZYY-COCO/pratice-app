@@ -28,3 +28,19 @@ class LearningSummaryResponse(BaseModel):
     weekly_answers: int = 0
     weekly_correct_answers: int = 0
     weekly_accuracy: float = 0
+
+
+class LeaderboardItem(BaseModel):
+    rank: int
+    user_id: str
+    nickname: str
+    avatar_url: str | None = None
+    total_answers: int
+    correct_answers: int
+    accuracy: float
+    weekly_answers: int = 0
+
+
+class LeaderboardResponse(BaseModel):
+    items: list[LeaderboardItem]
+    total_users: int

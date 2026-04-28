@@ -4,7 +4,7 @@
       <view class="home-dashboard">
         <view class="home-header">
           <view class="brand-line">
-            <text class="brand-title">港澳台考研刷题</text>
+            <text class="brand-title">港研通</text>
             <text class="brand-badge">{{ examCode }}</text>
           </view>
           <view class="profile-entry" @tap="activeTab = 'profile'">
@@ -12,7 +12,7 @@
           </view>
         </view>
 
-        <view class="welcome-card">
+        <view class="welcome-card" @tap="goLeaderboard">
           <view class="welcome-main">
             <view class="wave-icon">👋</view>
             <view class="welcome-copy">
@@ -330,9 +330,9 @@
 
     <template v-else>
       <view class="profile-dashboard">
-        <view class="profile-top-title">港澳台考研刷题</view>
+        <view class="profile-top-title">港研通</view>
 
-        <view class="account-card" @tap="isAuthed ? null : goLogin()">
+        <view class="account-card" @tap="handleAccountEntry">
           <view class="account-avatar">{{ profileAvatarText }}</view>
           <view class="account-main">
             <view class="account-name-row">
@@ -541,6 +541,25 @@
       </view>
     </view>
 
+    <view v-if="showFeedbackModal" class="feedback-modal-mask" @tap="handleCloseFeedbackModal">
+      <view class="feedback-modal-sheet" @tap.stop>
+        <view class="feedback-modal-handle"></view>
+        <button class="feedback-modal-close" @tap="handleCloseFeedbackModal">×</button>
+        <view class="feedback-modal-head">
+          <view class="feedback-modal-title">帮助与反馈</view>
+          <view class="feedback-modal-subtitle">提交题目质量、刷题体验或 Pro 功能/价格建议</view>
+        </view>
+        <scroll-view scroll-y class="feedback-modal-scroll">
+          <view class="feedback-template-card">
+            <view class="feedback-template-title">内测反馈</view>
+            <view class="feedback-template-copy">欢迎告诉我们你遇到的问题、最想要的功能，以及是否认可 Pro 定价。</view>
+            <button class="feedback-copy-btn" @tap="copyFeedbackTemplate">复制反馈模板</button>
+          </view>
+          <BetaFeedbackForm source-page="profile" />
+        </scroll-view>
+      </view>
+    </view>
+
     <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
   </view>
 </template>
@@ -552,6 +571,7 @@ import BottomTabBar from '../../components/BottomTabBar.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
+import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
@@ -603,6 +623,7 @@ const retestLoading = ref(false)
 const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
 const showProModal = ref(false)
+const showFeedbackModal = ref(false)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
@@ -673,7 +694,7 @@ const memberCardSubtitle = computed(() => {
   return '未来将开放无限存储、AI 生题解析与更完整的学习报告。'
 })
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
-const profileAvatarText = computed(() => (profile.value.userName || examCode.value || '游').slice(0, 1))
+const profileAvatarText = computed(() => authUser.value?.avatar_url || (profile.value.userName || examCode.value || '游').slice(0, 1))
 
 const dashboard = computed(() => {
   const base = getHomeDashboard(examCode.value)
@@ -730,15 +751,41 @@ const wrongSummaryCount = computed(() => {
   return String(Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0))
 })
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
-const practiceTools = computed(() => [
-  { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '☆', tone: 'blue', action: 'favorites' },
-  { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
-  { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
-  { label: '学习报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' },
-  { label: 'AI 专项出题', desc: '会员开放：按知识点生成专项练习', icon: 'AI', tone: 'locked', action: 'ai-generator', locked: true }
-])
+const practiceTools = computed(() => {
+  const proLocked = !isProMember.value
+  return [
+    { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '☆', tone: 'blue', action: 'favorites' },
+    { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
+    {
+      label: '错题本',
+      desc: proLocked ? 'Pro 开放：查看与重刷你的错题' : `查看与重刷 ${wrongSummaryCount.value} 道错题`,
+      icon: '▣',
+      tone: proLocked ? 'locked' : 'blue',
+      action: 'mistakes',
+      proOnly: true,
+      locked: proLocked
+    },
+    {
+      label: '学习报告',
+      desc: proLocked ? 'Pro 开放：查看能力分析与提升建议' : (reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告'),
+      icon: '▧',
+      tone: proLocked ? 'locked' : 'purple',
+      action: 'report',
+      proOnly: true,
+      locked: proLocked
+    },
+    {
+      label: 'AI 专项出题',
+      desc: proLocked ? 'Pro 开放：按知识点生成专项练习' : '按知识点生成专项练习',
+      icon: 'AI',
+      tone: proLocked ? 'locked' : 'green',
+      action: 'ai-generator',
+      proOnly: true,
+      locked: proLocked
+    }
+  ]
+})
 const serviceTools = computed(() => [
-  { label: '会员中心 / Pro 预览', desc: '查看 AI 诊断、同类加练与训练计划', icon: '◇', tone: 'dark', action: 'pro' },
   { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
   { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
 ])
@@ -1039,33 +1086,35 @@ function handleQuestionCountChange(event) {
 }
 
 function handleGenerateTraining() {
-  const baseConfig = {
-    subject: smartRecommendation.subject,
-    module: smartRecommendation.module,
-    submodule: smartRecommendation.submodule
-  }
-  const config = smartMode.value
-    ? {
-        ...baseConfig,
-        trainingMode: 'smart',
-        difficulty: smartRecommendation.difficulty,
-        questionCount: smartRecommendation.questionCount,
-        basis: smartRecommendation.basis
-      }
-    : {
-        ...baseConfig,
-        trainingMode: 'manual',
-        difficulty: manualDifficulty.value,
-        questionCount: manualQuestionCount.value
-      }
-
-  uni.setStorageSync('recommendedTrainingConfig', config)
-  closeRecommendedTrainingSheet()
-  goTaskPractice(config)
+  uni.showModal({
+    title: '功能暂未开放',
+    content: '推荐训练将接入 DeepSeek，根据你的错题、正确率和薄弱模块生成新题。当前暂不进入刷题页。',
+    confirmText: '知道了',
+    showCancel: false,
+    success() {
+      closeRecommendedTrainingSheet()
+    }
+  })
 }
 
 function goLogin() {
   uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/home/index')}` })
+}
+
+function handleAccountEntry() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  uni.navigateTo({ url: '/pages/profile/index' })
+}
+
+function goLeaderboard() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  uni.navigateTo({ url: '/pages/leaderboard/index' })
 }
 
 function goPro() {
@@ -1098,10 +1147,20 @@ function handleViewProPlans() {
 }
 
 function logout() {
-  clearAuthSession()
-  authUser.value = null
-  authed.value = false
-  uni.showToast({ title: '已退出登录', icon: 'none' })
+  uni.showModal({
+    title: '确认退出登录？',
+    content: '退出后需要重新登录才能同步学习进度和查看个人数据。',
+    confirmText: '退出登录',
+    cancelText: '取消',
+    confirmColor: '#ef4444',
+    success(result) {
+      if (!result.confirm) return
+      clearAuthSession()
+      authUser.value = null
+      authed.value = false
+      uni.showToast({ title: '已退出登录', icon: 'none' })
+    }
+  })
 }
 
 function openMistakes() {
@@ -1142,6 +1201,10 @@ function handleBenefit(item) {
 
 function handleMenu(item) {
   if (!item) return
+  if (item.proOnly && !isProMember.value) {
+    handleProEntry()
+    return
+  }
   if (item.action === 'mistakes') {
     openMistakes()
     return
@@ -1163,15 +1226,11 @@ function handleMenu(item) {
     return
   }
   if (item.action === 'ai-generator') {
-    if (isProMember.value) {
-      goPro()
-      return
-    }
-    uni.showToast({ title: 'AI 专项出题为 Pro 预览功能，后续开通后解锁', icon: 'none' })
+    openRecommendedTrainingSheet()
     return
   }
   if (item.action === 'feedback') {
-    copyFeedbackTemplate()
+    handleOpenFeedbackModal()
     return
   }
   if (item.action === 'about') {
@@ -1199,6 +1258,14 @@ function copyFeedbackTemplate() {
       uni.showToast({ title: '反馈模板已复制', icon: 'none' })
     }
   })
+}
+
+function handleOpenFeedbackModal() {
+  showFeedbackModal.value = true
+}
+
+function handleCloseFeedbackModal() {
+  showFeedbackModal.value = false
 }
 
 async function refreshLearningData() {
@@ -1752,6 +1819,12 @@ function getMembershipExpiresAt(user) {
   padding: 32rpx 26rpx 28rpx;
   overflow: hidden;
   position: relative;
+  cursor: pointer;
+  transition: transform 0.18s ease, box-shadow 0.18s ease;
+}
+
+.welcome-card:active {
+  transform: scale(0.992);
 }
 
 .welcome-main {
@@ -2839,6 +2912,115 @@ function getMembershipExpiresAt(user) {
   background: linear-gradient(135deg, #3478f6, #4f86ff);
   color: #ffffff;
   box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
+}
+
+.feedback-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 84;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.feedback-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 88vh;
+  padding: 16rpx 36rpx calc(env(safe-area-inset-bottom) + 30rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
+  box-sizing: border-box;
+}
+
+.feedback-modal-handle {
+  width: 74rpx;
+  height: 8rpx;
+  margin: 0 auto 18rpx;
+  border-radius: 999rpx;
+  background: #d8deea;
+}
+
+.feedback-modal-close {
+  position: absolute;
+  top: 20rpx;
+  right: 28rpx;
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f5f7fb;
+  color: #8a95a8;
+  font-size: 36rpx;
+  line-height: 56rpx;
+  font-weight: 800;
+}
+
+.feedback-modal-head {
+  padding: 0 58rpx 18rpx;
+  text-align: center;
+}
+
+.feedback-modal-title {
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.feedback-modal-subtitle {
+  margin-top: 10rpx;
+  color: #8a95a8;
+  font-size: 23rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.feedback-modal-scroll {
+  max-height: 70vh;
+  padding-bottom: 4rpx;
+  box-sizing: border-box;
+}
+
+.feedback-template-card {
+  margin-bottom: 22rpx;
+  padding: 22rpx;
+  border-radius: 24rpx;
+  background: #f6f8fc;
+  border: 2rpx solid #e6edf8;
+}
+
+.feedback-template-title {
+  color: #172033;
+  font-size: 27rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.feedback-template-copy {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.55;
+  font-weight: 650;
+}
+
+.feedback-copy-btn {
+  min-height: 70rpx;
+  margin: 18rpx 0 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: #3478f6;
+  font-size: 25rpx;
+  line-height: 70rpx;
+  font-weight: 900;
 }
 
 .mistake-page-head {

@@ -25,7 +25,15 @@ class ResetPasswordRequest(BaseModel):
 
 
 class ProfileUpdateRequest(BaseModel):
+    nickname: str | None = Field(default=None, max_length=40)
+    avatar_url: str | None = Field(default=None, max_length=120)
+    gender: str | None = Field(default=None, pattern="^(male|female)$")
     exam_target: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+
+
+class ChangeEmailRequest(BaseModel):
+    email: EmailStr
+    verification_code: str = Field(min_length=4, max_length=8)
 
 
 class MessageResponse(BaseModel):
@@ -36,6 +44,8 @@ class AuthUser(BaseModel):
     id: str
     email: str
     nickname: str | None = None
+    avatar_url: str | None = None
+    gender: str | None = None
     exam_target: str | None = None
     membership_status: str | None = "inactive"
     membership_plan: str | None = None
