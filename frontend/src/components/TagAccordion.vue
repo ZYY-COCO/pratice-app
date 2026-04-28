@@ -2,6 +2,14 @@
   <view class="accordion-group">
     <view v-for="section in sections" :key="section.module" class="accordion" :class="{ open: openMap[section.module] }">
       <view class="accordion-header" @tap="$emit('toggle-open', section.module)">
+        <view
+          class="section-check"
+          :class="{ checked: isSectionChecked(section), partial: isSectionPartial(section) }"
+          @tap.stop="$emit('toggle-section', section)"
+        >
+          <text v-if="isSectionChecked(section)">✓</text>
+          <text v-else-if="isSectionPartial(section)">•</text>
+        </view>
         <view class="header-copy">
           <view class="title">{{ section.module }}</view>
           <view class="sub">{{ section.description }}</view>
@@ -29,7 +37,7 @@
 </template>
 
 <script setup>
-defineProps({
+const props = defineProps({
   sections: {
     type: Array,
     default: () => []
@@ -48,7 +56,23 @@ defineProps({
   }
 })
 
-defineEmits(['toggle-open', 'toggle-tag'])
+defineEmits(['toggle-open', 'toggle-section', 'toggle-tag'])
+
+function getSectionSelectedCount(section) {
+  const submodules = section?.submodules || []
+  return submodules.filter((item) => props.selectedTags.includes(item)).length
+}
+
+function isSectionChecked(section) {
+  const submodules = section?.submodules || []
+  return submodules.length > 0 && getSectionSelectedCount(section) === submodules.length
+}
+
+function isSectionPartial(section) {
+  const count = getSectionSelectedCount(section)
+  const total = section?.submodules?.length || 0
+  return count > 0 && count < total
+}
 </script>
 
 <style scoped>
@@ -75,8 +99,36 @@ defineEmits(['toggle-open', 'toggle-tag'])
   padding: 30rpx;
 }
 
+.section-check {
+  width: 50rpx;
+  height: 50rpx;
+  border-radius: 17rpx;
+  border: 2rpx solid #c7d2fe;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.section-check.checked {
+  border-color: #2563eb;
+  background: #2563eb;
+  box-shadow: 0 8rpx 16rpx rgba(37, 99, 235, 0.18);
+}
+
+.section-check.partial {
+  border-color: #5b8cff;
+  background: #edf3ff;
+  color: #2563eb;
+}
+
 .header-copy {
   flex: 1;
+  min-width: 0;
 }
 
 .title {

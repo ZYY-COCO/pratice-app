@@ -9,12 +9,6 @@
     </view>
 
     <template v-if="mode === 'tags'">
-      <view class="setup-hero">
-        <view class="setup-eyebrow">刷题模式</view>
-        <view class="setup-title">选择本轮练习方式</view>
-        <view class="setup-sub">专项刷题按知识点训练；综合刷题会从当前科目全部知识点随机组卷。</view>
-      </view>
-
       <view class="mode-card">
         <view
           v-for="item in practiceModeOptions"
@@ -63,6 +57,7 @@
         :open-map="openMap"
         :get-count="getCount"
         @toggle-open="toggleOpen"
+        @toggle-section="toggleSection"
         @toggle-tag="toggleTag"
       />
 
@@ -355,7 +350,7 @@ onBackPress(() => {
 
 function buildOpenMap(sections) {
   return sections.reduce((result, item, index) => {
-    result[item.module] = index === 0
+    result[item.module] = false
     return result
   }, {})
 }
@@ -543,6 +538,24 @@ function toggleTag(tag) {
     return
   }
   selectedTags.value = [...selectedTags.value, tag]
+}
+
+function toggleSection(section) {
+  const submodules = section?.submodules || []
+  if (!submodules.length) {
+    return
+  }
+
+  const selectedSet = new Set(selectedTags.value)
+  const allSelected = submodules.every((item) => selectedSet.has(item))
+
+  if (allSelected) {
+    selectedTags.value = selectedTags.value.filter((item) => !submodules.includes(item))
+    return
+  }
+
+  submodules.forEach((item) => selectedSet.add(item))
+  selectedTags.value = Array.from(selectedSet)
 }
 
 function getCount(tag) {
