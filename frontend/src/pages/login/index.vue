@@ -531,107 +531,119 @@ function goBackHome() {
 .login-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(var(--status-bar-height) + 28rpx) 30rpx calc(env(safe-area-inset-bottom) + 48rpx);
+  padding: calc(var(--status-bar-height) + 22rpx) 30rpx calc(env(safe-area-inset-bottom) + 44rpx);
   background:
     radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
     linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
 }
 
+.login-page view,
+.login-page input,
+.login-page button {
+  box-sizing: border-box;
+}
+
+.login-page button::after {
+  border: 0;
+}
+
 .auth-hero {
-  padding: 40rpx 34rpx;
-  border-radius: 40rpx;
+  padding: 34rpx 32rpx 32rpx;
+  border-radius: 34rpx;
   background:
-    linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.16), transparent 44%);
+    radial-gradient(circle at 88% 18%, rgba(37, 99, 235, 0.13), transparent 32%),
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 255, 0.98));
   border: 2rpx solid rgba(219, 228, 245, 0.92);
-  box-shadow: 0 22rpx 52rpx rgba(20, 31, 66, 0.08);
+  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.07);
 }
 
 .hero-badge {
   display: inline-flex;
   align-items: center;
-  padding: 10rpx 18rpx;
+  padding: 9rpx 16rpx;
   border-radius: 999rpx;
   background: #edf3ff;
   color: #2563eb;
-  font-size: 23rpx;
+  font-size: 22rpx;
   font-weight: 900;
 }
 
 .hero-title {
-  margin-top: 20rpx;
+  margin-top: 18rpx;
   color: #101828;
-  font-size: 46rpx;
+  font-size: 42rpx;
   line-height: 1.22;
   font-weight: 900;
 }
 
 .hero-sub {
-  margin-top: 14rpx;
+  margin-top: 12rpx;
   color: #667085;
-  font-size: 26rpx;
-  line-height: 1.65;
+  font-size: 25rpx;
+  line-height: 1.55;
 }
 
 .segment-wrap {
-  margin-top: 24rpx;
+  margin-top: 22rpx;
 }
 
 .segment {
   display: flex;
-  gap: 12rpx;
-  padding: 12rpx;
-  border-radius: 34rpx;
-  background: rgba(255, 255, 255, 0.92);
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+  gap: 8rpx;
+  padding: 8rpx;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2rpx solid #e8eef8;
+  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.05);
 }
 
 .segment-btn {
   flex: 1;
-  min-height: 88rpx;
+  min-height: 72rpx;
   border: 0;
-  border-radius: 28rpx;
+  border-radius: 22rpx;
   background: transparent;
   color: #667085;
-  font-size: 25rpx;
+  font-size: 24rpx;
   font-weight: 900;
+  line-height: 72rpx;
+  padding: 0;
 }
 
 .segment-btn.active {
-  background: #2563eb;
+  background: linear-gradient(135deg, #3b82f6, #2563eb);
   color: #ffffff;
-  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.2);
 }
 
 .login-card {
-  margin-top: 26rpx;
-  padding: 34rpx 30rpx;
-  border-radius: 40rpx;
+  margin-top: 22rpx;
+  padding: 30rpx 28rpx;
+  border-radius: 34rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.07);
+  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.07);
 }
 
 .field + .field {
-  margin-top: 26rpx;
+  margin-top: 22rpx;
 }
 
 .label {
   color: #344054;
-  font-size: 25rpx;
+  font-size: 24rpx;
   font-weight: 900;
 }
 
 .input,
 .picker-box {
-  margin-top: 14rpx;
-  min-height: 104rpx;
-  padding: 0 28rpx;
-  border-radius: 30rpx;
+  margin-top: 12rpx;
+  min-height: 92rpx;
+  padding: 0 26rpx;
+  border-radius: 24rpx;
   border: 2rpx solid #dbe3f2;
   background: #f8fbff;
-  font-size: 30rpx;
+  font-size: 28rpx;
   color: #172033;
   display: flex;
   align-items: center;
@@ -640,7 +652,7 @@ function goBackHome() {
 .code-row {
   display: flex;
   gap: 16rpx;
-  align-items: flex-end;
+  align-items: stretch;
 }
 
 .code-input {
@@ -648,14 +660,16 @@ function goBackHome() {
 }
 
 .code-btn {
-  min-width: 208rpx;
-  min-height: 104rpx;
+  min-width: 190rpx;
+  min-height: 92rpx;
   border: 0;
-  border-radius: 30rpx;
+  border-radius: 24rpx;
   background: #eaf2ff;
   color: #1677ff;
   font-size: 24rpx;
   font-weight: 900;
+  line-height: 92rpx;
+  padding: 0 18rpx;
 }
 
 .code-btn[disabled] {
@@ -663,22 +677,24 @@ function goBackHome() {
 }
 
 .submit-btn {
-  margin-top: 36rpx;
-  min-height: 106rpx;
-  border-radius: 32rpx;
+  margin-top: 32rpx;
+  min-height: 96rpx;
+  border-radius: 28rpx;
   font-size: 30rpx;
+  line-height: 96rpx;
 }
 
 .home-btn {
-  margin-top: 18rpx;
-  min-height: 98rpx;
-  border-radius: 32rpx;
+  margin-top: 16rpx;
+  min-height: 88rpx;
+  border-radius: 26rpx;
+  line-height: 88rpx;
 }
 
 .tip-card {
-  margin-top: 24rpx;
-  padding: 28rpx;
-  border-radius: 34rpx;
+  margin-top: 22rpx;
+  padding: 26rpx;
+  border-radius: 28rpx;
   background: #fff8eb;
   border: 2rpx solid #fde7b0;
 }
