@@ -58,7 +58,7 @@
         <button class="icon-back-btn" @tap="handleMistakeBack">‹</button>
         <view class="mistake-head-copy">
           <view class="head-eyebrow">错题本</view>
-          <view class="head-title">{{ retestMode ? '错题重测' : '自动归档的高频错题' }}</view>
+          <view class="head-title">{{ retestMode ? '错题重测' : '错题复盘' }}</view>
           <view class="head-subtitle">{{ retestMode ? '随机排序复测全部错题，可随时退出。' : mistakeSubtitle }}</view>
         </view>
         <button
@@ -137,7 +137,7 @@
       </template>
 
       <template v-else>
-        <SectionCard title="最近需要重刷" subtitle="按薄弱标签自动聚合">
+        <SectionCard title="最近需要重刷">
           <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
           <view v-else class="filter-card">
             <scroll-view scroll-x class="filter-scroll">
@@ -177,7 +177,10 @@
           <view v-if="wrongLoading" class="state-box">正在读取真实错题记录...</view>
           <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
           <view v-else-if="isAuthed && filteredMistakes.length === 0" class="state-box">当前筛选条件下还没有错题。</view>
-          <MistakeList :items="fullMistakes" @select="openWrongDetail" />
+          <MistakeList v-else :items="visibleMistakes" @select="openWrongDetail" />
+          <view v-if="fullMistakes.length" class="list-load-state" @tap="loadMoreMistakes">
+            {{ hasMoreMistakes ? '继续下滑加载更多错题' : '已加载全部错题' }}
+          </view>
         </SectionCard>
       </template>
 
@@ -208,7 +211,7 @@
                 </button>
               </view>
               <view v-if="!reviewResultText" class="review-hint">
-                最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}。请选择一个答案后提交查看解析。
+                最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}。提交后会显示正确答案和解析。
               </view>
               <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
               <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
@@ -326,10 +329,11 @@
 
         <view class="member-card">
           <view class="member-copy">
-            <view class="member-title">{{ isAuthed ? '学习数据已云端同步' : '登录享受完整功能' }}</view>
-            <view class="member-subtitle">{{ isAuthed ? '错题本、能力报告和练习记录会持续更新' : '高效刷题，科学备考上岸' }}</view>
-            <button class="member-login-btn" @tap="isAuthed ? openReport() : goLogin()">
-              {{ isAuthed ? '查看报告' : '登录 / 注册' }}
+            <view class="member-kicker">Pro 功能预览</view>
+            <view class="member-title">Pro 会员中心</view>
+            <view class="member-subtitle">未来将开放无限存储、AI 生题解析与更完整的学习报告。</view>
+            <button class="member-login-btn" @tap="isAuthed ? goPro() : goLogin()">
+              {{ isAuthed ? '查看权益' : '登录 / 注册' }}
             </button>
           </view>
           <view class="shield-art">✓</view>
@@ -344,10 +348,19 @@
         <view class="profile-section-card">
           <view class="profile-section-title">练习工具</view>
           <view class="menu-list">
-            <view v-for="item in practiceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
+            <view
+              v-for="item in practiceTools"
+              :key="item.label"
+              class="menu-row"
+              :class="{ locked: item.locked }"
+              @tap="handleMenu(item)"
+            >
               <view class="menu-icon" :class="item.tone">{{ item.icon }}</view>
               <view class="menu-copy">
-                <view class="menu-title">{{ item.label }}</view>
+                <view class="menu-title-row">
+                  <text class="menu-title">{{ item.label }}</text>
+                  <text v-if="item.locked" class="pro-lock-badge">Pro</text>
+                </view>
                 <view class="menu-subtitle">{{ item.desc }}</view>
               </view>
               <view class="menu-arrow">›</view>
@@ -379,7 +392,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
@@ -408,6 +421,7 @@ const authed = ref(isLoggedIn())
 const wrongItems = ref([])
 const wrongLoading = ref(false)
 const wrongError = ref('')
+const visibleMistakeCount = ref(15)
 const abilityReport = ref(null)
 const learningSummary = ref(null)
 const reportLoading = ref(false)
@@ -444,11 +458,10 @@ const proPreviewItems = [
   '每周提分报告：总结正确率变化、刷题量和下周重点'
 ]
 const profileBenefits = [
-  { label: '云端同步', icon: '☁', action: 'sync' },
-  { label: '收藏夹', icon: '☆', action: 'favorites' },
+  { label: '无限存储', icon: '∞', action: 'pro' },
+  { label: '错题本', icon: '▣', action: 'mistakes' },
   { label: '学习报告', icon: '▥', action: 'report' },
-  { label: 'AI 解析', icon: '⌘', action: 'soon' },
-  { label: '专属推荐', icon: '👍', action: 'soon' }
+  { label: 'AI生题及解析', icon: 'AI', action: 'soon' }
 ]
 
 const isAuthed = computed(() => authed.value)
@@ -511,10 +524,11 @@ const wrongSummaryCount = computed(() => {
 })
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const practiceTools = computed(() => [
-  { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
   { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '☆', tone: 'blue', action: 'favorites' },
   { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
-  { label: '能力报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' }
+  { label: '错题本', desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`, icon: '▣', tone: 'blue', action: 'mistakes' },
+  { label: '学习报告', desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告', icon: '▧', tone: 'purple', action: 'report' },
+  { label: 'AI 专项出题', desc: '会员开放：按知识点生成专项练习', icon: 'AI', tone: 'locked', action: 'ai-generator', locked: true }
 ])
 const serviceTools = computed(() => [
   { label: '会员中心 / Pro 预览', desc: '查看 AI 诊断、同类加练与训练计划', icon: '◇', tone: 'dark', action: 'pro' },
@@ -530,6 +544,8 @@ const filteredMistakes = computed(() =>
   })
 )
 const fullMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : getFullMistakes()))
+const visibleMistakes = computed(() => fullMistakes.value.slice(0, visibleMistakeCount.value))
+const hasMoreMistakes = computed(() => visibleMistakeCount.value < fullMistakes.value.length)
 const retestTotal = computed(() => retestItems.value.length)
 const retestCorrectCount = computed(() => retestResults.value.filter((item) => item.is_correct).length)
 const retestProgressLabel = computed(() => {
@@ -618,13 +634,29 @@ watch(activeTab, (value) => {
     if (retestMode.value) {
       exitWrongRetest()
     }
+  } else {
+    resetMistakeVisibleCount()
   }
+})
+
+watch(wrongFilters, () => {
+  resetMistakeVisibleCount()
+}, { deep: true })
+
+watch(wrongItems, () => {
+  resetMistakeVisibleCount()
 })
 
 onShow(() => {
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
   refreshLearningData()
+})
+
+onReachBottom(() => {
+  if (activeTab.value === 'mistakes' && !retestMode.value) {
+    loadMoreMistakes()
+  }
 })
 
 async function changeExam(code) {
@@ -723,6 +755,10 @@ function handleBenefit(item) {
     })
     return
   }
+  if (item.action === 'pro') {
+    goPro()
+    return
+  }
   showMockToast()
 }
 
@@ -746,6 +782,10 @@ function handleMenu(item) {
   }
   if (item.action === 'favorites') {
     uni.navigateTo({ url: '/pages/favorites/index' })
+    return
+  }
+  if (item.action === 'ai-generator') {
+    uni.showToast({ title: 'AI 专项出题为 Pro 预览功能，后续开通后解锁', icon: 'none' })
     return
   }
   if (item.action === 'feedback') {
@@ -924,6 +964,15 @@ function setWrongFilter(field, value) {
   if (field === 'module') {
     wrongFilters.value.submodule = ''
   }
+}
+
+function resetMistakeVisibleCount() {
+  visibleMistakeCount.value = 15
+}
+
+function loadMoreMistakes() {
+  if (!hasMoreMistakes.value) return
+  visibleMistakeCount.value += 15
 }
 
 function handleMistakeBack() {
@@ -1421,10 +1470,11 @@ function formatDateTime(value) {
 }
 
 .filter-card {
-  margin-bottom: 18rpx;
+  margin-bottom: 16rpx;
+  padding: 8rpx 0 2rpx;
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 10rpx;
 }
 
 .filter-scroll {
@@ -1434,12 +1484,12 @@ function formatDateTime(value) {
 .filter-chip {
   display: inline-flex;
   margin-right: 12rpx;
-  padding: 14rpx 20rpx;
+  padding: 12rpx 18rpx;
   border: 2rpx solid #dbe4f5;
   border-radius: 999rpx;
   background: #f8fbff;
   color: #476089;
-  font-size: 22rpx;
+  font-size: 21rpx;
   font-weight: 700;
 }
 
@@ -1447,6 +1497,17 @@ function formatDateTime(value) {
   border-color: #2563eb;
   background: #edf3ff;
   color: #2563eb;
+}
+
+.list-load-state {
+  margin-top: 22rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 24rpx;
+  background: #f8fbff;
+  color: #667085;
+  text-align: center;
+  font-size: 23rpx;
+  line-height: 1.5;
 }
 
 .mistake-page-head {
@@ -1589,13 +1650,13 @@ function formatDateTime(value) {
   z-index: 50;
   display: flex;
   align-items: flex-end;
-  padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 30rpx);
   background: rgba(17, 24, 39, 0.42);
 }
 
 .wrong-modal-panel {
   width: 100%;
-  max-height: 88vh;
+  max-height: 86vh;
   border-radius: 38rpx;
   background: #ffffff;
   box-shadow: 0 -18rpx 46rpx rgba(15, 23, 42, 0.18);
@@ -1607,7 +1668,7 @@ function formatDateTime(value) {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 34rpx 34rpx 20rpx;
+  padding: 32rpx 34rpx 20rpx;
   border-bottom: 2rpx solid #eef2f8;
 }
 
@@ -1640,8 +1701,8 @@ function formatDateTime(value) {
 }
 
 .wrong-modal-scroll {
-  max-height: 70vh;
-  padding: 30rpx 34rpx 36rpx;
+  max-height: 68vh;
+  padding: 28rpx 34rpx 36rpx;
   box-sizing: border-box;
 }
 
@@ -2123,9 +2184,21 @@ function formatDateTime(value) {
   max-width: 430rpx;
 }
 
+.member-kicker {
+  display: inline-flex;
+  margin-bottom: 12rpx;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(22, 119, 255, 0.1);
+  color: #1677ff;
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
 .member-title {
   color: #101828;
-  font-size: 30rpx;
+  font-size: 34rpx;
   font-weight: 900;
   line-height: 1.35;
 }
@@ -2175,8 +2248,8 @@ function formatDateTime(value) {
   z-index: 1;
   margin-top: 28rpx;
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
-  gap: 10rpx;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
 }
 
 .benefit-item {
@@ -2201,7 +2274,7 @@ function formatDateTime(value) {
 
 .benefit-label {
   color: #344054;
-  font-size: 21rpx;
+  font-size: 20rpx;
   line-height: 1.25;
   font-weight: 700;
 }
@@ -2232,6 +2305,10 @@ function formatDateTime(value) {
 
 .menu-row:last-child {
   border-bottom: 0;
+}
+
+.menu-row.locked {
+  opacity: 0.74;
 }
 
 .menu-icon {
@@ -2268,15 +2345,36 @@ function formatDateTime(value) {
   color: #344054;
 }
 
+.menu-icon.locked {
+  background: #f2f4f7;
+  color: #98a2b3;
+}
+
 .menu-copy {
   flex: 1;
   min-width: 0;
+}
+
+.menu-title-row {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
 }
 
 .menu-title {
   color: #101828;
   font-size: 27rpx;
   line-height: 1.3;
+  font-weight: 900;
+}
+
+.pro-lock-badge {
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+  background: #f2f4f7;
+  color: #98a2b3;
+  font-size: 18rpx;
+  line-height: 1.2;
   font-weight: 900;
 }
 

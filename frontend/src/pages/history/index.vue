@@ -4,9 +4,23 @@
       <view class="back-btn" @tap="goBack">‹</view>
       <view class="top-title">练习历史</view>
       <view class="top-actions">
-        <text class="top-icon">⌕</text>
-        <text class="top-icon">⛃</text>
+        <text class="top-icon" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">⌕</text>
+        <view class="filter-icon-wrap" @tap="openFilterPanel">
+          <text class="top-icon" :class="{ active: activeFilterCount > 0 }">⛃</text>
+          <text v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</text>
+        </view>
       </view>
+    </view>
+
+    <view v-if="searchVisible" class="search-card">
+      <text class="search-symbol">⌕</text>
+      <input
+        v-model="searchKeyword"
+        class="search-input"
+        placeholder="搜索题干、科目、模块"
+        confirm-type="search"
+      />
+      <text v-if="searchKeyword" class="search-clear" @tap="clearSearch">×</text>
     </view>
 
     <view class="filter-tabs">
@@ -21,14 +35,22 @@
       </button>
     </view>
 
+    <view v-if="filterSummaryText" class="filter-summary">
+      <text>{{ filterSummaryText }}</text>
+      <text class="summary-clear" @tap="resetAllFilters">清除筛选</text>
+    </view>
+
     <view v-if="loading" class="state-card">正在读取你的真实练习记录...</view>
     <view v-else-if="error" class="state-card warning">{{ error }}</view>
     <view v-else-if="items.length === 0" class="state-card">
       暂无练习历史。完成一组刷题后，这里会自动记录你的答题情况。
     </view>
+    <view v-else-if="filteredItems.length === 0" class="state-card">
+      没有找到符合条件的练习记录。可以换个关键词，或清除筛选后再试。
+    </view>
 
     <view v-else class="history-list">
-      <view v-for="item in items" :key="item.id" class="history-card" @tap="openDetail(item)">
+      <view v-for="item in filteredItems" :key="item.id" class="history-card" @tap="openDetail(item)">
         <view class="card-head">
           <view class="card-title">{{ getTitle(item) }}</view>
           <view class="result-pill" :class="{ wrong: !item.is_correct }">
@@ -43,6 +65,84 @@
         <view v-if="!item.is_correct" class="correct-row">
           <text>正确答案：{{ item.question?.answer || '--' }}</text>
           <text class="detail-link">查看解析 ›</text>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="filterPanelVisible" class="filter-mask" @tap="closeFilterPanel">
+      <view class="filter-panel" @tap.stop>
+        <view class="sheet-handle"></view>
+        <view class="sheet-head">
+          <view>
+            <view class="sheet-title">筛选练习记录</view>
+            <view class="sheet-sub">按结果、科目、模块和时间快速定位题目</view>
+          </view>
+          <view class="sheet-close" @tap="closeFilterPanel">×</view>
+        </view>
+
+        <view class="filter-section">
+          <view class="filter-label">答题结果</view>
+          <view class="chip-grid three">
+            <button
+              v-for="item in filters"
+              :key="`status-${item.key}`"
+              class="filter-chip"
+              :class="{ active: activeFilter === item.key }"
+              @tap="changeFilter(item.key)"
+            >
+              {{ item.label }}
+            </button>
+          </view>
+        </view>
+
+        <view class="filter-section">
+          <view class="filter-label">科目</view>
+          <view class="chip-grid">
+            <button
+              v-for="subject in subjectOptions"
+              :key="`subject-${subject.value}`"
+              class="filter-chip"
+              :class="{ active: advancedFilters.subject === subject.value }"
+              @tap="setSubjectFilter(subject.value)"
+            >
+              {{ subject.label }}
+            </button>
+          </view>
+        </view>
+
+        <view class="filter-section">
+          <view class="filter-label">模块</view>
+          <view class="chip-grid">
+            <button
+              v-for="module in moduleOptions"
+              :key="`module-${module.value}`"
+              class="filter-chip"
+              :class="{ active: advancedFilters.module === module.value }"
+              @tap="advancedFilters.module = module.value"
+            >
+              {{ module.label }}
+            </button>
+          </view>
+        </view>
+
+        <view class="filter-section">
+          <view class="filter-label">时间范围</view>
+          <view class="chip-grid">
+            <button
+              v-for="time in timeOptions"
+              :key="`time-${time.value}`"
+              class="filter-chip"
+              :class="{ active: advancedFilters.timeRange === time.value }"
+              @tap="advancedFilters.timeRange = time.value"
+            >
+              {{ time.label }}
+            </button>
+          </view>
+        </view>
+
+        <view class="sheet-actions">
+          <button class="ghost-action" @tap="resetAllFilters">重置</button>
+          <button class="primary-action" @tap="closeFilterPanel">完成</button>
         </view>
       </view>
     </view>
@@ -93,8 +193,72 @@ const loading = ref(false)
 const error = ref('')
 const items = ref([])
 const selectedItem = ref(null)
+const searchVisible = ref(false)
+const searchKeyword = ref('')
+const filterPanelVisible = ref(false)
+const advancedFilters = ref({
+  subject: 'all',
+  module: 'all',
+  timeRange: 'all'
+})
+
+const timeOptions = [
+  { value: 'all', label: '全部时间' },
+  { value: 'today', label: '今天' },
+  { value: '7d', label: '近 7 天' },
+  { value: '30d', label: '近 30 天' }
+]
 
 const selectedOptions = computed(() => buildOptions(selectedItem.value?.question))
+const normalizedKeyword = computed(() => searchKeyword.value.trim().toLowerCase())
+const subjectOptions = computed(() => {
+  const subjects = uniqueQuestionValues('subject')
+  return [{ value: 'all', label: '全部科目' }, ...subjects.map((item) => ({ value: item, label: item }))]
+})
+const moduleOptions = computed(() => {
+  const source = advancedFilters.value.subject === 'all'
+    ? items.value
+    : items.value.filter((item) => item.question?.subject === advancedFilters.value.subject)
+  const modules = Array.from(new Set(source.map((item) => item.question?.module).filter(Boolean)))
+  return [{ value: 'all', label: '全部模块' }, ...modules.map((item) => ({ value: item, label: item }))]
+})
+const activeFilterCount = computed(() => {
+  let count = activeFilter.value === 'all' ? 0 : 1
+  if (advancedFilters.value.subject !== 'all') count += 1
+  if (advancedFilters.value.module !== 'all') count += 1
+  if (advancedFilters.value.timeRange !== 'all') count += 1
+  if (normalizedKeyword.value) count += 1
+  return count
+})
+const filterSummaryText = computed(() => {
+  const parts = []
+  const statusLabel = filters.find((item) => item.key === activeFilter.value)?.label
+  const timeLabel = timeOptions.find((item) => item.value === advancedFilters.value.timeRange)?.label
+  if (activeFilter.value !== 'all') parts.push(statusLabel)
+  if (advancedFilters.value.subject !== 'all') parts.push(advancedFilters.value.subject)
+  if (advancedFilters.value.module !== 'all') parts.push(advancedFilters.value.module)
+  if (advancedFilters.value.timeRange !== 'all') parts.push(timeLabel)
+  if (normalizedKeyword.value) parts.push(`搜索：${searchKeyword.value.trim()}`)
+  return parts.length ? `当前筛选：${parts.join(' / ')}` : ''
+})
+const filteredItems = computed(() => {
+  return items.value.filter((item) => {
+    const question = item.question || {}
+    if (advancedFilters.value.subject !== 'all' && question.subject !== advancedFilters.value.subject) {
+      return false
+    }
+    if (advancedFilters.value.module !== 'all' && question.module !== advancedFilters.value.module) {
+      return false
+    }
+    if (!matchesTimeRange(item.created_at, advancedFilters.value.timeRange)) {
+      return false
+    }
+    if (!matchesKeyword(item)) {
+      return false
+    }
+    return true
+  })
+})
 
 onShow(() => {
   loadHistory()
@@ -112,7 +276,7 @@ async function loadHistory() {
   try {
     const response = await fetchAnswerHistory({
       status: activeFilter.value,
-      limit: 50
+      limit: 120
     })
     items.value = response.items || []
   } catch (err) {
@@ -120,6 +284,84 @@ async function loadHistory() {
   } finally {
     loading.value = false
   }
+}
+
+function uniqueQuestionValues(field) {
+  return Array.from(new Set(items.value.map((item) => item.question?.[field]).filter(Boolean)))
+}
+
+function toggleSearch() {
+  searchVisible.value = !searchVisible.value
+  if (!searchVisible.value) searchKeyword.value = ''
+}
+
+function clearSearch() {
+  searchKeyword.value = ''
+}
+
+function openFilterPanel() {
+  filterPanelVisible.value = true
+}
+
+function closeFilterPanel() {
+  filterPanelVisible.value = false
+}
+
+function setSubjectFilter(value) {
+  advancedFilters.value.subject = value
+  advancedFilters.value.module = 'all'
+}
+
+function resetAdvancedFilters() {
+  advancedFilters.value = {
+    subject: 'all',
+    module: 'all',
+    timeRange: 'all'
+  }
+  searchKeyword.value = ''
+  searchVisible.value = false
+}
+
+function resetAllFilters() {
+  activeFilter.value = 'all'
+  resetAdvancedFilters()
+  loadHistory()
+}
+
+function matchesKeyword(item) {
+  if (!normalizedKeyword.value) return true
+  const question = item.question || {}
+  const text = [
+    question.subject,
+    question.module,
+    question.submodule,
+    question.stem,
+    question.option_a,
+    question.option_b,
+    question.option_c,
+    question.option_d,
+    question.option_e,
+    item.selected_answer
+  ]
+    .filter(Boolean)
+    .join(' ')
+    .toLowerCase()
+  return text.includes(normalizedKeyword.value)
+}
+
+function matchesTimeRange(value, range) {
+  if (range === 'all') return true
+  if (!value) return false
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return false
+  const now = new Date()
+  if (range === 'today') {
+    return date.toDateString() === now.toDateString()
+  }
+  const days = range === '7d' ? 7 : 30
+  const start = new Date(now)
+  start.setDate(now.getDate() - days)
+  return date >= start
 }
 
 function getTitle(item) {
@@ -221,6 +463,70 @@ function goBack() {
   font-size: 30rpx;
 }
 
+.top-icon.active {
+  color: #1677ff;
+  background: #edf4ff;
+}
+
+.filter-icon-wrap {
+  position: relative;
+}
+
+.filter-badge {
+  position: absolute;
+  top: 2rpx;
+  right: 2rpx;
+  min-width: 26rpx;
+  height: 26rpx;
+  padding: 0 7rpx;
+  border-radius: 999rpx;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 18rpx;
+  font-weight: 900;
+  line-height: 26rpx;
+  text-align: center;
+}
+
+.search-card {
+  min-height: 72rpx;
+  margin-bottom: 18rpx;
+  padding: 0 18rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  border: 2rpx solid #edf2fb;
+  box-shadow: 0 12rpx 34rpx rgba(25, 48, 89, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.search-symbol {
+  color: #98a2b3;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.search-input {
+  flex: 1;
+  min-width: 0;
+  height: 70rpx;
+  color: #101828;
+  font-size: 25rpx;
+}
+
+.search-clear {
+  width: 44rpx;
+  height: 44rpx;
+  border-radius: 50%;
+  background: #f2f4f7;
+  color: #667085;
+  text-align: center;
+  line-height: 42rpx;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
 .filter-tabs {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
@@ -247,6 +553,26 @@ function goBack() {
 .filter-tab.active {
   background: #1677ff;
   color: #ffffff;
+}
+
+.filter-summary {
+  margin: -6rpx 0 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 20rpx;
+  background: #edf4ff;
+  color: #315d9b;
+  font-size: 22rpx;
+  line-height: 1.45;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.summary-clear {
+  flex-shrink: 0;
+  color: #1677ff;
+  font-weight: 900;
 }
 
 .history-list {
@@ -328,6 +654,145 @@ function goBack() {
 .detail-link {
   color: #1677ff;
   font-weight: 900;
+}
+
+.filter-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 48;
+  padding: 120rpx 22rpx calc(env(safe-area-inset-bottom) + 22rpx);
+  background: rgba(15, 23, 42, 0.34);
+  display: flex;
+  align-items: flex-end;
+}
+
+.filter-panel {
+  width: 100%;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 14rpx 22rpx 22rpx;
+  border-radius: 34rpx;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 60rpx rgba(15, 23, 42, 0.14);
+}
+
+.sheet-handle {
+  width: 76rpx;
+  height: 8rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 999rpx;
+  background: #e4eaf4;
+}
+
+.sheet-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 24rpx;
+}
+
+.sheet-title {
+  color: #101828;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.sheet-sub {
+  margin-top: 8rpx;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.sheet-close {
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 20rpx;
+  background: #f2f4f7;
+  color: #667085;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.filter-section {
+  margin-top: 22rpx;
+}
+
+.filter-label {
+  margin-bottom: 12rpx;
+  color: #101828;
+  font-size: 25rpx;
+  font-weight: 900;
+}
+
+.chip-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+}
+
+.chip-grid.three {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+}
+
+.filter-chip {
+  min-height: 62rpx;
+  margin: 0;
+  padding: 0 22rpx;
+  border-radius: 999rpx;
+  border: 2rpx solid #e4eaf4;
+  background: #ffffff;
+  color: #475467;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 62rpx;
+}
+
+.filter-chip.active {
+  border-color: #1677ff;
+  background: #edf4ff;
+  color: #1677ff;
+}
+
+.sheet-actions {
+  position: sticky;
+  bottom: -22rpx;
+  margin: 28rpx -22rpx -22rpx;
+  padding: 18rpx 22rpx calc(env(safe-area-inset-bottom) + 18rpx);
+  background: rgba(255, 255, 255, 0.94);
+  backdrop-filter: blur(14rpx);
+  display: grid;
+  grid-template-columns: 1fr 1.4fr;
+  gap: 14rpx;
+}
+
+.ghost-action,
+.primary-action {
+  height: 76rpx;
+  margin: 0;
+  border-radius: 22rpx;
+  font-size: 26rpx;
+  font-weight: 900;
+  line-height: 76rpx;
+}
+
+.ghost-action {
+  border: 2rpx solid #d8e2f2;
+  background: #ffffff;
+  color: #475467;
+}
+
+.primary-action {
+  border: 0;
+  background: #1677ff;
+  color: #ffffff;
+  box-shadow: 0 14rpx 28rpx rgba(22, 119, 255, 0.22);
 }
 
 .detail-mask {
