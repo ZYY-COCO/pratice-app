@@ -64,7 +64,6 @@
       <view class="sticky-bar">
         <view class="sticky-copy">
           <view class="sticky-title">{{ stickyTitle }}</view>
-          <view class="sticky-sub">{{ stickySub }}</view>
           <view class="sticky-tip">本轮将加载 {{ plannedQuestionLimit }} 道题</view>
         </view>
         <button class="sticky-btn" :disabled="loading" @tap="startQuiz">
