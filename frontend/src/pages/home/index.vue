@@ -321,7 +321,7 @@
               <text>{{ item }}</text>
             </view>
           </view>
-          <button v-if="dailyPlan.length" class="report-action-btn" @tap="goTaskPractice(dailyPlan[0])">
+          <button v-if="dailyPlan.length" class="report-action-btn" @tap="openRecommendedTrainingSheet">
             开始推荐训练
           </button>
         </view>
@@ -414,6 +414,102 @@
       </view>
     </template>
 
+    <view v-if="showTrainingSheet" class="training-sheet-mask" @tap="closeRecommendedTrainingSheet">
+      <view class="training-sheet" @tap.stop>
+        <view class="sheet-handle"></view>
+        <view class="sheet-head">
+          <view class="sheet-title">推荐训练设置</view>
+          <view class="sheet-subtitle">根据你的错题、正确率和薄弱模块生成专属训练</view>
+        </view>
+
+        <view class="sheet-section">
+          <view class="sheet-row">
+            <view>
+              <view class="sheet-section-title">智能推荐</view>
+              <view class="sheet-section-sub">系统自动匹配当前最需要补强的范围</view>
+            </view>
+            <switch
+              :checked="smartMode"
+              color="#3478f6"
+              @change="handleSmartModeChange"
+            />
+          </view>
+
+          <view v-if="smartMode" class="smart-recommend-card">
+            <view class="smart-tip">
+              <view class="smart-tip-icon">✦</view>
+              <view class="smart-tip-copy">系统将根据你的正确率、错题类型和薄弱知识点，自动生成本次训练题目。</view>
+            </view>
+            <view class="recommend-lines">
+              <view class="recommend-line">
+                <text>推荐模块：</text>
+                <text class="recommend-value">{{ smartRecommendation.subject }}</text>
+              </view>
+              <view class="recommend-line">
+                <text>推荐难度：</text>
+                <text class="recommend-value">{{ smartRecommendation.difficulty }}</text>
+              </view>
+              <view class="recommend-line">
+                <text>推荐题量：</text>
+                <text class="recommend-value">{{ smartRecommendation.questionCount }}题</text>
+              </view>
+              <view class="recommend-line">
+                <text>推荐依据：</text>
+                <text class="recommend-text">{{ smartRecommendation.basis }}</text>
+              </view>
+            </view>
+          </view>
+
+          <view v-else class="manual-settings">
+            <view class="manual-title">手动设置</view>
+            <view class="manual-label">1. 选择难度</view>
+            <view class="difficulty-options">
+              <button
+                v-for="item in difficultyOptions"
+                :key="item"
+                class="difficulty-chip"
+                :class="{ active: manualDifficulty === item }"
+                @tap="manualDifficulty = item"
+              >
+                {{ item }}
+              </button>
+            </view>
+
+            <view class="manual-count-head">
+              <view class="manual-label">2. 题目数量</view>
+              <view class="manual-count-value">{{ manualQuestionCount }} 题</view>
+            </view>
+            <slider
+              class="question-slider"
+              :value="manualQuestionCount"
+              :min="5"
+              :max="30"
+              :step="5"
+              activeColor="#3478f6"
+              backgroundColor="#e5ebf5"
+              block-color="#ffffff"
+              :block-size="22"
+              @change="handleQuestionCountChange"
+              @changing="handleQuestionCountChange"
+            />
+            <view class="slider-scale">
+              <text>5</text>
+              <text>10</text>
+              <text>15</text>
+              <text>20</text>
+              <text>25</text>
+              <text>30</text>
+            </view>
+          </view>
+        </view>
+
+        <view class="sheet-actions">
+          <button class="sheet-cancel-btn" @tap="closeRecommendedTrainingSheet">取消</button>
+          <button class="sheet-generate-btn" @tap="handleGenerateTraining">生成训练</button>
+        </view>
+      </view>
+    </view>
+
     <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
   </view>
 </template>
@@ -473,10 +569,23 @@ const retestMastered = ref(false)
 const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
+const showTrainingSheet = ref(false)
+const smartMode = ref(true)
+const manualDifficulty = ref('标准提升')
+const manualQuestionCount = ref(10)
 const tabs = [
   { key: 'home', label: '首页', icon: '⌂' },
   { key: 'profile', label: '我的', icon: '☺' }
 ]
+const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
+const smartRecommendation = {
+  subject: '逻辑推理',
+  module: '判断',
+  submodule: '判断关系',
+  difficulty: '标准提升',
+  questionCount: 10,
+  basis: '当前正确率较低，优先巩固判断关系类题目'
+}
 const proPreviewItems = [
   'AI 薄弱诊断：把低正确率知识点转成更清晰的错因总结',
   '错题同类加练：围绕错题自动推荐同 submodule 题目',
@@ -809,7 +918,10 @@ function goTaskPractice(task) {
     const query = [
       ['subject', task.subject],
       ['module', task.module || ''],
-      ['submodule', task.submodule || '']
+      ['submodule', task.submodule || ''],
+      ['count', task.questionCount || ''],
+      ['difficulty', task.difficulty || ''],
+      ['trainingMode', task.trainingMode || '']
     ]
       .filter(([, value]) => value)
       .map(([key, value]) => `${key}=${encodeURIComponent(value)}`)
@@ -818,6 +930,52 @@ function goTaskPractice(task) {
     return
   }
   goPractice()
+}
+
+function openRecommendedTrainingSheet() {
+  smartMode.value = true
+  manualDifficulty.value = '标准提升'
+  manualQuestionCount.value = 10
+  showTrainingSheet.value = true
+}
+
+function closeRecommendedTrainingSheet() {
+  showTrainingSheet.value = false
+}
+
+function handleSmartModeChange(event) {
+  smartMode.value = Boolean(event?.detail?.value)
+}
+
+function handleQuestionCountChange(event) {
+  const nextValue = Number(event?.detail?.value || 10)
+  manualQuestionCount.value = Math.min(30, Math.max(5, nextValue))
+}
+
+function handleGenerateTraining() {
+  const baseConfig = {
+    subject: smartRecommendation.subject,
+    module: smartRecommendation.module,
+    submodule: smartRecommendation.submodule
+  }
+  const config = smartMode.value
+    ? {
+        ...baseConfig,
+        trainingMode: 'smart',
+        difficulty: smartRecommendation.difficulty,
+        questionCount: smartRecommendation.questionCount,
+        basis: smartRecommendation.basis
+      }
+    : {
+        ...baseConfig,
+        trainingMode: 'manual',
+        difficulty: manualDifficulty.value,
+        questionCount: manualQuestionCount.value
+      }
+
+  uni.setStorageSync('recommendedTrainingConfig', config)
+  closeRecommendedTrainingSheet()
+  goTaskPractice(config)
 }
 
 function goLogin() {
@@ -2111,6 +2269,251 @@ function formatDateTime(value) {
   font-size: 26rpx;
   font-weight: 900;
   box-shadow: 0 16rpx 28rpx rgba(22, 119, 255, 0.18);
+}
+
+.training-sheet-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 80;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.training-sheet {
+  width: 100%;
+  max-height: 88vh;
+  padding: 16rpx 40rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 52rpx rgba(15, 23, 42, 0.18);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.sheet-handle {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 999rpx;
+  background: #d7deeb;
+}
+
+.sheet-head {
+  text-align: center;
+}
+
+.sheet-title {
+  color: #101828;
+  font-size: 34rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.sheet-subtitle {
+  margin-top: 10rpx;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.sheet-section {
+  margin-top: 26rpx;
+  padding: 24rpx;
+  border: 2rpx solid #e8eef7;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 30rpx rgba(25, 48, 89, 0.06);
+}
+
+.sheet-row,
+.manual-count-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.sheet-section-title,
+.manual-title {
+  color: #172033;
+  font-size: 26rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.sheet-section-sub {
+  margin-top: 6rpx;
+  color: #8a95a8;
+  font-size: 21rpx;
+  line-height: 1.45;
+}
+
+.smart-recommend-card,
+.manual-settings {
+  margin-top: 22rpx;
+}
+
+.smart-tip {
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+  padding: 20rpx;
+  border-radius: 20rpx;
+  background: #eef5ff;
+}
+
+.smart-tip-icon {
+  width: 42rpx;
+  height: 42rpx;
+  flex: 0 0 42rpx;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #3478f6, #7ca7ff);
+  color: #ffffff;
+  text-align: center;
+  font-size: 24rpx;
+  line-height: 42rpx;
+  font-weight: 900;
+}
+
+.smart-tip-copy {
+  flex: 1;
+  min-width: 0;
+  color: #52627a;
+  font-size: 22rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.recommend-lines {
+  margin-top: 20rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.recommend-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8rpx;
+  color: #475467;
+  font-size: 23rpx;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.recommend-line text:first-child {
+  flex: 0 0 118rpx;
+  color: #667085;
+}
+
+.recommend-value {
+  color: #3478f6;
+  font-weight: 950;
+}
+
+.recommend-text {
+  flex: 1;
+  min-width: 0;
+  color: #475467;
+}
+
+.manual-label {
+  color: #475467;
+  font-size: 23rpx;
+  line-height: 1.4;
+  font-weight: 800;
+}
+
+.manual-title + .manual-label {
+  margin-top: 20rpx;
+}
+
+.difficulty-options {
+  margin-top: 14rpx;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.difficulty-chip {
+  min-width: 0;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 8rpx;
+  border: 2rpx solid #e0e7f2;
+  border-radius: 14rpx;
+  background: #ffffff;
+  color: #475467;
+  font-size: 21rpx;
+  line-height: 58rpx;
+  font-weight: 800;
+  box-shadow: none;
+}
+
+.difficulty-chip.active {
+  border-color: #3478f6;
+  background: #eef5ff;
+  color: #3478f6;
+  box-shadow: 0 8rpx 20rpx rgba(52, 120, 246, 0.12);
+}
+
+.manual-count-head {
+  margin-top: 24rpx;
+}
+
+.manual-count-value {
+  color: #3478f6;
+  font-size: 24rpx;
+  font-weight: 950;
+}
+
+.question-slider {
+  margin: 14rpx 0 0;
+}
+
+.slider-scale {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 6rpx;
+  color: #98a2b3;
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.sheet-actions {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 18rpx;
+  margin-top: 22rpx;
+}
+
+.sheet-cancel-btn,
+.sheet-generate-btn {
+  min-height: 84rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 18rpx;
+  font-size: 27rpx;
+  line-height: 84rpx;
+  font-weight: 900;
+}
+
+.sheet-cancel-btn {
+  background: #f6f8fb;
+  color: #475467;
+  border: 2rpx solid #e1e8f4;
+}
+
+.sheet-generate-btn {
+  background: linear-gradient(135deg, #3478f6, #4f86ff);
+  color: #ffffff;
+  box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
 }
 
 .mistake-page-head {

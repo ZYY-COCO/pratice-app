@@ -207,7 +207,7 @@ const subject = ref(uni.getStorageSync('subject') || '中华文化')
 const mode = ref('tags')
 const practiceMode = ref('special')
 const selectedTags = ref([])
-const questionCountOptions = [10, 20]
+const questionCountOptions = [5, 10, 15, 20, 25, 30]
 const selectedQuestionSize = ref(10)
 const selectedOption = ref('')
 const submitted = ref(false)
@@ -318,6 +318,12 @@ onLoad((options) => {
   if (options?.subject) {
     subject.value = decodeURIComponent(options.subject)
     uni.setStorageSync('subject', subject.value)
+  }
+  if (options?.count) {
+    const nextCount = Number(decodeURIComponent(options.count))
+    if (questionCountOptions.includes(nextCount)) {
+      selectedQuestionSize.value = nextCount
+    }
   }
   openMap.value = buildOpenMap(getSubjectTree(subject.value))
   if (options?.module && options?.submodule) {
