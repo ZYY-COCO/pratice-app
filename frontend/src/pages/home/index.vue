@@ -366,7 +366,7 @@
           </view>
           <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
           <view class="benefit-row">
-            <view v-for="item in profileBenefits" :key="item.label" class="benefit-item" @tap="handleBenefit(item)">
+            <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
               <view class="benefit-icon">{{ item.icon }}</view>
               <view class="benefit-label">{{ item.label }}</view>
             </view>
@@ -673,10 +673,10 @@ const proBenefits = [
   }
 ]
 const profileBenefits = [
-  { label: '无限存储', icon: '∞', action: 'pro' },
-  { label: '错题本', icon: '▣', action: 'mistakes' },
-  { label: '学习报告', icon: '▥', action: 'report' },
-  { label: 'AI生题及解析', icon: 'AI', action: 'soon' }
+  { label: '无限存储', icon: '∞' },
+  { label: '错题本', icon: '▣' },
+  { label: '学习报告', icon: '▥' },
+  { label: 'AI生题及解析', icon: 'AI' }
 ]
 
 const isAuthed = computed(() => authed.value)
@@ -1169,34 +1169,6 @@ function openMistakes() {
 
 function openReport() {
   activeTab.value = 'report'
-}
-
-function handleBenefit(item) {
-  if (!item) return
-  if (item.action === 'mistakes') {
-    openMistakes()
-    return
-  }
-  if (item.action === 'report') {
-    openReport()
-    return
-  }
-  if (item.action === 'favorites') {
-    uni.navigateTo({ url: '/pages/favorites/index' })
-    return
-  }
-  if (item.action === 'sync') {
-    uni.showToast({
-      title: isAuthed.value ? '学习数据已自动同步' : '登录后开启云端同步',
-      icon: 'none'
-    })
-    return
-  }
-  if (item.action === 'pro') {
-    handleProEntry()
-    return
-  }
-  showMockToast()
 }
 
 function handleMenu(item) {
@@ -3787,6 +3759,7 @@ function getMembershipExpiresAt(user) {
 .benefit-item {
   min-width: 0;
   text-align: center;
+  cursor: default;
 }
 
 .benefit-icon {

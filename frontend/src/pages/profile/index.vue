@@ -1,9 +1,10 @@
 <template>
   <view class="page profile-edit-page">
     <view class="profile-edit-head">
-      <button class="back-btn" @tap="goBack">‹</button>
-      <view>
-        <view class="head-title">个人资料</view>
+      <view class="head-mark">资料</view>
+      <view class="head-copy">
+        <view class="head-eyebrow">账号设置</view>
+        <view class="head-title">编辑个人资料</view>
         <view class="head-subtitle">修改昵称、头像样式、性别和绑定邮箱</view>
       </view>
     </view>
@@ -52,8 +53,9 @@
         </view>
       </view>
 
-      <button class="primary-button save-btn" :disabled="savingProfile" @tap="saveProfile">
-        {{ savingProfile ? '保存中...' : '保存资料' }}
+      <view class="save-hint">{{ hasProfileChanges ? '保存后会自动返回“我的”页面。' : '当前资料已同步。' }}</view>
+      <button class="primary-button save-btn" :disabled="savingProfile || !canSaveProfile" @tap="saveProfile">
+        {{ savingProfile ? '保存中...' : hasProfileChanges ? '保存资料' : '暂无修改' }}
       </button>
     </SectionCard>
 
@@ -107,23 +109,39 @@ const emailForm = reactive({
 })
 
 const avatarText = computed(() => (form.nickname || user.value?.email || '用').slice(0, 1))
+const initialProfile = ref({
+  nickname: '',
+  avatar_url: '',
+  gender: ''
+})
+const hasProfileChanges = computed(() =>
+  form.nickname !== initialProfile.value.nickname ||
+  form.avatar_url !== initialProfile.value.avatar_url ||
+  form.gender !== initialProfile.value.gender
+)
+const canSaveProfile = computed(() => Boolean(form.nickname && hasProfileChanges.value))
 
 onShow(() => {
   user.value = getAuthUser() || {}
   form.nickname = user.value.nickname || ''
   form.avatar_url = user.value.avatar_url || ''
   form.gender = user.value.gender || ''
+  initialProfile.value = {
+    nickname: form.nickname,
+    avatar_url: form.avatar_url,
+    gender: form.gender
+  }
 })
-
-function goBack() {
-  uni.navigateBack()
-}
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
 }
 
 async function saveProfile() {
+  if (!hasProfileChanges.value) {
+    uni.showToast({ title: '暂无修改', icon: 'none' })
+    return
+  }
   if (!form.nickname) {
     uni.showToast({ title: '请填写昵称', icon: 'none' })
     return
@@ -138,7 +156,28 @@ async function saveProfile() {
     })
     updateAuthUser(nextUser)
     user.value = getAuthUser() || nextUser
-    uni.showToast({ title: '资料已保存', icon: 'none' })
+    initialProfile.value = {
+      nickname: form.nickname,
+      avatar_url: form.avatar_url,
+      gender: form.gender
+    }
+    uni.navigateBack({
+      success() {
+        setTimeout(() => {
+          uni.showToast({ title: '保存成功', icon: 'success' })
+        }, 180)
+      },
+      fail() {
+        uni.reLaunch({
+          url: '/pages/home/index',
+          success() {
+            setTimeout(() => {
+              uni.showToast({ title: '保存成功', icon: 'success' })
+            }, 180)
+          }
+        })
+      }
+    })
   } catch (error) {
     uni.showToast({ title: error?.detail || '保存失败，请稍后重试', icon: 'none' })
   } finally {
@@ -195,30 +234,47 @@ async function bindEmail() {
 <style scoped>
 .profile-edit-page {
   padding-bottom: calc(env(safe-area-inset-bottom) + 44rpx);
+  background:
+    linear-gradient(180deg, rgba(232, 240, 255, 0.86), rgba(246, 248, 252, 0.98) 34%, #f6f8fc 100%);
 }
 
 .profile-edit-head {
   display: flex;
   align-items: center;
-  gap: 18rpx;
-  margin-bottom: 22rpx;
+  gap: 20rpx;
+  margin-bottom: 24rpx;
 }
 
-.back-btn {
-  width: 72rpx;
-  height: 72rpx;
-  flex: 0 0 72rpx;
-  margin: 0;
-  border: 0;
-  border-radius: 24rpx;
+.head-mark {
+  width: 82rpx;
+  height: 82rpx;
+  border-radius: 26rpx;
   background: #ffffff;
-  color: #172033;
-  font-size: 42rpx;
-  line-height: 72rpx;
-  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
+  color: #2563eb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 82rpx;
+  font-size: 24rpx;
+  line-height: 1;
+  font-weight: 950;
+  box-shadow: 0 12rpx 28rpx rgba(37, 99, 235, 0.1);
+}
+
+.head-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.head-eyebrow {
+  color: #2563eb;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 900;
 }
 
 .head-title {
+  margin-top: 6rpx;
   color: #101828;
   font-size: 38rpx;
   line-height: 1.25;
@@ -237,10 +293,11 @@ async function bindEmail() {
   display: flex;
   align-items: center;
   gap: 22rpx;
-  padding: 28rpx;
-  margin-bottom: 20rpx;
+  padding: 30rpx;
+  margin-bottom: 22rpx;
   border-radius: 34rpx;
-  background: #ffffff;
+  background:
+    linear-gradient(180deg, rgba(255, 255, 255, 0.98), rgba(248, 251, 255, 0.96));
   border: 2rpx solid #e8effc;
   box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
 }
@@ -338,9 +395,23 @@ async function bindEmail() {
   box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.12);
 }
 
+.save-hint {
+  margin-top: 24rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
 .save-btn,
 .bind-btn {
-  margin-top: 26rpx;
+  margin-top: 18rpx;
+}
+
+.save-btn:disabled {
+  background: #d9e2f1;
+  color: #8a95a8;
+  box-shadow: none;
 }
 
 .code-row {
