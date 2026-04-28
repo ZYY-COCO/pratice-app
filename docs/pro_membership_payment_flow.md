@@ -11,11 +11,16 @@
   - `membership_updated_at`
 - `public.membership_orders` stores provider order records and webhook payloads.
 - `GET /membership/status` returns the current user's effective membership status.
+- `GET /membership/plans` returns the supported plans:
+  - `pro_monthly`: 9.9 CNY / month
+  - `pro_quarterly`: 24.9 CNY / quarter
+- `POST /membership/orders` creates a pending order for a supported plan.
+- `POST /membership/webhooks/manual` is the protected payment callback skeleton. It requires `PAYMENT_WEBHOOK_SECRET`.
 - Frontend pages refresh membership status on show and update cached `authUser`.
 
 ## Real payment flow
 
-1. Frontend selects a plan and asks backend to create a membership order.
+1. Frontend selects `pro_monthly` or `pro_quarterly` and asks backend to create a membership order.
 2. Backend creates a `membership_orders` row with `status = pending`.
 3. Backend calls the payment provider and returns provider checkout data to the frontend.
 4. Payment provider sends a signed webhook to the backend.

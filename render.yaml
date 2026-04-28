@@ -32,3 +32,5 @@ services:
         value: 港澳台考研刷题
       - key: SMTP_USE_TLS
         value: "false"
+      - key: PAYMENT_WEBHOOK_SECRET
+        sync: false

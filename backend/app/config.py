@@ -17,6 +17,7 @@ class Settings(BaseSettings):
     smtp_from_email: str | None = None
     smtp_from_name: str = "港澳台考研刷题"
     smtp_use_tls: bool = False
+    payment_webhook_secret: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

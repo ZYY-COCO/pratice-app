@@ -40,6 +40,8 @@ create table if not exists public.membership_orders (
   currency text not null default 'CNY',
   status text not null default 'pending'
     check (status in ('pending', 'paid', 'failed', 'cancelled', 'refunded')),
+  constraint membership_orders_plan_code_check
+    check (plan_code in ('pro_monthly', 'pro_quarterly')),
   paid_at timestamptz,
   raw_payload jsonb,
   created_at timestamptz not null default now(),

@@ -37,6 +37,7 @@ SMTP_PASSWORD=
 SMTP_FROM_EMAIL=
 SMTP_FROM_NAME=港澳台考研刷题
 SMTP_USE_TLS=false
+PAYMENT_WEBHOOK_SECRET=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` 只能配置在后端部署平台，不能放到前端。
@@ -55,3 +56,6 @@ https://你的后端公网域名/docs
 - `GET /questions/by-module`：按 `exam_code + subject + module + submodule` 获取专项题目。
 - `POST /answers/submit`：提交答案，同步写入作答记录、错题本和能力统计。
 - `GET /report/ability`：读取能力统计并返回薄弱项建议。
+- `GET /membership/plans`：读取 Pro 套餐配置。
+- `POST /membership/orders`：创建会员订单，当前先返回待支付订单。
+- `POST /membership/webhooks/manual`：支付回调骨架，校验 `PAYMENT_WEBHOOK_SECRET` 后更新订单和会员状态。

@@ -56,6 +56,19 @@ create table if not exists public.membership_orders (
   updated_at timestamptz not null default now()
 );
 
+do $$
+begin
+  if not exists (
+    select 1
+    from pg_constraint
+    where conname = 'membership_orders_plan_code_check'
+  ) then
+    alter table public.membership_orders
+      add constraint membership_orders_plan_code_check
+      check (plan_code in ('pro_monthly', 'pro_quarterly'));
+  end if;
+end $$;
+
 create unique index if not exists idx_membership_orders_provider_order
   on public.membership_orders (provider, provider_order_id)
   where provider_order_id is not null;

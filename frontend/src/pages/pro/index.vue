@@ -88,12 +88,12 @@
       />
 
       <view class="hero-card">
-        <view class="hero-tag">内测版 · 暂未开放支付</view>
+        <view class="hero-tag">支付准备中 · 订单骨架已接入</view>
         <view class="hero-title">把刷题结果变成下一步行动</view>
         <view class="hero-sub">
           Pro 版本计划围绕 AI 薄弱诊断、错题同类加练、每日训练计划和每周提分报告展开，帮助用户从“做题”走到“知道怎么提分”。
         </view>
-        <button class="hero-btn" @tap="showPaymentClosed">内测阶段暂未开放支付</button>
+        <button class="hero-btn" @tap="showPaymentClosed">查看开通方式</button>
       </view>
 
       <SectionCard title="免费版 / Pro 版差异" subtitle="当前不限制功能，只用于验证用户是否认可会员价值。">
@@ -121,17 +121,25 @@
         </view>
       </SectionCard>
 
-      <SectionCard title="内测定价 Mock" subtitle="价格仅用于验证意愿，后续上线前会重新确认。">
+      <SectionCard title="会员套餐" subtitle="当前先创建待支付订单，正式支付渠道接入后会打开收银台。">
         <view class="price-list">
           <view v-for="item in pricePlans" :key="item.name" class="price-card" :class="{ hot: item.hot }">
             <view>
               <view class="price-name">{{ item.name }}</view>
               <view class="price-desc">{{ item.desc }}</view>
             </view>
-            <view class="price-value">{{ item.price }}</view>
+            <view class="price-side">
+              <view class="price-value">{{ item.price }}</view>
+              <button
+                class="price-action-btn"
+                :disabled="creatingOrderCode === item.code"
+                @tap.stop="handleCreateOrder(item)"
+              >
+                {{ creatingOrderCode === item.code ? '创建中' : '立即开通' }}
+              </button>
+            </view>
           </view>
         </view>
-        <button class="primary-button pay-btn" @tap="showPaymentClosed">内测阶段暂未开放支付</button>
       </SectionCard>
 
       <SectionCard title="内测反馈" subtitle="如果你愿意付费，欢迎把原因和可接受价格反馈给开发者。">
@@ -151,10 +159,11 @@ import { onShow } from '@dcloudio/uni-app'
 import PageHeader from '../../components/PageHeader.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
-import { fetchMembershipStatus } from '../../api/membership'
+import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
 
 const authUser = ref(getAuthUser())
+const creatingOrderCode = ref('')
 
 const freeFeatures = [
   '注册登录与基础刷题',
@@ -193,11 +202,10 @@ const previewFeatures = [
   }
 ]
 
-const pricePlans = [
-  { name: '月卡', price: '19元', desc: '适合短期试用 Pro 功能', hot: false },
-  { name: '季卡', price: '49元', desc: '适合一轮系统复习', hot: true },
-  { name: '半年卡', price: '89元', desc: '适合完整备考周期', hot: false }
-]
+const pricePlans = ref([
+  { code: 'pro_monthly', name: '月卡', price: '9.9元/月', desc: '适合短期试用 Pro 功能', hot: false },
+  { code: 'pro_quarterly', name: '季卡', price: '24.9元/季', desc: '适合一轮系统复习', hot: true }
+])
 
 const memberFeatureCards = [
   { icon: 'AI', title: 'AI 生题', desc: '按薄弱点生成专项题', tone: 'green', action: 'ai' },
@@ -224,11 +232,28 @@ const memberUntilText = computed(() =>
 
 onShow(() => {
   authUser.value = getAuthUser()
+  loadMembershipPlans()
   refreshMembershipStatus()
 })
 
 function showPaymentClosed() {
-  uni.showToast({ title: '内测阶段暂未开放支付', icon: 'none' })
+  uni.showToast({ title: '已支持创建订单，正式支付渠道接入中', icon: 'none' })
+}
+
+async function loadMembershipPlans() {
+  try {
+    const plans = await fetchMembershipPlans()
+    if (!Array.isArray(plans) || !plans.length) return
+    pricePlans.value = plans.map((item) => ({
+      code: item.code,
+      name: item.name,
+      price: item.price_label,
+      desc: item.description,
+      hot: item.code === 'pro_quarterly'
+    }))
+  } catch (error) {
+    // Keep local fallback plan display when the backend is unavailable.
+  }
 }
 
 async function refreshMembershipStatus() {
@@ -246,6 +271,29 @@ async function refreshMembershipStatus() {
 
 function showComingSoon(title) {
   uni.showToast({ title, icon: 'none' })
+}
+
+async function handleCreateOrder(plan) {
+  if (!uni.getStorageSync('accessToken')) {
+    uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/pro/index')}` })
+    return
+  }
+  if (!plan?.code || creatingOrderCode.value) return
+
+  creatingOrderCode.value = plan.code
+  try {
+    const order = await createMembershipOrder({ plan_code: plan.code })
+    uni.showModal({
+      title: '订单已创建',
+      content: `套餐：${plan.name}\n金额：${plan.price}\n订单号：${order.provider_order_id}\n\n正式支付渠道接入后，这里会继续打开收银台。`,
+      confirmText: '知道了',
+      showCancel: false
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '创建订单失败，请稍后重试', icon: 'none' })
+  } finally {
+    creatingOrderCode.value = ''
+  }
 }
 
 function handleMemberFeature(item) {
@@ -693,6 +741,35 @@ function getMembershipExpiresAt(user) {
   white-space: nowrap;
 }
 
+.price-side {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 12rpx;
+  flex: 0 0 auto;
+}
+
+.price-action-btn {
+  min-width: 148rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 16rpx;
+  background: linear-gradient(135deg, #2563eb, #4f86ff);
+  color: #ffffff;
+  font-size: 23rpx;
+  line-height: 58rpx;
+  font-weight: 900;
+  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.18);
+}
+
+.price-action-btn:disabled {
+  background: #e8edf7;
+  color: #98a2b3;
+  box-shadow: none;
+}
+
 @media (max-width: 380px) {
   .compare-grid,
   .member-action-grid,
@@ -708,6 +785,15 @@ function getMembershipExpiresAt(user) {
   .plan-btn {
     width: 100%;
     flex-basis: auto;
+  }
+
+  .price-card {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .price-side {
+    align-items: stretch;
   }
 }
 </style>
