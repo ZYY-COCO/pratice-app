@@ -332,7 +332,7 @@
       <view class="profile-dashboard">
         <view class="profile-top-title">港研通</view>
 
-        <view class="account-card" @tap="handleAccountEntry">
+        <view class="account-card" :class="{ guest: !isAuthed }" @tap="handleAccountEntry">
           <view class="account-avatar">{{ profileAvatarText }}</view>
           <view class="account-main">
             <view class="account-name-row">
@@ -340,7 +340,8 @@
               <text class="account-badge">{{ profile.badge }}</text>
             </view>
             <view class="account-desc">{{ isAuthed ? profile.subtitle : '登录后同步学习进度与数据' }}</view>
-            <view class="exam-switch">
+            <button v-if="!isAuthed" class="account-login-btn" @tap.stop="goLogin">登录 / 注册</button>
+            <view v-else class="exam-switch">
               <button
                 v-for="option in examOptions"
                 :key="option.code"
@@ -360,8 +361,8 @@
             <view class="member-kicker">{{ isProMember ? 'Pro 会员 · 已开通' : 'Pro 功能预览' }}</view>
             <view class="member-title">Pro 会员中心</view>
             <view class="member-subtitle">{{ memberCardSubtitle }}</view>
-            <button class="member-login-btn" @tap="handleProEntry">
-              {{ isAuthed ? (isProMember ? '会员中心' : '查看权益') : '登录 / 注册' }}
+            <button v-if="isAuthed" class="member-login-btn" @tap="handleProEntry">
+              {{ isProMember ? '会员中心' : '查看权益' }}
             </button>
           </view>
           <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
@@ -694,7 +695,10 @@ const memberCardSubtitle = computed(() => {
   return '未来将开放无限存储、AI 生题解析与更完整的学习报告。'
 })
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
-const profileAvatarText = computed(() => authUser.value?.avatar_url || (profile.value.userName || examCode.value || '游').slice(0, 1))
+const profileAvatarText = computed(() => {
+  if (!isAuthed.value) return '研'
+  return authUser.value?.avatar_url || (profile.value.userName || examCode.value || '游').slice(0, 1)
+})
 
 const dashboard = computed(() => {
   const base = getHomeDashboard(examCode.value)
@@ -927,7 +931,7 @@ const profile = computed(() => {
   if (!isAuthed.value) {
     return {
       ...base,
-      userName: examCode.value,
+      userName: '欢迎来到港研通',
       subtitle: '登录后同步学习进度与数据',
       badge: '游客',
       stats: [
@@ -3569,6 +3573,13 @@ function getMembershipExpiresAt(user) {
   gap: 20rpx;
 }
 
+.account-card.guest {
+  align-items: flex-start;
+  background:
+    radial-gradient(circle at 94% 20%, rgba(22, 119, 255, 0.1), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%);
+}
+
 .account-avatar {
   width: 96rpx;
   height: 96rpx;
@@ -3645,6 +3656,20 @@ function getMembershipExpiresAt(user) {
   border-color: #1677ff;
   background: #1677ff;
   box-shadow: 0 8rpx 18rpx rgba(22, 119, 255, 0.18);
+}
+
+.account-login-btn {
+  width: 210rpx;
+  min-height: 72rpx;
+  margin: 18rpx 0 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #1677ff;
+  color: #ffffff;
+  font-size: 26rpx;
+  line-height: 72rpx;
+  font-weight: 900;
+  box-shadow: 0 12rpx 26rpx rgba(22, 119, 255, 0.18);
 }
 
 .account-arrow,
