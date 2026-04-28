@@ -234,70 +234,98 @@
     </template>
 
     <template v-else-if="activeTab === 'report'">
-      <PageHeader
-        eyebrow="AI 诊断"
-        title="提分路径已生成"
-        :subtitle="reportSubtitle"
-      />
+      <view class="report-dashboard">
+        <view class="report-topbar">
+          <button class="icon-back-btn" @tap="activeTab = 'profile'">‹</button>
+          <view class="report-top-title">能力报告</view>
+          <view class="report-top-spacer"></view>
+        </view>
 
-      <view v-if="reportLoading" class="state-box">正在生成真实能力报告...</view>
-      <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
-      <ReportRadarMock :metrics="report.metrics" />
+        <view v-if="reportLoading" class="state-box">正在生成真实能力报告...</view>
+        <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
 
-      <SectionCard title="真实统计概览" subtitle="按正确率分级：稳定 / 一般 / 薄弱 / 重点补强">
+        <view class="report-overview-card">
+          <view class="overview-copy">
+            <view class="overview-title-row">
+              <text class="overview-title">本周学习概览</text>
+              <text class="overview-info">i</text>
+            </view>
+            <view class="overview-subtitle">{{ reportOverview.subtitle }}</view>
+          </view>
+          <view class="overview-art">📈</view>
+          <view class="overview-metrics">
+            <view class="overview-metric">
+              <view class="metric-icon blue">▦</view>
+              <view>
+                <view class="metric-label">本周做题总数</view>
+                <view class="metric-value">{{ reportOverview.weeklyAnswers }}<text>题</text></view>
+              </view>
+            </view>
+            <view class="overview-metric">
+              <view class="metric-icon green">◎</view>
+              <view>
+                <view class="metric-label">整体正确率</view>
+                <view class="metric-value">{{ reportOverview.accuracy }}</view>
+              </view>
+            </view>
+          </view>
+          <view class="overview-trend">{{ reportOverview.trend }}</view>
+        </view>
+
         <view v-if="!isAuthed" class="state-box warning">登录并完成几道题后，这里会显示你的真实能力统计。</view>
         <view v-else-if="report.items.length === 0" class="state-box">暂无能力统计。先完成一轮专项或综合刷题吧。</view>
-        <view v-else class="ability-list">
-          <view v-for="item in report.items" :key="item.id" class="ability-row">
-            <view>
-              <view class="ability-title">{{ item.subject }} · {{ item.module }}</view>
-              <view class="ability-sub">{{ item.submodule }} · 已做 {{ item.total_count }} 题</view>
+
+        <view v-else class="subject-report-list">
+          <view
+            v-for="item in subjectReportCards"
+            :key="item.subject"
+            class="subject-report-card"
+            @tap="goTaskPractice(item)"
+          >
+            <view class="ring-wrap" :class="item.tone">
+              <view class="ring-score">{{ item.accuracy }}%</view>
+              <view class="ring-label">正确率</view>
             </view>
-            <view class="ability-pill" :class="levelClass(item.level)">
-              {{ Math.round(item.accuracy) }}% · {{ item.level }}
+            <view class="subject-report-main">
+              <view class="subject-head">
+                <view class="subject-name">
+                  <view class="subject-icon">{{ item.icon }}</view>
+                  <view class="subject-title">{{ item.subject }}</view>
+                </view>
+                <view class="subject-status" :class="item.tone">{{ item.status }}</view>
+              </view>
+              <view class="subject-count-label">做题数量</view>
+              <view class="subject-count">{{ item.total }}<text>题</text></view>
+              <view class="progress-track">
+                <view class="progress-fill" :class="item.tone" :style="{ width: `${item.accuracy}%` }"></view>
+              </view>
+              <view class="subject-trend">{{ item.tip }}</view>
             </view>
           </view>
         </view>
-      </SectionCard>
 
-      <SectionCard title="每日训练计划" subtitle="根据当前最低正确率的知识点自动生成，暂不接 AI。">
-        <view v-if="dailyPlan.length === 0" class="state-box">暂无真实薄弱项，先完成一轮练习后会自动生成训练计划。</view>
-        <view v-else class="daily-list">
-          <view v-for="item in dailyPlan" :key="item.title" class="daily-card">
-            <view>
-              <view class="daily-title">{{ item.title }}</view>
-              <view class="daily-desc">{{ item.desc }}</view>
+        <view class="learning-advice-card">
+          <view class="advice-head">
+            <view class="advice-title-wrap">
+              <view class="advice-icon">💡</view>
+              <view>
+                <view class="advice-title">学习建议</view>
+                <view class="advice-subtitle">当前为规则生成，后续接入 DeepSeek 输出简洁建议。</view>
+              </view>
             </view>
-            <button class="task-btn" @tap="goTaskPractice(item)">开始</button>
+            <button class="advice-pro-btn" @tap="goPro">AI升级</button>
           </view>
+          <view class="advice-list">
+            <view v-for="item in reportAdvice" :key="item" class="advice-item">
+              <text class="advice-dot">✓</text>
+              <text>{{ item }}</text>
+            </view>
+          </view>
+          <button v-if="dailyPlan.length" class="report-action-btn" @tap="goTaskPractice(dailyPlan[0])">
+            开始推荐训练
+          </button>
         </view>
-      </SectionCard>
-
-      <view class="diagnosis-card">
-        <view class="diagnosis-title">AI 诊断结论</view>
-        <view class="diagnosis-text">{{ report.diagnosis }}</view>
       </view>
-
-      <SectionCard title="Pro 预览：深度 AI 诊断即将开放" subtitle="免费用户当前可查看基础统计；Pro 将提供更细的提分路径。">
-        <view class="pro-preview">
-          <view v-for="item in proPreviewItems" :key="item" class="pro-preview-item">{{ item }}</view>
-        </view>
-        <button class="primary-button pro-btn" @tap="goPro">查看会员中心 / Pro 功能</button>
-      </SectionCard>
-
-      <SectionCard title="行动建议" subtitle="根据当前短板推荐优先训练方向">
-        <view class="task-list">
-          <view v-for="task in report.tasks" :key="task.title" class="task-item">
-            <view class="task-copy">
-              <view class="task-title">{{ task.title }}</view>
-              <view class="task-desc">{{ task.desc }}</view>
-            </view>
-            <button class="task-btn" @tap="goTaskPractice(task)">{{ task.action }}</button>
-          </view>
-        </view>
-      </SectionCard>
-
-      <button class="unlock-btn" @tap="showMockToast">解锁完整 AI 诊断与专属提分计划</button>
     </template>
 
     <template v-else>
@@ -396,8 +424,6 @@ import { onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
-import PageHeader from '../../components/PageHeader.vue'
-import ReportRadarMock from '../../components/ReportRadarMock.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { updateProfile } from '../../api/auth'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
@@ -576,6 +602,89 @@ const dailyPlan = computed(() => report.value.tasks.slice(0, 3).map((item, index
   title: `今日任务 ${index + 1}：${item.subject} - ${item.submodule || item.module}`,
   desc: `建议先做 10 题。${item.desc}`
 })))
+const reportOverview = computed(() => {
+  const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
+  const totalAnswers = Number(learningSummary.value?.total_answers || 0)
+  const summaryAccuracy = Number(learningSummary.value?.accuracy || 0)
+  const cardAccuracy = subjectReportCards.value.length
+    ? Math.round(subjectReportCards.value.reduce((sum, item) => sum + item.accuracy, 0) / subjectReportCards.value.length)
+    : 0
+  const accuracyValue = totalAnswers ? Math.round(summaryAccuracy) : cardAccuracy
+
+  return {
+    weeklyAnswers,
+    accuracy: accuracyValue ? `${accuracyValue}%` : '--',
+    subtitle: totalAnswers ? '坚持学习，稳步提升！' : '完成练习后，这里会生成你的真实学习概览。',
+    trend: totalAnswers ? '真实数据已同步，继续保持刷题节奏 ↗' : '暂无趋势数据，先完成一轮练习吧'
+  }
+})
+const subjectReportCards = computed(() => {
+  const groups = new Map()
+  report.value.items.forEach((item) => {
+    const subject = item.subject || '其他科目'
+    const total = Number(item.total_count || 0)
+    const accuracy = Number(item.accuracy || 0)
+    const correct = Number(item.correct_count || Math.round((total * accuracy) / 100))
+    const current = groups.get(subject) || {
+      subject,
+      total: 0,
+      correct: 0,
+      lowestAccuracy: 100,
+      weakestModule: '',
+      module: item.module || '',
+      submodule: item.submodule || ''
+    }
+    current.total += total
+    current.correct += correct
+    if (accuracy < current.lowestAccuracy) {
+      current.lowestAccuracy = accuracy
+      current.weakestModule = item.submodule || item.module || ''
+      current.module = item.module || ''
+      current.submodule = item.submodule || ''
+    }
+    groups.set(subject, current)
+  })
+
+  const subjectOrder = ['中华文化', '英语运用', '逻辑推理', '数学基础']
+  return Array.from(groups.values())
+    .map((item) => {
+      const accuracy = item.total ? Math.round((item.correct / item.total) * 100) : 0
+      return {
+        ...item,
+        accuracy,
+        icon: getSubjectIcon(item.subject),
+        status: getSubjectStatus(accuracy),
+        tone: getSubjectTone(accuracy),
+        tip: item.weakestModule ? `优先关注：${item.weakestModule}` : '当前表现稳定',
+        action: '去练习'
+      }
+    })
+    .sort((a, b) => {
+      const aIndex = subjectOrder.indexOf(a.subject)
+      const bIndex = subjectOrder.indexOf(b.subject)
+      return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex)
+    })
+})
+const reportAdvice = computed(() => {
+  if (!isAuthed.value) {
+    return ['登录后会基于真实作答记录生成能力报告。', '完成一组专项或综合刷题后，可查看科目正确率和薄弱项。']
+  }
+  if (report.value.items.length === 0) {
+    return ['当前还没有足够的作答数据，建议先完成 10 道专项练习。', '系统会在提交答案后自动更新正确率、错题和能力统计。']
+  }
+
+  const weakestSubjects = subjectReportCards.value.slice().sort((a, b) => a.accuracy - b.accuracy)
+  const weakestStats = report.value.items.slice().sort((a, b) => Number(a.accuracy || 0) - Number(b.accuracy || 0)).slice(0, 2)
+  const advice = []
+  if (weakestSubjects[0]) {
+    advice.push(`${weakestSubjects[0].subject} 当前正确率 ${weakestSubjects[0].accuracy}%，建议优先完成一组 10 题专项训练。`)
+  }
+  weakestStats.forEach((item) => {
+    advice.push(`重点复盘 ${item.module}${item.submodule ? ` - ${item.submodule}` : ''}，先看错题解析，再做同类题。`)
+  })
+  advice.push('后续接入 DeepSeek 后，这里会自动生成更简洁的个性化学习建议。')
+  return advice.slice(0, 4)
+})
 const reportSubtitle = computed(() => {
   if (!isAuthed.value) {
     return '登录后会基于真实作答统计生成报告；当前展示示例诊断。'
@@ -934,6 +1043,29 @@ function buildReportView() {
     tasks,
     items: sortedByWeakness
   }
+}
+
+function getSubjectIcon(subject) {
+  const iconMap = {
+    中华文化: '📚',
+    英语运用: '📝',
+    逻辑推理: '🧠',
+    数学基础: '📐'
+  }
+  return iconMap[subject] || '📊'
+}
+
+function getSubjectStatus(accuracy) {
+  if (accuracy >= 80) return '表现优秀'
+  if (accuracy >= 70) return '表现良好'
+  if (accuracy >= 60) return '继续加油'
+  return '重点补强'
+}
+
+function getSubjectTone(accuracy) {
+  if (accuracy >= 70) return 'blue'
+  if (accuracy >= 60) return 'orange'
+  return 'red'
 }
 
 function getSafeError(error, fallback) {
@@ -1508,6 +1640,477 @@ function formatDateTime(value) {
   text-align: center;
   font-size: 23rpx;
   line-height: 1.5;
+}
+
+.report-dashboard {
+  width: 100%;
+  max-width: 760rpx;
+  margin: 0 auto;
+  padding-bottom: 24rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.report-topbar {
+  min-height: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.report-top-title {
+  flex: 1;
+  color: #101828;
+  text-align: center;
+  font-size: 31rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.report-top-spacer {
+  width: 74rpx;
+  height: 74rpx;
+  flex: 0 0 74rpx;
+}
+
+.report-overview-card,
+.subject-report-card,
+.learning-advice-card {
+  border: 2rpx solid #e7eefb;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
+}
+
+.report-overview-card {
+  position: relative;
+  overflow: hidden;
+  padding: 28rpx 24rpx 22rpx;
+  background:
+    radial-gradient(circle at 86% 10%, rgba(22, 119, 255, 0.14), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+}
+
+.overview-copy {
+  position: relative;
+  z-index: 1;
+}
+
+.overview-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.overview-title {
+  color: #1f2a44;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.overview-info {
+  width: 28rpx;
+  height: 28rpx;
+  border-radius: 50%;
+  border: 2rpx solid #cbd5e1;
+  color: #98a2b3;
+  text-align: center;
+  font-size: 18rpx;
+  line-height: 25rpx;
+  font-weight: 800;
+}
+
+.overview-subtitle {
+  margin-top: 12rpx;
+  color: #6b778d;
+  font-size: 24rpx;
+  line-height: 1.5;
+  font-weight: 600;
+}
+
+.overview-art {
+  position: absolute;
+  right: 20rpx;
+  top: 20rpx;
+  width: 106rpx;
+  height: 106rpx;
+  border-radius: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(255, 255, 255, 0.72);
+  color: #1677ff;
+  font-size: 56rpx;
+  transform: rotate(-5deg);
+  box-shadow: 0 16rpx 34rpx rgba(22, 119, 255, 0.12);
+}
+
+.overview-metrics {
+  position: relative;
+  z-index: 1;
+  margin-top: 26rpx;
+  padding: 24rpx 10rpx;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.94);
+  display: flex;
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, 0.07);
+}
+
+.overview-metric {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+  border-right: 2rpx solid #e8eef7;
+}
+
+.overview-metric:last-child {
+  border-right: 0;
+}
+
+.metric-icon {
+  width: 56rpx;
+  height: 56rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #1677ff;
+  background: #eef5ff;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.metric-icon.green {
+  color: #16a34a;
+  background: #eefbf3;
+}
+
+.metric-copy {
+  min-width: 0;
+}
+
+.metric-label {
+  color: #8a95a8;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.metric-value {
+  margin-top: 4rpx;
+  color: #1677ff;
+  font-size: 38rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.metric-value text {
+  margin-left: 4rpx;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.overview-trend {
+  margin-top: 16rpx;
+  color: #16a34a;
+  text-align: center;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.subject-report-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.subject-report-card {
+  padding: 24rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+}
+
+.ring-wrap {
+  width: 124rpx;
+  height: 124rpx;
+  flex: 0 0 124rpx;
+  border-radius: 50%;
+  border: 12rpx solid #1677ff;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 8rpx #eef5ff;
+}
+
+.ring-wrap.orange {
+  border-color: #f59e0b;
+  box-shadow: inset 0 0 0 8rpx #fff7ed;
+}
+
+.ring-wrap.red {
+  border-color: #ef4444;
+  box-shadow: inset 0 0 0 8rpx #fff1f2;
+}
+
+.ring-score {
+  color: #1677ff;
+  font-size: 30rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.ring-wrap.orange .ring-score {
+  color: #f59e0b;
+}
+
+.ring-wrap.red .ring-score {
+  color: #ef4444;
+}
+
+.ring-label {
+  margin-top: 6rpx;
+  color: #8a95a8;
+  font-size: 18rpx;
+  font-weight: 700;
+}
+
+.subject-report-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.subject-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.subject-name {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  min-width: 0;
+}
+
+.subject-icon {
+  width: 50rpx;
+  height: 50rpx;
+  flex: 0 0 50rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #f4f7ff;
+  font-size: 26rpx;
+}
+
+.subject-title {
+  flex: 1;
+  min-width: 0;
+  color: #101828;
+  font-size: 28rpx;
+  font-weight: 950;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subject-status {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  color: #1677ff;
+  background: #eef5ff;
+  font-size: 20rpx;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.subject-status.orange {
+  color: #d97706;
+  background: #fff7ed;
+}
+
+.subject-status.red {
+  color: #dc2626;
+  background: #fff1f2;
+}
+
+.subject-count-label {
+  margin-top: 12rpx;
+  color: #8a95a8;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.subject-count {
+  margin-top: 4rpx;
+  color: #101828;
+  font-size: 34rpx;
+  font-weight: 950;
+}
+
+.subject-count text {
+  margin-left: 6rpx;
+  color: #667085;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.progress-track {
+  margin-top: 16rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  overflow: hidden;
+  background: #e8eef7;
+}
+
+.progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, #1677ff, #63a4ff);
+}
+
+.progress-fill.orange {
+  background: linear-gradient(90deg, #f59e0b, #fbbf24);
+}
+
+.progress-fill.red {
+  background: linear-gradient(90deg, #ef4444, #fb7185);
+}
+
+.subject-trend {
+  margin-top: 12rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.learning-advice-card {
+  position: relative;
+  overflow: hidden;
+  padding: 26rpx 24rpx;
+}
+
+.learning-advice-card::after {
+  content: "";
+  position: absolute;
+  right: -20rpx;
+  bottom: -26rpx;
+  width: 150rpx;
+  height: 150rpx;
+  border-radius: 38rpx;
+  background: linear-gradient(135deg, rgba(22, 119, 255, 0.12), rgba(22, 119, 255, 0.02));
+  transform: rotate(-10deg);
+}
+
+.advice-head {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.advice-title-wrap {
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  min-width: 0;
+}
+
+.advice-icon {
+  width: 48rpx;
+  height: 48rpx;
+  flex: 0 0 48rpx;
+  border-radius: 16rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: #fff8d8;
+  font-size: 25rpx;
+}
+
+.advice-title {
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.advice-subtitle {
+  margin-top: 8rpx;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.advice-pro-btn {
+  margin: 0;
+  padding: 0 18rpx;
+  height: 54rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: #111827;
+  color: #ffffff;
+  font-size: 21rpx;
+  line-height: 54rpx;
+  font-weight: 900;
+}
+
+.advice-list {
+  position: relative;
+  z-index: 1;
+  margin-top: 18rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.advice-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  color: #475467;
+  font-size: 23rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.advice-dot {
+  width: 28rpx;
+  height: 28rpx;
+  flex: 0 0 28rpx;
+  margin-top: 4rpx;
+  border-radius: 50%;
+  background: #1677ff;
+  color: #ffffff;
+  text-align: center;
+  font-size: 18rpx;
+  line-height: 28rpx;
+  font-weight: 900;
+}
+
+.report-action-btn {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 82rpx;
+  margin-top: 22rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #1677ff, #4f86ff);
+  color: #ffffff;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-shadow: 0 16rpx 28rpx rgba(22, 119, 255, 0.18);
 }
 
 .mistake-page-head {
