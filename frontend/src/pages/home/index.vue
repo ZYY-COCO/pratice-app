@@ -536,7 +536,7 @@
 
         <view class="pro-modal-actions">
           <button class="pro-later-btn" @tap="handleCloseProModal">稍后再说</button>
-          <button class="pro-open-btn" @tap="handleProComingSoon">敬请期待</button>
+          <button class="pro-open-btn" @tap="handleViewProPlans">查看开通方式</button>
         </view>
       </view>
     </view>
@@ -1092,8 +1092,9 @@ function handleCloseProModal() {
   showProModal.value = false
 }
 
-function handleProComingSoon() {
-  uni.showToast({ title: '内测阶段暂未开放支付', icon: 'none' })
+function handleViewProPlans() {
+  handleCloseProModal()
+  goPro()
 }
 
 function logout() {
