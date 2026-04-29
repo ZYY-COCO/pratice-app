@@ -1,4 +1,4 @@
-from datetime import UTC, datetime
+from datetime import datetime, timezone
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -47,7 +47,7 @@ def record_wrong_question(supabase: Client, user_id: str, question_id: str) -> N
     if existing.data:
         row = existing.data[0]
         supabase.table("wrong_questions").update(
-            {"wrong_count": int(row["wrong_count"]) + 1, "last_wrong_at": datetime.now(UTC).isoformat()}
+            {"wrong_count": int(row["wrong_count"]) + 1, "last_wrong_at": datetime.now(timezone.utc).isoformat()}
         ).eq("id", row["id"]).execute()
         return
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import secrets
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -38,7 +38,7 @@ def check_send_cooldown(supabase: Client, email: str, purpose: str) -> None:
         return
 
     latest = datetime.fromisoformat(response.data[0]["created_at"].replace("Z", "+00:00"))
-    delta = datetime.now(UTC) - latest
+    delta = datetime.now(timezone.utc) - latest
     if delta.total_seconds() < SEND_COOLDOWN_SECONDS:
         wait_seconds = SEND_COOLDOWN_SECONDS - int(delta.total_seconds())
         raise HTTPException(
@@ -49,8 +49,8 @@ def check_send_cooldown(supabase: Client, email: str, purpose: str) -> None:
 
 def store_verification_code(supabase: Client, email: str, purpose: str, code: str) -> None:
     normalized_email = normalize_email(email)
-    now_iso = datetime.now(UTC).isoformat()
-    expires_at = (datetime.now(UTC) + timedelta(minutes=CODE_EXPIRE_MINUTES)).isoformat()
+    now_iso = datetime.now(timezone.utc).isoformat()
+    expires_at = (datetime.now(timezone.utc) + timedelta(minutes=CODE_EXPIRE_MINUTES)).isoformat()
 
     (
         supabase.table("auth_email_codes")
@@ -90,7 +90,7 @@ def verify_code_or_raise(supabase: Client, email: str, purpose: str, code: str) 
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code already used")
 
     expires_at = datetime.fromisoformat(row["expires_at"].replace("Z", "+00:00"))
-    if expires_at < datetime.now(UTC):
+    if expires_at < datetime.now(timezone.utc):
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Verification code expired")
 
     expected_hash = hash_verification_code(normalized_email, purpose, code)
@@ -99,7 +99,7 @@ def verify_code_or_raise(supabase: Client, email: str, purpose: str, code: str) 
 
     (
         supabase.table("auth_email_codes")
-        .update({"consumed_at": datetime.now(UTC).isoformat()})
+        .update({"consumed_at": datetime.now(timezone.utc).isoformat()})
         .eq("id", row["id"])
         .execute()
     )

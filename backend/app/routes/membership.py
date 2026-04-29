@@ -1,4 +1,4 @@
-from datetime import UTC, datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Annotated
 from uuid import uuid4
 
@@ -50,7 +50,7 @@ def _parse_datetime(value: str | None) -> datetime | None:
 def _build_membership_status(profile: dict) -> MembershipStatusResponse:
     raw_status = str(profile.get("membership_status") or "inactive").lower()
     expires_at = _parse_datetime(profile.get("membership_expires_at"))
-    is_expired = bool(expires_at and expires_at < datetime.now(UTC))
+    is_expired = bool(expires_at and expires_at < datetime.now(timezone.utc))
     effective_status = "expired" if raw_status == "active" and is_expired else raw_status
 
     return MembershipStatusResponse(
@@ -72,12 +72,12 @@ def _get_plan_or_raise(plan_code: str) -> MembershipPlan:
 
 
 def _utc_now_iso() -> str:
-    return datetime.now(UTC).isoformat()
+    return datetime.now(timezone.utc).isoformat()
 
 
 def _activate_membership(user_id: str, plan: MembershipPlan) -> None:
     supabase_admin = get_supabase_admin()
-    now = datetime.now(UTC)
+    now = datetime.now(timezone.utc)
     expires_at = now + timedelta(days=plan.duration_days)
     supabase_admin.table("users").update(
         {
