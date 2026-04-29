@@ -8,6 +8,17 @@ class SubmitAnswerRequest(BaseModel):
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 
 
+class SubmitBatchAnswerItem(BaseModel):
+    question_id: str
+    selected_answer: str = Field(pattern="^[ABCD]$")
+    used_time: int = Field(default=0, ge=0)
+
+
+class SubmitBatchAnswerRequest(BaseModel):
+    answers: list[SubmitBatchAnswerItem] = Field(min_length=1, max_length=50)
+    exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+
+
 class SubmitAnswerResponse(BaseModel):
     question_id: str
     selected_answer: str
@@ -16,6 +27,10 @@ class SubmitAnswerResponse(BaseModel):
     explanation: str
     added_to_wrong_questions: bool
     ability_accuracy: float
+
+
+class SubmitBatchAnswerResponse(BaseModel):
+    items: list[SubmitAnswerResponse]
 
 
 class AnswerHistoryQuestion(BaseModel):

@@ -2,7 +2,13 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
-from app.schemas.answers import AnswerHistoryResponse, SubmitAnswerRequest, SubmitAnswerResponse
+from app.schemas.answers import (
+    AnswerHistoryResponse,
+    SubmitAnswerRequest,
+    SubmitAnswerResponse,
+    SubmitBatchAnswerRequest,
+    SubmitBatchAnswerResponse,
+)
 from app.services.answers import list_answer_history, persist_answer_submission, submit_answer
 
 router = APIRouter(prefix="/answers", tags=["作答"])
@@ -58,3 +64,40 @@ def submit(
         is_correct=result["is_correct"],
     )
     return SubmitAnswerResponse(**result)
+
+
+@router.post("/submit-batch", response_model=SubmitBatchAnswerResponse)
+def submit_batch(
+    payload: SubmitBatchAnswerRequest,
+    background_tasks: BackgroundTasks,
+    user_id: str = Depends(get_current_user_id),
+) -> SubmitBatchAnswerResponse:
+    supabase = get_supabase_admin()
+    items: list[SubmitAnswerResponse] = []
+
+    for item in payload.answers:
+        result = submit_answer(
+            supabase=supabase,
+            user_id=user_id,
+            question_id=item.question_id,
+            selected_answer=item.selected_answer,
+            used_time=item.used_time,
+            requested_exam_code=payload.exam_code,
+        )
+        background_tasks.add_task(
+            persist_answer_submission,
+            user_id=user_id,
+            question={
+                "id": result["question_id"],
+                "exam_code": result.get("exam_code"),
+                "subject": result.get("subject"),
+                "module": result.get("module"),
+                "submodule": result.get("submodule"),
+            },
+            selected_answer=item.selected_answer,
+            used_time=item.used_time,
+            is_correct=result["is_correct"],
+        )
+        items.append(SubmitAnswerResponse(**result))
+
+    return SubmitBatchAnswerResponse(items=items)

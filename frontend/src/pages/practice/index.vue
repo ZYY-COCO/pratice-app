@@ -97,7 +97,7 @@
         <view class="summary-card">
           <view class="summary-kicker">综合刷题结果</view>
           <view class="summary-score">{{ correctCount }} / {{ reviewResults.length }}</view>
-          <view class="summary-sub">绿色代表答对，红色代表答错。点击题号可直接查看对应解析。</view>
+          <view class="summary-sub">绿色代表答对，红色代表答错，橙色代表网络回包异常但不会阻断结果页。点击题号可查看对应解析。</view>
         </view>
 
         <view class="summary-grid">
@@ -105,7 +105,7 @@
             v-for="(item, index) in reviewResults"
             :key="item.question.questionId || item.question.id"
             class="summary-dot"
-            :class="{ correct: item.isCorrect, wrong: !item.isCorrect }"
+            :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
             @tap="openReviewQuestion(index)"
           >
             {{ index + 1 }}
@@ -831,44 +831,15 @@ async function submitComprehensiveAnswers() {
   scrollToResultSection()
 
   try {
-    const results = await Promise.all(
-      questionPool.value.map(async (question) => {
-        const key = question.questionId || question.id
-        const selected = comprehensiveAnswers.value[key]
-
-        if (hasAccessToken.value && question.questionId && !String(question.questionId).startsWith('mock-')) {
-          const result = await request({
-            url: '/answers/submit',
-            method: 'POST',
-            header: {
-              Authorization: `Bearer ${accessToken.value}`
-            },
-            data: {
-              question_id: question.questionId,
-              selected_answer: selected,
-              used_time: timerSeconds.value,
-              exam_code: examCode.value
-            }
-          })
-
-          return {
-            question,
-            selectedAnswer: selected,
-            correctAnswer: result.correct_answer,
-            explanation: result.explanation,
-            isCorrect: result.is_correct
-          }
-        }
-
-        return {
-          question,
-          selectedAnswer: selected,
-          correctAnswer: question.answer,
-          explanation: question.explanation,
-          isCorrect: selected === question.answer
-        }
-      })
-    )
+    const entries = questionPool.value.map((question) => {
+      const key = question.questionId || question.id
+      return {
+        question,
+        selected: comprehensiveAnswers.value[key]
+      }
+    })
+    const useRealSubmit = entries.every(({ question }) => isRealSubmitQuestion(question))
+    const results = useRealSubmit ? await submitComprehensiveBatch(entries) : entries.map(buildLocalComprehensiveResult)
 
     reviewResults.value = results
     summaryMode.value = true
@@ -882,6 +853,99 @@ async function submitComprehensiveAnswers() {
     uni.showToast({ title: error?.detail || '提交整卷失败', icon: 'none' })
   } finally {
     submitting.value = false
+  }
+}
+
+function isRealSubmitQuestion(question) {
+  return hasAccessToken.value && question.questionId && !String(question.questionId).startsWith('mock-')
+}
+
+function buildRemoteComprehensiveResult(question, selected, result) {
+  return {
+    question,
+    selectedAnswer: selected,
+    correctAnswer: result.correct_answer,
+    explanation: result.explanation,
+    isCorrect: result.is_correct,
+    syncFailed: false
+  }
+}
+
+function buildLocalComprehensiveResult({ question, selected }) {
+  return {
+    question,
+    selectedAnswer: selected,
+    correctAnswer: question.answer,
+    explanation: question.explanation,
+    isCorrect: selected === question.answer,
+    syncFailed: false
+  }
+}
+
+function buildPendingComprehensiveResult(question, selected, error) {
+  const reason = error?.detail ? `（${error.detail}）` : ''
+  return {
+    question,
+    selectedAnswer: selected,
+    correctAnswer: '待同步',
+    explanation: `本题做题记录已提交或正在同步，但移动端网络返回异常${reason}。请稍后到练习历史查看完整答案与解析。`,
+    isCorrect: false,
+    syncFailed: true
+  }
+}
+
+async function submitComprehensiveBatch(entries) {
+  try {
+    const response = await request({
+      url: '/answers/submit-batch',
+      method: 'POST',
+      timeout: 25000,
+      header: {
+        Authorization: `Bearer ${accessToken.value}`
+      },
+      data: {
+        exam_code: examCode.value,
+        answers: entries.map(({ question, selected }) => ({
+          question_id: question.questionId,
+          selected_answer: selected,
+          used_time: timerSeconds.value
+        }))
+      }
+    })
+
+    const resultMap = new Map((response.items || []).map((item) => [item.question_id, item]))
+    return entries.map(({ question, selected }) => {
+      const result = resultMap.get(question.questionId)
+      return result ? buildRemoteComprehensiveResult(question, selected, result) : buildPendingComprehensiveResult(question, selected)
+    })
+  } catch (error) {
+    const results = []
+    for (const entry of entries) {
+      results.push(await submitComprehensiveSingle(entry, error))
+    }
+    return results
+  }
+}
+
+async function submitComprehensiveSingle({ question, selected }, batchError) {
+  try {
+    const result = await request({
+      url: '/answers/submit',
+      method: 'POST',
+      timeout: 20000,
+      header: {
+        Authorization: `Bearer ${accessToken.value}`
+      },
+      data: {
+        question_id: question.questionId,
+        selected_answer: selected,
+        used_time: timerSeconds.value,
+        exam_code: examCode.value
+      }
+    })
+    return buildRemoteComprehensiveResult(question, selected, result)
+  } catch (error) {
+    return buildPendingComprehensiveResult(question, selected, error || batchError)
   }
 }
 
@@ -946,7 +1010,7 @@ function applyReviewAt(index) {
   selectedOption.value = result.selectedAnswer
   correctAnswer.value = result.correctAnswer
   answerExplanation.value = result.explanation
-  resultTag.value = result.isCorrect ? '本题答对。' : '本题答错，已纳入错题统计。'
+  resultTag.value = result.syncFailed ? '本题记录已提交，答案解析稍后可在练习历史中查看。' : result.isCorrect ? '本题答对。' : '本题答错，已纳入错题统计。'
   submitted.value = true
   abilityAccuracy.value = null
   loadCurrentFavoriteStatus()
@@ -1580,6 +1644,10 @@ function scrollToResultSection() {
 
 .summary-dot.wrong {
   background: #ef4444;
+}
+
+.summary-dot.pending {
+  background: #f59e0b;
 }
 
 .summary-actions {
