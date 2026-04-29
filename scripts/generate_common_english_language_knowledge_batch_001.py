@@ -1,0 +1,1763 @@
+from __future__ import annotations
+
+import json
+import random
+import re
+from collections import Counter
+from pathlib import Path
+
+
+PROJECT_ROOT = Path(__file__).resolve().parent.parent
+OUTPUT_PATH = PROJECT_ROOT / "data" / "common_english_language_knowledge_batch_001.json"
+REVIEW_PATH = PROJECT_ROOT / "data" / "common_english_language_knowledge_batch_001_review.md"
+
+
+def normalize_stem(value: str) -> str:
+    return re.sub(r"\s+", "", value or "").strip().lower()
+
+
+def load_existing_stems() -> set[str]:
+    stems: set[str] = set()
+    for path in (PROJECT_ROOT / "data").glob("*.json"):
+        if path.resolve() == OUTPUT_PATH.resolve():
+            continue
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        questions = payload.get("questions") if isinstance(payload, dict) else payload
+        if not isinstance(questions, list):
+            continue
+        for question in questions:
+            if isinstance(question, dict) and question.get("stem"):
+                stems.add(normalize_stem(str(question["stem"])))
+    return stems
+
+
+def make_options(correct: str, distractors: list[str], rng: random.Random) -> tuple[dict[str, str], str]:
+    values: list[str] = []
+    for value in [correct, *distractors]:
+        if value and value not in values:
+            values.append(value)
+    if len(values) != 4:
+        raise ValueError(f"Expected 4 unique options, got {values}")
+    rng.shuffle(values)
+    labels = ["A", "B", "C", "D"]
+    options = dict(zip(labels, values))
+    answer = next(label for label, value in options.items() if value == correct)
+    return options, answer
+
+
+def build_question(spec: dict, rng: random.Random) -> dict:
+    options, answer = make_options(spec["correct"], spec["distractors"], rng)
+    return {
+        "exam_code": "COMMON",
+        "subject": "英语运用",
+        "module": "语言知识",
+        "submodule": spec["submodule"],
+        "question_type": "single_choice",
+        "stem": spec["stem"],
+        "option_a": options["A"],
+        "option_b": options["B"],
+        "option_c": options["C"],
+        "option_d": options["D"],
+        "answer": answer,
+        "explanation": spec["explanation"],
+        "difficulty": spec["difficulty"],
+        "source_type": "ai_generated",
+        "source_year": 2026,
+        "passage_id": None,
+    }
+
+
+VOCAB_SPECS = [
+    {
+        "stem": "The manager was accused ______ ignoring several safety warnings before the accident.",
+        "correct": "of",
+        "distractors": ["for", "to", "with"],
+        "explanation": "固定搭配：accuse sb. of doing sth. 表示“指控某人做某事”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "Students are expected to observe the rules even when no teacher is present.",
+        "correct": "obey",
+        "distractors": ["watch", "notice", "predict"],
+        "explanation": "observe 在此表示“遵守”，与 rules/laws 搭配时相当于 obey。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The temperature dropped ______ zero during the night.",
+        "correct": "below",
+        "distractors": ["beneath", "underneath", "under"],
+        "explanation": "表示温度、水平、标准低于某一点，常用 below zero。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The new course is designed to appeal ______ students who need practical writing skills.",
+        "correct": "to",
+        "distractors": ["for", "with", "at"],
+        "explanation": "固定搭配：appeal to sb. 表示“吸引某人；对某人有吸引力”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "You should not sit down ______ and do nothing when difficulties appear.",
+        "correct": "in despair",
+        "distractors": ["in default", "in dispute", "in dismay"],
+        "explanation": "in despair 表示“绝望地”，符合语境。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The research team tried to ______ whether the new policy was effective.",
+        "correct": "ascertain",
+        "distractors": ["assume", "assert", "assign"],
+        "explanation": "ascertain 表示“查明、确定”；assume 是“假设”，assert 是“断言”，assign 是“分配”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The mountain village lies at an ______ of nearly 2,000 meters.",
+        "correct": "altitude",
+        "distractors": ["attitude", "longitude", "latitude"],
+        "explanation": "altitude 指“海拔高度”；attitude 是“态度”，longitude/latitude 是经纬度。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Some documents were found to be ______ because they repeated information already provided.",
+        "correct": "redundant",
+        "distractors": ["abundant", "relevant", "reluctant"],
+        "explanation": "redundant 表示“多余的、冗余的”；abundant 是“丰富的”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Treatment of the disease requires regular medical ______.",
+        "correct": "intervention",
+        "distractors": ["interference", "interruption", "interaction"],
+        "explanation": "medical intervention 指“医疗干预”；interference 多指“不当干涉”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The organization offers a ______ to students from low-income families.",
+        "correct": "scholarship",
+        "distractors": ["membership", "leadership", "partnership"],
+        "explanation": "scholarship 表示“奖学金”；其余选项不符合语境。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The old city is famous for its ______ streets and quiet courtyards.",
+        "correct": "narrow",
+        "distractors": ["minor", "slight", "thin"],
+        "explanation": "narrow 用来形容街道狭窄；thin 通常形容厚度或人瘦。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The witness gave a detailed ______ of what had happened at the station.",
+        "correct": "account",
+        "distractors": ["discount", "amount", "count"],
+        "explanation": "account 可表示“叙述、描述”；give an account of sth. 是常见搭配。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The museum has taken steps to ______ rare manuscripts from damage.",
+        "correct": "preserve",
+        "distractors": ["reserve", "deserve", "observe"],
+        "explanation": "preserve 表示“保护、保存”；reserve 是“预留”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The new evidence is ______ to the case and should not be ignored.",
+        "correct": "relevant",
+        "distractors": ["reluctant", "redundant", "resistant"],
+        "explanation": "be relevant to 表示“与……有关”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The plan was rejected because it was not ______ with the current regulations.",
+        "correct": "consistent",
+        "distractors": ["constant", "conscious", "considerate"],
+        "explanation": "be consistent with 表示“与……一致”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The committee will ______ the proposal before making a final decision.",
+        "correct": "evaluate",
+        "distractors": ["estimate", "imitate", "illustrate"],
+        "explanation": "evaluate 表示“评估、评价”，符合委员会审议方案的语境。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The speaker tried to ______ the importance of careful preparation.",
+        "correct": "emphasize",
+        "distractors": ["sympathize", "summarize", "authorize"],
+        "explanation": "emphasize 表示“强调”；sympathize 表示“同情”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "His explanation was clear and ______, so everyone understood the procedure quickly.",
+        "correct": "concise",
+        "distractors": ["confused", "casual", "complex"],
+        "explanation": "concise 表示“简明的”，与 clear 并列符合语境。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The school decided to ______ the meeting until next Friday.",
+        "correct": "postpone",
+        "distractors": ["promote", "propose", "prohibit"],
+        "explanation": "postpone 表示“推迟”；promote 是“促进、晋升”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The article gives a brief ______ of the changes in modern education.",
+        "correct": "overview",
+        "distractors": ["overlook", "overtime", "outcome"],
+        "explanation": "overview 表示“概述”；overlook 是“忽视/俯瞰”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The teacher asked the students to ______ their answers with examples.",
+        "correct": "support",
+        "distractors": ["supply", "suppose", "survive"],
+        "explanation": "support an answer with examples 表示“用例子支持答案”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The company has made a ______ effort to reduce energy consumption.",
+        "correct": "conscious",
+        "distractors": ["constant", "considerable", "conservative"],
+        "explanation": "a conscious effort 指“有意识的努力”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The villagers were ______ to leave their homes after the flood warning.",
+        "correct": "reluctant",
+        "distractors": ["redundant", "relevant", "resistant"],
+        "explanation": "be reluctant to do sth. 表示“不情愿做某事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The two reports are not identical, but they are ______ in many important points.",
+        "correct": "similar",
+        "distractors": ["separate", "single", "specific"],
+        "explanation": "similar 表示“相似的”，符合 not identical but... 的转折语境。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The professor asked us to ______ between facts and opinions in the article.",
+        "correct": "distinguish",
+        "distractors": ["distribute", "dismiss", "display"],
+        "explanation": "distinguish between A and B 表示“区分A和B”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The new policy will have a direct ______ on small businesses.",
+        "correct": "impact",
+        "distractors": ["impulse", "import", "image"],
+        "explanation": "have an impact on 表示“对……产生影响”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The student made a ______ attempt to answer the difficult question.",
+        "correct": "brave",
+        "distractors": ["brief", "blank", "bare"],
+        "explanation": "a brave attempt 表示“勇敢尝试”；其余选项语义不合。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The evidence is not strong enough to ______ the conclusion.",
+        "correct": "justify",
+        "distractors": ["identify", "modify", "classify"],
+        "explanation": "justify 表示“证明……有理、为……提供正当理由”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "We need to ______ the problem from different angles.",
+        "correct": "approach",
+        "distractors": ["approve", "appoint", "apply"],
+        "explanation": "approach a problem 表示“处理、看待一个问题”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The plan sounds attractive, but its practical ______ remains uncertain.",
+        "correct": "feasibility",
+        "distractors": ["flexibility", "visibility", "responsibility"],
+        "explanation": "feasibility 表示“可行性”，符合 practical 的语境。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The young researcher showed remarkable ______ in solving the technical problem.",
+        "correct": "creativity",
+        "distractors": ["security", "authority", "majority"],
+        "explanation": "creativity 表示“创造力”，符合 solving technical problem 的语境。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The instructions should be written in plain language to avoid ______.",
+        "correct": "confusion",
+        "distractors": ["conclusion", "condition", "confidence"],
+        "explanation": "avoid confusion 表示“避免混淆”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The scientist's argument was based on careful ______ rather than guesswork.",
+        "correct": "observation",
+        "distractors": ["occupation", "operation", "opposition"],
+        "explanation": "observation 表示“观察”，与 rather than guesswork 构成对比。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The mayor promised to ______ public transport in the next five years.",
+        "correct": "improve",
+        "distractors": ["prove", "approve", "remove"],
+        "explanation": "improve public transport 表示“改善公共交通”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The applicant was asked to provide ______ documents before the deadline.",
+        "correct": "additional",
+        "distractors": ["addictive", "adjective", "adequate"],
+        "explanation": "additional documents 表示“补充文件、额外文件”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The final decision will depend ______ the results of the survey.",
+        "correct": "on",
+        "distractors": ["of", "to", "with"],
+        "explanation": "depend on 是固定搭配，表示“取决于”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The teacher reminded us to pay attention ______ spelling and punctuation.",
+        "correct": "to",
+        "distractors": ["for", "with", "on"],
+        "explanation": "pay attention to 是固定搭配。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The committee objected ______ the proposal because it lacked clear evidence.",
+        "correct": "to",
+        "distractors": ["with", "against", "for"],
+        "explanation": "object to sth./doing sth. 表示“反对”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The speaker referred ______ several recent studies in his report.",
+        "correct": "to",
+        "distractors": ["on", "with", "for"],
+        "explanation": "refer to 表示“提到、参考”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The new rule applies ______ all students, including exchange students.",
+        "correct": "to",
+        "distractors": ["for", "with", "at"],
+        "explanation": "apply to sb./sth. 表示“适用于”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The success of the project depends largely on the team's ______.",
+        "correct": "cooperation",
+        "distractors": ["competition", "composition", "comparison"],
+        "explanation": "cooperation 表示“合作”，符合 team project 的语境。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The old factory has been ______ into a modern art center.",
+        "correct": "converted",
+        "distractors": ["convinced", "connected", "confined"],
+        "explanation": "convert A into B 表示“把A转变为B”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The city is trying to ______ more visitors by improving public services.",
+        "correct": "attract",
+        "distractors": ["attack", "attach", "attend"],
+        "explanation": "attract visitors 表示“吸引游客”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The medicine may have side effects, so it should be used with ______.",
+        "correct": "caution",
+        "distractors": ["courage", "custom", "comfort"],
+        "explanation": "with caution 表示“谨慎地”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The new evidence seems to ______ his earlier statement.",
+        "correct": "contradict",
+        "distractors": ["contribute", "construct", "conduct"],
+        "explanation": "contradict 表示“与……矛盾”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The two sides failed to reach an ______ on the price.",
+        "correct": "agreement",
+        "distractors": ["argument", "arrangement", "assignment"],
+        "explanation": "reach an agreement 表示“达成协议”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The meeting was held to discuss issues of common ______.",
+        "correct": "concern",
+        "distractors": ["control", "command", "content"],
+        "explanation": "issues of common concern 表示“共同关心的问题”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The report is ______ to be published next month.",
+        "correct": "scheduled",
+        "distractors": ["settled", "selected", "secured"],
+        "explanation": "be scheduled to do sth. 表示“计划、安排做某事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The student was praised for his ______ improvement in writing.",
+        "correct": "steady",
+        "distractors": ["steep", "strict", "stiff"],
+        "explanation": "steady improvement 表示“稳定进步”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The audience responded ______ to the speaker's humorous examples.",
+        "correct": "warmly",
+        "distractors": ["barely", "closely", "nearly"],
+        "explanation": "respond warmly 表示“热烈回应”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The survey aims to collect data from a ______ sample of students.",
+        "correct": "representative",
+        "distractors": ["repetitive", "respective", "restrictive"],
+        "explanation": "representative sample 表示“有代表性的样本”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The issue is too complicated to be solved by a ______ answer.",
+        "correct": "simple",
+        "distractors": ["single", "similar", "silent"],
+        "explanation": "simple answer 表示“简单答案”；句意强调问题复杂。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The report provides ______ information about the local economy.",
+        "correct": "valuable",
+        "distractors": ["valueless", "various", "violent"],
+        "explanation": "valuable information 表示“有价值的信息”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "He made a clear ______ between short-term goals and long-term goals.",
+        "correct": "distinction",
+        "distractors": ["distribution", "description", "decision"],
+        "explanation": "make a distinction between A and B 表示“区分A和B”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The public library is ______ to everyone in the community.",
+        "correct": "accessible",
+        "distractors": ["acceptable", "available", "adaptable"],
+        "explanation": "be accessible to 表示“可进入、可使用”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The applicant's experience is highly ______ to the position.",
+        "correct": "relevant",
+        "distractors": ["relative", "regular", "reliable"],
+        "explanation": "be relevant to 表示“与……相关”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The final result was beyond our ______.",
+        "correct": "expectations",
+        "distractors": ["exceptions", "experiments", "expressions"],
+        "explanation": "beyond one's expectations 表示“超出某人的预期”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The government has introduced measures to ______ air pollution.",
+        "correct": "reduce",
+        "distractors": ["release", "replace", "recover"],
+        "explanation": "reduce pollution 表示“减少污染”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The professor's remarks were brief but highly ______.",
+        "correct": "informative",
+        "distractors": ["imaginary", "informal", "inactive"],
+        "explanation": "informative 表示“信息量大的、有启发的”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The new teaching method has been widely ______ by local schools.",
+        "correct": "adopted",
+        "distractors": ["adapted", "adjusted", "admitted"],
+        "explanation": "adopt a method 表示“采用一种方法”；adapt 表示“适应、改编”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The child showed great ______ about how the machine worked.",
+        "correct": "curiosity",
+        "distractors": ["security", "capacity", "certainty"],
+        "explanation": "curiosity about sth. 表示“对……的好奇心”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The plan is ______ only if enough volunteers are available.",
+        "correct": "practical",
+        "distractors": ["physical", "political", "personal"],
+        "explanation": "practical 表示“实际可行的”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The speaker used several examples to ______ his main point.",
+        "correct": "illustrate",
+        "distractors": ["imitate", "investigate", "interrupt"],
+        "explanation": "illustrate a point 表示“说明一个观点”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The road was closed because of ______ fog.",
+        "correct": "dense",
+        "distractors": ["deep", "heavy", "thickened"],
+        "explanation": "dense fog 是常见搭配，表示“浓雾”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The school encourages students to take an ______ part in class discussions.",
+        "correct": "active",
+        "distractors": ["actual", "accurate", "ancient"],
+        "explanation": "take an active part in 表示“积极参与”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The project was completed ahead ______ schedule.",
+        "correct": "of",
+        "distractors": ["to", "with", "for"],
+        "explanation": "ahead of schedule 表示“提前”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The researcher is familiar ______ both qualitative and quantitative methods.",
+        "correct": "with",
+        "distractors": ["to", "for", "about"],
+        "explanation": "be familiar with sth. 表示“熟悉某事”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The teacher's advice was of great ______ to the new students.",
+        "correct": "benefit",
+        "distractors": ["profit", "interest", "advantage"],
+        "explanation": "be of great benefit to sb. 表示“对某人大有益处”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The two terms are often used ______, though they are not exactly the same.",
+        "correct": "interchangeably",
+        "distractors": ["individually", "indirectly", "indifferently"],
+        "explanation": "interchangeably 表示“可互换地”。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The company apologized for the ______ caused by the delay.",
+        "correct": "inconvenience",
+        "distractors": ["incompetence", "inconsistency", "independence"],
+        "explanation": "inconvenience 表示“不便”；常用于道歉语境。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The evidence was ______ from several independent sources.",
+        "correct": "obtained",
+        "distractors": ["contained", "maintained", "retained"],
+        "explanation": "obtain evidence 表示“获得证据”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The committee reached a ______ after three hours of discussion.",
+        "correct": "consensus",
+        "distractors": ["consequence", "conference", "confidence"],
+        "explanation": "reach a consensus 表示“达成共识”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The accident was caused by a ______ of factors, not by a single mistake.",
+        "correct": "combination",
+        "distractors": ["competition", "condition", "collection"],
+        "explanation": "a combination of factors 表示“多种因素的结合”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The result was ______ with what the researchers had predicted.",
+        "correct": "consistent",
+        "distractors": ["constant", "convenient", "contrary"],
+        "explanation": "be consistent with 表示“与……一致”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The course aims to help students develop ______ thinking.",
+        "correct": "critical",
+        "distractors": ["critic", "crucial", "creative"],
+        "explanation": "critical thinking 表示“批判性思维”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The plan was approved despite some minor ______.",
+        "correct": "objections",
+        "distractors": ["objects", "objectives", "observations"],
+        "explanation": "objection 表示“反对意见”；objective 是“目标”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The company is looking for ways to ______ its market share.",
+        "correct": "expand",
+        "distractors": ["extend", "expend", "explore"],
+        "explanation": "expand market share 表示“扩大市场份额”；expend 表示“花费”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The instructions are ______ enough for beginners to follow.",
+        "correct": "straightforward",
+        "distractors": ["forward-looking", "far-reaching", "hard-working"],
+        "explanation": "straightforward 表示“简单明了的”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The judge asked the witness to give a ______ account of the event.",
+        "correct": "truthful",
+        "distractors": ["true", "trustful", "trusted"],
+        "explanation": "truthful account 表示“真实陈述”；trustful 指“轻信的”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The proposal is still under ______ and no decision has been made.",
+        "correct": "consideration",
+        "distractors": ["construction", "condition", "connection"],
+        "explanation": "under consideration 表示“正在考虑中”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The failure of the experiment was mainly ______ to poor design.",
+        "correct": "due",
+        "distractors": ["owing", "because", "thanks"],
+        "explanation": "be due to 表示“由于”；owing to 通常不用在 be 后作表语结构的核心。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The boy has a natural ______ for languages.",
+        "correct": "aptitude",
+        "distractors": ["attitude", "altitude", "attribute"],
+        "explanation": "aptitude for 表示“在某方面的天资、能力倾向”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The two cities are connected by a ______ railway line.",
+        "correct": "direct",
+        "distractors": ["direction", "directive", "director"],
+        "explanation": "direct railway line 表示“直达铁路线路”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The speaker's argument was persuasive because it was supported by ______ data.",
+        "correct": "reliable",
+        "distractors": ["relative", "reluctant", "relevantly"],
+        "explanation": "reliable data 表示“可靠数据”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The workers demanded better pay and safer working ______.",
+        "correct": "conditions",
+        "distractors": ["situations", "positions", "locations"],
+        "explanation": "working conditions 表示“工作条件”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The article presents a ______ view of the problem, considering both advantages and risks.",
+        "correct": "balanced",
+        "distractors": ["blank", "blind", "brief"],
+        "explanation": "balanced view 表示“平衡的观点、全面的看法”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The number of applicants has increased ______ over the past three years.",
+        "correct": "steadily",
+        "distractors": ["strictly", "slightly", "suddenly"],
+        "explanation": "steadily 表示“稳定地、持续地”，与 over the past three years 搭配自然。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The school provides students with ______ access to online learning resources.",
+        "correct": "convenient",
+        "distractors": ["considerate", "constant", "confident"],
+        "explanation": "convenient access 表示“便利的使用渠道”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The report was criticized for its lack of ______ evidence.",
+        "correct": "convincing",
+        "distractors": ["convinced", "convenient", "conventional"],
+        "explanation": "convincing evidence 表示“有说服力的证据”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The museum is open every day ______ Monday.",
+        "correct": "except",
+        "distractors": ["besides", "except for", "beside"],
+        "explanation": "except Monday 表示“除周一外”；besides 表示“除……之外还”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The result was not ______; everyone had expected the team to win.",
+        "correct": "surprising",
+        "distractors": ["surprised", "surprise", "surprisingly"],
+        "explanation": "修饰事物用 surprising，表示“令人惊讶的”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The students were ______ by the speaker's personal story.",
+        "correct": "inspired",
+        "distractors": ["inspiring", "inspected", "installed"],
+        "explanation": "修饰人受到鼓舞用 inspired；inspiring 通常修饰事物。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The committee asked for a more ______ explanation of the budget.",
+        "correct": "detailed",
+        "distractors": ["detached", "detained", "determined"],
+        "explanation": "detailed explanation 表示“详细解释”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The course is intended to improve students' ______ of academic English.",
+        "correct": "command",
+        "distractors": ["comment", "commerce", "comfort"],
+        "explanation": "command of a language 表示“对某种语言的掌握”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The new policy is expected to ______ economic growth.",
+        "correct": "stimulate",
+        "distractors": ["simulate", "submit", "summarize"],
+        "explanation": "stimulate growth 表示“刺激、促进增长”；simulate 是“模拟”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The student was absent from class ______ illness.",
+        "correct": "because of",
+        "distractors": ["because", "since", "as"],
+        "explanation": "because of 后接名词短语；because/since/as 后接从句。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The professor encouraged students to ______ their own views in the discussion.",
+        "correct": "express",
+        "distractors": ["expose", "extend", "expand"],
+        "explanation": "express one's views 表示“表达观点”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The new system is designed to ______ errors in data entry.",
+        "correct": "minimize",
+        "distractors": ["maximum", "maintain", "mention"],
+        "explanation": "minimize errors 表示“尽量减少错误”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The speaker's tone was polite but ______.",
+        "correct": "firm",
+        "distractors": ["flat", "faint", "false"],
+        "explanation": "polite but firm 表示“礼貌但坚定”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The results are ______ with previous findings in this field.",
+        "correct": "in line",
+        "distractors": ["in charge", "in place", "in turn"],
+        "explanation": "be in line with 表示“与……一致”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The program aims to raise students' ______ of environmental protection.",
+        "correct": "awareness",
+        "distractors": ["agreement", "arrangement", "assistance"],
+        "explanation": "raise awareness of sth. 表示“提高对……的意识”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The young man was ______ of stealing the phone, but later he was proved innocent.",
+        "correct": "accused",
+        "distractors": ["charged", "blamed", "punished"],
+        "explanation": "accuse sb. of doing sth. 表示“指控某人做某事”。charge 也可表示指控，但常用 charge sb. with sth.。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The remote island is largely ______, with only a few researchers visiting it each year.",
+        "correct": "uninhabited",
+        "distractors": ["inhabitant", "inhabited", "habitable"],
+        "explanation": "uninhabited 表示“无人居住的”；habitable 表示“适合居住的”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Pollution may be described as an ______ enemy because it is not always easy to see.",
+        "correct": "invisible",
+        "distractors": ["invaluable", "invalid", "invincible"],
+        "explanation": "invisible 表示“看不见的”；invincible 表示“不可战胜的”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "He completed the task quickly, and his colleagues did it ______.",
+        "correct": "likewise",
+        "distractors": ["likely", "unlikely", "otherwise"],
+        "explanation": "likewise 表示“同样地、也一样”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The first experiment failed; ______, the team redesigned the procedure.",
+        "correct": "subsequently",
+        "distractors": ["previously", "frequently", "occasionally"],
+        "explanation": "subsequently 表示“随后、后来”，符合时间顺序。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The committee decided to ______ the new policy after public criticism.",
+        "correct": "revise",
+        "distractors": ["review", "reverse", "reveal"],
+        "explanation": "revise means to change or improve something after reconsideration; reverse means to turn something around.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The speaker avoided making a ______ statement until more evidence was available.",
+        "correct": "definite",
+        "distractors": ["defensive", "defective", "delicate"],
+        "explanation": "definite means clear and certain, which fits a statement supported by evidence.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The charity campaign aims to ______ funds for rural schools.",
+        "correct": "raise",
+        "distractors": ["rise", "arise", "rouse"],
+        "explanation": "raise funds is a fixed collocation meaning to collect money.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The results were ______ because the sample size was too small.",
+        "correct": "unreliable",
+        "distractors": ["irrelevant", "unavailable", "invisible"],
+        "explanation": "unreliable means not trustworthy; a small sample size can make results unreliable.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The two candidates differ ______ their views on education.",
+        "correct": "in",
+        "distractors": ["with", "from", "by"],
+        "explanation": "differ in something means to be different with respect to a particular aspect.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The report places special emphasis ______ environmental protection.",
+        "correct": "on",
+        "distractors": ["in", "with", "to"],
+        "explanation": "emphasis on is the standard collocation.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The student is capable ______ solving the problem independently.",
+        "correct": "of",
+        "distractors": ["to", "for", "with"],
+        "explanation": "be capable of doing something is a fixed structure.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The decision was made in ______ with school regulations.",
+        "correct": "accordance",
+        "distractors": ["agreement", "account", "access"],
+        "explanation": "in accordance with means according to rules or requirements.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The new evidence cast doubt ______ the original conclusion.",
+        "correct": "on",
+        "distractors": ["to", "for", "with"],
+        "explanation": "cast doubt on means to make something seem uncertain.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The researcher tried to ______ the cause of the unexpected result.",
+        "correct": "identify",
+        "distractors": ["identity", "identical", "identification"],
+        "explanation": "identify is the verb meaning to recognize or determine something.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The policy is intended to ______ equal opportunities for all students.",
+        "correct": "promote",
+        "distractors": ["propose", "produce", "prohibit"],
+        "explanation": "promote means to encourage or support the development of something.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The old building was ______ after years of careful repair.",
+        "correct": "restored",
+        "distractors": ["reserved", "refreshed", "renewed"],
+        "explanation": "restore means to repair something and return it to its former condition.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The instructions were so ______ that many students misunderstood them.",
+        "correct": "ambiguous",
+        "distractors": ["ambitious", "accurate", "adequate"],
+        "explanation": "ambiguous means unclear or having more than one possible meaning.",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The success of the plan depends on careful ______.",
+        "correct": "implementation",
+        "distractors": ["implication", "imagination", "imitation"],
+        "explanation": "implementation means carrying a plan or policy into effect.",
+        "difficulty": 4,
+    },
+]
+
+
+GRAMMAR_SPECS = [
+    {
+        "stem": "He insisted on realizing his dream by ______ as a teacher in a poor village.",
+        "correct": "volunteering",
+        "distractors": ["volunteer", "to volunteer", "volunteered"],
+        "explanation": "介词 by 后接动名词，表示“通过做某事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Three fourths of the surface of the earth ______ covered with water.",
+        "correct": "is",
+        "distractors": ["are", "has", "have"],
+        "explanation": "分数作主语时，谓语由 of 后名词决定；surface 是单数，故用 is。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "It was not until midnight ______ the meeting finally ended.",
+        "correct": "that",
+        "distractors": ["when", "before", "after"],
+        "explanation": "强调句结构：It was not until...that...。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "It is the recommendation ______ students review their notes every week.",
+        "correct": "that",
+        "distractors": ["which", "what", "it"],
+        "explanation": "recommendation 后接同位语从句，说明建议内容，用 that 引导。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "______ more evidence, the researchers repeated the experiment.",
+        "correct": "To obtain",
+        "distractors": ["Obtaining", "Obtained", "Having obtained"],
+        "explanation": "句意为“为了获得更多证据”，应用不定式作目的状语。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "No sooner had we arrived at the station ______ the train began to move.",
+        "correct": "than",
+        "distractors": ["when", "before", "that"],
+        "explanation": "固定结构：no sooner...than...，且 no sooner 置句首时主句倒装。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Hardly had she opened the door ______ she heard someone calling her name.",
+        "correct": "when",
+        "distractors": ["than", "that", "before"],
+        "explanation": "固定结构：hardly/scarcely...when... 表示“一……就……”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The book, together with the notes, ______ on the desk.",
+        "correct": "is",
+        "distractors": ["are", "have been", "were"],
+        "explanation": "主语中心词是 The book，together with 不影响谓语单复数，故用 is。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Neither the students nor the teacher ______ aware of the change at that time.",
+        "correct": "was",
+        "distractors": ["were", "are", "have been"],
+        "explanation": "neither...nor...连接主语时，谓语遵循就近原则；teacher 为单数，故用 was。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Each of the applicants ______ required to submit a copy of the certificate.",
+        "correct": "is",
+        "distractors": ["are", "have", "were"],
+        "explanation": "Each of... 作主语时谓语通常用单数。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The number of students applying for the program ______ increasing.",
+        "correct": "is",
+        "distractors": ["are", "have", "were"],
+        "explanation": "the number of 表示“……的数量”，作主语时谓语用单数。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "A number of students ______ volunteered to help with the survey.",
+        "correct": "have",
+        "distractors": ["has", "is", "was"],
+        "explanation": "a number of 表示“许多”，后接复数名词，谓语用复数。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The question ______ at yesterday's meeting remains unsolved.",
+        "correct": "discussed",
+        "distractors": ["discussing", "to discuss", "having discussed"],
+        "explanation": "question 与 discuss 之间为被动关系，用过去分词作后置定语。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The students ______ in the library are preparing for the final exam.",
+        "correct": "studying",
+        "distractors": ["studied", "to study", "having studied"],
+        "explanation": "students 与 study 为主动关系，用现在分词作后置定语。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "She had her computer ______ yesterday.",
+        "correct": "repaired",
+        "distractors": ["repair", "repairing", "to repair"],
+        "explanation": "have sth. done 表示“让某物被……”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The teacher made the students ______ the sentence again.",
+        "correct": "read",
+        "distractors": ["to read", "reading", "readed"],
+        "explanation": "make sb. do sth. 主动语态中不定式省略 to。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The students were made ______ the sentence again.",
+        "correct": "to read",
+        "distractors": ["read", "reading", "to reading"],
+        "explanation": "make sb. do sth. 变被动语态时，不定式符号 to 要还原。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I remember ______ the book, but I cannot find it now.",
+        "correct": "buying",
+        "distractors": ["to buy", "buy", "bought"],
+        "explanation": "remember doing 表示“记得做过某事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Please remember ______ the lights before leaving the classroom.",
+        "correct": "to turn off",
+        "distractors": ["turning off", "turned off", "turn off"],
+        "explanation": "remember to do 表示“记得去做尚未做的事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The problem is difficult ______, but not impossible.",
+        "correct": "to solve",
+        "distractors": ["solving", "solved", "to be solved"],
+        "explanation": "形容词 difficult 后常用主动形式的不定式表示被动意义。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "If I ______ more time, I would finish the report today.",
+        "correct": "had",
+        "distractors": ["have", "will have", "had had"],
+        "explanation": "与现在事实相反的虚拟条件句，从句用一般过去时。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "If he had checked the data carefully, he ______ the mistake.",
+        "correct": "would have found",
+        "distractors": ["would find", "found", "will have found"],
+        "explanation": "与过去事实相反的虚拟条件句，主句用 would have done。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The doctor suggested that the patient ______ more rest.",
+        "correct": "take",
+        "distractors": ["takes", "took", "has taken"],
+        "explanation": "suggest 表示“建议”时，宾语从句用 should do，should 可省略。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "It is essential that every student ______ the instructions carefully.",
+        "correct": "read",
+        "distractors": ["reads", "reading", "has read"],
+        "explanation": "It is essential that... 从句常用 should do，should 可省略。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "______ I known the answer, I would have told you.",
+        "correct": "Had",
+        "distractors": ["If", "Were", "Should"],
+        "explanation": "虚拟条件句省略 if 时，可将 had 提前形成倒装。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "Only after the exam ______ how important daily review was.",
+        "correct": "did he realize",
+        "distractors": ["he realized", "he did realize", "realized he"],
+        "explanation": "Only + 状语置于句首时，主句需部分倒装。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "Not until the results were announced ______ the mistake.",
+        "correct": "did they notice",
+        "distractors": ["they noticed", "they did notice", "noticed they"],
+        "explanation": "Not until 置句首时，主句需部分倒装。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "So difficult ______ that few students could answer it correctly.",
+        "correct": "was the question",
+        "distractors": ["the question was", "did the question", "the question did"],
+        "explanation": "So + 形容词置句首时，主句用倒装结构。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The reason ______ he was late was that the bus broke down.",
+        "correct": "why",
+        "distractors": ["which", "what", "when"],
+        "explanation": "先行词 reason 后接定语从句，表示原因时常用 why。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "This is the school ______ I studied five years ago.",
+        "correct": "where",
+        "distractors": ["which", "what", "that"],
+        "explanation": "从句中缺地点状语，先行词为 school，故用 where。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The book ______ cover is blue belongs to my roommate.",
+        "correct": "whose",
+        "distractors": ["which", "that", "what"],
+        "explanation": "whose 引导定语从句，表示所属关系。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I will never forget the day ______ we first met.",
+        "correct": "when",
+        "distractors": ["which", "that", "what"],
+        "explanation": "从句中缺时间状语，先行词为 the day，故用 when。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "He gave me all the information ______ I needed.",
+        "correct": "that",
+        "distractors": ["what", "who", "where"],
+        "explanation": "先行词被 all 修饰，定语从句中关系代词常用 that。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "______ he said at the meeting surprised everyone.",
+        "correct": "What",
+        "distractors": ["That", "Which", "It"],
+        "explanation": "What 引导主语从句，并在从句中作宾语。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "It is unclear ______ the plan will be accepted.",
+        "correct": "whether",
+        "distractors": ["that", "which", "what"],
+        "explanation": "whether 引导主语从句，表示“是否”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The fact ______ he passed the exam surprised his friends.",
+        "correct": "that",
+        "distractors": ["which", "what", "why"],
+        "explanation": "fact 后接同位语从句说明具体内容，用 that。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "I have no idea ______ he will come back.",
+        "correct": "when",
+        "distractors": ["that", "which", "what"],
+        "explanation": "idea 后接同位语从句，句意为“不知道他何时回来”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The more carefully you read the question, ______ mistakes you will make.",
+        "correct": "the fewer",
+        "distractors": ["the less", "fewer", "less"],
+        "explanation": "the more..., the fewer... 表示“越……越少”；mistakes 为可数名词复数。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "This problem is ______ more difficult than the previous one.",
+        "correct": "far",
+        "distractors": ["very", "too", "so"],
+        "explanation": "修饰比较级可用 far/much/even 等，不能用 very。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "He is ______ taller of the two brothers.",
+        "correct": "the",
+        "distractors": ["a", "an", "不填"],
+        "explanation": "两者中较……的一个，比较级前常用 the。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "This is ______ most useful suggestion I have received today.",
+        "correct": "the",
+        "distractors": ["a", "an", "不填"],
+        "explanation": "形容词最高级前通常用定冠词 the。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "He has ______ knowledge of Chinese history than most beginners.",
+        "correct": "more",
+        "distractors": ["many", "much", "most"],
+        "explanation": "knowledge 为不可数名词，但比较级结构用 more knowledge。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "There is little water left, ______?",
+        "correct": "is there",
+        "distractors": ["isn't there", "is it", "isn't it"],
+        "explanation": "陈述部分含 little 表否定意义，反意疑问部分用肯定形式。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Let's discuss the question after class, ______?",
+        "correct": "shall we",
+        "distractors": ["will you", "do we", "do you"],
+        "explanation": "Let's... 的反意疑问句通常用 shall we。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Don't forget to bring your notebook, ______?",
+        "correct": "will you",
+        "distractors": ["do you", "shall we", "won't you"],
+        "explanation": "否定祈使句的反意疑问部分常用 will you。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "______ smartly dressed you are today!",
+        "correct": "How",
+        "distractors": ["What", "What a", "How a"],
+        "explanation": "How + 副词/形容词 + 主语 + 谓语，构成感叹句。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "______ useful advice he gave us!",
+        "correct": "What",
+        "distractors": ["What a", "How", "How a"],
+        "explanation": "advice 为不可数名词，感叹句用 What + 形容词 + 不可数名词。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "By the time we arrived, the lecture ______.",
+        "correct": "had begun",
+        "distractors": ["began", "has begun", "begins"],
+        "explanation": "by the time + 过去时间，主句表示此前已完成的动作，用过去完成时。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I ______ in this city for five years by the end of next month.",
+        "correct": "will have lived",
+        "distractors": ["have lived", "had lived", "will live"],
+        "explanation": "by the end of next month 指将来某时之前完成，用将来完成时。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The report ______ now, so we cannot read it yet.",
+        "correct": "is being revised",
+        "distractors": ["is revised", "has revised", "revises"],
+        "explanation": "now 表示正在进行，report 与 revise 是被动关系，故用现在进行时被动语态。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The bridge ______ before the rainy season begins.",
+        "correct": "will be completed",
+        "distractors": ["will complete", "has completed", "completed"],
+        "explanation": "bridge 与 complete 是被动关系，且指将来动作，用 will be done。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "She ______ have left already; her coat is still here.",
+        "correct": "can't",
+        "distractors": ["must", "should", "may"],
+        "explanation": "根据 her coat is still here 判断“不可能已经离开”，用 can't have done。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "You ______ have told me earlier; now it is too late.",
+        "correct": "should",
+        "distractors": ["must", "can", "may"],
+        "explanation": "should have done 表示“本应该做却没做”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The door is locked. He ______ be at home.",
+        "correct": "can't",
+        "distractors": ["must", "need", "shall"],
+        "explanation": "根据门锁着推测“不可能在家”，用 can't 表示否定推测。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "She speaks English as fluently as ______.",
+        "correct": "he does",
+        "distractors": ["him", "he is", "his"],
+        "explanation": "比较结构中为避免重复，用助动词 does 代替 speaks English。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The committee has made ______ decision yet.",
+        "correct": "no",
+        "distractors": ["not", "none", "neither"],
+        "explanation": "make no decision 表示“没有作出决定”；not 不能直接修饰名词 decision。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I have two dictionaries; you may borrow ______ of them.",
+        "correct": "either",
+        "distractors": ["any", "each", "every"],
+        "explanation": "两者中的任意一个用 either。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "There are many books on the shelf, but ______ of them is useful for this topic.",
+        "correct": "none",
+        "distractors": ["neither", "no one", "nothing"],
+        "explanation": "三者或以上“没有一个”用 none；neither 用于两者。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The teacher asked us ______ we had finished the assignment.",
+        "correct": "whether",
+        "distractors": ["that", "which", "what"],
+        "explanation": "ask 后接宾语从句表示“是否”时用 whether/if。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The reason for his absence was ______ he had a fever.",
+        "correct": "that",
+        "distractors": ["because", "why", "which"],
+        "explanation": "表语从句说明 reason 的内容时用 that，不用 because。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "He is one of the students who ______ passed the test.",
+        "correct": "have",
+        "distractors": ["has", "is", "was"],
+        "explanation": "定语从句先行词为 students，谓语用复数 have。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "He is the only one of the students who ______ passed the test.",
+        "correct": "has",
+        "distractors": ["have", "are", "were"],
+        "explanation": "先行词受 the only one 限定，定语从句谓语用单数 has。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The more practice you get, the more confident you ______ become.",
+        "correct": "will",
+        "distractors": ["would", "should", "must"],
+        "explanation": "the more..., the more... 结构中可用一般现在/将来表达规律或结果。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The meeting was put off ______ the chairman was ill.",
+        "correct": "because",
+        "distractors": ["because of", "due to", "owing to"],
+        "explanation": "空后是完整从句，应用 because；because of/due to/owing to 后接名词短语。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "The project, ______ by the local government, will start next month.",
+        "correct": "supported",
+        "distractors": ["supporting", "to support", "supports"],
+        "explanation": "project 与 support 是被动关系，用过去分词作定语。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "______ the weather was bad, they continued the survey.",
+        "correct": "Although",
+        "distractors": ["Because", "Unless", "Since"],
+        "explanation": "前后存在让步关系，应用 Although。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "You can borrow the book ______ you return it by Friday.",
+        "correct": "provided that",
+        "distractors": ["even though", "as if", "so that"],
+        "explanation": "provided that 表示“只要、如果”，引导条件状语从句。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The data were collected carefully ______ errors could be reduced.",
+        "correct": "so that",
+        "distractors": ["even if", "as though", "now that"],
+        "explanation": "so that 引导目的状语从句，表示“以便”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The man denied ______ the document without permission.",
+        "correct": "taking",
+        "distractors": ["to take", "take", "took"],
+        "explanation": "deny 后接动名词作宾语。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "She is looking forward to ______ from the university.",
+        "correct": "hearing",
+        "distractors": ["hear", "heard", "to hear"],
+        "explanation": "look forward to 中 to 为介词，后接动名词。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The student had difficulty ______ the main idea of the paragraph.",
+        "correct": "identifying",
+        "distractors": ["to identify", "identified", "identify"],
+        "explanation": "have difficulty doing sth. 表示“做某事有困难”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I would rather you ______ the truth now.",
+        "correct": "told",
+        "distractors": ["tell", "will tell", "have told"],
+        "explanation": "would rather 后接从句表示现在或将来愿望时，从句用过去式。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "It is high time that we ______ action to solve the problem.",
+        "correct": "took",
+        "distractors": ["take", "will take", "have taken"],
+        "explanation": "It is high time that... 从句常用过去式表示“早该做某事”。",
+        "difficulty": 4,
+    },
+    {
+        "stem": "The boy pretended ______ asleep when his mother entered the room.",
+        "correct": "to be",
+        "distractors": ["being", "be", "been"],
+        "explanation": "pretend to do sth. 表示“假装做某事”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The sentence is difficult because it contains more than one ______.",
+        "correct": "clause",
+        "distractors": ["phrase", "word", "letter"],
+        "explanation": "clause 表示“从句、分句”；复合句含有多个分句。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "______ is known to all, practice is important in language learning.",
+        "correct": "As",
+        "distractors": ["It", "That", "What"],
+        "explanation": "As is known to all 是非限制性定语从句固定表达。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "______ he comes or not, we will start the meeting at nine.",
+        "correct": "Whether",
+        "distractors": ["If", "Unless", "Because"],
+        "explanation": "whether...or not is used to introduce two possibilities.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The classroom needs ______ before the exam begins.",
+        "correct": "cleaning",
+        "distractors": ["to clean", "cleaned", "clean"],
+        "explanation": "need doing can mean need to be done when the subject receives the action.",
+        "difficulty": 3,
+    },
+    {
+        "stem": "It was in this library ______ she found the old manuscript.",
+        "correct": "that",
+        "distractors": ["where", "which", "when"],
+        "explanation": "This is an emphatic cleft sentence: It was...that...",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The manager demanded that the report ______ before Friday.",
+        "correct": "be finished",
+        "distractors": ["is finished", "was finished", "finished"],
+        "explanation": "Verbs such as demand can take a subjunctive that-clause: should be finished, with should omitted.",
+        "difficulty": 4,
+    },
+]
+
+
+PRAGMATIC_SPECS = [
+    {
+        "stem": "— Would you mind opening the window? — ______",
+        "correct": "Not at all.",
+        "distractors": ["Yes, please.", "Never mind.", "It doesn't matter."],
+        "explanation": "回答 Would you mind...? 同意对方请求时常用 Not at all./Of course not.",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— Thank you for helping me with the report. — ______",
+        "correct": "My pleasure.",
+        "distractors": ["No, thanks.", "Never mind.", "I agree."],
+        "explanation": "回应感谢可用 My pleasure./You're welcome.",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— I'm sorry I broke your pen. — ______",
+        "correct": "It doesn't matter.",
+        "distractors": ["You are welcome.", "I hope so.", "That's right."],
+        "explanation": "回应道歉时可用 It doesn't matter./Never mind.",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— Shall we go over the grammar exercises now? — ______",
+        "correct": "Good idea.",
+        "distractors": ["That's all right.", "No wonder.", "Never mind."],
+        "explanation": "对建议表示赞同可用 Good idea.",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— Could I use your dictionary for a moment? — ______",
+        "correct": "Certainly.",
+        "distractors": ["Not really.", "I doubt it.", "Forget it."],
+        "explanation": "Certainly 表示礼貌许可。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— I have passed the entrance examination. — ______",
+        "correct": "Congratulations!",
+        "distractors": ["Take care!", "What a pity!", "Never mind!"],
+        "explanation": "听到好消息时应表示祝贺。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— May I speak to Mr. Brown? — ______",
+        "correct": "Speaking.",
+        "distractors": ["I speak.", "I am him.", "It's me."],
+        "explanation": "电话中本人接听时常用 Speaking.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "— I failed the test again. — ______",
+        "correct": "Don't lose heart.",
+        "distractors": ["That's wonderful.", "You are welcome.", "It's my pleasure."],
+        "explanation": "对方受挫时，应给予鼓励。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— Would you like some more tea? — ______ I have had enough.",
+        "correct": "No, thanks.",
+        "distractors": ["Yes, please.", "With pleasure.", "Good luck."],
+        "explanation": "拒绝别人提供的食物或饮品时，可用 No, thanks.",
+        "difficulty": 1,
+    },
+    {
+        "stem": "— I wonder if you could send me the file today. — ______",
+        "correct": "I'll do it right away.",
+        "distractors": ["It doesn't matter.", "You must be joking.", "No way, thanks."],
+        "explanation": "对礼貌请求作肯定回应，可表示马上去做。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The first method is expensive. ______, it takes too much time.",
+        "correct": "Moreover",
+        "distractors": ["However", "Otherwise", "Instead"],
+        "explanation": "前后为递进关系，应用 moreover。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The plan sounds attractive. ______, it may be difficult to carry out.",
+        "correct": "However",
+        "distractors": ["Therefore", "Likewise", "Besides"],
+        "explanation": "前后转折，应用 however。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "The data were incomplete. ______, the conclusion should be treated with caution.",
+        "correct": "Therefore",
+        "distractors": ["Nevertheless", "Similarly", "Meanwhile"],
+        "explanation": "前后为因果关系，应用 therefore。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Some students prefer online courses; ______, others learn better in a classroom.",
+        "correct": "by contrast",
+        "distractors": ["as a result", "in addition", "for example"],
+        "explanation": "前后比较对照，应用 by contrast。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The experiment failed twice. ______, the team continued to improve the method.",
+        "correct": "Nevertheless",
+        "distractors": ["Therefore", "Likewise", "For instance"],
+        "explanation": "前后有让步转折关系，nevertheless 表示“尽管如此”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "The professor speaks slowly and clearly; ______, his lectures are easy to follow.",
+        "correct": "as a result",
+        "distractors": ["in contrast", "on the contrary", "for example"],
+        "explanation": "前后为结果关系，as a result 表示“因此”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "I cannot attend the meeting. ______, I will send my notes to the group.",
+        "correct": "Instead",
+        "distractors": ["Besides", "Likewise", "Therefore"],
+        "explanation": "instead 表示“作为替代”。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "This paragraph needs a more formal ending. Which expression is the most appropriate?",
+        "correct": "I look forward to your reply.",
+        "distractors": ["Write back soon!", "See you later!", "Tell me quick!"],
+        "explanation": "正式邮件结尾常用 I look forward to your reply.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which sentence is the most appropriate in a formal notice?",
+        "correct": "Participants are requested to arrive ten minutes early.",
+        "distractors": ["You guys should come early.", "Don't be late, OK?", "Come early if you can."],
+        "explanation": "正式通知应使用客观、礼貌、规范的表达。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which response is most suitable when declining an invitation politely?",
+        "correct": "I'm sorry, but I won't be able to attend.",
+        "distractors": ["No, I don't want to.", "Forget it.", "I dislike your invitation."],
+        "explanation": "礼貌拒绝邀请应先表达歉意，再说明无法参加。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which expression best shows agreement in a discussion?",
+        "correct": "I couldn't agree more.",
+        "distractors": ["I can't agree less.", "I don't say so.", "I have no idea at all."],
+        "explanation": "I couldn't agree more 表示“我完全同意”。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which sentence sounds most natural in academic writing?",
+        "correct": "The results suggest that further research is needed.",
+        "distractors": ["The results say we need more stuff.", "The results are like very useful.", "The results tell everyone to do things."],
+        "explanation": "学术表达应客观、准确，suggest that further research is needed 更自然正式。",
+        "difficulty": 3,
+    },
+    {
+        "stem": "Which phrase best connects two similar ideas?",
+        "correct": "Similarly",
+        "distractors": ["Nevertheless", "On the contrary", "Despite"],
+        "explanation": "Similarly 用于连接相似观点或情况。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which phrase best introduces an example?",
+        "correct": "For instance",
+        "distractors": ["In contrast", "As a result", "In spite of"],
+        "explanation": "For instance 表示“例如”。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "Which sentence is most polite when asking for help?",
+        "correct": "Could you please help me check this sentence?",
+        "distractors": ["Check this sentence now.", "You must check this.", "Why don't you check it?"],
+        "explanation": "Could you please...? 是礼貌请求表达。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "Which expression is suitable when giving advice?",
+        "correct": "You might want to review the key points first.",
+        "distractors": ["You are wrong to do that.", "I order you to review it.", "You have no choice."],
+        "explanation": "You might want to... 语气委婉，适合提出建议。",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which expression best completes a formal apology?",
+        "correct": "We apologize for any inconvenience caused.",
+        "distractors": ["Sorry about that, whatever.", "Bad luck for you.", "It is not our problem."],
+        "explanation": "正式道歉常用 We apologize for any inconvenience caused.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which response is appropriate after someone says, “I'm afraid I can't help you today”?",
+        "correct": "That's all right. Thank you anyway.",
+        "distractors": ["You must help me.", "I don't care.", "You are welcome."],
+        "explanation": "对方无法帮忙时，礼貌回应可用 Thank you anyway.",
+        "difficulty": 2,
+    },
+    {
+        "stem": "Which phrase best shows a conclusion in a short essay?",
+        "correct": "In conclusion",
+        "distractors": ["In the meantime", "In case", "In person"],
+        "explanation": "In conclusion 用于引出总结性结论。",
+        "difficulty": 1,
+    },
+    {
+        "stem": "Which phrase best shows a condition?",
+        "correct": "as long as",
+        "distractors": ["as soon as", "as well as", "as far as"],
+        "explanation": "as long as 表示“只要”，引导条件。",
+        "difficulty": 2,
+    },
+]
+
+
+def with_submodule(specs: list[dict], submodule: str) -> list[dict]:
+    return [{**item, "submodule": submodule} for item in specs]
+
+
+def build_questions(seed: int = 20260428) -> list[dict]:
+    rng = random.Random(seed)
+    specs = [
+        *with_submodule(VOCAB_SPECS, "词汇"),
+        *with_submodule(GRAMMAR_SPECS, "语法"),
+        *with_submodule(PRAGMATIC_SPECS, "语用"),
+    ]
+    if len(VOCAB_SPECS) != 120 or len(GRAMMAR_SPECS) != 80 or len(PRAGMATIC_SPECS) != 30:
+        raise RuntimeError(
+            f"Unexpected counts: vocab={len(VOCAB_SPECS)}, grammar={len(GRAMMAR_SPECS)}, pragmatic={len(PRAGMATIC_SPECS)}"
+        )
+
+    existing_stems = load_existing_stems()
+    seen: set[str] = set()
+    questions: list[dict] = []
+    for spec in specs:
+        key = normalize_stem(spec["stem"])
+        if key in existing_stems or key in seen:
+            raise RuntimeError(f"Duplicate stem detected: {spec['stem']}")
+        seen.add(key)
+        questions.append(build_question(spec, rng))
+
+    rng.shuffle(questions)
+    return questions
+
+
+def write_review(questions: list[dict]) -> None:
+    by_submodule = Counter(question["submodule"] for question in questions)
+    by_difficulty = Counter(question["difficulty"] for question in questions)
+    lines = [
+        "# COMMON 英语运用 语言知识 批次 001",
+        "",
+        "本批次参考英语（一）语言知识考纲、用户提供的回忆录题型，以及专四语法词汇教材的考点体系生成。",
+        "题目为新生成训练题，不直接照搬教材或回忆录题干。",
+        "",
+        f"- 总题数：{len(questions)}",
+        "- exam_code：COMMON",
+        "- subject：英语运用",
+        "- module：语言知识",
+        "- source_type：ai_generated",
+        "- source_year：2026",
+        "",
+        "## 子模块分布",
+    ]
+    for submodule in ["词汇", "语法", "语用"]:
+        lines.append(f"- {submodule}：{by_submodule[submodule]} 题")
+    lines.extend(["", "## 难度分布"])
+    for difficulty in sorted(by_difficulty):
+        lines.append(f"- 难度 {difficulty}：{by_difficulty[difficulty]} 题")
+    REVIEW_PATH.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+
+def main() -> int:
+    questions = build_questions()
+    OUTPUT_PATH.write_text(json.dumps({"questions": questions}, ensure_ascii=False, indent=2), encoding="utf-8")
+    write_review(questions)
+    print(f"Wrote {len(questions)} questions to {OUTPUT_PATH.relative_to(PROJECT_ROOT)}")
+    print(f"Wrote review to {REVIEW_PATH.relative_to(PROJECT_ROOT)}")
+    print(f"Submodules: {dict(Counter(q['submodule'] for q in questions))}")
+    print(f"Difficulty: {dict(sorted(Counter(q['difficulty'] for q in questions).items()))}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
