@@ -422,9 +422,6 @@ function buildApiQuestion(apiQuestion, meta) {
     { key: 'C', text: apiQuestion.option_c },
     { key: 'D', text: apiQuestion.option_d }
   ]
-  if (apiQuestion.option_e) {
-    options.push({ key: 'E', text: apiQuestion.option_e })
-  }
 
   return {
     id: apiQuestion.id,

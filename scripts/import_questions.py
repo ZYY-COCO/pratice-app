@@ -67,7 +67,7 @@ KNOWLEDGE_TREE = {
 }
 
 ALLOWED_EXAM_CODES = {"Z001", "Z002", "COMMON"}
-ALLOWED_ANSWERS = {"A", "B", "C", "D", "E"}
+ALLOWED_ANSWERS = {"A", "B", "C", "D"}
 ALLOWED_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
 REQUIRED_FIELDS = [
     "exam_code",
@@ -96,7 +96,6 @@ IMPORT_COLUMNS = [
     "option_b",
     "option_c",
     "option_d",
-    "option_e",
     "answer",
     "explanation",
     "difficulty",
@@ -237,8 +236,6 @@ def validate_question(question: dict, index: int) -> dict:
     normalized["option_b"] = str(question["option_b"]).strip()
     normalized["option_c"] = str(question["option_c"]).strip()
     normalized["option_d"] = str(question["option_d"]).strip()
-    if not is_blank(question.get("option_e")):
-        normalized["option_e"] = str(question["option_e"]).strip()
     normalized["explanation"] = str(question["explanation"]).strip()
 
     return normalized

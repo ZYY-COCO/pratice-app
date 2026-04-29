@@ -115,9 +115,9 @@ def parse_args() -> argparse.Namespace:
 
 
 def make_options(correct: str, distractors: list[str], rng: random.Random) -> tuple[dict[str, str], str]:
-    values = [correct, *distractors]
+    values = [correct, *distractors][:4]
     rng.shuffle(values)
-    labels = ["A", "B", "C", "D", "E"]
+    labels = ["A", "B", "C", "D"]
     options = {label: value for label, value in zip(labels, values)}
     answer = next(label for label, value in options.items() if value == correct)
     return options, answer
@@ -146,7 +146,6 @@ def build_question(
         "option_b": options["B"],
         "option_c": options["C"],
         "option_d": options["D"],
-        "option_e": options["E"],
         "answer": answer,
         "explanation": explanation,
         "difficulty": difficulty,

@@ -107,6 +107,9 @@ def build_question(block: str, index: int) -> dict | None:
         return None
     if answer == "E" and "E" not in options:
         return None
+    if answer == "E":
+        options["D"] = options["E"]
+        answer = "D"
 
     title_match = re.match(r"(例\d+\.\d+)", stem)
     source_label = title_match.group(1) if title_match else f"逻辑资料题{index}"
@@ -132,8 +135,6 @@ def build_question(block: str, index: int) -> dict | None:
         "source_year": 2025,
         "passage_id": None,
     }
-    if options.get("E"):
-        question["option_e"] = options["E"]
     return question
 
 

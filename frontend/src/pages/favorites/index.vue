@@ -132,7 +132,6 @@ const favoriteCards = computed(() =>
         option_b: question.option_b,
         option_c: question.option_c,
         option_d: question.option_d,
-        option_e: question.option_e,
         answer: question.answer || '',
         explanation: question.explanation || ''
       }
@@ -161,8 +160,7 @@ const selectedOptions = computed(() => {
     { key: 'A', text: item.option_a },
     { key: 'B', text: item.option_b },
     { key: 'C', text: item.option_c },
-    { key: 'D', text: item.option_d },
-    { key: 'E', text: item.option_e }
+    { key: 'D', text: item.option_d }
   ].filter((option) => option.text)
 })
 

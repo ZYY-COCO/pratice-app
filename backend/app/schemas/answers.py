@@ -3,7 +3,7 @@ from pydantic import BaseModel, Field
 
 class SubmitAnswerRequest(BaseModel):
     question_id: str
-    selected_answer: str = Field(pattern="^[ABCDE]$")
+    selected_answer: str = Field(pattern="^[ABCD]$")
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 
@@ -29,7 +29,6 @@ class AnswerHistoryQuestion(BaseModel):
     option_b: str
     option_c: str
     option_d: str
-    option_e: str | None = None
     answer: str
     explanation: str
 

@@ -349,7 +349,6 @@ function matchesKeyword(item) {
     question.option_b,
     question.option_c,
     question.option_d,
-    question.option_e,
     item.selected_answer
   ]
     .filter(Boolean)
@@ -395,8 +394,7 @@ function buildOptions(question = {}) {
     { key: 'A', text: question.option_a },
     { key: 'B', text: question.option_b },
     { key: 'C', text: question.option_c },
-    { key: 'D', text: question.option_d },
-    { key: 'E', text: question.option_e }
+    { key: 'D', text: question.option_d }
   ].filter((item) => item.text)
 }
 

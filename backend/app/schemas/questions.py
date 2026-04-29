@@ -13,7 +13,6 @@ class Question(BaseModel):
     option_b: str
     option_c: str
     option_d: str
-    option_e: str | None = None
     answer: str | None = None
     explanation: str | None = None
     difficulty: int

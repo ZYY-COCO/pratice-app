@@ -16,8 +16,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -35,8 +34,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -54,8 +52,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "有较高艺术修养的学生，都能考上电影学院。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -73,8 +70,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "甲、乙、丙三人的意见都不正确。1讲"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -86,14 +82,13 @@
       "option_a": "仅I。",
       "option_b": "仅Ⅱ。",
       "option_c": "仅Ⅲ。",
-      "option_d": "仅Ⅱ和Ⅲ。",
-      "answer": "E",
+      "option_d": "I、Ⅱ和Ⅲ。",
+      "answer": "D",
       "explanation": "例1.5。第1步：画箭头。\n“当且仅当”为充要条件的关联词，根据口诀“充要条件两头推”，可得：①180分一进复试。\n第2步：逆否。\n①逆否可得：②-180分<进复试。\n第3步：找答案。\nI项，180分一→进复试，根据箭头指向原则，由①可知，此项为真。\nⅡ项，进复试→180分，根据箭头指向原则，由①可知，此项为真。\nⅢ项，180分→进复试，根据箭头指向原则，由②可知，此项为真。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -111,8 +106,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "不能改正错误，除非认识错误。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -130,8 +124,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "只有赢了，才可能更自信。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -149,8 +142,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -168,8 +160,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果别人看得起你，你日子就能过得舒心。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -187,8 +178,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -206,8 +196,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "一个人只要不断加强理论学习，就能守住道德的底线。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -219,14 +208,13 @@
       "option_a": "树木能绿化环境。",
       "option_b": "树木不能绿化环境。",
       "option_c": "树木能制造出新鲜空气。",
-      "option_d": "树木不能制造出新鲜空气。",
-      "answer": "E",
-      "explanation": "例1.12。由“A∧B”为真，可知A真，而且B真。\n故由题干可知：“树木能绿化环境”为真，“树木能制造出新鲜空气”也为真。\n故A、C项为真，B、D项为假。\n由于题干仅涉及“树木”，不涉及“小草”，故无法由题干判断E项的真假。",
+      "option_d": "小草也能制造出新鲜空气。",
+      "answer": "D",
+      "explanation": "例1.12。由“A∧B”为真，可知A真，而且B真。\n故由题干可知：“树木能绿化环境”为真，“树木能制造出新鲜空气”也为真。\n故A、C项为真，B、D项为假。\n由于题干仅涉及“树木”，不涉及“小草”，故无法由题干判断D项的真假。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "小草也能制造出新鲜空气。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -238,14 +226,13 @@
       "option_a": "树木不能制造出新鲜空气。",
       "option_b": "树木能绿化环境，但不能制造出新鲜空气。",
       "option_c": "树木不能绿化环境，但能制造出新鲜空气。",
-      "option_d": "树木既不能绿化环境，也不能制造出新鲜空气。",
-      "answer": "E",
-      "explanation": "例1.13。由“A∧B”为假，可知“-A”和“B”至少发生一个，有三种可能：A真B假、A假B真、A\n假B假。\n因此，由“树木既能绿化环境，又能制造出新鲜空气”为假，可知“树木不能绿化环境”和“树\n木不能制造出新鲜空气”至少发生一个，故E项为真。\n有以下三种可能：\n可能①：树木能绿化环境，但不能制造出新鲜空气。\n可能②：树木不能绿化环境，但能制造出新鲜空气。\n可能③：树木既不能绿化环境，也不能制造出新鲜空气。\n但是，并不确定具体发生了这三种可能中的哪一种可能，因此，A、B、C、D项均不能确定真假。",
+      "option_d": "树木不能绿化环境和树木不能制造出新鲜空气至少一个为真。",
+      "answer": "D",
+      "explanation": "例1.13。由“A∧B”为假，可知“-A”和“B”至少发生一个，有三种可能：A真B假、A假B真、A\n假B假。\n因此，由“树木既能绿化环境，又能制造出新鲜空气”为假，可知“树木不能绿化环境”和“树\n木不能制造出新鲜空气”至少发生一个，故D项为真。\n有以下三种可能：\n可能①：树木能绿化环境，但不能制造出新鲜空气。\n可能②：树木不能绿化环境，但能制造出新鲜空气。\n可能③：树木既不能绿化环境，也不能制造出新鲜空气。\n但是，并不确定具体发生了这三种可能中的哪一种可能，因此，A、B、C、D项均不能确定真假。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "树木不能绿化环境和树木不能制造出新鲜空气至少一个为真。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -263,8 +250,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果蔡经理负责销售，那么他不负责研发。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -276,14 +262,13 @@
       "option_a": "罚款但不停业。",
       "option_b": "停业但不罚款。",
       "option_c": "既不罚款又不停业。",
-      "option_d": "既罚款又停业。",
-      "answer": "E",
-      "explanation": "例1.16。执法人员：罚款V停业。\n个体户：不同意（罚款V停业），即一（罚款V停业）。\n由公式“（AVB)=（AAB)V（AAB)”，可得：（罚款V停业）=（罚款△停业）V\n(罚款入停业)。\n利用排除法，如果不能“一罚款八停业”，那么就要“罚款八停业”。故E项正确。",
+      "option_d": "如果既不罚款又不停业办不到的话，就必须接受既罚款又停业。",
+      "answer": "D",
+      "explanation": "例1.16。执法人员：罚款V停业。\n个体户：不同意（罚款V停业），即一（罚款V停业）。\n由公式“（AVB)=（AAB)V（AAB)”，可得：（罚款V停业）=（罚款△停业）V\n(罚款入停业)。\n利用排除法，如果不能“一罚款八停业”，那么就要“罚款八停业”。故D项正确。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果既不罚款又不停业办不到的话，就必须接受既罚款又停业。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -295,14 +280,13 @@
       "option_a": "雅典奥运会成功但不节俭。",
       "option_b": "雅典奥运会节俭但不成功。",
       "option_c": "雅典奥运会既不节俭也不成功。",
-      "option_d": "如果雅典奥运会不节俭，那么一定成功了。",
-      "answer": "E",
-      "explanation": "例1.17。题干：（成功∧节俭）=(成功V-节俭）=（成功→节俭）=（节俭→成功）。\n德摩根\n或者变箭头\n逆否\n故E项，“如果成功，那么不节俭”为真。",
+      "option_d": "如果雅典奥运会成功了，那么一定不节俭。",
+      "answer": "D",
+      "explanation": "例1.17。题干：（成功∧节俭）=(成功V-节俭）=（成功→节俭）=（节俭→成功）。\n德摩根\n或者变箭头\n逆否\n故D项，“如果成功，那么不节俭”为真。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果雅典奥运会成功了，那么一定不节俭。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -320,8 +304,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -333,14 +316,13 @@
       "option_a": "环岛绿地、宏达小区和清河改造这三个工程都上马。",
       "option_b": "环岛绿地、宏达小区和清河改造这三个工程都不上马。",
       "option_c": "环岛绿地、宏达小区这两个工程至多上马一个，但清河改造工程要上马。",
-      "option_d": "环岛绿地、宏达小区这两个工程至多上马一个，如果做不到这一点，那也要保证清河改造工程上马。",
-      "answer": "E",
+      "option_d": "环岛绿地、宏达小区这两个工程都不上马，如果做不到这一点，那也要保证清河改造工程上马。",
+      "answer": "D",
       "explanation": "例1.19。总经理：（绿地V宏达）八清河。\n董事长：我不同意。\n故，董事长的意思是：并非[（绿地V宏达）∧清河]=（绿地V宏达）V清河=（绿地^\n宏达）V清河=（绿地^宏达)→清河。\n故有：如果不能做到环岛绿地和宏达小区这两个项目都不上马，那么清河改造工程要上马。",
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "环岛绿地、宏达小区这两个工程都不上马，如果做不到这一点，那也要保证清河改造工程上马。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -358,8 +340,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅲ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -377,8 +358,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "化学农药和生物农药是两类不同的农药，两类农药不要同时使用。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -396,8 +376,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果缺乏足够的勇气和智慧，就总有事办不成。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -415,8 +394,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "一个质量好并且由诚信者经销的产品不一定畅销。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -434,8 +412,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "小张服用了对乙酰氨基酚，但没有服用羟苯基乙酰胺。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -447,14 +424,13 @@
       "option_a": "如果失事时无特殊意外发生，则飞行员一定没有严格遵守操作规程，并且飞机在起飞前没有经过严格的例行技术检验。",
       "option_b": "如果失事时有特殊意外发生，则飞行员一定严格遵守了操作规程，并且飞机在起飞前经过了严格的例行技术检验。",
       "option_c": "如果飞行员没有严格遵守操作规程，并且飞机起飞前没有经过严格的例行技术检验，则失事时一定没有特殊意外发生。",
-      "option_d": "如果失事时没有特殊意外发生，则可得出结论：只要飞机失事的原因是飞行员没有严格遵守操作规程，那么飞机在起飞前一定经过了严格的例行技术检验。",
-      "answer": "E",
+      "option_d": "如果失事时没有特殊意外发生，则可得出结论：只要飞机失事的原因不是飞机在起飞前没有经过严格的例行技术检验，那么一定是飞行员没有严格遵守操作规程。",
+      "answer": "D",
       "explanation": "例1.25。题干的意思是：遵守操作规程八例行技术检验八一特殊意外一失事。\n28\n第1章·复言命题\n推导过程如下：\n特殊意外→(遵守操作规程∧例行技术检验一失事）。\n等价于：特殊意外→(遵守操作规程V例行技术检验V失事)。一括号内\n箭头变或者\n等价于：特殊意外V-遵守操作规程V-例行技术检验V-失事。一括号外箭头\n变或者\n故，四种可能中排除三种，可推出另外一种可能。\n即：遵守操作规程八例行技术检验∧ 特殊意外→失事。一或者变箭头\n第\n1\n等价于：失事→遵守操作规程V-例行技术检验V特殊意外。—逆否命题\n讲\n已知这架波音747在金沙岛上空失事，故必有：遵守操作规程V-例行技术检验V特殊\n意外。\n等价于：特殊意外八例行技术检验→遵守操作规程。—或者变箭头",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果失事时没有特殊意外发生，则可得出结论：只要飞机失事的原因不是飞机在起飞前没有经过严格的例行技术检验，那么一定是飞行员没有严格遵守操作规程。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -466,14 +442,13 @@
       "option_a": "修建住宅。",
       "option_b": "收拾平台。",
       "option_c": "在平台上唱歌。",
-      "option_d": "如果没有刮风，它就在抢修工程。",
-      "answer": "E",
+      "option_d": "如果没有刮风，它就在平台上唱歌。",
+      "answer": "D",
       "explanation": "例1.26。题干：夏夜，除非下雨或者刮风，否则蟋蚌肯定会在这个平台上唱歌。\n方法一：\n符号化：夏夜→[(下雨V刮风)→蟋唱歌]。\n等价于：夏夜→(下雨V刮风V蟋唱歌)。\n等价于：一夏夜V下雨V刮风V蟋唱歌。\n等价于：夏夜八下雨八刮风→蟋唱歌。\n方法二：\n根据句意易知，题干有两个条件，即：“夏夜”和“非(下雨或者刮风)”。\n故有：夏夜八（下雨V刮风)→蟋唱歌，即：夏夜八下雨八刮风→蟋唱歌。\n所以，无雨的夏夜，如果不刮风，则蟋在平台上唱歌。",
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "如果没有刮风，它就在平台上唱歌。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -491,8 +466,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "酱油是留学生，但不是来自韩国。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -510,8 +484,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "只有I。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -529,8 +502,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -566,8 +538,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "明天不可能不地震。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -585,8 +556,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "人都可能会犯错误，但有的人一定不犯严重错误。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -598,14 +568,13 @@
       "option_a": "仅I。",
       "option_b": "仅Ⅱ。",
       "option_c": "仅Ⅲ。",
-      "option_d": "仅I和Ⅱ。",
-      "answer": "E",
+      "option_d": "仅Ⅱ和Ⅲ。",
+      "answer": "D",
       "explanation": "例2.14。题干：没\n有一个\n人\n尊重\n不自重的人\n等价于：\n所有\n人\n不尊重\n不自重的人\n等价于：不自重的人不被所有人尊重。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "仅Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -623,8 +592,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "仅Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -642,8 +610,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "招聘考试中可能有应聘者被录用，也可能有应聘者不被录用。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -661,8 +628,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "有的出于良好愿望的行为一定不会导致良好的结果。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -680,8 +646,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "至少有一把钥匙可能打不开天下所有的锁。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -693,14 +658,13 @@
       "option_a": "小王考上了研究生。",
       "option_b": "小李没考上研究生。",
       "option_c": "小王和小李都考上了研究生。",
-      "option_d": "小王和小李都没考上研究生。",
-      "answer": "E",
+      "option_d": "小王没考上研究生，但是小李考上了研究生。",
+      "answer": "D",
       "explanation": "例2.20。题干：并非小王考上了研究生\n或者\n小李没考上研究生\n等价于：\n小王没考上研究生\n并且\n小李考上了研究生",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "小王没考上研究生，但是小李考上了研究生。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -718,8 +682,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "一方面允许有人凌驾于法律之上，同时又声称任何人触犯法律都要受到制裁，这是可能的。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -737,8 +700,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "仅Ⅱ、Ⅲ和IⅣV。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -756,8 +718,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "2002年，中国队进人日韩世界杯决赛圈，小组赛即被淘汰。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -775,8 +736,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "李思不想考研究生。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -794,8 +754,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅲ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -813,8 +772,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "流行畅销的明星产品最适合城市中的白领使用。56第2章·简单命题"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -832,8 +790,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -851,8 +808,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "I、Ⅱ和Ⅲ。59"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -864,14 +820,13 @@
       "option_a": "甘蓝与绿芥蓝同样有营养。",
       "option_b": "菠菜比莴苣更有营养。",
       "option_c": "菠菜比绿芥蓝更有营养。",
-      "option_d": "菠菜与绿芥蓝同样有营养。",
-      "answer": "E",
-      "explanation": "例2.30。题干中的关系是一种传递关系，可以认为是排序题，用不等式求解即可。\n将题干信息符号化：甘蓝>菠莱，绿芥蓝>莴苣，所以，甘蓝>莴苣。\nA项，甘蓝=绿芥蓝，又因为绿芥蓝>莴苣，所以可以得到甘蓝>莴苣，故此项能使题干的\n推理成立。\nB项，菠莱>莴苣，又因为甘蓝>菠莱，所以可以得到甘蓝>莴苣，故此项能使题干的推理\n成立。\nC项，菠莱>绿芥蓝，与题干信息串联可得：甘蓝>菠莱>绿芥蓝>莴苣，所以可以得到甘\n蓝>莴苣，故此项能使题干的推理成立。\nD项，菠莱=绿芥蓝，与题干信息串联可得：甘蓝>菠莱=绿芥蓝>莴苣，所以可以得到甘\n蓝>莴苣，故此项能使题干的推理成立。\nE项，绿芥蓝>甘蓝，又由题干可知，绿芥蓝>莴苣，此时无法判断甘蓝与莴苣的关系。",
+      "option_d": "绿芥蓝比甘蓝更有营养。",
+      "answer": "D",
+      "explanation": "例2.30。题干中的关系是一种传递关系，可以认为是排序题，用不等式求解即可。\n将题干信息符号化：甘蓝>菠莱，绿芥蓝>莴苣，所以，甘蓝>莴苣。\nA项，甘蓝=绿芥蓝，又因为绿芥蓝>莴苣，所以可以得到甘蓝>莴苣，故此项能使题干的\n推理成立。\nB项，菠莱>莴苣，又因为甘蓝>菠莱，所以可以得到甘蓝>莴苣，故此项能使题干的推理\n成立。\nC项，菠莱>绿芥蓝，与题干信息串联可得：甘蓝>菠莱>绿芥蓝>莴苣，所以可以得到甘\n蓝>莴苣，故此项能使题干的推理成立。\nD项，菠莱=绿芥蓝，与题干信息串联可得：甘蓝>菠莱=绿芥蓝>莴苣，所以可以得到甘\n蓝>莴苣，故此项能使题干的推理成立。\nD项，绿芥蓝>甘蓝，又由题干可知，绿芥蓝>莴苣，此时无法判断甘蓝与莴苣的关系。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "绿芥蓝比甘蓝更有营养。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -883,14 +838,13 @@
       "option_a": "赵大大原来在汽车制造厂工作，半年前辞去工作，开了一个汽车修理铺。",
       "option_b": "钱二萍原来是某咨询公司的办公室秘书。最近，公司以经营困难为由，解除了她的工作合同，她只能在家做家务。",
       "option_c": "张三枫原来在手表厂工作，因长期疾病不能工作，经批准提前办理了退休手续。",
-      "option_d": "李四喜原来在某服装厂工作，长期请病假。其实他的身体并无不适，目前在家里开了个缝纫部。",
-      "answer": "E",
-      "explanation": "例3.1。“下岗职工”的定义包括：\n①由于企业的生产和经营状况等原因，即不是个人原因。\n②已经离开本人的生产和工作岗位，并已不在本单位从事其他工作。\n③仍与用人单位保留劳动关系。\nA项，个人原因，不符合①。\nB项，没有与用人单位保留劳动关系，不符合③。\nC项，个人原因，不符合①。\nD项，个人原因，不符合①。\nE项，符合下岗职工的定义。",
+      "option_d": "王五伯原来在电视机厂工作，今年53岁。去年工厂因产品积压，人员富余，让50岁以上的人回家休息，等55岁时再办理正式退休手续。",
+      "answer": "D",
+      "explanation": "例3.1。“下岗职工”的定义包括：\n①由于企业的生产和经营状况等原因，即不是个人原因。\n②已经离开本人的生产和工作岗位，并已不在本单位从事其他工作。\n③仍与用人单位保留劳动关系。\nA项，个人原因，不符合①。\nB项，没有与用人单位保留劳动关系，不符合③。\nC项，个人原因，不符合①。\nD项，个人原因，不符合①。\nD项，符合下岗职工的定义。",
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "王五伯原来在电视机厂工作，今年53岁。去年工厂因产品积压，人员富余，让50岁以上的人回家休息，等55岁时再办理正式退休手续。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -908,8 +862,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "宁可食无肉，不可居无竹。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -927,8 +880,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "应该说明平反的主体及其权威性。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -946,8 +898,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "该寝室的三个进修生都是南方人。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -965,8 +916,7 @@
       "difficulty": 3,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "高校教师包括教授、副教授、讲师和助教等。"
+      "passage_id": null
     },
     {
       "exam_code": "Z001",
@@ -984,8 +934,7 @@
       "difficulty": 2,
       "source_type": "logic_7_lessons_ocr",
       "source_year": 2025,
-      "passage_id": null,
-      "option_e": "在“古典的”后面，没有紧接着指出“现代的”。"
+      "passage_id": null
     }
   ]
 }

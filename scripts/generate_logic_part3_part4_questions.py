@@ -71,11 +71,11 @@ def make_options(correct: str, distractors: list[str], rng: random.Random) -> tu
     for value in values:
         if value and value not in deduped:
             deduped.append(value)
-    while len(deduped) < 5:
+    while len(deduped) < 4:
         deduped.append(f"以上判断无法由题干确定{len(deduped)}")
-    values = deduped[:5]
+    values = deduped[:4]
     rng.shuffle(values)
-    labels = ["A", "B", "C", "D", "E"]
+    labels = ["A", "B", "C", "D"]
     options = {label: value for label, value in zip(labels, values)}
     answer = next(label for label, value in options.items() if value == correct)
     return options, answer
@@ -104,7 +104,6 @@ def question(
         "option_b": options["B"],
         "option_c": options["C"],
         "option_d": options["D"],
-        "option_e": options["E"],
         "answer": answer,
         "explanation": explanation,
         "difficulty": difficulty,

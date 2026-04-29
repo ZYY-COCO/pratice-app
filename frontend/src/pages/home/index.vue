@@ -1445,7 +1445,7 @@ const wrongDetailOptions = computed(() => {
 
 function buildQuestionOptions(question) {
   if (!question) return []
-  return ['A', 'B', 'C', 'D', 'E']
+  return ['A', 'B', 'C', 'D']
     .map((key) => ({
       key,
       text: question[`option_${key.toLowerCase()}`]
