@@ -34,6 +34,17 @@ sudo systemctl restart gangyantong-backend
 sudo systemctl reload nginx
 
 echo "==> Health check"
-curl -fsS http://127.0.0.1:8000/health
+for attempt in {1..20}; do
+  if curl -fsS http://127.0.0.1:8000/health; then
+    echo
+    echo "Deployment finished."
+    exit 0
+  fi
+  echo "Backend is not ready yet, retrying (${attempt}/20)..."
+  sleep 2
+done
+
 echo
-echo "Deployment finished."
+echo "Backend health check failed after waiting."
+sudo systemctl status gangyantong-backend --no-pager || true
+exit 1
