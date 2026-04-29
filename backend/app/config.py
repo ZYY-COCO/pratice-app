@@ -18,6 +18,10 @@ class Settings(BaseSettings):
     smtp_from_name: str = "港澳台考研刷题"
     smtp_use_tls: bool = False
     payment_webhook_secret: str | None = None
+    deepseek_api_key: str | None = None
+    deepseek_base_url: str = "https://api.deepseek.com"
+    deepseek_model: str = "deepseek-v4-flash"
+    deepseek_timeout_seconds: int = 60
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

@@ -201,6 +201,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+import { fetchAiTrainingSession } from '../../api/ai'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
@@ -229,6 +230,7 @@ const practiceMode = ref('special')
 const selectedTags = ref([])
 const questionCountOptions = [5, 10, 15, 20, 25, 30]
 const selectedQuestionSize = ref(10)
+const aiSessionId = ref('')
 const selectedOption = ref('')
 const submitted = ref(false)
 const submitting = ref(false)
@@ -272,8 +274,12 @@ const canFavoriteCurrent = computed(() => {
   const questionId = questionMeta.value.questionId
   return Boolean(questionId) && !String(questionId).startsWith('mock-')
 })
+const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
 const pageTitle = computed(() => {
+  if (isAiTrainingMode.value) {
+    return 'AI 专项出题'
+  }
   if (mode.value === 'tags') {
     return '选择刷题范围'
   }
@@ -355,6 +361,10 @@ onLoad((options) => {
     }
     selectedTags.value = [submodule]
   }
+  if (options?.ai_session_id) {
+    aiSessionId.value = decodeURIComponent(options.ai_session_id)
+    loadAiTrainingSession(aiSessionId.value)
+  }
 })
 
 onShow(() => {
@@ -422,13 +432,14 @@ function buildApiQuestion(apiQuestion, meta) {
     { key: 'C', text: apiQuestion.option_c },
     { key: 'D', text: apiQuestion.option_d }
   ]
+  const sourceLabel = apiQuestion.source_type === 'ai_deepseek' ? 'AI 生成训练' : '真实题库'
 
   return {
     id: apiQuestion.id,
     year: apiQuestion.source_year ? `${apiQuestion.source_year} 年题目` : '题库练习',
     badge: meta.submodule || apiQuestion.submodule || meta.module || apiQuestion.module,
     stem: apiQuestion.stem,
-    helper: `当前来自真实题库：${apiQuestion.subject} / ${apiQuestion.module} / ${apiQuestion.submodule}`,
+    helper: `当前来自${sourceLabel}：${apiQuestion.subject} / ${apiQuestion.module} / ${apiQuestion.submodule}`,
     options,
     answer: '',
     explanation: '',
@@ -697,6 +708,64 @@ function applyQuestionAt(index) {
   loadCurrentFavoriteStatus()
   startTimer()
   scrollToQuestionTop()
+}
+
+async function loadAiTrainingSession(sessionId) {
+  syncAccessToken()
+  if (!hasAccessToken.value) {
+    uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent(`/pages/practice/index?ai_session_id=${sessionId}`)}` })
+    return
+  }
+
+  loading.value = true
+  loadError.value = ''
+  resetQuizState()
+  reviewMode.value = false
+  reviewResults.value = []
+  summaryMode.value = false
+  comprehensiveAnswers.value = {}
+  uni.showLoading({ title: '正在加载 AI 训练...' })
+
+  try {
+    const data = await fetchAiTrainingSession(sessionId)
+    const items = data?.items || []
+    if (!items.length) {
+      throw new Error('AI 训练题目为空，请重新生成')
+    }
+
+    examCode.value = data.exam_code || examCode.value
+    subject.value = data.target?.subject || items[0]?.subject || subject.value
+    selectedQuestionSize.value = normalizeQuestionSize(items.length)
+    practiceMode.value = 'special'
+    questionPool.value = items.map((item) =>
+      buildApiQuestion(item, {
+        module: item.module,
+        submodule: item.submodule
+      })
+    )
+    mode.value = 'quiz'
+    applyQuestionAt(0)
+  } catch (error) {
+    const detail = error?.detail || error?.message || 'AI 训练加载失败'
+    loadError.value = detail
+    uni.showModal({
+      title: '加载失败',
+      content: detail,
+      showCancel: false,
+      confirmText: '知道了',
+      success() {
+        uni.navigateBack({
+          delta: 1,
+          fail() {
+            uni.redirectTo({ url: '/pages/home/index' })
+          }
+        })
+      }
+    })
+  } finally {
+    loading.value = false
+    uni.hideLoading()
+  }
 }
 
 async function startQuiz() {
@@ -1130,6 +1199,7 @@ function resetQuizState() {
 }
 
 function resetToTags() {
+  aiSessionId.value = ''
   mode.value = 'tags'
   questionPool.value = buildMockPool()
   currentQuestionIndex.value = 0

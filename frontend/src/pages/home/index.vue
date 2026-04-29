@@ -510,7 +510,9 @@
 
         <view class="sheet-actions">
           <button class="sheet-cancel-btn" @tap="closeRecommendedTrainingSheet">取消</button>
-          <button class="sheet-generate-btn" @tap="handleGenerateTraining">生成训练</button>
+          <button class="sheet-generate-btn" :disabled="generatingTraining" @tap="handleGenerateTraining">
+            {{ generatingTraining ? '生成中...' : '生成训练' }}
+          </button>
         </view>
       </view>
     </view>
@@ -572,6 +574,7 @@ import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
+import { generateAiTraining } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
@@ -624,6 +627,7 @@ const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
 const showProModal = ref(false)
 const showFeedbackModal = ref(false)
+const generatingTraining = ref(false)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
@@ -1090,16 +1094,58 @@ function handleQuestionCountChange(event) {
   manualQuestionCount.value = Math.min(30, Math.max(5, nextValue))
 }
 
-function handleGenerateTraining() {
-  uni.showModal({
-    title: '功能暂未开放',
-    content: '推荐训练将接入 DeepSeek，根据你的错题、正确率和薄弱模块生成新题。当前暂不进入刷题页。',
-    confirmText: '知道了',
-    showCancel: false,
-    success() {
-      closeRecommendedTrainingSheet()
+function buildAiTrainingPayload() {
+  if (smartMode.value) {
+    return {
+      smart_mode: true,
+      exam_code: examCode.value,
+      question_count: smartRecommendation.questionCount
     }
-  })
+  }
+
+  return {
+    smart_mode: false,
+    exam_code: examCode.value,
+    subject: smartRecommendation.subject,
+    module: smartRecommendation.module,
+    submodule: smartRecommendation.submodule,
+    difficulty: manualDifficulty.value,
+    question_count: manualQuestionCount.value
+  }
+}
+
+async function handleGenerateTraining() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  if (!isProMember.value) {
+    handleOpenProModal()
+    return
+  }
+  if (generatingTraining.value) return
+
+  generatingTraining.value = true
+  uni.showLoading({ title: '正在生成训练...' })
+
+  try {
+    const response = await generateAiTraining(buildAiTrainingPayload())
+    closeRecommendedTrainingSheet()
+    uni.navigateTo({
+      url: `/pages/practice/index?ai_session_id=${encodeURIComponent(response.session_id)}`
+    })
+  } catch (error) {
+    const detail = error?.detail || 'AI 训练生成失败，请稍后重试'
+    uni.showModal({
+      title: '生成失败',
+      content: detail,
+      showCancel: false,
+      confirmText: '知道了'
+    })
+  } finally {
+    generatingTraining.value = false
+    uni.hideLoading()
+  }
 }
 
 function goLogin() {
@@ -2688,6 +2734,11 @@ function getMembershipExpiresAt(user) {
   background: linear-gradient(135deg, #3478f6, #4f86ff);
   color: #ffffff;
   box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
+}
+
+.sheet-generate-btn[disabled] {
+  opacity: 0.68;
+  box-shadow: none;
 }
 
 .pro-modal-mask {

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class ExplainWrongRequest(BaseModel):
@@ -24,4 +24,31 @@ class SimilarQuestionRequest(BaseModel):
 
 
 class SimilarQuestionResponse(BaseModel):
+    items: list[dict]
+
+
+class AiTrainingGenerateRequest(BaseModel):
+    smart_mode: bool = True
+    exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+    subject: str | None = None
+    module: str | None = None
+    submodule: str | None = None
+    difficulty: str | None = None
+    question_count: int = Field(default=10, ge=5, le=30)
+
+
+class AiTrainingTarget(BaseModel):
+    subject: str
+    module: str
+    submodule: str
+    difficulty: str
+    question_count: int
+    basis: str
+
+
+class AiTrainingSessionResponse(BaseModel):
+    session_id: str
+    status: str
+    exam_code: str
+    target: AiTrainingTarget
     items: list[dict]
