@@ -4,9 +4,11 @@
       <view class="back-btn" @tap="goBack">‹</view>
       <view class="top-title">练习历史</view>
       <view class="top-actions">
-        <text class="top-icon" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">⌕</text>
-        <view class="filter-icon-wrap" @tap="openFilterPanel">
-          <text class="top-icon" :class="{ active: activeFilterCount > 0 }">⛃</text>
+        <view class="top-action-btn" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">
+          <view class="search-glyph"></view>
+        </view>
+        <view class="top-action-btn filter-icon-wrap" :class="{ active: activeFilterCount > 0 }" @tap="openFilterPanel">
+          <view class="filter-glyph"></view>
           <text v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</text>
         </view>
       </view>
@@ -432,16 +434,19 @@ function goBack() {
   overflow-x: hidden;
 }
 
+.history-page button::after {
+  border: 0;
+}
+
 .history-topbar {
-  display: flex;
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  justify-content: space-between;
   min-height: 72rpx;
   margin-bottom: 22rpx;
 }
 
 .back-btn,
-.top-icon,
 .close-btn {
   width: 58rpx;
   height: 58rpx;
@@ -454,25 +459,93 @@ function goBack() {
   font-weight: 800;
 }
 
+.back-btn {
+  justify-self: start;
+}
+
 .top-title {
+  justify-self: center;
   color: #101828;
   font-size: 32rpx;
   font-weight: 900;
 }
 
 .top-actions {
+  justify-self: end;
   display: flex;
   align-items: center;
-  gap: 8rpx;
+  gap: 10rpx;
 }
 
-.top-icon {
-  font-size: 30rpx;
+.top-action-btn {
+  position: relative;
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 20rpx;
+  border: 2rpx solid transparent;
+  background: rgba(255, 255, 255, 0.74);
+  color: #344054;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 8rpx 20rpx rgba(25, 48, 89, 0.05);
 }
 
-.top-icon.active {
+.top-action-btn.active {
   color: #1677ff;
   background: #edf4ff;
+  border-color: #dbeafe;
+}
+
+.search-glyph {
+  position: relative;
+  width: 21rpx;
+  height: 21rpx;
+  border: 4rpx solid currentColor;
+  border-radius: 50%;
+  box-sizing: border-box;
+}
+
+.search-glyph::after {
+  content: '';
+  position: absolute;
+  right: -9rpx;
+  bottom: -6rpx;
+  width: 11rpx;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+  transform: rotate(45deg);
+}
+
+.filter-glyph {
+  position: relative;
+  width: 30rpx;
+  height: 24rpx;
+}
+
+.filter-glyph::before {
+  content: '';
+  position: absolute;
+  left: 1rpx;
+  top: 2rpx;
+  width: 28rpx;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+  box-shadow: 0 9rpx 0 currentColor, 0 18rpx 0 currentColor;
+}
+
+.filter-glyph::after {
+  content: '';
+  position: absolute;
+  left: 17rpx;
+  top: 0;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: -12rpx 9rpx 0 currentColor, 6rpx 18rpx 0 currentColor;
 }
 
 .filter-icon-wrap {

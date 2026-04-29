@@ -43,7 +43,7 @@
     </view>
 
     <button class="primary-button" :disabled="submitting" @tap="submit">
-      {{ submitting ? '提交中...' : '提交内测反馈' }}
+      {{ submitting ? '提交中...' : '提交反馈' }}
     </button>
   </view>
 </template>

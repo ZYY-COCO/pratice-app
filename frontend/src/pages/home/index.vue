@@ -555,11 +555,6 @@
           <view class="feedback-modal-subtitle">提交题目质量、刷题体验或 Pro 功能/价格建议</view>
         </view>
         <scroll-view scroll-y class="feedback-modal-scroll">
-          <view class="feedback-template-card">
-            <view class="feedback-template-title">内测反馈</view>
-            <view class="feedback-template-copy">欢迎告诉我们你遇到的问题、最想要的功能，以及是否认可 Pro 定价。</view>
-            <button class="feedback-copy-btn" @tap="copyFeedbackTemplate">复制反馈模板</button>
-          </view>
           <BetaFeedbackForm source-page="profile" />
         </scroll-view>
       </view>
@@ -1224,22 +1219,6 @@ function handleMenu(item) {
 
 function showMockToast() {
   uni.showToast({ title: '完整 AI 诊断后续再接入', icon: 'none' })
-}
-
-function copyFeedbackTemplate() {
-  const text = [
-    '内测反馈：',
-    '1. 我测试的是哪个功能？',
-    '2. 遇到了什么问题或不顺手的地方？',
-    '3. 题目质量是否满意？',
-    '4. 我是否愿意为 AI诊断/同类加练/每日计划付费？'
-  ].join('\n')
-  uni.setClipboardData({
-    data: text,
-    success() {
-      uni.showToast({ title: '反馈模板已复制', icon: 'none' })
-    }
-  })
 }
 
 function handleOpenFeedbackModal() {
@@ -2968,41 +2947,6 @@ function getMembershipExpiresAt(user) {
   max-height: 70vh;
   padding-bottom: 4rpx;
   box-sizing: border-box;
-}
-
-.feedback-template-card {
-  margin-bottom: 22rpx;
-  padding: 22rpx;
-  border-radius: 24rpx;
-  background: #f6f8fc;
-  border: 2rpx solid #e6edf8;
-}
-
-.feedback-template-title {
-  color: #172033;
-  font-size: 27rpx;
-  line-height: 1.35;
-  font-weight: 950;
-}
-
-.feedback-template-copy {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.55;
-  font-weight: 650;
-}
-
-.feedback-copy-btn {
-  min-height: 70rpx;
-  margin: 18rpx 0 0;
-  border: 0;
-  border-radius: 18rpx;
-  background: #ffffff;
-  color: #3478f6;
-  font-size: 25rpx;
-  line-height: 70rpx;
-  font-weight: 900;
 }
 
 .mistake-page-head {
