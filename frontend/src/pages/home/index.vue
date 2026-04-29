@@ -443,7 +443,9 @@
           <view v-if="smartMode" class="smart-recommend-card">
             <view class="smart-tip">
               <view class="smart-tip-icon">✦</view>
-              <view class="smart-tip-copy">系统将根据你的正确率、错题类型和薄弱知识点，自动生成本次训练题目。</view>
+              <view class="smart-tip-copy">
+                {{ recommendationLoading ? '正在读取你的错题和能力统计...' : '系统将根据你的正确率、错题类型和薄弱知识点，自动生成本次训练题目。' }}
+              </view>
             </view>
             <view class="recommend-lines">
               <view class="recommend-line">
@@ -574,7 +576,7 @@ import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
-import { generateAiTraining } from '../../api/ai'
+import { fetchAiTrainingRecommendation, generateAiTraining } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
@@ -628,6 +630,7 @@ const showTrainingSheet = ref(false)
 const showProModal = ref(false)
 const showFeedbackModal = ref(false)
 const generatingTraining = ref(false)
+const recommendationLoading = ref(false)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
@@ -636,7 +639,7 @@ const tabs = [
   { key: 'profile', label: '我的', icon: '☺' }
 ]
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
-const smartRecommendation = {
+const fallbackSmartRecommendation = {
   subject: '逻辑推理',
   module: '判断',
   submodule: '判断关系',
@@ -644,6 +647,7 @@ const smartRecommendation = {
   questionCount: 10,
   basis: '当前正确率较低，优先巩固判断关系类题目'
 }
+const smartRecommendation = ref({ ...fallbackSmartRecommendation })
 const proPreviewItems = [
   'AI 薄弱诊断：把低正确率知识点转成更清晰的错因总结',
   '错题同类加练：围绕错题自动推荐同 submodule 题目',
@@ -1079,6 +1083,7 @@ function openRecommendedTrainingSheet() {
   manualDifficulty.value = '标准提升'
   manualQuestionCount.value = 10
   showTrainingSheet.value = true
+  refreshTrainingRecommendation()
 }
 
 function closeRecommendedTrainingSheet() {
@@ -1087,6 +1092,9 @@ function closeRecommendedTrainingSheet() {
 
 function handleSmartModeChange(event) {
   smartMode.value = Boolean(event?.detail?.value)
+  if (smartMode.value) {
+    refreshTrainingRecommendation()
+  }
 }
 
 function handleQuestionCountChange(event) {
@@ -1094,21 +1102,50 @@ function handleQuestionCountChange(event) {
   manualQuestionCount.value = Math.min(30, Math.max(5, nextValue))
 }
 
+function normalizeTrainingRecommendation(response) {
+  const target = response?.target || {}
+  return {
+    subject: target.subject || fallbackSmartRecommendation.subject,
+    module: target.module || fallbackSmartRecommendation.module,
+    submodule: target.submodule || fallbackSmartRecommendation.submodule,
+    difficulty: target.difficulty || fallbackSmartRecommendation.difficulty,
+    questionCount: Number(target.question_count || fallbackSmartRecommendation.questionCount),
+    basis: target.basis || fallbackSmartRecommendation.basis
+  }
+}
+
+async function refreshTrainingRecommendation() {
+  if (!isAuthed.value || !isProMember.value || recommendationLoading.value) {
+    return
+  }
+
+  recommendationLoading.value = true
+  try {
+    const response = await fetchAiTrainingRecommendation(examCode.value)
+    smartRecommendation.value = normalizeTrainingRecommendation(response)
+  } catch (error) {
+    smartRecommendation.value = { ...fallbackSmartRecommendation }
+  } finally {
+    recommendationLoading.value = false
+  }
+}
+
 function buildAiTrainingPayload() {
+  const recommendation = smartRecommendation.value
   if (smartMode.value) {
     return {
       smart_mode: true,
       exam_code: examCode.value,
-      question_count: smartRecommendation.questionCount
+      question_count: recommendation.questionCount
     }
   }
 
   return {
     smart_mode: false,
     exam_code: examCode.value,
-    subject: smartRecommendation.subject,
-    module: smartRecommendation.module,
-    submodule: smartRecommendation.submodule,
+    subject: recommendation.subject,
+    module: recommendation.module,
+    submodule: recommendation.submodule,
     difficulty: manualDifficulty.value,
     question_count: manualQuestionCount.value
   }

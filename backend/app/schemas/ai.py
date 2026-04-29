@@ -46,9 +46,27 @@ class AiTrainingTarget(BaseModel):
     basis: str
 
 
+class AiTrainingRecommendationResponse(BaseModel):
+    exam_code: str
+    target: AiTrainingTarget
+    metrics: dict = Field(default_factory=dict)
+
+
 class AiTrainingSessionResponse(BaseModel):
     session_id: str
     status: str
     exam_code: str
     target: AiTrainingTarget
     items: list[dict]
+
+
+class AiTrainingSummaryResponse(BaseModel):
+    session_id: str
+    total_count: int
+    answered_count: int
+    correct_count: int
+    accuracy: float
+    summary: str
+    next_step: str
+    weak_points: list[str] = Field(default_factory=list)
+    items: list[dict] = Field(default_factory=list)

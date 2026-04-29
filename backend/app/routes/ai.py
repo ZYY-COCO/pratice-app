@@ -1,4 +1,5 @@
 import json
+import re
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -10,7 +11,9 @@ from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
 from app.schemas.ai import (
     AiTrainingGenerateRequest,
+    AiTrainingRecommendationResponse,
     AiTrainingSessionResponse,
+    AiTrainingSummaryResponse,
     AiTrainingTarget,
     ExplainWrongRequest,
     ExplainWrongResponse,
@@ -77,9 +80,36 @@ def _normalize_difficulty(value: str | None) -> str:
     return FALLBACK_TARGET["difficulty"]
 
 
+def _difficulty_from_accuracy(accuracy: float | None, wrong_count: int = 0) -> str:
+    score = 0 if accuracy is None else float(accuracy)
+    if wrong_count >= 5 or score < 45:
+        return "基础巩固"
+    if score < 65:
+        return "标准提升"
+    if score < 82:
+        return "强化突破"
+    return "冲刺挑战"
+
+
+def _question_count_from_focus(total_count: int = 0, wrong_count: int = 0, accuracy: float | None = None) -> int:
+    score = 0 if accuracy is None else float(accuracy)
+    if wrong_count >= 15 or (total_count >= 50 and score < 75):
+        return 20
+    if wrong_count >= 8 or (total_count >= 20 and score < 60):
+        return 15
+    return 10
+
+
 def _compact_text(value: object, max_length: int = 2000) -> str:
     text = str(value or "").strip()
     return text[:max_length]
+
+
+def _question_fingerprint(stem: object) -> str:
+    text = _compact_text(stem, 400)
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[^\w\u4e00-\u9fff]", "", text, flags=re.UNICODE)
+    return text.lower()[:180]
 
 
 def _extract_json_object(content: str) -> dict:
@@ -129,6 +159,144 @@ def _hide_answer(question: dict) -> dict:
     return {**question, "answer": None, "explanation": None}
 
 
+def _candidate_key(row: dict) -> tuple[str, str, str]:
+    return (
+        str(row.get("subject") or FALLBACK_TARGET["subject"]),
+        str(row.get("module") or FALLBACK_TARGET["module"]),
+        str(row.get("submodule") or FALLBACK_TARGET["submodule"]),
+    )
+
+
+def _build_smart_target(
+    supabase,
+    user_id: str,
+    profile: dict,
+    exam_code: str,
+    preferred_question_count: int | None = None,
+) -> tuple[AiTrainingTarget, dict]:
+    candidates: dict[tuple[str, str, str], dict] = {}
+
+    try:
+        ability_response = (
+            supabase.table("ability_stats")
+            .select("*")
+            .eq("user_id", user_id)
+            .eq("exam_code", exam_code)
+            .gt("total_count", 0)
+            .order("accuracy")
+            .order("total_count", desc=True)
+            .limit(20)
+            .execute()
+        )
+    except Exception:
+        ability_response = None
+
+    for row in ability_response.data if ability_response else []:
+        key = _candidate_key(row)
+        total_count = int(row.get("total_count") or 0)
+        correct_count = int(row.get("correct_count") or 0)
+        accuracy = float(row.get("accuracy") or 0)
+        candidates[key] = {
+            "subject": key[0],
+            "module": key[1],
+            "submodule": key[2],
+            "total_count": total_count,
+            "correct_count": correct_count,
+            "accuracy": accuracy,
+            "wrong_count": max(0, total_count - correct_count),
+            "score": (100 - accuracy) * 2 + min(total_count, 40),
+            "source": "ability_stats",
+        }
+
+    try:
+        wrong_response = (
+            supabase.table("wrong_questions")
+            .select("wrong_count, questions(exam_code, subject, module, submodule, stem)")
+            .eq("user_id", user_id)
+            .order("last_wrong_at", desc=True)
+            .limit(40)
+            .execute()
+        )
+    except Exception:
+        wrong_response = None
+
+    for row in wrong_response.data if wrong_response else []:
+        question = row.get("questions") or {}
+        if question.get("exam_code") not in {exam_code, "COMMON", None}:
+            continue
+        key = _candidate_key(question)
+        wrong_count = int(row.get("wrong_count") or 1)
+        current = candidates.get(
+            key,
+            {
+                "subject": key[0],
+                "module": key[1],
+                "submodule": key[2],
+                "total_count": 0,
+                "correct_count": 0,
+                "accuracy": None,
+                "wrong_count": 0,
+                "score": 80,
+                "source": "wrong_questions",
+            },
+        )
+        current["wrong_count"] = int(current.get("wrong_count") or 0) + wrong_count
+        current["score"] = float(current.get("score") or 0) + wrong_count * 16
+        candidates[key] = current
+
+    if not candidates:
+        question_count = _normalize_question_count(preferred_question_count or 10)
+        target = AiTrainingTarget(
+            subject=FALLBACK_TARGET["subject"],
+            module=FALLBACK_TARGET["module"],
+            submodule=FALLBACK_TARGET["submodule"],
+            difficulty=FALLBACK_TARGET["difficulty"],
+            question_count=question_count,
+            basis=FALLBACK_TARGET["basis"],
+        )
+        return target, {"source": "fallback", "reason": "no_answer_history"}
+
+    chosen = max(
+        candidates.values(),
+        key=lambda item: (
+            float(item.get("score") or 0),
+            int(item.get("wrong_count") or 0),
+            -float(item.get("accuracy") if item.get("accuracy") is not None else 100),
+        ),
+    )
+    accuracy = chosen.get("accuracy")
+    wrong_count = int(chosen.get("wrong_count") or 0)
+    total_count = int(chosen.get("total_count") or 0)
+    question_count = _normalize_question_count(
+        preferred_question_count or _question_count_from_focus(total_count, wrong_count, accuracy)
+    )
+    difficulty = _difficulty_from_accuracy(accuracy, wrong_count)
+
+    if accuracy is None:
+        basis = f"近期 {chosen['submodule']} 错题出现 {wrong_count} 次，优先做同类加练。"
+    else:
+        basis = (
+            f"{chosen['submodule']} 已做 {total_count} 题，正确率约 {round(float(accuracy))}%，"
+            f"累计错题 {wrong_count} 次，优先巩固同类题目。"
+        )
+
+    target = AiTrainingTarget(
+        subject=chosen["subject"],
+        module=chosen["module"],
+        submodule=chosen["submodule"],
+        difficulty=difficulty,
+        question_count=question_count,
+        basis=basis,
+    )
+    return target, {
+        "source": chosen.get("source"),
+        "total_count": total_count,
+        "correct_count": int(chosen.get("correct_count") or 0),
+        "wrong_count": wrong_count,
+        "accuracy": accuracy,
+    }
+
+
 def _build_target(supabase, user_id: str, profile: dict, payload: AiTrainingGenerateRequest) -> AiTrainingTarget:
     question_count = _normalize_question_count(payload.question_count)
     difficulty = _normalize_difficulty(payload.difficulty)
@@ -144,37 +312,9 @@ def _build_target(supabase, user_id: str, profile: dict, payload: AiTrainingGene
         )
 
     exam_code = payload.exam_code or profile.get("exam_target") or "Z001"
-    response = (
-        supabase.table("ability_stats")
-        .select("*")
-        .eq("user_id", user_id)
-        .eq("exam_code", exam_code)
-        .gt("total_count", 0)
-        .order("accuracy")
-        .order("total_count", desc=True)
-        .limit(1)
-        .execute()
-    )
-    if response.data:
-        row = response.data[0]
-        accuracy = float(row.get("accuracy") or 0)
-        return AiTrainingTarget(
-            subject=row.get("subject") or FALLBACK_TARGET["subject"],
-            module=row.get("module") or FALLBACK_TARGET["module"],
-            submodule=row.get("submodule") or FALLBACK_TARGET["submodule"],
-            difficulty=difficulty,
-            question_count=question_count,
-            basis=f"当前 {row.get('submodule') or row.get('module')} 正确率约 {round(accuracy)}%，优先生成同类强化题。",
-        )
-
-    return AiTrainingTarget(
-        subject=FALLBACK_TARGET["subject"],
-        module=FALLBACK_TARGET["module"],
-        submodule=FALLBACK_TARGET["submodule"],
-        difficulty=difficulty,
-        question_count=question_count,
-        basis=FALLBACK_TARGET["basis"],
-    )
+    preferred_count = question_count if "question_count" in payload.model_fields_set else None
+    target, _ = _build_smart_target(supabase, user_id, profile, exam_code, preferred_count)
+    return target
 
 
 def _build_context_snippets(supabase, user_id: str) -> list[str]:
@@ -201,8 +341,17 @@ def _build_context_snippets(supabase, user_id: str) -> list[str]:
     return snippets
 
 
-def _build_deepseek_messages(target: AiTrainingTarget, context_snippets: list[str]) -> list[dict]:
+def _build_deepseek_messages(
+    target: AiTrainingTarget,
+    context_snippets: list[str],
+    request_count: int | None = None,
+    exclude_stems: list[str] | None = None,
+) -> list[dict]:
     context = "\n".join(context_snippets) if context_snippets else "暂无最近错题样例。"
+    count = request_count or target.question_count
+    exclude_text = "\n".join(f"- {item}" for item in (exclude_stems or []) if item)
+    if not exclude_text:
+        exclude_text = "无。"
     return [
         {
             "role": "system",
@@ -210,18 +359,20 @@ def _build_deepseek_messages(target: AiTrainingTarget, context_snippets: list[st
                 "你是港澳台考研刷题 App 的命题老师。请只输出合法 JSON，不要输出 Markdown。"
                 "题目必须为单选题，只有 A、B、C、D 四个选项，绝对不要生成 E 选项。"
                 "题干、选项、解析必须准确、简洁，贴近港澳台考研初试刷题训练。"
+                "同一批题目之间不得重复题干、不得只替换少量词语、不得复用示例题。"
             ),
         },
         {
             "role": "user",
             "content": (
-                f"请生成 {target.question_count} 道训练题。\n"
+                f"请生成 {count} 道训练题。\n"
                 f"科目：{target.subject}\n"
                 f"模块：{target.module}\n"
                 f"知识点：{target.submodule}\n"
                 f"难度：{target.difficulty}\n"
                 f"推荐依据：{target.basis}\n"
                 f"最近错题参考：\n{context}\n\n"
+                f"以下题干近期已生成或本轮已采用，必须避开：\n{exclude_text}\n\n"
                 "输出 JSON 格式必须为："
                 '{"questions":[{"stem":"题干","option_a":"A选项","option_b":"B选项",'
                 '"option_c":"C选项","option_d":"D选项","answer":"A","explanation":"解析",'
@@ -231,7 +382,12 @@ def _build_deepseek_messages(target: AiTrainingTarget, context_snippets: list[st
     ]
 
 
-async def _call_deepseek(target: AiTrainingTarget, context_snippets: list[str]) -> dict:
+async def _call_deepseek(
+    target: AiTrainingTarget,
+    context_snippets: list[str],
+    request_count: int | None = None,
+    exclude_stems: list[str] | None = None,
+) -> dict:
     settings = get_settings()
     if not settings.deepseek_api_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="DeepSeek API Key 尚未配置")
@@ -240,8 +396,8 @@ async def _call_deepseek(target: AiTrainingTarget, context_snippets: list[str]) 
     timeout = aiohttp.ClientTimeout(total=settings.deepseek_timeout_seconds)
     body = {
         "model": settings.deepseek_model,
-        "messages": _build_deepseek_messages(target, context_snippets),
-        "temperature": 0.35,
+        "messages": _build_deepseek_messages(target, context_snippets, request_count, exclude_stems),
+        "temperature": 0.55,
         "response_format": {"type": "json_object"},
     }
 
@@ -264,7 +420,12 @@ async def _call_deepseek(target: AiTrainingTarget, context_snippets: list[str]) 
             return data
 
 
-def _parse_generated_questions(raw_response: dict, target: AiTrainingTarget, exam_code: str) -> list[dict]:
+def _parse_generated_questions(
+    raw_response: dict,
+    target: AiTrainingTarget,
+    exam_code: str,
+    required_count: int | None = None,
+) -> list[dict]:
     choices = raw_response.get("choices") or []
     content = choices[0].get("message", {}).get("content") if choices else ""
     if not content:
@@ -286,9 +447,79 @@ def _parse_generated_questions(raw_response: dict, target: AiTrainingTarget, exa
             if row:
                 rows.append(row)
 
-    if len(rows) < target.question_count:
+    minimum = target.question_count if required_count is None else required_count
+    if len(rows) < minimum:
         raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="DeepSeek 返回的有效题目数量不足")
     return rows[: target.question_count]
+
+
+def _existing_ai_fingerprints(supabase, target: AiTrainingTarget) -> tuple[set[str], list[str]]:
+    try:
+        response = (
+            supabase.table("questions")
+            .select("stem")
+            .eq("source_type", "ai_deepseek")
+            .eq("subject", target.subject)
+            .eq("module", target.module)
+            .eq("submodule", target.submodule)
+            .limit(120)
+            .execute()
+        )
+    except Exception:
+        return set(), []
+
+    fingerprints: set[str] = set()
+    stems: list[str] = []
+    for row in response.data or []:
+        stem = row.get("stem")
+        fingerprint = _question_fingerprint(stem)
+        if fingerprint:
+            fingerprints.add(fingerprint)
+            if len(stems) < 8:
+                stems.append(_compact_text(stem, 120))
+    return fingerprints, stems
+
+
+async def _generate_unique_question_rows(
+    supabase,
+    target: AiTrainingTarget,
+    exam_code: str,
+    context_snippets: list[str],
+) -> tuple[list[dict], dict]:
+    seen, existing_stems = _existing_ai_fingerprints(supabase, target)
+    rows: list[dict] = []
+    raw_responses: list[dict] = []
+    attempts = 0
+
+    while len(rows) < target.question_count and attempts < 4:
+        remaining = target.question_count - len(rows)
+        request_count = min(30, max(remaining + 2, target.question_count if attempts == 0 else remaining))
+        exclude_stems = existing_stems + [_compact_text(item["stem"], 120) for item in rows[-8:]]
+        raw_response = await _call_deepseek(target, context_snippets, request_count=request_count, exclude_stems=exclude_stems)
+        raw_responses.append(raw_response)
+        parsed_rows = _parse_generated_questions(raw_response, target, exam_code, required_count=1)
+
+        added_this_round = 0
+        for row in parsed_rows:
+            fingerprint = _question_fingerprint(row.get("stem"))
+            if not fingerprint or fingerprint in seen:
+                continue
+            seen.add(fingerprint)
+            rows.append(row)
+            added_this_round += 1
+            if len(rows) >= target.question_count:
+                break
+
+        attempts += 1
+
+    if len(rows) < target.question_count:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail=f"DeepSeek 只生成了 {len(rows)} 道不重复有效题，请稍后重试",
+        )
+
+    raw_response = raw_responses[0] if len(raw_responses) == 1 else {"attempts": raw_responses}
+    return rows[: target.question_count], raw_response
 
 
 def _create_training_session(supabase, user_id: str, exam_code: str, target: AiTrainingTarget, payload: AiTrainingGenerateRequest) -> str:
@@ -382,6 +613,24 @@ def generate_similar_question(
     return SimilarQuestionResponse(items=items)
 
 
+@router.get("/training/recommendation", response_model=AiTrainingRecommendationResponse)
+def get_training_recommendation(
+    exam_code: str | None = None,
+    user_id: str = Depends(get_current_user_id),
+) -> AiTrainingRecommendationResponse:
+    supabase = get_supabase_admin()
+    profile = _get_profile_or_404(supabase, user_id)
+    if not _is_membership_active(profile):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="AI 专项出题当前仅对 Pro 会员开放")
+
+    resolved_exam_code = exam_code or profile.get("exam_target") or "Z001"
+    if resolved_exam_code not in {"Z001", "Z002"}:
+        resolved_exam_code = "Z001"
+
+    target, metrics = _build_smart_target(supabase, user_id, profile, resolved_exam_code)
+    return AiTrainingRecommendationResponse(exam_code=resolved_exam_code, target=target, metrics=metrics)
+
+
 @router.post("/training/generate", response_model=AiTrainingSessionResponse)
 async def generate_training(
     payload: AiTrainingGenerateRequest,
@@ -403,13 +652,14 @@ async def generate_training(
     context_snippets = _build_context_snippets(supabase, user_id)
 
     try:
-        raw_response = await _call_deepseek(target, context_snippets)
-        question_rows = _parse_generated_questions(raw_response, target, exam_code)
+        question_rows, raw_response = await _generate_unique_question_rows(supabase, target, exam_code, context_snippets)
         inserted = supabase.table("questions").insert(question_rows).execute()
         questions = inserted.data or []
+        if len(questions) < target.question_count:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI 题目写入数量不足，请稍后重试")
         mapping_rows = [
             {"session_id": session_id, "question_id": question["id"], "position": index + 1}
-            for index, question in enumerate(questions)
+            for index, question in enumerate(questions[: target.question_count])
         ]
         supabase.table("ai_training_session_questions").insert(mapping_rows).execute()
         supabase.table("ai_training_sessions").update(
@@ -427,7 +677,7 @@ async def generate_training(
         status="completed",
         exam_code=exam_code,
         target=target,
-        items=[_hide_answer(question) for question in questions],
+        items=[_hide_answer(question) for question in questions[: target.question_count]],
     )
 
 
@@ -471,4 +721,102 @@ def get_training_session(
         exam_code=session["exam_code"],
         target=target,
         items=questions,
+    )
+
+
+@router.get("/training/sessions/{session_id}/summary", response_model=AiTrainingSummaryResponse)
+def get_training_summary(
+    session_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> AiTrainingSummaryResponse:
+    supabase = get_supabase_admin()
+    session_response = (
+        supabase.table("ai_training_sessions")
+        .select("*")
+        .eq("id", session_id)
+        .eq("user_id", user_id)
+        .limit(1)
+        .execute()
+    )
+    if not session_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="AI 训练不存在")
+
+    question_response = (
+        supabase.table("ai_training_session_questions")
+        .select("position, questions(*)")
+        .eq("session_id", session_id)
+        .order("position")
+        .execute()
+    )
+    questions = [row["questions"] for row in question_response.data or [] if row.get("questions")]
+    question_ids = [item["id"] for item in questions]
+
+    answer_map: dict[str, dict] = {}
+    if question_ids:
+        answer_response = (
+            supabase.table("user_answers")
+            .select("question_id, selected_answer, is_correct, used_time, created_at")
+            .eq("user_id", user_id)
+            .in_("question_id", question_ids)
+            .order("created_at", desc=True)
+            .execute()
+        )
+        for row in answer_response.data or []:
+            question_id = row.get("question_id")
+            if question_id and question_id not in answer_map:
+                answer_map[question_id] = row
+
+    items: list[dict] = []
+    weak_points: list[str] = []
+    for question in questions:
+        answer = answer_map.get(question["id"])
+        is_correct = bool(answer.get("is_correct")) if answer else False
+        if answer and not is_correct:
+            label = f"{question.get('module')} / {question.get('submodule')}"
+            if label not in weak_points:
+                weak_points.append(label)
+        items.append(
+            {
+                "question_id": question["id"],
+                "stem": question.get("stem"),
+                "selected_answer": answer.get("selected_answer") if answer else None,
+                "correct_answer": question.get("answer"),
+                "is_correct": is_correct if answer else None,
+                "explanation": question.get("explanation"),
+                "subject": question.get("subject"),
+                "module": question.get("module"),
+                "submodule": question.get("submodule"),
+            }
+        )
+
+    total_count = len(questions)
+    answered_count = len(answer_map)
+    correct_count = sum(1 for row in answer_map.values() if row.get("is_correct"))
+    accuracy = round(correct_count / answered_count * 100, 2) if answered_count else 0.0
+    session = session_response.data[0]
+    focus = f"{session.get('subject')} / {session.get('module')} / {session.get('submodule')}"
+
+    if answered_count < total_count:
+        summary = f"本轮 AI 训练还未完整作答，目前已完成 {answered_count}/{total_count} 题。"
+        next_step = "建议先完成剩余题目，再回到总结页查看完整诊断。"
+    elif accuracy >= 80:
+        summary = f"本轮围绕 {focus} 训练，正确率 {round(accuracy)}%，掌握度较好。"
+        next_step = "下一轮可以提高难度，继续做强化突破或冲刺挑战题。"
+    elif accuracy >= 60:
+        summary = f"本轮围绕 {focus} 训练，正确率 {round(accuracy)}%，基础理解基本到位，但稳定性还可以继续提升。"
+        next_step = "建议回看错题解析，再生成一组同知识点标准提升训练。"
+    else:
+        summary = f"本轮围绕 {focus} 训练，正确率 {round(accuracy)}%，说明该知识点仍是当前薄弱项。"
+        next_step = "建议先看完每道题解析，再用基础巩固难度重新训练 10 题。"
+
+    return AiTrainingSummaryResponse(
+        session_id=session_id,
+        total_count=total_count,
+        answered_count=answered_count,
+        correct_count=correct_count,
+        accuracy=accuracy,
+        summary=summary,
+        next_step=next_step,
+        weak_points=weak_points[:5],
+        items=items,
     )

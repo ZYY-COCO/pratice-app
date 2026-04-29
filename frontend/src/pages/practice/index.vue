@@ -93,7 +93,42 @@
     </template>
 
     <template v-else>
-      <template v-if="summaryMode">
+      <template v-if="aiSummaryMode">
+        <view class="summary-card ai-summary-card">
+          <view class="summary-kicker">AI 训练总结</view>
+          <view class="summary-score">{{ aiSummaryAccuracy }}%</view>
+          <view class="summary-sub">本轮答对 {{ aiSummaryCorrect }} / {{ aiSummaryTotal }} 题。看完解析后，系统会把错题继续纳入能力统计。</view>
+        </view>
+
+        <view class="ai-diagnosis-card">
+          <view class="ai-diagnosis-title">本轮诊断</view>
+          <view class="ai-diagnosis-text">{{ aiSummary?.summary || '已完成本轮 AI 专项训练。' }}</view>
+          <view class="ai-diagnosis-title">下一步建议</view>
+          <view class="ai-diagnosis-text">{{ aiSummary?.next_step || '建议回看错题解析后，再生成一组同知识点训练。' }}</view>
+          <view v-if="aiSummary?.weak_points?.length" class="ai-weak-tags">
+            <text v-for="item in aiSummary.weak_points" :key="item">{{ item }}</text>
+          </view>
+        </view>
+
+        <view class="summary-grid">
+          <button
+            v-for="(item, index) in aiReviewResults"
+            :key="item.question.questionId || item.question.id"
+            class="summary-dot"
+            :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
+            @tap="openAiReviewQuestion(index)"
+          >
+            {{ index + 1 }}
+          </button>
+        </view>
+
+        <view class="summary-actions">
+          <button class="next-btn" @tap="openAiReviewQuestion(0)">回看本轮解析</button>
+          <button class="ghost-button back-tags" @tap="resetToTags">返回刷题范围</button>
+        </view>
+      </template>
+
+      <template v-else-if="summaryMode">
         <view class="summary-card">
           <view class="summary-kicker">综合刷题结果</view>
           <view class="summary-score">{{ correctCount }} / {{ reviewResults.length }}</view>
@@ -183,12 +218,14 @@
             <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
             <button class="next-btn" :disabled="!hasNextQuestion" @tap="goNextQuestion">下一题</button>
           </view>
-          <button class="next-btn outline" @tap="showSummary">查看结果总览</button>
+          <button class="next-btn outline" @tap="isAiTrainingMode ? showAiSummary() : showSummary()">
+            {{ isAiTrainingMode ? '返回 AI 总结' : '查看结果总览' }}
+          </button>
         </template>
 
         <template v-else>
           <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
-          <button v-else class="next-btn done" @tap="finishQuiz">完成本轮</button>
+          <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
         </template>
       </view>
 
@@ -201,7 +238,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
-import { fetchAiTrainingSession } from '../../api/ai'
+import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
@@ -257,6 +294,9 @@ const comprehensiveAnswers = ref({})
 const reviewMode = ref(false)
 const reviewResults = ref([])
 const summaryMode = ref(false)
+const aiSummaryMode = ref(false)
+const aiSummary = ref(null)
+const aiReviewResults = ref([])
 
 const questionCache = new Map()
 let timerId = null
@@ -265,16 +305,24 @@ const subjectTree = computed(() => getSubjectTree(subject.value))
 const openMap = ref(buildOpenMap(subjectTree.value))
 const hasAccessToken = computed(() => Boolean(accessToken.value))
 const plannedQuestionLimit = computed(() => selectedQuestionSize.value)
-const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || buildMockQuestion(subject.value, examCode.value))
+const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
+const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
+const aiSummaryTotal = computed(() => aiSummary.value?.total_count ?? (aiReviewResults.value.length || questionPool.value.length || 0))
+const aiSummaryCorrect = computed(() => aiSummary.value?.correct_count ?? aiReviewResults.value.filter((item) => item.isCorrect).length)
+const aiSummaryAccuracy = computed(() => {
+  if (aiSummary.value?.accuracy !== undefined) {
+    return Math.round(Number(aiSummary.value.accuracy || 0))
+  }
+  return aiSummaryTotal.value ? Math.round((aiSummaryCorrect.value / aiSummaryTotal.value) * 100) : 0
+})
 const canFavoriteCurrent = computed(() => {
   const questionId = questionMeta.value.questionId
   return Boolean(questionId) && !String(questionId).startsWith('mock-')
 })
-const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
 const pageTitle = computed(() => {
   if (isAiTrainingMode.value) {
@@ -333,6 +381,9 @@ const formattedTimer = computed(() => {
 })
 
 watch(subject, () => {
+  if (isAiTrainingMode.value) {
+    return
+  }
   openMap.value = buildOpenMap(getSubjectTree(subject.value))
   questionPool.value = [buildMockQuestion(subject.value, examCode.value)]
   currentQuestionIndex.value = 0
@@ -376,7 +427,7 @@ onUnload(() => {
 })
 
 onBackPress(() => {
-  if (summaryMode.value || reviewMode.value || mode.value === 'quiz') {
+  if (aiSummaryMode.value || summaryMode.value || reviewMode.value || mode.value === 'quiz') {
     confirmExitPractice()
     return true
   }
@@ -422,6 +473,23 @@ function buildMockQuestion(nextSubject, nextExamCode, index = 0) {
     year: mock.year || '题库练习',
     badge: mock.badge || '专项练习',
     helper: `${mock.helper}（mock 模式）`
+  }
+}
+
+function buildEmptyAiQuestion() {
+  return {
+    id: 'ai-loading',
+    year: 'AI 训练',
+    badge: '正在加载',
+    stem: '正在加载 AI 训练题目...',
+    helper: '如果长时间停留在这里，请返回重新生成训练。',
+    options: [],
+    answer: '',
+    explanation: '',
+    autoTag: '',
+    questionId: '',
+    module: '',
+    submodule: ''
   }
 }
 
@@ -525,7 +593,7 @@ function getCacheKey(moduleInfos) {
 }
 
 function goBack() {
-  if (summaryMode.value || reviewMode.value || mode.value === 'quiz') {
+  if (aiSummaryMode.value || summaryMode.value || reviewMode.value || mode.value === 'quiz') {
     confirmExitPractice()
     return
   }
@@ -723,7 +791,12 @@ async function loadAiTrainingSession(sessionId) {
   reviewMode.value = false
   reviewResults.value = []
   summaryMode.value = false
+  aiSummaryMode.value = false
+  aiSummary.value = null
+  aiReviewResults.value = []
   comprehensiveAnswers.value = {}
+  questionPool.value = []
+  mode.value = 'quiz'
   uni.showLoading({ title: '正在加载 AI 训练...' })
 
   try {
@@ -798,6 +871,9 @@ async function startQuiz() {
   reviewMode.value = false
   reviewResults.value = []
   summaryMode.value = false
+  aiSummaryMode.value = false
+  aiSummary.value = null
+  aiReviewResults.value = []
   comprehensiveAnswers.value = {}
   uni.showLoading({ title: '正在加载题目...' })
 
@@ -1028,10 +1104,12 @@ async function submitAnswer() {
   await nextTick()
   scrollToResultSection()
   try {
+    let answerResult = null
     if (hasAccessToken.value && isRealQuestion()) {
       const result = await request({
         url: '/answers/submit',
         method: 'POST',
+        timeout: 25000,
         header: {
           Authorization: `Bearer ${accessToken.value}`
         },
@@ -1049,18 +1127,43 @@ async function submitAnswer() {
         ? `已写入错题本：${subject.value} / ${questionMeta.value.module} / ${questionMeta.value.submodule}`
         : '本题答对，当前知识点继续保持。'
       abilityAccuracy.value = result.ability_accuracy
+      answerResult = {
+        question: currentQuestion.value,
+        selectedAnswer: selectedOption.value,
+        correctAnswer: result.correct_answer,
+        explanation: result.explanation,
+        isCorrect: result.is_correct,
+        syncFailed: false
+      }
     } else {
       correctAnswer.value = currentQuestion.value.answer
       answerExplanation.value = currentQuestion.value.explanation
       resultTag.value = currentQuestion.value.autoTag
       abilityAccuracy.value = null
+      answerResult = buildLocalComprehensiveResult({ question: currentQuestion.value, selected: selectedOption.value })
     }
 
+    if (isAiTrainingMode.value && answerResult) {
+      upsertAiReviewResult(answerResult)
+    }
     submitted.value = true
     clearTimer()
     await nextTick()
     scrollToResultSection()
   } catch (error) {
+    if (isAiTrainingMode.value && isRealQuestion()) {
+      const pending = buildPendingComprehensiveResult(currentQuestion.value, selectedOption.value, error)
+      correctAnswer.value = pending.correctAnswer
+      answerExplanation.value = pending.explanation
+      resultTag.value = '本题已尝试提交，网络返回异常，稍后可在 AI 总结页重新读取结果。'
+      abilityAccuracy.value = null
+      upsertAiReviewResult(pending)
+      submitted.value = true
+      clearTimer()
+      await nextTick()
+      scrollToResultSection()
+      return
+    }
     uni.showToast({ title: error?.detail || '提交失败', icon: 'none' })
   } finally {
     submitting.value = false
@@ -1089,6 +1192,32 @@ function openReviewQuestion(index) {
   summaryMode.value = false
   reviewMode.value = true
   applyReviewAt(index)
+  nextTick(() => {
+    scrollToQuestionTop()
+  })
+}
+
+function upsertAiReviewResult(result) {
+  const key = result.question.questionId || result.question.id
+  const nextResults = [...aiReviewResults.value]
+  const existingIndex = nextResults.findIndex((item) => (item.question.questionId || item.question.id) === key)
+  if (existingIndex >= 0) {
+    nextResults[existingIndex] = result
+  } else {
+    nextResults[currentQuestionIndex.value] = result
+  }
+  aiReviewResults.value = nextResults.filter(Boolean)
+}
+
+function openAiReviewQuestion(index) {
+  if (!aiReviewResults.value.length) {
+    return
+  }
+  aiSummaryMode.value = false
+  summaryMode.value = false
+  reviewMode.value = true
+  reviewResults.value = aiReviewResults.value
+  applyReviewAt(Math.max(0, Math.min(index, aiReviewResults.value.length - 1)))
   nextTick(() => {
     scrollToQuestionTop()
   })
@@ -1174,6 +1303,58 @@ function goNextQuestion() {
 
 function showSummary() {
   summaryMode.value = true
+  aiSummaryMode.value = false
+  reviewMode.value = false
+  submitted.value = false
+  nextTick(() => {
+    scrollToQuestionTop()
+  })
+}
+
+function buildAiReviewResultFromSummaryItem(item) {
+  const question = questionPool.value.find((row) => (row.questionId || row.id) === item.question_id)
+  if (!question) {
+    return null
+  }
+  return {
+    question,
+    selectedAnswer: item.selected_answer || '',
+    correctAnswer: item.correct_answer || '待同步',
+    explanation: item.explanation || '解析正在同步中，请稍后再试。',
+    isCorrect: item.is_correct,
+    syncFailed: item.is_correct === null || item.is_correct === undefined
+  }
+}
+
+async function showAiSummary() {
+  if (!aiSessionId.value) {
+    showSummary()
+    return
+  }
+
+  uni.showLoading({ title: '正在生成总结...' })
+  try {
+    const summary = await fetchAiTrainingSummary(aiSessionId.value)
+    aiSummary.value = summary
+    const summaryResults = (summary.items || []).map(buildAiReviewResultFromSummaryItem).filter(Boolean)
+    if (summaryResults.length) {
+      aiReviewResults.value = summaryResults
+    }
+  } catch (error) {
+    aiSummary.value = {
+      total_count: questionPool.value.length,
+      correct_count: aiReviewResults.value.filter((item) => item.isCorrect).length,
+      accuracy: aiSummaryAccuracy.value,
+      summary: '本轮 AI 训练已完成，但总结同步暂时失败。',
+      next_step: '可以先回看题目解析，稍后再进入练习历史查看完整记录。',
+      weak_points: []
+    }
+  } finally {
+    uni.hideLoading()
+  }
+
+  aiSummaryMode.value = true
+  summaryMode.value = false
   reviewMode.value = false
   submitted.value = false
   nextTick(() => {
@@ -1182,6 +1363,10 @@ function showSummary() {
 }
 
 function finishQuiz() {
+  if (isAiTrainingMode.value) {
+    showAiSummary()
+    return
+  }
   uni.showToast({ title: '本轮完成，已返回刷题范围', icon: 'none' })
   resetToTags()
 }
@@ -1212,6 +1397,9 @@ function resetToTags() {
   reviewMode.value = false
   reviewResults.value = []
   summaryMode.value = false
+  aiSummaryMode.value = false
+  aiSummary.value = null
+  aiReviewResults.value = []
   resetQuizState()
 }
 
@@ -1663,6 +1851,57 @@ function scrollToResultSection() {
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+}
+
+.ai-summary-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(235, 244, 255, 0.96)),
+    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 42%);
+}
+
+.ai-diagnosis-card {
+  margin-top: 22rpx;
+  padding: 30rpx;
+  border-radius: 34rpx;
+  background: #ffffff;
+  border: 2rpx solid #e6ebf5;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+}
+
+.ai-diagnosis-title {
+  color: #172033;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.ai-diagnosis-title + .ai-diagnosis-text {
+  margin-top: 10rpx;
+}
+
+.ai-diagnosis-text + .ai-diagnosis-title {
+  margin-top: 24rpx;
+}
+
+.ai-diagnosis-text {
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.65;
+}
+
+.ai-weak-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 24rpx;
+}
+
+.ai-weak-tags text {
+  padding: 9rpx 14rpx;
+  border-radius: 999rpx;
+  background: #eef4ff;
+  color: #2563eb;
+  font-size: 22rpx;
+  font-weight: 800;
 }
 
 .summary-kicker {
