@@ -33,7 +33,7 @@
               class="input"
               type="text"
               maxlength="15"
-              placeholder="请输入已注册手机号，港澳台可带区号"
+              placeholder="请输入手机号（可带区号）"
             />
           </view>
 
@@ -45,7 +45,7 @@
                 class="input code-input"
                 type="text"
                 maxlength="6"
-                placeholder="请输入短信验证码"
+                placeholder="请输入验证码"
               />
               <button class="code-btn" :disabled="sendingCode.phoneLogin" @tap="handleSendPhoneLoginCode">
                 {{ sendingCode.phoneLogin ? '发送中...' : '发送验证码' }}
@@ -53,7 +53,7 @@
             </view>
           </view>
 
-          <view class="auth-note">无需密码，验证码验证后直接进入账号。</view>
+          <view class="auth-note">验证码登录，无需记密码，登录后自动同步错题和报告。</view>
         </template>
 
         <template v-else>
@@ -99,7 +99,7 @@
               class="input"
               type="text"
               maxlength="15"
-              placeholder="请输入手机号，港澳台可带区号"
+              placeholder="请输入手机号（可带区号）"
             />
           </view>
 
@@ -111,7 +111,7 @@
                 class="input code-input"
                 type="text"
                 maxlength="6"
-                placeholder="请输入短信验证码"
+                placeholder="请输入验证码"
               />
               <button class="code-btn" :disabled="sendingCode.phoneRegister" @tap="handleSendPhoneRegisterCode">
                 {{ sendingCode.phoneRegister ? '发送中...' : '发送验证码' }}
@@ -187,7 +187,7 @@
               class="input"
               type="text"
               maxlength="15"
-              placeholder="请输入已注册手机号，港澳台可带区号"
+              placeholder="请输入手机号（可带区号）"
             />
           </view>
 
@@ -199,7 +199,7 @@
                 class="input code-input"
                 type="text"
                 maxlength="6"
-                placeholder="请输入短信验证码"
+                placeholder="请输入验证码"
               />
               <button class="code-btn" :disabled="sendingCode.phoneReset" @tap="handleSendPhoneResetCode">
                 {{ sendingCode.phoneReset ? '发送中...' : '发送验证码' }}
@@ -267,7 +267,7 @@
 
       <button class="wechat-button" @tap="handleWechatLogin">
         <text class="wechat-icon">微</text>
-        <text>微信一键登录</text>
+        <text>微信登录</text>
       </button>
 
       <button class="ghost-button home-btn" @tap="goBackHome">返回首页</button>
@@ -285,6 +285,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   checkBackendHealth,
+  fetchWechatAuthUrl,
   loginWithEmail,
   loginWithPhone,
   loginWithWechat,
@@ -424,6 +425,12 @@ onLoad((options) => {
   if (options?.method === 'email' || options?.method === 'phone') {
     authMethod.value = options.method
   }
+
+  const wechatParams = getWechatOAuthParams(options)
+  if (wechatParams.code) {
+    mode.value = 'login'
+    handleWechatCodeLogin(wechatParams)
+  }
 })
 
 function switchMode(nextMode) {
@@ -491,6 +498,18 @@ function normalizeUiError(error, fallbackText) {
 
   if (detail.includes('WeChat login requires')) {
     return '微信登录需要配置正式域名、HTTPS 和微信开放平台参数，当前先保留入口'
+  }
+
+  if (detail.includes('WeChat login is not configured')) {
+    return '微信登录还没有配置 AppID 和 AppSecret，请先完成微信开放平台配置'
+  }
+
+  if (detail.includes('Invalid WeChat state') || detail.includes('WeChat state expired')) {
+    return '微信授权状态已失效，请重新点击微信登录'
+  }
+
+  if (detail.includes('WeChat token exchange failed')) {
+    return '微信授权失败，请重新尝试'
   }
 
   if (detail.includes('Send register code failed')) {
@@ -844,8 +863,15 @@ async function handleWechatLogin() {
 
   try {
     await ensureBackendAvailable()
-    const response = await loginWithWechat({})
-    saveSessionAndRedirect(response, '微信登录成功')
+    const redirectUri = getWechatRedirectUri()
+    if (!redirectUri) {
+      throw { detail: '当前环境暂不支持微信网页授权' }
+    }
+    const response = await fetchWechatAuthUrl({ redirect_uri: redirectUri })
+    if (!response?.auth_url) {
+      throw { detail: '微信授权地址生成失败' }
+    }
+    window.location.href = response.auth_url
   } catch (error) {
     const message = normalizeUiError(error, '微信登录暂未开放')
     tipType.value = 'warning'
@@ -854,6 +880,86 @@ async function handleWechatLogin() {
   } finally {
     submitting.value = false
   }
+}
+
+async function handleWechatCodeLogin(params) {
+  if (!params.code) return
+  submitting.value = true
+  tipText.value = ''
+  try {
+    await ensureBackendAvailable()
+    const response = await loginWithWechat({
+      code: params.code,
+      state: params.state || null
+    })
+    cleanupWechatUrl()
+    saveSessionAndRedirect(response, '微信登录成功')
+  } catch (error) {
+    cleanupWechatUrl()
+    const message = normalizeUiError(error, '微信登录失败')
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+function getWechatRedirectUri() {
+  if (typeof window === 'undefined') return ''
+  const url = new URL(window.location.href)
+  url.searchParams.delete('code')
+  url.searchParams.delete('state')
+  const hashIndex = url.hash.indexOf('?')
+  if (hashIndex >= 0) {
+    const hashPath = url.hash.slice(0, hashIndex)
+    const hashQuery = new URLSearchParams(url.hash.slice(hashIndex + 1))
+    hashQuery.delete('code')
+    hashQuery.delete('state')
+    const nextHash = hashQuery.toString()
+    url.hash = nextHash ? `${hashPath}?${nextHash}` : hashPath
+  }
+  return url.toString()
+}
+
+function getWechatOAuthParams(options = {}) {
+  const params = {
+    code: options?.code || '',
+    state: options?.state || ''
+  }
+  if (params.code || typeof window === 'undefined') {
+    return params
+  }
+
+  const url = new URL(window.location.href)
+  params.code = url.searchParams.get('code') || ''
+  params.state = url.searchParams.get('state') || ''
+  if (params.code) return params
+
+  const hashIndex = url.hash.indexOf('?')
+  if (hashIndex >= 0) {
+    const hashQuery = new URLSearchParams(url.hash.slice(hashIndex + 1))
+    params.code = hashQuery.get('code') || ''
+    params.state = hashQuery.get('state') || ''
+  }
+  return params
+}
+
+function cleanupWechatUrl() {
+  if (typeof window === 'undefined' || !window.history?.replaceState) return
+  const url = new URL(window.location.href)
+  url.searchParams.delete('code')
+  url.searchParams.delete('state')
+  const hashIndex = url.hash.indexOf('?')
+  if (hashIndex >= 0) {
+    const hashPath = url.hash.slice(0, hashIndex)
+    const hashQuery = new URLSearchParams(url.hash.slice(hashIndex + 1))
+    hashQuery.delete('code')
+    hashQuery.delete('state')
+    const nextHash = hashQuery.toString()
+    url.hash = nextHash ? `${hashPath}?${nextHash}` : hashPath
+  }
+  window.history.replaceState({}, document.title, url.toString())
 }
 
 function goBackHome() {
@@ -869,7 +975,7 @@ function goBackHome() {
 .login-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(var(--status-bar-height) + 22rpx) 30rpx calc(env(safe-area-inset-bottom) + 44rpx);
+  padding: calc(var(--status-bar-height) + 14rpx) 30rpx calc(env(safe-area-inset-bottom) + 40rpx);
   background:
     radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
     linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
@@ -886,19 +992,19 @@ function goBackHome() {
 }
 
 .auth-hero {
-  padding: 34rpx 32rpx 32rpx;
-  border-radius: 34rpx;
+  padding: 26rpx 30rpx 28rpx;
+  border-radius: 30rpx;
   background:
     radial-gradient(circle at 88% 18%, rgba(37, 99, 235, 0.13), transparent 32%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 255, 0.98));
   border: 2rpx solid rgba(219, 228, 245, 0.92);
-  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.07);
+  box-shadow: 0 14rpx 34rpx rgba(20, 31, 66, 0.06);
 }
 
 .hero-badge {
   display: inline-flex;
   align-items: center;
-  padding: 9rpx 16rpx;
+  padding: 8rpx 15rpx;
   border-radius: 999rpx;
   background: #edf3ff;
   color: #2563eb;
@@ -907,44 +1013,44 @@ function goBackHome() {
 }
 
 .hero-title {
-  margin-top: 18rpx;
+  margin-top: 14rpx;
   color: #101828;
-  font-size: 42rpx;
+  font-size: 38rpx;
   line-height: 1.22;
   font-weight: 900;
 }
 
 .hero-sub {
-  margin-top: 12rpx;
+  margin-top: 10rpx;
   color: #667085;
-  font-size: 25rpx;
-  line-height: 1.55;
+  font-size: 24rpx;
+  line-height: 1.45;
 }
 
 .segment-wrap {
-  margin-top: 22rpx;
+  margin-top: 18rpx;
 }
 
 .segment {
   display: flex;
-  gap: 8rpx;
-  padding: 8rpx;
-  border-radius: 28rpx;
+  gap: 6rpx;
+  padding: 7rpx;
+  border-radius: 26rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 2rpx solid #e8eef8;
-  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.05);
+  box-shadow: 0 8rpx 22rpx rgba(20, 31, 66, 0.045);
 }
 
 .segment-btn {
   flex: 1;
-  min-height: 72rpx;
+  min-height: 68rpx;
   border: 0;
-  border-radius: 22rpx;
+  border-radius: 20rpx;
   background: transparent;
   color: #667085;
   font-size: 24rpx;
   font-weight: 900;
-  line-height: 72rpx;
+  line-height: 68rpx;
   padding: 0;
 }
 
@@ -955,45 +1061,45 @@ function goBackHome() {
 }
 
 .login-card {
-  margin-top: 22rpx;
-  padding: 30rpx 28rpx;
-  border-radius: 34rpx;
+  margin-top: 18rpx;
+  padding: 24rpx 26rpx 26rpx;
+  border-radius: 30rpx;
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
-  box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.07);
+  box-shadow: 0 14rpx 34rpx rgba(20, 31, 66, 0.06);
 }
 
 .method-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10rpx;
-  margin-bottom: 26rpx;
-  padding: 8rpx;
-  border-radius: 24rpx;
-  background: #f5f8ff;
-  border: 2rpx solid #e6ebf5;
+  gap: 8rpx;
+  margin-bottom: 24rpx;
+  padding: 6rpx;
+  border-radius: 22rpx;
+  background: #f4f7fc;
+  border: 2rpx solid #e8edf7;
 }
 
 .method-btn {
-  min-height: 68rpx;
+  min-height: 62rpx;
   border: 0;
-  border-radius: 18rpx;
+  border-radius: 17rpx;
   background: transparent;
   color: #667085;
   font-size: 24rpx;
-  line-height: 68rpx;
+  line-height: 62rpx;
   font-weight: 900;
   padding: 0;
 }
 
 .method-btn.active {
-  background: #ffffff;
+  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
   color: #2563eb;
-  box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.08);
+  box-shadow: 0 8rpx 18rpx rgba(20, 31, 66, 0.075);
 }
 
 .field + .field {
-  margin-top: 22rpx;
+  margin-top: 20rpx;
 }
 
 .label {
@@ -1004,10 +1110,10 @@ function goBackHome() {
 
 .input,
 .picker-box {
-  margin-top: 12rpx;
-  min-height: 92rpx;
-  padding: 0 26rpx;
-  border-radius: 24rpx;
+  margin-top: 10rpx;
+  min-height: 86rpx;
+  padding: 0 24rpx;
+  border-radius: 22rpx;
   border: 2rpx solid #dbe3f2;
   background: #f8fbff;
   font-size: 28rpx;
@@ -1018,7 +1124,7 @@ function goBackHome() {
 
 .code-row {
   display: flex;
-  gap: 16rpx;
+  gap: 12rpx;
   align-items: stretch;
 }
 
@@ -1027,16 +1133,16 @@ function goBackHome() {
 }
 
 .code-btn {
-  min-width: 190rpx;
-  min-height: 92rpx;
+  width: 184rpx;
+  min-height: 86rpx;
   border: 0;
-  border-radius: 24rpx;
-  background: #eaf2ff;
+  border-radius: 22rpx;
+  background: linear-gradient(180deg, #edf5ff 0%, #e4efff 100%);
   color: #1677ff;
-  font-size: 24rpx;
+  font-size: 23rpx;
   font-weight: 900;
-  line-height: 92rpx;
-  padding: 0 18rpx;
+  line-height: 86rpx;
+  padding: 0 10rpx;
 }
 
 .code-btn[disabled] {
@@ -1044,33 +1150,33 @@ function goBackHome() {
 }
 
 .auth-note {
-  margin-top: 18rpx;
-  padding: 18rpx 20rpx;
-  border-radius: 22rpx;
-  background: #f7fbff;
+  margin-top: 16rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 20rpx;
+  background: linear-gradient(180deg, #f8fbff 0%, #f5f9ff 100%);
   color: #667085;
   font-size: 23rpx;
   line-height: 1.55;
 }
 
 .submit-btn {
-  margin-top: 32rpx;
-  min-height: 96rpx;
-  border-radius: 28rpx;
+  margin-top: 28rpx;
+  min-height: 92rpx;
+  border-radius: 26rpx;
   font-size: 30rpx;
-  line-height: 96rpx;
+  line-height: 92rpx;
 }
 
 .wechat-button {
-  margin-top: 16rpx;
-  min-height: 88rpx;
+  margin-top: 14rpx;
+  min-height: 84rpx;
   border: 0;
-  border-radius: 26rpx;
-  background: #eefbf3;
+  border-radius: 24rpx;
+  background: #f1fbf5;
   color: #138a43;
-  font-size: 27rpx;
+  font-size: 25rpx;
   font-weight: 900;
-  line-height: 88rpx;
+  line-height: 84rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1089,10 +1195,10 @@ function goBackHome() {
 }
 
 .home-btn {
-  margin-top: 16rpx;
-  min-height: 88rpx;
-  border-radius: 26rpx;
-  line-height: 88rpx;
+  margin-top: 14rpx;
+  min-height: 84rpx;
+  border-radius: 24rpx;
+  line-height: 84rpx;
 }
 
 .tip-card {
@@ -1127,6 +1233,11 @@ function goBackHome() {
 }
 
 @media (max-width: 380px) {
+  .login-page {
+    padding-left: 24rpx;
+    padding-right: 24rpx;
+  }
+
   .code-row {
     flex-direction: column;
     align-items: stretch;

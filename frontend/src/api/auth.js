@@ -57,6 +57,19 @@ export function loginWithWechat(payload = {}) {
   return buildNoAuthRequest('/auth/wechat-login', payload, 25000)
 }
 
+export function fetchWechatAuthUrl(payload = {}) {
+  return request({
+    url: '/auth/wechat-auth-url',
+    method: 'GET',
+    timeout: 12000,
+    authRedirect: false,
+    header: {
+      Authorization: ''
+    },
+    data: payload
+  })
+}
+
 export function resetPasswordWithCode(payload) {
   return buildNoAuthRequest('/auth/reset-password', payload, 25000)
 }

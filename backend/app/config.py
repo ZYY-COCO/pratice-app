@@ -25,6 +25,18 @@ class Settings(BaseSettings):
     phone_auth_password_secret: str | None = None
     sms_provider: str = "disabled"
     sms_mock_return_code: bool = False
+    tencent_sms_secret_id: str | None = None
+    tencent_sms_secret_key: str | None = None
+    tencent_sms_sdk_app_id: str | None = None
+    tencent_sms_sign_name: str | None = None
+    tencent_sms_template_id: str | None = None
+    tencent_sms_template_params: str = "code"
+    tencent_sms_region: str = "ap-guangzhou"
+    tencent_sms_endpoint: str = "sms.tencentcloudapi.com"
+    wechat_oauth_app_id: str | None = None
+    wechat_oauth_app_secret: str | None = None
+    wechat_oauth_scope: str = "snsapi_userinfo"
+    wechat_auth_password_secret: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

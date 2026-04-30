@@ -42,6 +42,20 @@ DEEPSEEK_API_KEY=
 DEEPSEEK_BASE_URL=https://api.deepseek.com
 DEEPSEEK_MODEL=deepseek-v4-flash
 DEEPSEEK_TIMEOUT_SECONDS=60
+PHONE_AUTH_PASSWORD_SECRET=
+SMS_PROVIDER=tencent
+SMS_MOCK_RETURN_CODE=false
+TENCENT_SMS_SECRET_ID=
+TENCENT_SMS_SECRET_KEY=
+TENCENT_SMS_SDK_APP_ID=
+TENCENT_SMS_SIGN_NAME=
+TENCENT_SMS_TEMPLATE_ID=
+TENCENT_SMS_TEMPLATE_PARAMS=code
+TENCENT_SMS_REGION=ap-guangzhou
+WECHAT_OAUTH_APP_ID=
+WECHAT_OAUTH_APP_SECRET=
+WECHAT_OAUTH_SCOPE=snsapi_userinfo
+WECHAT_AUTH_PASSWORD_SECRET=
 ```
 
 `SUPABASE_SERVICE_ROLE_KEY` 只能配置在后端部署平台，不能放到前端。
@@ -60,7 +74,8 @@ https://你的后端公网域名/docs
 - `POST /auth/send-phone-code`：发送手机号验证码（需先执行 `database/phone_auth.sql` 并配置短信通道）。
 - `POST /auth/phone-register`：手机号验证码注册，兼容 Supabase token。
 - `POST /auth/phone-login`：手机号验证码登录，返回 Supabase access token。
-- `POST /auth/wechat-login`：微信登录预留接口，需配置微信开放平台/公众号后启用。
+- `GET /auth/wechat-auth-url`：生成微信网页授权地址。
+- `POST /auth/wechat-login`：微信网页授权登录，按 openid 创建或登录用户。
 - `GET /questions/by-module`：按 `exam_code + subject + module + submodule` 获取专项题目。
 - `POST /answers/submit`：提交答案，同步写入作答记录、错题本和能力统计。
 - `GET /report/ability`：读取能力统计并返回薄弱项建议。

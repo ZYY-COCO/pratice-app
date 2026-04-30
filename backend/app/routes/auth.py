@@ -1,6 +1,6 @@
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin, get_supabase_anon
 from app.dependencies import get_current_user_id
@@ -18,6 +18,7 @@ from app.schemas.auth import (
     ResetPasswordRequest,
     SendEmailCodeRequest,
     SendPhoneCodeRequest,
+    WechatAuthUrlResponse,
     WechatLoginRequest,
 )
 from app.services.auth_codes import (
@@ -34,6 +35,12 @@ from app.services.phone_auth import (
     normalize_phone,
     store_phone_code,
     verify_phone_code_or_raise,
+)
+from app.services.wechat_auth import (
+    build_wechat_auth_url,
+    exchange_wechat_code,
+    make_wechat_email,
+    make_wechat_password,
 )
 from app.utils.email_sender import send_email_code
 from app.utils.sms_sender import send_sms_code
@@ -87,6 +94,18 @@ def _get_profile_by_phone(phone: str) -> dict | None:
         supabase_admin.table("users")
         .select("*")
         .eq("phone", normalize_phone(phone))
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
+def _get_profile_by_wechat_openid(openid: str) -> dict | None:
+    supabase_admin = get_supabase_admin()
+    response = (
+        supabase_admin.table("users")
+        .select("*")
+        .eq("wechat_openid", openid)
         .limit(1)
         .execute()
     )
@@ -220,6 +239,14 @@ def send_phone_code(payload: SendPhoneCodeRequest) -> PhoneCodeResponse:
     return PhoneCodeResponse(detail="Phone verification code sent", debug_code=debug_code)
 
 
+@router.get("/wechat-auth-url", response_model=WechatAuthUrlResponse)
+def wechat_auth_url(
+    redirect_uri: str = Query(min_length=8),
+) -> WechatAuthUrlResponse:
+    auth_url, state = build_wechat_auth_url(redirect_uri)
+    return WechatAuthUrlResponse(auth_url=auth_url, state=state)
+
+
 @router.post("/send-change-email-code", response_model=MessageResponse)
 def send_change_email_code(
     payload: SendEmailCodeRequest,
@@ -348,10 +375,87 @@ def phone_login(payload: PhoneLoginRequest) -> AuthResponse:
 
 @router.post("/wechat-login", response_model=AuthResponse)
 def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
-    raise HTTPException(
-        status_code=status.HTTP_501_NOT_IMPLEMENTED,
-        detail="WeChat login requires official AppID/AppSecret, HTTPS domain, and callback configuration",
-    )
+    supabase_admin = get_supabase_admin()
+    wechat_profile = exchange_wechat_code(payload.code or "", payload.state)
+    openid = wechat_profile["openid"]
+    profile = _get_profile_by_wechat_openid(openid)
+    password = make_wechat_password(openid)
+
+    if profile:
+        profile_updates = {}
+        if not profile.get("nickname") and wechat_profile.get("nickname"):
+            profile_updates["nickname"] = wechat_profile.get("nickname")
+        if not profile.get("avatar_url") and wechat_profile.get("avatar_url"):
+            profile_updates["avatar_url"] = wechat_profile.get("avatar_url")
+        if profile.get("auth_provider") != "wechat":
+            profile_updates["auth_provider"] = "wechat"
+        if profile_updates:
+            supabase_admin.table("users").update(profile_updates).eq("id", profile["id"]).execute()
+            profile.update(profile_updates)
+
+        try:
+            supabase_admin.auth.admin.update_user_by_id(
+                profile["id"],
+                {
+                    "password": password,
+                    "user_metadata": {
+                        "wechat_openid": openid,
+                        "nickname": profile.get("nickname") or wechat_profile.get("nickname"),
+                        "avatar_url": profile.get("avatar_url") or wechat_profile.get("avatar_url"),
+                        "exam_target": profile.get("exam_target"),
+                        "auth_provider": "wechat",
+                    },
+                },
+            )
+        except Exception as exc:
+            error_summary = _safe_error_summary(exc)
+            logger.exception("WeChat login password refresh failed for openid=%s: %s", openid, error_summary)
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"WeChat login failed: {error_summary}",
+            ) from exc
+        return _auth_response_from_profile(profile, password)
+
+    wechat_email = make_wechat_email(openid)
+    nickname = wechat_profile.get("nickname") or "微信用户"
+    try:
+        create_response = supabase_admin.auth.admin.create_user(
+            {
+                "email": wechat_email,
+                "password": password,
+                "email_confirm": True,
+                "user_metadata": {
+                    "wechat_openid": openid,
+                    "nickname": nickname,
+                    "avatar_url": wechat_profile.get("avatar_url"),
+                    "exam_target": "Z001",
+                    "auth_provider": "wechat",
+                },
+            }
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("WeChat register failed for openid=%s: %s", openid, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"WeChat login failed: {error_summary}",
+        ) from exc
+
+    user = create_response.user
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WeChat login failed")
+
+    profile = {
+        "id": user.id,
+        "email": wechat_email,
+        "auth_provider": "wechat",
+        "wechat_openid": openid,
+        "nickname": nickname,
+        "avatar_url": wechat_profile.get("avatar_url"),
+        "exam_target": "Z001",
+    }
+    supabase_admin.table("users").upsert(profile).execute()
+    return _auth_response_from_profile(profile, password)
 
 
 @router.post("/register", response_model=AuthResponse)

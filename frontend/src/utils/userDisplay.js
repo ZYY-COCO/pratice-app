@@ -1,12 +1,12 @@
-const PHONE_SHADOW_EMAIL_DOMAIN = '@phone.gangyantong.local'
+const SHADOW_EMAIL_DOMAINS = ['@phone.gangyantong.local', '@wechat.gangyantong.local']
 
-export function isPhoneShadowEmail(email) {
-  return typeof email === 'string' && email.endsWith(PHONE_SHADOW_EMAIL_DOMAIN)
+export function isShadowEmail(email) {
+  return typeof email === 'string' && SHADOW_EMAIL_DOMAINS.some((domain) => email.endsWith(domain))
 }
 
 export function getPublicEmail(user) {
   const email = user?.email || ''
-  return isPhoneShadowEmail(email) ? '' : email
+  return isShadowEmail(email) ? '' : email
 }
 
 export function maskPhone(phone) {
@@ -32,5 +32,6 @@ export function getUserDisplayName(user, fallback = '用户') {
 export function getUserContactLabel(user, fallback = '未绑定账号') {
   const phone = maskPhone(user?.phone)
   if (phone) return phone
+  if (user?.wechat_openid) return '微信账号'
   return getPublicEmail(user) || fallback
 }

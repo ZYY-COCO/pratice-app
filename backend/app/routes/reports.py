@@ -48,7 +48,7 @@ def get_display_name(profile: dict) -> str:
             return f"{phone[:prefix_length]}****{phone[-4:]}"
         return phone
     email = str(profile.get("email") or "")
-    if email.endswith("@phone.gangyantong.local"):
+    if email.endswith("@phone.gangyantong.local") or email.endswith("@wechat.gangyantong.local"):
         return "学习用户"
     prefix = email.split("@", maxsplit=1)[0]
     if prefix:

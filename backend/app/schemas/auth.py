@@ -40,8 +40,14 @@ class PhoneCodeResponse(BaseModel):
     debug_code: str | None = None
 
 
+class WechatAuthUrlResponse(BaseModel):
+    auth_url: str
+    state: str
+
+
 class WechatLoginRequest(BaseModel):
     code: str | None = None
+    state: str | None = None
     redirect_uri: str | None = None
 
 
