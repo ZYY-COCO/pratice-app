@@ -41,6 +41,40 @@ FALLBACK_TARGET = {
     "basis": "当前暂无足够作答记录，先从逻辑推理常见薄弱点开始训练。",
 }
 
+EXAM_SUBJECTS = {
+    "Z001": {"中华文化", "英语运用", "逻辑推理"},
+    "Z002": {"中华文化", "英语运用", "数学基础"},
+}
+
+SUBJECT_ALIASES = {
+    "高数": "数学基础",
+}
+
+SUBJECT_FALLBACK_TARGETS = {
+    "中华文化": {
+        "subject": "中华文化",
+        "module": "中国文学常识",
+        "submodule": "文体流变",
+        "difficulty": "标准提升",
+        "basis": "当前暂无足够作答记录，先从中华文化高频常识题开始训练。",
+    },
+    "英语运用": {
+        "subject": "英语运用",
+        "module": "语言知识",
+        "submodule": "词汇",
+        "difficulty": "标准提升",
+        "basis": "当前暂无足够作答记录，先从英语运用基础语言知识开始训练。",
+    },
+    "逻辑推理": FALLBACK_TARGET,
+    "数学基础": {
+        "subject": "数学基础",
+        "module": "一元函数微分学",
+        "submodule": "极限",
+        "difficulty": "标准提升",
+        "basis": "当前暂无足够作答记录，先从数学基础题型开始训练。",
+    },
+}
+
 
 def _utc_now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()
@@ -78,6 +112,27 @@ def _normalize_difficulty(value: str | None) -> str:
     if value in DIFFICULTY_LEVELS:
         return value
     return FALLBACK_TARGET["difficulty"]
+
+
+def _normalize_subject(value: str | None) -> str | None:
+    subject = _compact_text(value, 40)
+    if not subject:
+        return None
+    return SUBJECT_ALIASES.get(subject, subject)
+
+
+def _normalize_subject_for_exam(value: str | None, exam_code: str) -> str | None:
+    subject = _normalize_subject(value)
+    if not subject:
+        return None
+    if subject in EXAM_SUBJECTS.get(exam_code, set()):
+        return subject
+    return None
+
+
+def _fallback_target_for_subject(subject: str | None) -> dict:
+    normalized = _normalize_subject(subject)
+    return SUBJECT_FALLBACK_TARGETS.get(normalized or "", FALLBACK_TARGET)
 
 
 def _difficulty_from_accuracy(accuracy: float | None, wrong_count: int = 0) -> str:
@@ -173,21 +228,21 @@ def _build_smart_target(
     profile: dict,
     exam_code: str,
     preferred_question_count: int | None = None,
+    subject_filter: str | None = None,
 ) -> tuple[AiTrainingTarget, dict]:
     candidates: dict[tuple[str, str, str], dict] = {}
 
     try:
-        ability_response = (
+        ability_query = (
             supabase.table("ability_stats")
             .select("*")
             .eq("user_id", user_id)
             .eq("exam_code", exam_code)
             .gt("total_count", 0)
-            .order("accuracy")
-            .order("total_count", desc=True)
-            .limit(20)
-            .execute()
         )
+        if subject_filter:
+            ability_query = ability_query.eq("subject", subject_filter)
+        ability_response = ability_query.order("accuracy").order("total_count", desc=True).limit(20).execute()
     except Exception:
         ability_response = None
 
@@ -224,6 +279,8 @@ def _build_smart_target(
         question = row.get("questions") or {}
         if question.get("exam_code") not in {exam_code, "COMMON", None}:
             continue
+        if subject_filter and question.get("subject") != subject_filter:
+            continue
         key = _candidate_key(question)
         wrong_count = int(row.get("wrong_count") or 1)
         current = candidates.get(
@@ -246,15 +303,16 @@ def _build_smart_target(
 
     if not candidates:
         question_count = _normalize_question_count(preferred_question_count or 10)
+        fallback = _fallback_target_for_subject(subject_filter)
         target = AiTrainingTarget(
-            subject=FALLBACK_TARGET["subject"],
-            module=FALLBACK_TARGET["module"],
-            submodule=FALLBACK_TARGET["submodule"],
-            difficulty=FALLBACK_TARGET["difficulty"],
+            subject=fallback["subject"],
+            module=fallback["module"],
+            submodule=fallback["submodule"],
+            difficulty=fallback["difficulty"],
             question_count=question_count,
-            basis=FALLBACK_TARGET["basis"],
+            basis=fallback["basis"],
         )
-        return target, {"source": "fallback", "reason": "no_answer_history"}
+        return target, {"source": "fallback", "reason": "no_answer_history", "subject_filter": subject_filter}
 
     chosen = max(
         candidates.values(),
@@ -300,24 +358,33 @@ def _build_smart_target(
 def _build_target(supabase, user_id: str, profile: dict, payload: AiTrainingGenerateRequest) -> AiTrainingTarget:
     question_count = _normalize_question_count(payload.question_count)
     difficulty = _normalize_difficulty(payload.difficulty)
+    exam_code = payload.exam_code or profile.get("exam_target") or "Z001"
+    if exam_code not in EXAM_SUBJECTS:
+        exam_code = "Z001"
+    subject_filter = _normalize_subject_for_exam(payload.subject, exam_code)
+    fallback = _fallback_target_for_subject(subject_filter)
 
     if not payload.smart_mode:
         return AiTrainingTarget(
-            subject=payload.subject or FALLBACK_TARGET["subject"],
-            module=payload.module or FALLBACK_TARGET["module"],
-            submodule=payload.submodule or FALLBACK_TARGET["submodule"],
+            subject=subject_filter or fallback["subject"],
+            module=payload.module or fallback["module"],
+            submodule=payload.submodule or fallback["submodule"],
             difficulty=difficulty,
             question_count=question_count,
             basis="用户手动选择训练范围和题量。",
         )
 
-    exam_code = payload.exam_code or profile.get("exam_target") or "Z001"
     preferred_count = question_count if "question_count" in payload.model_fields_set else None
-    target, _ = _build_smart_target(supabase, user_id, profile, exam_code, preferred_count)
+    target, _ = _build_smart_target(supabase, user_id, profile, exam_code, preferred_count, subject_filter)
     return target
 
 
-def _build_context_snippets(supabase, user_id: str) -> list[str]:
+def _build_context_snippets(
+    supabase,
+    user_id: str,
+    exam_code: str | None = None,
+    subject_filter: str | None = None,
+) -> list[str]:
     try:
         response = (
             supabase.table("wrong_questions")
@@ -333,6 +400,10 @@ def _build_context_snippets(supabase, user_id: str) -> list[str]:
     snippets: list[str] = []
     for row in response.data or []:
         question = row.get("questions") or {}
+        if exam_code and question.get("exam_code") not in {exam_code, "COMMON", None}:
+            continue
+        if subject_filter and question.get("subject") != subject_filter:
+            continue
         stem = _compact_text(question.get("stem"), 180)
         if stem:
             snippets.append(
@@ -616,6 +687,7 @@ def generate_similar_question(
 @router.get("/training/recommendation", response_model=AiTrainingRecommendationResponse)
 def get_training_recommendation(
     exam_code: str | None = None,
+    subject: str | None = None,
     user_id: str = Depends(get_current_user_id),
 ) -> AiTrainingRecommendationResponse:
     supabase = get_supabase_admin()
@@ -627,7 +699,8 @@ def get_training_recommendation(
     if resolved_exam_code not in {"Z001", "Z002"}:
         resolved_exam_code = "Z001"
 
-    target, metrics = _build_smart_target(supabase, user_id, profile, resolved_exam_code)
+    subject_filter = _normalize_subject_for_exam(subject, resolved_exam_code)
+    target, metrics = _build_smart_target(supabase, user_id, profile, resolved_exam_code, subject_filter=subject_filter)
     return AiTrainingRecommendationResponse(exam_code=resolved_exam_code, target=target, metrics=metrics)
 
 
@@ -649,7 +722,7 @@ async def generate_training(
     if not get_settings().deepseek_api_key:
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="DeepSeek API Key 尚未配置")
     session_id = _create_training_session(supabase, user_id, exam_code, target, payload)
-    context_snippets = _build_context_snippets(supabase, user_id)
+    context_snippets = _build_context_snippets(supabase, user_id, exam_code, target.subject)
 
     try:
         question_rows, raw_response = await _generate_unique_question_rows(supabase, target, exam_code, context_snippets)

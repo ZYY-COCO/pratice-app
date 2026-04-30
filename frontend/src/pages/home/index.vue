@@ -428,6 +428,21 @@
         </view>
 
         <view class="sheet-section">
+          <view class="subject-setting">
+            <view class="manual-label">训练科目</view>
+            <view class="subject-options">
+              <button
+                v-for="item in trainingSubjectOptions"
+                :key="item.value"
+                class="subject-chip"
+                :class="{ active: trainingSubject === item.value }"
+                @tap="selectTrainingSubject(item.value)"
+              >
+                {{ item.label }}
+              </button>
+            </view>
+          </view>
+
           <view class="sheet-row">
             <view>
               <view class="sheet-section-title">智能推荐</view>
@@ -450,7 +465,7 @@
             <view class="recommend-lines">
               <view class="recommend-line">
                 <text>推荐模块：</text>
-                <text class="recommend-value">{{ smartRecommendation.subject }}</text>
+                <text class="recommend-value">{{ smartRecommendationSubjectLabel }}</text>
               </view>
               <view class="recommend-line">
                 <text>推荐难度：</text>
@@ -519,6 +534,23 @@
       </view>
     </view>
 
+    <view v-if="showGeneratingModal" class="generating-modal-mask">
+      <view class="generating-modal-card">
+        <view class="generating-orbit">
+          <view class="generating-dot"></view>
+        </view>
+        <view class="generating-title">正在生成训练</view>
+        <view class="generating-subtitle">
+          DeepSeek 正在根据你的 {{ trainingSubjectLabel }} 记录生成专属题目，请稍等。
+        </view>
+        <view class="generating-countdown">预计还需 {{ generateCountdown }} 秒</view>
+        <view class="generating-progress">
+          <view class="generating-progress-bar" :style="{ width: generateProgressWidth }"></view>
+        </view>
+        <button class="generating-cancel-btn" @tap="cancelGenerateTraining">取消生成</button>
+      </view>
+    </view>
+
     <view v-if="showProModal" class="pro-modal-mask" @tap="handleCloseProModal">
       <view class="pro-modal-sheet" @tap.stop>
         <view class="pro-modal-handle"></view>
@@ -570,13 +602,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { onReachBottom, onShow } from '@dcloudio/uni-app'
+import { onLoad, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
-import { fetchAiTrainingRecommendation, generateAiTraining } from '../../api/ai'
+import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
 import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
@@ -634,6 +666,13 @@ const recommendationLoading = ref(false)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
+const trainingSubject = ref('')
+const showGeneratingModal = ref(false)
+const generateEstimate = ref(45)
+const generateCountdown = ref(45)
+const generationCancelled = ref(false)
+let generateTimerId = null
+let generateRequestTask = null
 const tabs = [
   { key: 'home', label: '首页', icon: '⌂' },
   { key: 'profile', label: '我的', icon: '☺' }
@@ -648,6 +687,33 @@ const fallbackSmartRecommendation = {
   basis: '当前正确率较低，优先巩固判断关系类题目'
 }
 const smartRecommendation = ref({ ...fallbackSmartRecommendation })
+const subjectFallbackTargets = {
+  中华文化: {
+    subject: '中华文化',
+    module: '中国文学常识',
+    submodule: '文体流变',
+    difficulty: '标准提升',
+    questionCount: 10,
+    basis: '优先巩固中华文化高频常识题。'
+  },
+  英语运用: {
+    subject: '英语运用',
+    module: '语言知识',
+    submodule: '词汇',
+    difficulty: '标准提升',
+    questionCount: 10,
+    basis: '优先巩固英语运用基础语言知识。'
+  },
+  逻辑推理: fallbackSmartRecommendation,
+  数学基础: {
+    subject: '数学基础',
+    module: '一元函数微分学',
+    submodule: '极限',
+    difficulty: '标准提升',
+    questionCount: 10,
+    basis: '优先巩固数学基础题型。'
+  }
+}
 const proPreviewItems = [
   'AI 薄弱诊断：把低正确率知识点转成更清晰的错因总结',
   '错题同类加练：围绕错题自动推荐同 submodule 题目',
@@ -756,6 +822,21 @@ const homeStats = computed(() => {
 })
 
 const moduleCards = computed(() => getHomeModules(examCode.value))
+const trainingSubjectOptions = computed(() => {
+  const option = EXAM_OPTIONS.find((item) => item.code === examCode.value) || EXAM_OPTIONS[0]
+  return (option?.subjects || []).map((subject) => ({
+    value: subject,
+    label: getTrainingSubjectLabel(subject)
+  }))
+})
+const trainingSubjectLabel = computed(() => getTrainingSubjectLabel(trainingSubject.value))
+const smartRecommendationSubjectLabel = computed(() => getTrainingSubjectLabel(smartRecommendation.value.subject))
+const generateProgressWidth = computed(() => {
+  const total = Math.max(1, Number(generateEstimate.value || 1))
+  const remaining = Math.max(0, Number(generateCountdown.value || 0))
+  const progress = ((total - remaining) / total) * 100
+  return `${Math.min(96, Math.max(8, progress))}%`
+})
 const realMistakes = computed(() => wrongItems.value.map(formatWrongQuestion))
 const wrongSummaryCount = computed(() => {
   if (!isAuthed.value) return '0'
@@ -972,6 +1053,7 @@ const profile = computed(() => {
 
 watch(examCode, (value) => {
   uni.setStorageSync('examCode', value)
+  syncTrainingSubject()
   if (isAuthed.value) {
     loadAbilityReport()
     loadLearningSummary()
@@ -995,6 +1077,12 @@ watch(wrongFilters, () => {
 
 watch(wrongItems, () => {
   resetMistakeVisibleCount()
+})
+
+onLoad((options) => {
+  if (options?.tab === 'profile') {
+    activeTab.value = 'profile'
+  }
 })
 
 onShow(() => {
@@ -1078,15 +1166,59 @@ function goTaskPractice(task) {
   goPractice()
 }
 
+function getTrainingSubjectLabel(subject) {
+  return subject || '逻辑推理'
+}
+
+function getTrainingSubjectValues() {
+  return trainingSubjectOptions.value.map((item) => item.value)
+}
+
+function getDefaultTrainingSubject() {
+  const values = getTrainingSubjectValues()
+  if (values.includes(trainingSubject.value)) {
+    return trainingSubject.value
+  }
+  if (values.includes(smartRecommendation.value.subject)) {
+    return smartRecommendation.value.subject
+  }
+  const preferred = examCode.value === 'Z002' ? '数学基础' : '逻辑推理'
+  return values.includes(preferred) ? preferred : values[0] || fallbackSmartRecommendation.subject
+}
+
+function getSubjectFallbackTarget(subject) {
+  return subjectFallbackTargets[subject] || fallbackSmartRecommendation
+}
+
+function syncTrainingSubject() {
+  trainingSubject.value = getDefaultTrainingSubject()
+  const fallback = getSubjectFallbackTarget(trainingSubject.value)
+  if (!trainingSubject.value || smartRecommendation.value.subject !== trainingSubject.value) {
+    smartRecommendation.value = { ...fallback }
+  }
+}
+
+function selectTrainingSubject(subject) {
+  if (trainingSubject.value === subject) return
+  trainingSubject.value = subject
+  const fallback = getSubjectFallbackTarget(subject)
+  smartRecommendation.value = { ...fallback }
+  if (smartMode.value) {
+    refreshTrainingRecommendation()
+  }
+}
+
 function openRecommendedTrainingSheet() {
   smartMode.value = true
   manualDifficulty.value = '标准提升'
   manualQuestionCount.value = 10
+  syncTrainingSubject()
   showTrainingSheet.value = true
   refreshTrainingRecommendation()
 }
 
 function closeRecommendedTrainingSheet() {
+  if (generatingTraining.value) return
   showTrainingSheet.value = false
 }
 
@@ -1121,10 +1253,10 @@ async function refreshTrainingRecommendation() {
 
   recommendationLoading.value = true
   try {
-    const response = await fetchAiTrainingRecommendation(examCode.value)
+    const response = await fetchAiTrainingRecommendation(examCode.value, trainingSubject.value)
     smartRecommendation.value = normalizeTrainingRecommendation(response)
   } catch (error) {
-    smartRecommendation.value = { ...fallbackSmartRecommendation }
+    smartRecommendation.value = { ...getSubjectFallbackTarget(trainingSubject.value) }
   } finally {
     recommendationLoading.value = false
   }
@@ -1132,10 +1264,15 @@ async function refreshTrainingRecommendation() {
 
 function buildAiTrainingPayload() {
   const recommendation = smartRecommendation.value
+  const fallback = getSubjectFallbackTarget(trainingSubject.value)
+  const subject = trainingSubject.value || recommendation.subject || fallback.subject
+  const module = recommendation.subject === subject ? recommendation.module : fallback.module
+  const submodule = recommendation.subject === subject ? recommendation.submodule : fallback.submodule
   if (smartMode.value) {
     return {
       smart_mode: true,
       exam_code: examCode.value,
+      subject,
       question_count: recommendation.questionCount
     }
   }
@@ -1143,12 +1280,70 @@ function buildAiTrainingPayload() {
   return {
     smart_mode: false,
     exam_code: examCode.value,
-    subject: recommendation.subject,
-    module: recommendation.module,
-    submodule: recommendation.submodule,
+    subject,
+    module,
+    submodule,
     difficulty: manualDifficulty.value,
     question_count: manualQuestionCount.value
   }
+}
+
+function getGenerateEstimateSeconds(questionCount) {
+  const count = Number(questionCount || 10)
+  return Math.min(90, Math.max(25, count * 4 + 12))
+}
+
+function startGenerateCountdown(seconds) {
+  stopGenerateCountdown()
+  generateEstimate.value = seconds
+  generateCountdown.value = seconds
+  generateTimerId = setInterval(() => {
+    generateCountdown.value = Math.max(1, generateCountdown.value - 1)
+  }, 1000)
+}
+
+function stopGenerateCountdown() {
+  if (generateTimerId) {
+    clearInterval(generateTimerId)
+    generateTimerId = null
+  }
+}
+
+function openGeneratingModal(payload) {
+  const estimate = getGenerateEstimateSeconds(payload.question_count)
+  generationCancelled.value = false
+  showGeneratingModal.value = true
+  startGenerateCountdown(estimate)
+}
+
+function closeGeneratingModal() {
+  showGeneratingModal.value = false
+  stopGenerateCountdown()
+}
+
+function requestAiTrainingSession(payload) {
+  return new Promise((resolve, reject) => {
+    generateRequestTask = createAiTrainingRequestTask(payload, {
+      success: resolve,
+      fail: reject
+    })
+  })
+}
+
+function cancelGenerateTraining() {
+  if (!generatingTraining.value) {
+    closeGeneratingModal()
+    return
+  }
+
+  generationCancelled.value = true
+  if (generateRequestTask?.abort) {
+    generateRequestTask.abort()
+  }
+  generateRequestTask = null
+  generatingTraining.value = false
+  closeGeneratingModal()
+  uni.showToast({ title: '已取消生成', icon: 'none' })
 }
 
 async function handleGenerateTraining() {
@@ -1162,16 +1357,25 @@ async function handleGenerateTraining() {
   }
   if (generatingTraining.value) return
 
+  const payload = buildAiTrainingPayload()
   generatingTraining.value = true
-  uni.showLoading({ title: '正在生成训练...' })
+  showTrainingSheet.value = false
+  openGeneratingModal(payload)
 
   try {
-    const response = await generateAiTraining(buildAiTrainingPayload())
-    closeRecommendedTrainingSheet()
+    const response = await requestAiTrainingSession(payload)
+    if (generationCancelled.value) {
+      return
+    }
+    closeGeneratingModal()
     uni.navigateTo({
       url: `/pages/practice/index?ai_session_id=${encodeURIComponent(response.session_id)}`
     })
   } catch (error) {
+    if (generationCancelled.value) {
+      return
+    }
+    closeGeneratingModal()
     const detail = error?.detail || 'AI 训练生成失败，请稍后重试'
     uni.showModal({
       title: '生成失败',
@@ -1180,8 +1384,11 @@ async function handleGenerateTraining() {
       confirmText: '知道了'
     })
   } finally {
+    generateRequestTask = null
     generatingTraining.value = false
-    uni.hideLoading()
+    if (!generationCancelled.value) {
+      closeGeneratingModal()
+    }
   }
 }
 
@@ -2776,6 +2983,145 @@ function getMembershipExpiresAt(user) {
 .sheet-generate-btn[disabled] {
   opacity: 0.68;
   box-shadow: none;
+}
+
+.subject-setting {
+  margin-bottom: 22rpx;
+  padding-bottom: 22rpx;
+  border-bottom: 2rpx solid #edf2f8;
+}
+
+.subject-options {
+  margin-top: 14rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.subject-chip {
+  min-width: 0;
+  min-height: 60rpx;
+  margin: 0;
+  padding: 0 10rpx;
+  border: 2rpx solid #e0e7f2;
+  border-radius: 16rpx;
+  background: #ffffff;
+  color: #475467;
+  font-size: 22rpx;
+  line-height: 60rpx;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.subject-chip.active {
+  border-color: #3478f6;
+  background: #eef5ff;
+  color: #3478f6;
+  box-shadow: 0 10rpx 24rpx rgba(52, 120, 246, 0.12);
+}
+
+.generating-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 95;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx;
+  background: rgba(15, 23, 42, 0.42);
+  box-sizing: border-box;
+}
+
+.generating-modal-card {
+  width: 100%;
+  max-width: 640rpx;
+  padding: 44rpx 36rpx 34rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+  box-shadow: 0 24rpx 70rpx rgba(15, 23, 42, 0.2);
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.generating-orbit {
+  position: relative;
+  width: 78rpx;
+  height: 78rpx;
+  margin: 0 auto 22rpx;
+  border: 6rpx solid #e8f0ff;
+  border-top-color: #3478f6;
+  border-radius: 50%;
+  animation: generating-spin 0.9s linear infinite;
+}
+
+.generating-dot {
+  position: absolute;
+  right: 2rpx;
+  top: 6rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 50%;
+  background: #3478f6;
+}
+
+.generating-title {
+  color: #101828;
+  font-size: 32rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.generating-subtitle {
+  margin-top: 12rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.generating-countdown {
+  margin-top: 22rpx;
+  color: #3478f6;
+  font-size: 26rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.generating-progress {
+  height: 12rpx;
+  margin-top: 18rpx;
+  border-radius: 999rpx;
+  background: #edf2fb;
+  overflow: hidden;
+}
+
+.generating-progress-bar {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(135deg, #3478f6, #75a2ff);
+  transition: width 0.25s ease;
+}
+
+.generating-cancel-btn {
+  min-height: 76rpx;
+  margin: 28rpx 0 0;
+  border: 2rpx solid #e1e8f4;
+  border-radius: 18rpx;
+  background: #f8fafc;
+  color: #475467;
+  font-size: 25rpx;
+  line-height: 76rpx;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+@keyframes generating-spin {
+  to {
+    transform: rotate(360deg);
+  }
 }
 
 .pro-modal-mask {

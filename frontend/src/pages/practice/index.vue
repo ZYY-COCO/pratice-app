@@ -427,6 +427,10 @@ onUnload(() => {
 })
 
 onBackPress(() => {
+  if (isAiTrainingMode.value) {
+    returnToProfilePage()
+    return true
+  }
   if (aiSummaryMode.value || summaryMode.value || reviewMode.value || mode.value === 'quiz') {
     confirmExitPractice()
     return true
@@ -593,6 +597,11 @@ function getCacheKey(moduleInfos) {
 }
 
 function goBack() {
+  if (isAiTrainingMode.value) {
+    returnToProfilePage()
+    return
+  }
+
   if (aiSummaryMode.value || summaryMode.value || reviewMode.value || mode.value === 'quiz') {
     confirmExitPractice()
     return
@@ -602,6 +611,17 @@ function goBack() {
     delta: 1,
     fail() {
       uni.redirectTo({ url: '/pages/subjects/index' })
+    }
+  })
+}
+
+function returnToProfilePage() {
+  clearTimer()
+  aiSessionId.value = ''
+  uni.reLaunch({
+    url: '/pages/home/index?tab=profile',
+    fail() {
+      uni.redirectTo({ url: '/pages/home/index?tab=profile' })
     }
   })
 }
