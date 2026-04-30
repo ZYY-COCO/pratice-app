@@ -1,12 +1,13 @@
 <template>
   <view class="option" :class="optionClass" @tap="$emit('select', option.key)">
     <view class="letter">{{ option.key }}</view>
-    <view class="text">{{ option.text }}</view>
+    <view class="text">{{ formattedText }}</view>
   </view>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import { formatMathText } from '../utils/mathText'
 
 const props = defineProps({
   option: {
@@ -44,6 +45,8 @@ const optionClass = computed(() => {
 
   return ''
 })
+
+const formattedText = computed(() => formatMathText(props.option.text))
 </script>
 
 <style scoped>

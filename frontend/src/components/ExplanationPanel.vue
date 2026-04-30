@@ -9,7 +9,7 @@
 
     <view v-else class="body">
       <text class="strong">正确答案：{{ correctAnswer }}</text>
-      <text class="paragraph">{{ explanation }}</text>
+      <text class="paragraph">{{ formattedExplanation }}</text>
     </view>
 
     <view v-if="!pending && autoTag" class="tag">{{ autoTag }}</view>
@@ -17,7 +17,10 @@
 </template>
 
 <script setup>
-defineProps({
+import { computed } from 'vue'
+import { formatMathText } from '../utils/mathText'
+
+const props = defineProps({
   visible: {
     type: Boolean,
     default: false
@@ -39,6 +42,8 @@ defineProps({
     default: ''
   }
 })
+
+const formattedExplanation = computed(() => formatMathText(props.explanation))
 </script>
 
 <style scoped>

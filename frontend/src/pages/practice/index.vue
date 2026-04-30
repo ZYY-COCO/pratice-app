@@ -172,7 +172,7 @@
               {{ currentFavorited ? '★' : '☆' }}
             </button>
           </view>
-          <view class="question-title">{{ currentQuestion.stem }}</view>
+          <view class="question-title">{{ formattedQuestionStem }}</view>
           <view class="helper-box">{{ questionHelperText }}</view>
         </view>
       </view>
@@ -246,6 +246,7 @@ import QuestionOption from '../../components/QuestionOption.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { getSubjectTree } from '../../utils/knowledgeTree'
+import { formatMathText } from '../../utils/mathText'
 
 const practiceModeOptions = [
   {
@@ -308,6 +309,7 @@ const plannedQuestionLimit = computed(() => selectedQuestionSize.value)
 const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
+const formattedQuestionStem = computed(() => formatMathText(currentQuestion.value.stem))
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
