@@ -10,10 +10,15 @@ from app.schemas.auth import (
     ChangeEmailRequest,
     LoginRequest,
     MessageResponse,
+    PhoneCodeResponse,
+    PhoneLoginRequest,
+    PhoneRegisterRequest,
     ProfileUpdateRequest,
     RegisterRequest,
     ResetPasswordRequest,
     SendEmailCodeRequest,
+    SendPhoneCodeRequest,
+    WechatLoginRequest,
 )
 from app.services.auth_codes import (
     check_send_cooldown,
@@ -22,7 +27,16 @@ from app.services.auth_codes import (
     store_verification_code,
     verify_code_or_raise,
 )
+from app.services.phone_auth import (
+    check_phone_send_cooldown,
+    make_phone_email,
+    make_phone_password,
+    normalize_phone,
+    store_phone_code,
+    verify_phone_code_or_raise,
+)
 from app.utils.email_sender import send_email_code
+from app.utils.sms_sender import send_sms_code
 
 router = APIRouter(prefix="/auth", tags=["认证"])
 logger = logging.getLogger(__name__)
@@ -67,10 +81,25 @@ def _get_profile_by_email(email: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
+def _get_profile_by_phone(phone: str) -> dict | None:
+    supabase_admin = get_supabase_admin()
+    response = (
+        supabase_admin.table("users")
+        .select("*")
+        .eq("phone", normalize_phone(phone))
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
     merged = {
         **profile,
         "email": db_profile.get("email") or profile.get("email"),
+        "phone": db_profile.get("phone") or profile.get("phone"),
+        "auth_provider": db_profile.get("auth_provider") or profile.get("auth_provider"),
+        "wechat_openid": db_profile.get("wechat_openid") or profile.get("wechat_openid"),
         "nickname": db_profile.get("nickname") or profile.get("nickname"),
         "avatar_url": db_profile.get("avatar_url") or profile.get("avatar_url"),
         "gender": db_profile.get("gender") or profile.get("gender"),
@@ -89,6 +118,40 @@ def _send_code(email: str, purpose: str) -> None:
     code = generate_verification_code()
     store_verification_code(supabase_admin, normalized_email, purpose, code)
     send_email_code(normalized_email, code, purpose)
+
+
+def _send_phone_code(phone: str, purpose: str) -> str | None:
+    supabase_admin = get_supabase_admin()
+    normalized_phone = normalize_phone(phone)
+    check_phone_send_cooldown(supabase_admin, normalized_phone, purpose)
+    code = generate_verification_code()
+    store_phone_code(supabase_admin, normalized_phone, purpose, code)
+    return send_sms_code(normalized_phone, code, purpose)
+
+
+def _auth_response_from_profile(profile: dict, password: str) -> AuthResponse:
+    supabase_auth = get_supabase_anon()
+    try:
+        auth_response = supabase_auth.auth.sign_in_with_password(
+            {"email": profile["email"], "password": password}
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Phone auth sign in failed for user_id=%s: %s", profile.get("id"), error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Phone login failed: {error_summary}",
+        ) from exc
+
+    session = auth_response.session
+    if not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Phone login failed")
+
+    return AuthResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        user=AuthUser(**profile),
+    )
 
 
 @router.post("/send-register-code", response_model=MessageResponse)
@@ -133,6 +196,30 @@ def send_reset_code(payload: SendEmailCodeRequest) -> MessageResponse:
     return MessageResponse(detail="Reset code sent")
 
 
+@router.post("/send-phone-code", response_model=PhoneCodeResponse)
+def send_phone_code(payload: SendPhoneCodeRequest) -> PhoneCodeResponse:
+    normalized_phone = normalize_phone(payload.phone)
+    profile = _get_profile_by_phone(normalized_phone)
+    if payload.purpose == "register" and profile:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already registered")
+    if payload.purpose == "login" and not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone not registered")
+
+    try:
+        debug_code = _send_phone_code(normalized_phone, payload.purpose)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send phone code failed for phone=%s: %s", normalized_phone, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Send phone code failed: {error_summary}",
+        ) from exc
+
+    return PhoneCodeResponse(detail="Phone verification code sent", debug_code=debug_code)
+
+
 @router.post("/send-change-email-code", response_model=MessageResponse)
 def send_change_email_code(
     payload: SendEmailCodeRequest,
@@ -160,6 +247,111 @@ def send_change_email_code(
         ) from exc
 
     return MessageResponse(detail="Change email code sent")
+
+
+@router.post("/phone-register", response_model=AuthResponse)
+def phone_register(payload: PhoneRegisterRequest) -> AuthResponse:
+    supabase_admin = get_supabase_admin()
+    normalized_phone = normalize_phone(payload.phone)
+
+    if _get_profile_by_phone(normalized_phone):
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone already registered")
+
+    verify_phone_code_or_raise(
+        supabase=supabase_admin,
+        phone=normalized_phone,
+        purpose="register",
+        code=payload.verification_code,
+    )
+
+    phone_email = make_phone_email(normalized_phone)
+    phone_password = make_phone_password(normalized_phone)
+    try:
+        create_response = supabase_admin.auth.admin.create_user(
+            {
+                "email": phone_email,
+                "password": phone_password,
+                "email_confirm": True,
+                "user_metadata": {
+                    "phone": normalized_phone,
+                    "nickname": payload.nickname,
+                    "exam_target": payload.exam_target,
+                    "auth_provider": "phone",
+                },
+            }
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Phone register failed for phone=%s: %s", normalized_phone, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Phone register failed: {error_summary}",
+        ) from exc
+
+    user = create_response.user
+    if not user:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Phone register failed")
+
+    profile = {
+        "id": user.id,
+        "email": phone_email,
+        "phone": normalized_phone,
+        "auth_provider": "phone",
+        "nickname": payload.nickname,
+        "exam_target": payload.exam_target,
+    }
+    supabase_admin.table("users").upsert(profile).execute()
+    return _auth_response_from_profile(profile, phone_password)
+
+
+@router.post("/phone-login", response_model=AuthResponse)
+def phone_login(payload: PhoneLoginRequest) -> AuthResponse:
+    supabase_admin = get_supabase_admin()
+    normalized_phone = normalize_phone(payload.phone)
+    profile = _get_profile_by_phone(normalized_phone)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone not registered")
+
+    verify_phone_code_or_raise(
+        supabase=supabase_admin,
+        phone=normalized_phone,
+        purpose="login",
+        code=payload.verification_code,
+    )
+
+    phone_password = make_phone_password(normalized_phone)
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            profile["id"],
+            {
+                "password": phone_password,
+                "user_metadata": {
+                    "phone": normalized_phone,
+                    "nickname": profile.get("nickname"),
+                    "avatar_url": profile.get("avatar_url"),
+                    "gender": profile.get("gender"),
+                    "exam_target": profile.get("exam_target"),
+                    "auth_provider": profile.get("auth_provider") or "phone",
+                },
+            },
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Phone login password refresh failed for phone=%s: %s", normalized_phone, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Phone login failed: {error_summary}",
+        ) from exc
+
+    return _auth_response_from_profile(profile, phone_password)
+
+
+@router.post("/wechat-login", response_model=AuthResponse)
+def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
+    raise HTTPException(
+        status_code=status.HTTP_501_NOT_IMPLEMENTED,
+        detail="WeChat login requires official AppID/AppSecret, HTTPS domain, and callback configuration",
+    )
 
 
 @router.post("/register", response_model=AuthResponse)

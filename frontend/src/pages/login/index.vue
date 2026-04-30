@@ -15,27 +15,69 @@
     </view>
 
     <view class="login-card">
-      <template v-if="mode === 'login'">
-        <view class="field">
-          <view class="label">邮箱</view>
-          <input
-            v-model.trim="loginForm.email"
-            class="input"
-            type="text"
-            placeholder="请输入已注册邮箱"
-          />
-        </view>
+      <view class="method-switch">
+        <button class="method-btn" :class="{ active: authMethod === 'phone' }" @tap="switchAuthMethod('phone')">
+          手机号
+        </button>
+        <button class="method-btn" :class="{ active: authMethod === 'email' }" @tap="switchAuthMethod('email')">
+          邮箱
+        </button>
+      </view>
 
-        <view class="field">
-          <view class="label">密码</view>
-          <input
-            v-model="loginForm.password"
-            class="input"
-            password
-            type="text"
-            placeholder="请输入密码"
-          />
-        </view>
+      <template v-if="mode === 'login'">
+        <template v-if="authMethod === 'phone'">
+          <view class="field">
+            <view class="label">手机号</view>
+            <input
+              v-model.trim="phoneLoginForm.phone"
+              class="input"
+              type="text"
+              maxlength="15"
+              placeholder="请输入已注册手机号，港澳台可带区号"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">验证码</view>
+            <view class="code-row">
+              <input
+                v-model.trim="phoneLoginForm.code"
+                class="input code-input"
+                type="text"
+                maxlength="6"
+                placeholder="请输入短信验证码"
+              />
+              <button class="code-btn" :disabled="sendingCode.phoneLogin" @tap="handleSendPhoneLoginCode">
+                {{ sendingCode.phoneLogin ? '发送中...' : '发送验证码' }}
+              </button>
+            </view>
+          </view>
+
+          <view class="auth-note">无需密码，验证码验证后直接进入账号。</view>
+        </template>
+
+        <template v-else>
+          <view class="field">
+            <view class="label">邮箱</view>
+            <input
+              v-model.trim="loginForm.email"
+              class="input"
+              type="text"
+              placeholder="请输入已注册邮箱"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">密码</view>
+            <input
+              v-model="loginForm.password"
+              class="input"
+              password
+              type="text"
+              placeholder="请输入密码"
+            />
+          </view>
+        </template>
       </template>
 
       <template v-else-if="mode === 'register'">
@@ -49,114 +91,183 @@
           />
         </view>
 
-        <view class="field">
-          <view class="label">邮箱</view>
-          <input
-            v-model.trim="registerForm.email"
-            class="input"
-            type="text"
-            placeholder="请输入可接收验证码的邮箱"
-          />
-        </view>
-
-        <view class="field">
-          <view class="label">验证码</view>
-          <view class="code-row">
+        <template v-if="authMethod === 'phone'">
+          <view class="field">
+            <view class="label">手机号</view>
             <input
-              v-model.trim="registerForm.code"
-              class="input code-input"
+              v-model.trim="phoneRegisterForm.phone"
+              class="input"
               type="text"
-              maxlength="6"
-              placeholder="请输入邮箱验证码"
+              maxlength="15"
+              placeholder="请输入手机号，港澳台可带区号"
             />
-            <button class="code-btn" :disabled="sendingCode.register" @tap="handleSendRegisterCode">
-              {{ sendingCode.register ? '发送中...' : '发送验证码' }}
-            </button>
           </view>
-        </view>
 
-        <view class="field">
-          <view class="label">密码</view>
-          <input
-            v-model="registerForm.password"
-            class="input"
-            password
-            type="text"
-            placeholder="请输入至少 6 位密码"
-          />
-        </view>
+          <view class="field">
+            <view class="label">验证码</view>
+            <view class="code-row">
+              <input
+                v-model.trim="phoneRegisterForm.code"
+                class="input code-input"
+                type="text"
+                maxlength="6"
+                placeholder="请输入短信验证码"
+              />
+              <button class="code-btn" :disabled="sendingCode.phoneRegister" @tap="handleSendPhoneRegisterCode">
+                {{ sendingCode.phoneRegister ? '发送中...' : '发送验证码' }}
+              </button>
+            </view>
+          </view>
+        </template>
 
-        <view class="field">
-          <view class="label">确认密码</view>
-          <input
-            v-model="registerForm.confirmPassword"
-            class="input"
-            password
-            type="text"
-            placeholder="请再次输入密码"
-          />
-        </view>
+        <template v-else>
+          <view class="field">
+            <view class="label">邮箱</view>
+            <input
+              v-model.trim="registerForm.email"
+              class="input"
+              type="text"
+              placeholder="请输入可接收验证码的邮箱"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">验证码</view>
+            <view class="code-row">
+              <input
+                v-model.trim="registerForm.code"
+                class="input code-input"
+                type="text"
+                maxlength="6"
+                placeholder="请输入邮箱验证码"
+              />
+              <button class="code-btn" :disabled="sendingCode.register" @tap="handleSendRegisterCode">
+                {{ sendingCode.register ? '发送中...' : '发送验证码' }}
+              </button>
+            </view>
+          </view>
+
+          <view class="field">
+            <view class="label">密码</view>
+            <input
+              v-model="registerForm.password"
+              class="input"
+              password
+              type="text"
+              placeholder="请输入至少 6 位密码"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">确认密码</view>
+            <input
+              v-model="registerForm.confirmPassword"
+              class="input"
+              password
+              type="text"
+              placeholder="请再次输入密码"
+            />
+          </view>
+        </template>
 
         <view class="field">
           <view class="label">目标版本</view>
           <picker :range="examLabels" :value="registerExamIndex" @change="onExamChange">
-            <view class="picker-box">{{ registerForm.examTarget || '请选择目标版本' }}</view>
+            <view class="picker-box">{{ activeRegisterExamTarget || '请选择目标版本' }}</view>
           </picker>
         </view>
       </template>
 
       <template v-else>
-        <view class="field">
-          <view class="label">邮箱</view>
-          <input
-            v-model.trim="resetForm.email"
-            class="input"
-            type="text"
-            placeholder="请输入已注册邮箱"
-          />
-        </view>
-
-        <view class="field">
-          <view class="label">验证码</view>
-          <view class="code-row">
+        <template v-if="authMethod === 'phone'">
+          <view class="field">
+            <view class="label">手机号</view>
             <input
-              v-model.trim="resetForm.code"
-              class="input code-input"
+              v-model.trim="phoneResetForm.phone"
+              class="input"
               type="text"
-              maxlength="6"
-              placeholder="请输入邮箱验证码"
+              maxlength="15"
+              placeholder="请输入已注册手机号，港澳台可带区号"
             />
-            <button class="code-btn" :disabled="sendingCode.reset" @tap="handleSendResetCode">
-              {{ sendingCode.reset ? '发送中...' : '发送验证码' }}
-            </button>
           </view>
-        </view>
 
-        <view class="field">
-          <view class="label">新密码</view>
-          <input
-            v-model="resetForm.newPassword"
-            class="input"
-            password
-            type="text"
-            placeholder="请输入新密码"
-          />
-        </view>
+          <view class="field">
+            <view class="label">验证码</view>
+            <view class="code-row">
+              <input
+                v-model.trim="phoneResetForm.code"
+                class="input code-input"
+                type="text"
+                maxlength="6"
+                placeholder="请输入短信验证码"
+              />
+              <button class="code-btn" :disabled="sendingCode.phoneReset" @tap="handleSendPhoneResetCode">
+                {{ sendingCode.phoneReset ? '发送中...' : '发送验证码' }}
+              </button>
+            </view>
+          </view>
 
-        <view class="field">
-          <view class="label">确认新密码</view>
-          <input
-            v-model="resetForm.confirmPassword"
-            class="input"
-            password
-            type="text"
-            placeholder="请再次输入新密码"
-          />
-        </view>
+          <view class="auth-note">手机号账号不需要找回密码，验证短信后会直接登录。</view>
+        </template>
+
+        <template v-else>
+          <view class="field">
+            <view class="label">邮箱</view>
+            <input
+              v-model.trim="resetForm.email"
+              class="input"
+              type="text"
+              placeholder="请输入已注册邮箱"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">验证码</view>
+            <view class="code-row">
+              <input
+                v-model.trim="resetForm.code"
+                class="input code-input"
+                type="text"
+                maxlength="6"
+                placeholder="请输入邮箱验证码"
+              />
+              <button class="code-btn" :disabled="sendingCode.reset" @tap="handleSendResetCode">
+                {{ sendingCode.reset ? '发送中...' : '发送验证码' }}
+              </button>
+            </view>
+          </view>
+
+          <view class="field">
+            <view class="label">新密码</view>
+            <input
+              v-model="resetForm.newPassword"
+              class="input"
+              password
+              type="text"
+              placeholder="请输入新密码"
+            />
+          </view>
+
+          <view class="field">
+            <view class="label">确认新密码</view>
+            <input
+              v-model="resetForm.confirmPassword"
+              class="input"
+              password
+              type="text"
+              placeholder="请再次输入新密码"
+            />
+          </view>
+        </template>
       </template>
 
       <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
         {{ submitButtonText }}
+      </button>
+
+      <button class="wechat-button" @tap="handleWechatLogin">
+        <text class="wechat-icon">微</text>
+        <text>微信一键登录</text>
       </button>
 
       <button class="ghost-button home-btn" @tap="goBackHome">返回首页</button>
@@ -175,8 +286,12 @@ import { onLoad } from '@dcloudio/uni-app'
 import {
   checkBackendHealth,
   loginWithEmail,
+  loginWithPhone,
+  loginWithWechat,
   registerWithEmail,
+  registerWithPhone,
   resetPasswordWithCode,
+  sendPhoneCode,
   sendRegisterCode,
   sendResetCode
 } from '../../api/auth'
@@ -184,18 +299,27 @@ import { saveAuthSession } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
 
 const mode = ref('login')
+const authMethod = ref('phone')
 const submitting = ref(false)
 const redirect = ref('/pages/home/index')
 const tipText = ref('')
 const tipType = ref('warning')
 const sendingCode = reactive({
   register: false,
-  reset: false
+  reset: false,
+  phoneLogin: false,
+  phoneRegister: false,
+  phoneReset: false
 })
 
 const loginForm = reactive({
   email: '',
   password: ''
+})
+
+const phoneLoginForm = reactive({
+  phone: '',
+  code: ''
 })
 
 const registerForm = reactive({
@@ -207,6 +331,13 @@ const registerForm = reactive({
   examTarget: 'Z001'
 })
 
+const phoneRegisterForm = reactive({
+  nickname: '',
+  phone: '',
+  code: '',
+  examTarget: 'Z001'
+})
+
 const resetForm = reactive({
   email: '',
   code: '',
@@ -214,20 +345,36 @@ const resetForm = reactive({
   confirmPassword: ''
 })
 
+const phoneResetForm = reactive({
+  phone: '',
+  code: ''
+})
+
 const examLabels = EXAM_OPTIONS.map((item) => item.title)
 const registerExamIndex = computed(() =>
-  Math.max(0, EXAM_OPTIONS.findIndex((item) => item.code === registerForm.examTarget))
+  Math.max(0, EXAM_OPTIONS.findIndex((item) => item.code === activeRegisterExamTarget.value))
+)
+const activeRegisterExamTarget = computed(() =>
+  authMethod.value === 'phone' ? phoneRegisterForm.examTarget : registerForm.examTarget
 )
 
 const heroTitle = computed(() => {
-  if (mode.value === 'register') return '创建你的刷题账号'
-  if (mode.value === 'reset') return '通过邮箱找回密码'
-  return '欢迎回来，继续刷题'
+  if (mode.value === 'register') return authMethod.value === 'phone' ? '手机号注册，开始刷题' : '创建邮箱刷题账号'
+  if (mode.value === 'reset') return authMethod.value === 'phone' ? '验证码登录账号' : '通过邮箱找回密码'
+  return authMethod.value === 'phone' ? '手机号登录，继续刷题' : '欢迎回来，继续刷题'
 })
 
 const heroSubtitle = computed(() => {
-  if (mode.value === 'register') return '先接收邮箱验证码，再设置密码和目标版本。'
-  if (mode.value === 'reset') return '验证邮箱后即可重新设置密码。'
+  if (mode.value === 'register') {
+    return authMethod.value === 'phone'
+      ? '接收短信验证码后创建账号，后续无需记密码。'
+      : '先接收邮箱验证码，再设置密码和目标版本。'
+  }
+  if (mode.value === 'reset') {
+    return authMethod.value === 'phone'
+      ? '手机号账号通过验证码直接登录，不再单独找回密码。'
+      : '验证邮箱后即可重新设置密码。'
+  }
   return '登录后会自动保存会话，错题本和能力报告会同步更新。'
 })
 
@@ -243,12 +390,12 @@ const submitButtonText = computed(() => {
   }
 
   if (mode.value === 'login') {
-    return '登录并保存会话'
+    return authMethod.value === 'phone' ? '验证码登录' : '登录并保存会话'
   }
   if (mode.value === 'register') {
-    return '验证并注册'
+    return authMethod.value === 'phone' ? '验证并创建账号' : '验证并注册'
   }
-  return '验证并重置密码'
+  return authMethod.value === 'phone' ? '验证并登录' : '验证并重置密码'
 })
 
 onLoad((options) => {
@@ -263,8 +410,19 @@ onLoad((options) => {
     resetForm.email = email
   }
 
+  if (options?.phone) {
+    const phone = decodeURIComponent(options.phone)
+    phoneLoginForm.phone = phone
+    phoneRegisterForm.phone = phone
+    phoneResetForm.phone = phone
+  }
+
   if (options?.mode) {
     mode.value = options.mode
+  }
+
+  if (options?.method === 'email' || options?.method === 'phone') {
+    authMethod.value = options.method
   }
 })
 
@@ -273,9 +431,19 @@ function switchMode(nextMode) {
   tipText.value = ''
 }
 
+function switchAuthMethod(nextMethod) {
+  authMethod.value = nextMethod
+  tipText.value = ''
+}
+
 function onExamChange(event) {
   const index = Number(event.detail.value)
-  registerForm.examTarget = EXAM_OPTIONS[index]?.code || 'Z001'
+  const examTarget = EXAM_OPTIONS[index]?.code || 'Z001'
+  if (authMethod.value === 'phone') {
+    phoneRegisterForm.examTarget = examTarget
+    return
+  }
+  registerForm.examTarget = examTarget
 }
 
 function normalizeUiError(error, fallbackText) {
@@ -295,6 +463,34 @@ function normalizeUiError(error, fallbackText) {
 
   if (detail.includes('Invalid email or password')) {
     return '邮箱或密码错误，请重新检查'
+  }
+
+  if (detail.includes('Invalid phone number')) {
+    return '手机号格式不正确，请检查后重试'
+  }
+
+  if (detail.includes('Phone already registered')) {
+    return '该手机号已注册，请切换到登录'
+  }
+
+  if (detail.includes('Phone not registered')) {
+    return '该手机号尚未注册，请先注册'
+  }
+
+  if (detail.includes('Invalid verification code')) {
+    return '验证码不正确，请重新输入'
+  }
+
+  if (detail.includes('Verification code expired')) {
+    return '验证码已过期，请重新发送'
+  }
+
+  if (detail.includes('SMS provider is not configured')) {
+    return '短信通道还没有配置，先在后端配置短信服务后再使用手机号登录'
+  }
+
+  if (detail.includes('WeChat login requires')) {
+    return '微信登录需要配置正式域名、HTTPS 和微信开放平台参数，当前先保留入口'
   }
 
   if (detail.includes('Send register code failed')) {
@@ -369,18 +565,142 @@ async function handleSendResetCode() {
   }
 }
 
+async function sendPhoneVerificationCode(form, purpose, sendingKey) {
+  if (!form.phone) {
+    uni.showToast({ title: '请先填写手机号', icon: 'none' })
+    return
+  }
+
+  sendingCode[sendingKey] = true
+  tipText.value = ''
+
+  try {
+    await ensureBackendAvailable()
+    const response = await sendPhoneCode({
+      phone: form.phone,
+      purpose
+    })
+    tipType.value = 'success'
+    tipText.value = response.debug_code
+      ? `测试验证码：${response.debug_code}`
+      : response.detail || '验证码已发送，请查看短信。'
+    uni.showToast({ title: '验证码已发送', icon: 'success' })
+  } catch (error) {
+    const message = normalizeUiError(error, '发送验证码失败')
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    sendingCode[sendingKey] = false
+  }
+}
+
+function handleSendPhoneLoginCode() {
+  return sendPhoneVerificationCode(phoneLoginForm, 'login', 'phoneLogin')
+}
+
+function handleSendPhoneRegisterCode() {
+  return sendPhoneVerificationCode(phoneRegisterForm, 'register', 'phoneRegister')
+}
+
+function handleSendPhoneResetCode() {
+  return sendPhoneVerificationCode(phoneResetForm, 'login', 'phoneReset')
+}
+
 async function submit() {
   if (mode.value === 'login') {
+    if (authMethod.value === 'phone') {
+      await submitPhoneLogin(phoneLoginForm)
+      return
+    }
     await submitLogin()
     return
   }
 
   if (mode.value === 'register') {
+    if (authMethod.value === 'phone') {
+      await submitPhoneRegister()
+      return
+    }
     await submitRegister()
     return
   }
 
+  if (authMethod.value === 'phone') {
+    await submitPhoneLogin(phoneResetForm)
+    return
+  }
   await submitResetPassword()
+}
+
+function saveSessionAndRedirect(response, successText) {
+  saveAuthSession({
+    accessToken: response.access_token,
+    refreshToken: response.refresh_token,
+    user: response.user
+  })
+
+  tipType.value = 'success'
+  tipText.value = successText
+  uni.showToast({ title: successText, icon: 'success' })
+
+  setTimeout(() => {
+    uni.redirectTo({ url: redirect.value })
+  }, 200)
+}
+
+async function submitPhoneLogin(form) {
+  if (!form.phone || !form.code) {
+    uni.showToast({ title: '请先填写手机号和验证码', icon: 'none' })
+    return
+  }
+
+  submitting.value = true
+  tipText.value = ''
+
+  try {
+    await ensureBackendAvailable()
+    const response = await loginWithPhone({
+      phone: form.phone,
+      verification_code: form.code
+    })
+    saveSessionAndRedirect(response, '登录成功')
+  } catch (error) {
+    const message = normalizeUiError(error, '手机号登录失败')
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
+}
+
+async function submitPhoneRegister() {
+  if (!phoneRegisterForm.phone || !phoneRegisterForm.code) {
+    uni.showToast({ title: '请先填写手机号和验证码', icon: 'none' })
+    return
+  }
+
+  submitting.value = true
+  tipText.value = ''
+
+  try {
+    await ensureBackendAvailable()
+    const response = await registerWithPhone({
+      phone: phoneRegisterForm.phone,
+      verification_code: phoneRegisterForm.code,
+      nickname: registerForm.nickname || null,
+      exam_target: phoneRegisterForm.examTarget
+    })
+    saveSessionAndRedirect(response, '注册成功')
+  } catch (error) {
+    const message = normalizeUiError(error, '手机号注册失败')
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
 }
 
 async function submitLogin() {
@@ -518,6 +838,24 @@ async function submitResetPassword() {
   }
 }
 
+async function handleWechatLogin() {
+  submitting.value = true
+  tipText.value = ''
+
+  try {
+    await ensureBackendAvailable()
+    const response = await loginWithWechat({})
+    saveSessionAndRedirect(response, '微信登录成功')
+  } catch (error) {
+    const message = normalizeUiError(error, '微信登录暂未开放')
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    submitting.value = false
+  }
+}
+
 function goBackHome() {
   uni.navigateBack({
     fail() {
@@ -625,6 +963,35 @@ function goBackHome() {
   box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.07);
 }
 
+.method-switch {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10rpx;
+  margin-bottom: 26rpx;
+  padding: 8rpx;
+  border-radius: 24rpx;
+  background: #f5f8ff;
+  border: 2rpx solid #e6ebf5;
+}
+
+.method-btn {
+  min-height: 68rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 68rpx;
+  font-weight: 900;
+  padding: 0;
+}
+
+.method-btn.active {
+  background: #ffffff;
+  color: #2563eb;
+  box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.08);
+}
+
 .field + .field {
   margin-top: 22rpx;
 }
@@ -676,12 +1043,49 @@ function goBackHome() {
   color: #98a2b3;
 }
 
+.auth-note {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 22rpx;
+  background: #f7fbff;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
 .submit-btn {
   margin-top: 32rpx;
   min-height: 96rpx;
   border-radius: 28rpx;
   font-size: 30rpx;
   line-height: 96rpx;
+}
+
+.wechat-button {
+  margin-top: 16rpx;
+  min-height: 88rpx;
+  border: 0;
+  border-radius: 26rpx;
+  background: #eefbf3;
+  color: #138a43;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+}
+
+.wechat-icon {
+  width: 42rpx;
+  height: 42rpx;
+  border-radius: 50%;
+  background: #16a34a;
+  color: #ffffff;
+  font-size: 22rpx;
+  line-height: 42rpx;
+  text-align: center;
 }
 
 .home-btn {

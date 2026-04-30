@@ -18,6 +18,33 @@ class SendEmailCodeRequest(BaseModel):
     email: EmailStr
 
 
+class SendPhoneCodeRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    purpose: str = Field(pattern="^(login|register)$")
+
+
+class PhoneRegisterRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    verification_code: str = Field(min_length=4, max_length=8)
+    nickname: str | None = Field(default=None, max_length=40)
+    exam_target: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+
+
+class PhoneLoginRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    verification_code: str = Field(min_length=4, max_length=8)
+
+
+class PhoneCodeResponse(BaseModel):
+    detail: str
+    debug_code: str | None = None
+
+
+class WechatLoginRequest(BaseModel):
+    code: str | None = None
+    redirect_uri: str | None = None
+
+
 class ResetPasswordRequest(BaseModel):
     email: EmailStr
     verification_code: str = Field(min_length=4, max_length=8)
@@ -43,6 +70,9 @@ class MessageResponse(BaseModel):
 class AuthUser(BaseModel):
     id: str
     email: str
+    phone: str | None = None
+    auth_provider: str | None = None
+    wechat_openid: str | None = None
     nickname: str | None = None
     avatar_url: str | None = None
     gender: str | None = None

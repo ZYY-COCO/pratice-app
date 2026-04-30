@@ -41,6 +41,22 @@ export function sendResetCode(payload) {
   return buildNoAuthRequest('/auth/send-reset-code', payload, 25000)
 }
 
+export function sendPhoneCode(payload) {
+  return buildNoAuthRequest('/auth/send-phone-code', payload, 25000)
+}
+
+export function registerWithPhone(payload) {
+  return buildNoAuthRequest('/auth/phone-register', payload, 25000)
+}
+
+export function loginWithPhone(payload) {
+  return buildNoAuthRequest('/auth/phone-login', payload, 25000)
+}
+
+export function loginWithWechat(payload = {}) {
+  return buildNoAuthRequest('/auth/wechat-login', payload, 25000)
+}
+
 export function resetPasswordWithCode(payload) {
   return buildNoAuthRequest('/auth/reset-password', payload, 25000)
 }

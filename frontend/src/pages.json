@@ -10,7 +10,7 @@
     {
       "path": "pages/login/index",
       "style": {
-        "navigationBarTitleText": "邮箱登录"
+        "navigationBarTitleText": "登录注册"
       }
     },
     {

@@ -76,6 +76,13 @@ function normalizeLatexCommands(value) {
     .replace(/\\partial/g, '∂')
     .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
     .replace(/\\(sin|cos|tan|ln|log|sec)\b/g, '$1')
+    .replace(/\b(sin|cos|tan|ln|log|sec)(?=[0-9])/g, '$1 ')
+}
+
+function wrapFractionPart(value) {
+  if (!value) return ''
+  if (/^\(.+\)$/.test(value)) return value
+  return /[\s+\-*/]/.test(value) ? `(${value})` : value
 }
 
 function replaceFractions(value) {
@@ -86,7 +93,7 @@ function replaceFractions(value) {
   while (previous !== result) {
     previous = result
     result = result.replace(fractionPattern, (_, numerator, denominator) => {
-      return `${formatMathText(numerator)} / ${formatMathText(denominator)}`
+      return `(${wrapFractionPart(formatMathText(numerator))} / ${wrapFractionPart(formatMathText(denominator))})`
     })
   }
 

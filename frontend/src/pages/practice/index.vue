@@ -1635,23 +1635,27 @@ function scrollToResultSection() {
 
 .count-slider-wrap {
   margin-top: 26rpx;
-  padding: 8rpx 2rpx 0;
+  padding: 8rpx 8rpx 0;
 }
 
 .count-slider {
-  margin: 0;
+  margin: 0 -8rpx;
 }
 
 .count-scale {
-  display: flex;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   align-items: center;
-  justify-content: space-between;
-  padding: 0 20rpx;
-  margin-top: 2rpx;
+  justify-items: center;
+  padding: 0 18rpx;
+  margin-top: 0;
 }
 
 .scale-value {
   min-width: 38rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
   color: #98a2b3;
   font-size: 21rpx;
   line-height: 1.2;

@@ -5,15 +5,15 @@
       <view class="head-copy">
         <view class="head-eyebrow">账号设置</view>
         <view class="head-title">编辑个人资料</view>
-        <view class="head-subtitle">修改昵称、头像样式、性别和绑定邮箱</view>
+        <view class="head-subtitle">修改昵称、头像样式、性别和绑定账号</view>
       </view>
     </view>
 
     <view class="profile-card">
       <view class="avatar-preview">{{ form.avatar_url || avatarText }}</view>
       <view class="profile-card-copy">
-        <view class="profile-name">{{ form.nickname || user.email || '用户' }}</view>
-        <view class="profile-email">{{ user.email || '未绑定邮箱' }}</view>
+        <view class="profile-name">{{ profileName }}</view>
+        <view class="profile-email">{{ profileContact }}</view>
       </view>
     </view>
 
@@ -59,8 +59,8 @@
       </button>
     </SectionCard>
 
-    <SectionCard title="更改绑定 QQ 邮箱" subtitle="验证码会发送到新的邮箱，验证后完成换绑。">
-      <view class="current-email">当前邮箱：{{ user.email || '未绑定' }}</view>
+    <SectionCard title="绑定 / 更改 QQ 邮箱" subtitle="手机号账号也可以额外绑定邮箱，验证码验证后生效。">
+      <view class="current-email">当前邮箱：{{ currentEmailText }}</view>
       <view class="field">
         <view class="label">新 QQ 邮箱</view>
         <input v-model.trim="emailForm.email" class="input" type="text" placeholder="例如：123456@qq.com" />
@@ -87,6 +87,7 @@ import { onShow } from '@dcloudio/uni-app'
 import SectionCard from '../../components/SectionCard.vue'
 import { changeEmailWithCode, sendChangeEmailCode, updateProfile } from '../../api/auth'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
+import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI', 'Pro']
 const genderOptions = [
@@ -108,7 +109,10 @@ const emailForm = reactive({
   code: ''
 })
 
-const avatarText = computed(() => (form.nickname || user.value?.email || '用').slice(0, 1))
+const profileName = computed(() => form.nickname || getUserDisplayName(user.value, '用户'))
+const profileContact = computed(() => getUserContactLabel(user.value, '未绑定账号'))
+const currentEmailText = computed(() => getPublicEmail(user.value) || '未绑定')
+const avatarText = computed(() => (form.avatar_url || profileName.value || '用').slice(0, 1))
 const initialProfile = ref({
   nickname: '',
   avatar_url: '',
@@ -190,7 +194,7 @@ async function sendEmailCode() {
     uni.showToast({ title: '请填写正确的新邮箱', icon: 'none' })
     return
   }
-  if (emailForm.email === user.value.email) {
+  if (emailForm.email === getPublicEmail(user.value)) {
     uni.showToast({ title: '新邮箱不能与当前邮箱相同', icon: 'none' })
     return
   }

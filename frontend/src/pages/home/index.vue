@@ -59,15 +59,15 @@
         <view class="mistake-head-copy">
           <view class="head-eyebrow">错题本</view>
           <view class="head-title">{{ retestMode ? '错题重测' : '错题复盘' }}</view>
-          <view class="head-subtitle">{{ retestMode ? '随机排序复测全部错题，可随时退出。' : mistakeSubtitle }}</view>
+          <view class="head-subtitle">{{ retestMode ? retestScopeText : mistakeSubtitle }}</view>
         </view>
         <button
           v-if="!retestMode"
           class="retest-entry-btn"
-          :disabled="!isAuthed || realMistakes.length === 0"
+          :disabled="!isAuthed || retestCandidateMistakes.length === 0"
           @tap="startWrongRetest"
         >
-          重测错题
+          {{ retestButtonText }}
         </button>
         <button v-else class="retest-entry-btn ghost" @tap="confirmExitRetest">退出</button>
       </view>
@@ -102,7 +102,7 @@
 
         <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`" subtitle="作答后立即查看本题解析。">
           <view class="wrong-detail retest-detail">
-            <view class="wrong-stem">{{ retestDetail.question.stem }}</view>
+            <view class="wrong-stem">{{ formatMathText(retestDetail.question.stem) }}</view>
             <view class="wrong-options">
               <button
                 v-for="option in retestOptions"
@@ -118,7 +118,7 @@
             <view v-if="!retestResultText" class="review-hint">请选择一个答案后提交，本题会立即显示正误和解析。</view>
             <view v-if="retestResultText" class="state-box" :class="{ mastered: retestMastered }">{{ retestResultText }}</view>
             <view v-if="retestResultText" class="answer-line">正确答案：{{ retestDetail.question.answer }}</view>
-            <view v-if="retestResultText" class="explain-text">{{ retestDetail.question.explanation }}</view>
+            <view v-if="retestResultText" class="explain-text">{{ formatMathText(retestDetail.question.explanation) }}</view>
             <view class="detail-actions">
               <button
                 v-if="!retestResultText"
@@ -140,6 +140,7 @@
         <SectionCard title="最近需要重刷">
           <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
           <view v-else class="filter-card">
+            <view class="filter-tip">先选择科目或模块，再点击右上角重测，可只复盘当前范围的错题。</view>
             <scroll-view scroll-x class="filter-scroll">
               <button
                 v-for="item in subjectFilters"
@@ -197,7 +198,7 @@
           </view>
           <scroll-view scroll-y class="wrong-modal-scroll">
             <view class="wrong-detail">
-              <view class="wrong-stem">{{ selectedWrongDetail.question.stem }}</view>
+              <view class="wrong-stem">{{ formatMathText(selectedWrongDetail.question.stem) }}</view>
               <view class="wrong-options">
                 <button
                   v-for="option in wrongDetailOptions"
@@ -215,7 +216,7 @@
               </view>
               <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
               <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
-              <view v-if="reviewResultText" class="explain-text">{{ selectedWrongDetail.question.explanation }}</view>
+              <view v-if="reviewResultText" class="explain-text">{{ formatMathText(selectedWrongDetail.question.explanation) }}</view>
               <view class="detail-actions">
                 <button
                   v-if="!reviewResultText"
@@ -622,6 +623,8 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { formatMathText } from '../../utils/mathText'
+import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
 const initialAuthUser = getAuthUser()
@@ -770,7 +773,7 @@ const memberCardSubtitle = computed(() => {
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const profileAvatarText = computed(() => {
   if (!isAuthed.value) return '研'
-  return authUser.value?.avatar_url || (profile.value.userName || examCode.value || '游').slice(0, 1)
+  return authUser.value?.avatar_url || (getUserDisplayName(authUser.value, profile.value.userName || examCode.value || '游')).slice(0, 1)
 })
 
 const dashboard = computed(() => {
@@ -791,7 +794,7 @@ const dashboard = computed(() => {
 
   return {
     ...base,
-    userName: authUser.value?.nickname || authUser.value?.email || base.userName,
+    userName: getUserDisplayName(authUser.value, base.userName),
     statusText: '今日学习状态：已登录，可直连真实题库',
     heroTitle: `本周已刷真题：${weeklyAnswers} 道`,
     heroSubtitle: totalAnswers
@@ -894,6 +897,7 @@ const filteredMistakes = computed(() =>
 const fullMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : getFullMistakes()))
 const visibleMistakes = computed(() => fullMistakes.value.slice(0, visibleMistakeCount.value))
 const hasMoreMistakes = computed(() => visibleMistakeCount.value < fullMistakes.value.length)
+const retestCandidateMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : []))
 const retestTotal = computed(() => retestItems.value.length)
 const retestCorrectCount = computed(() => retestResults.value.filter((item) => item.is_correct).length)
 const retestProgressLabel = computed(() => {
@@ -909,6 +913,17 @@ const submoduleFilters = computed(() =>
     module: wrongFilters.value.module
   })
 )
+const wrongFilterScopeParts = computed(() =>
+  [wrongFilters.value.subject, wrongFilters.value.module, wrongFilters.value.submodule].filter(Boolean)
+)
+const retestScopeText = computed(() => {
+  const scope = wrongFilterScopeParts.value.length ? wrongFilterScopeParts.value.join(' / ') : '全部错题'
+  return `正在重测：${scope}，可随时退出。`
+})
+const retestButtonText = computed(() => {
+  if (!isAuthed.value || !wrongFilterScopeParts.value.length) return '重测错题'
+  return `重测${wrongFilters.value.subject ? '本科目' : '当前范围'}`
+})
 const mistakeSubtitle = computed(() => {
   if (!isAuthed.value) {
     return '登录后会读取你的真实错题记录；当前展示示例内容。'
@@ -1039,8 +1054,8 @@ const profile = computed(() => {
 
   return {
     ...base,
-    userName: authUser.value?.nickname || authUser.value?.email || base.userName,
-    subtitle: authUser.value?.email || base.subtitle,
+    userName: getUserDisplayName(authUser.value, base.userName),
+    subtitle: getUserContactLabel(authUser.value, base.subtitle),
     badge: '已登录',
     stats: [
       { label: '目标版本', value: examCode.value },
@@ -1573,7 +1588,7 @@ async function loadLearningSummary() {
 
 function formatWrongQuestion(item) {
   const question = item?.question || {}
-  const title = question.stem || `错题 ${item?.question_id || ''}`
+  const title = formatMathText(question.stem || `错题 ${item?.question_id || ''}`)
   const tags = [
     question.subject,
     question.module,
@@ -1738,7 +1753,7 @@ function buildQuestionOptions(question) {
   return ['A', 'B', 'C', 'D']
     .map((key) => ({
       key,
-      text: question[`option_${key.toLowerCase()}`]
+      text: formatMathText(question[`option_${key.toLowerCase()}`] || '')
     }))
     .filter((option) => option.text)
 }
@@ -1804,9 +1819,13 @@ async function startWrongRetest() {
     uni.showToast({ title: '当前还没有可重测的错题', icon: 'none' })
     return
   }
+  if (retestCandidateMistakes.value.length === 0) {
+    uni.showToast({ title: '当前筛选范围下没有可重测的错题', icon: 'none' })
+    return
+  }
 
   selectedWrongDetail.value = null
-  retestItems.value = shuffleMistakes(realMistakes.value)
+  retestItems.value = shuffleMistakes(retestCandidateMistakes.value)
   retestIndex.value = 0
   retestResults.value = []
   retestCompleted.value = false
@@ -2229,6 +2248,12 @@ function getMembershipExpiresAt(user) {
   display: flex;
   flex-direction: column;
   gap: 10rpx;
+}
+
+.filter-tip {
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.5;
 }
 
 .filter-scroll {

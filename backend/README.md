@@ -57,6 +57,10 @@ https://你的后端公网域名/docs
 
 - `POST /auth/register`：邮箱注册并写入 `public.users`。
 - `POST /auth/login`：邮箱登录，返回 Supabase access token。
+- `POST /auth/send-phone-code`：发送手机号验证码（需先执行 `database/phone_auth.sql` 并配置短信通道）。
+- `POST /auth/phone-register`：手机号验证码注册，兼容 Supabase token。
+- `POST /auth/phone-login`：手机号验证码登录，返回 Supabase access token。
+- `POST /auth/wechat-login`：微信登录预留接口，需配置微信开放平台/公众号后启用。
 - `GET /questions/by-module`：按 `exam_code + subject + module + submodule` 获取专项题目。
 - `POST /answers/submit`：提交答案，同步写入作答记录、错题本和能力统计。
 - `GET /report/ability`：读取能力统计并返回薄弱项建议。

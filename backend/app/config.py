@@ -22,6 +22,9 @@ class Settings(BaseSettings):
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
     deepseek_timeout_seconds: int = 60
+    phone_auth_password_secret: str | None = None
+    sms_provider: str = "disabled"
+    sms_mock_return_code: bool = False
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 

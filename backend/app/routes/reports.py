@@ -41,7 +41,15 @@ def get_display_name(profile: dict) -> str:
     nickname = profile.get("nickname")
     if isinstance(nickname, str) and nickname.strip():
         return nickname.strip()
+    phone = str(profile.get("phone") or "").strip()
+    if phone:
+        prefix_length = 4 if phone.startswith("+") else 3
+        if len(phone) > prefix_length + 4:
+            return f"{phone[:prefix_length]}****{phone[-4:]}"
+        return phone
     email = str(profile.get("email") or "")
+    if email.endswith("@phone.gangyantong.local"):
+        return "学习用户"
     prefix = email.split("@", maxsplit=1)[0]
     if prefix:
         return f"{prefix[:2]}***"
@@ -54,7 +62,7 @@ def fetch_user_profiles(supabase) -> list[dict]:
     while True:
         chunk = (
             supabase.table("users")
-            .select("id, email, nickname, avatar_url")
+            .select("id, email, phone, nickname, avatar_url")
             .order("created_at")
             .range(offset, offset + PAGE_SIZE - 1)
             .execute()

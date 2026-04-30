@@ -100,6 +100,7 @@ import { onShow } from '@dcloudio/uni-app'
 import SectionCard from '../../components/SectionCard.vue'
 import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
+import { getUserDisplayName } from '../../utils/userDisplay'
 
 const authUser = ref(getAuthUser())
 const creatingOrderCode = ref('')
@@ -131,7 +132,7 @@ const unlockedBenefits = [
 ]
 
 const isProMember = computed(() => getMembershipStatus(authUser.value) === 'active')
-const memberName = computed(() => authUser.value?.nickname || authUser.value?.email || '你')
+const memberName = computed(() => getUserDisplayName(authUser.value, '你'))
 const membershipExpiresAt = computed(() => getMembershipExpiresAt(authUser.value))
 const memberUntilText = computed(() =>
   membershipExpiresAt.value
