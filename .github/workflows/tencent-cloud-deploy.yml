@@ -20,8 +20,35 @@ jobs:
           TENCENT_SSH_KEY: ${{ secrets.TENCENT_SSH_KEY }}
         run: |
           set -euo pipefail
+
+          TENCENT_HOST="$(printf '%s' "${TENCENT_HOST}" | tr -d '[:space:]')"
+          TENCENT_USER="$(printf '%s' "${TENCENT_USER}" | tr -d '[:space:]')"
+          TENCENT_PORT="$(printf '%s' "${TENCENT_PORT:-22}" | tr -d '[:space:]')"
+
+          # Normalize common copy-paste mistakes from GitHub Secrets.
+          TENCENT_HOST="${TENCENT_HOST#ssh://}"
+          TENCENT_HOST="${TENCENT_HOST#http://}"
+          TENCENT_HOST="${TENCENT_HOST#https://}"
+          TENCENT_HOST="${TENCENT_HOST##*@}"
+          TENCENT_HOST="${TENCENT_HOST%%/*}"
+          TENCENT_HOST="${TENCENT_HOST%%:*}"
+          TENCENT_USER="${TENCENT_USER#ssh}"
+          TENCENT_USER="${TENCENT_USER%@*}"
+
           if [ -z "${TENCENT_HOST}" ] || [ -z "${TENCENT_USER}" ] || [ -z "${TENCENT_SSH_KEY}" ]; then
             echo "Missing required Tencent Cloud SSH secrets." >&2
+            exit 1
+          fi
+          if ! [[ "${TENCENT_PORT}" =~ ^[0-9]+$ ]]; then
+            echo "TENCENT_PORT must be a plain number, for example 22." >&2
+            exit 1
+          fi
+          if [[ "${TENCENT_HOST}" =~ [^A-Za-z0-9._-] ]]; then
+            echo "TENCENT_HOST must be only the server IP/domain, for example 159.75.155.82." >&2
+            exit 1
+          fi
+          if [[ "${TENCENT_USER}" =~ [^A-Za-z0-9._-] ]]; then
+            echo "TENCENT_USER must be only the Linux username, for example ubuntu." >&2
             exit 1
           fi
 
