@@ -1043,15 +1043,20 @@ function goBackHome() {
 
 .segment-btn {
   flex: 1;
+  width: 0;
   min-height: 68rpx;
+  margin: 0;
   border: 0;
   border-radius: 20rpx;
   background: transparent;
   color: #667085;
   font-size: 24rpx;
   font-weight: 900;
-  line-height: 68rpx;
+  line-height: 1;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .segment-btn.active {
@@ -1072,24 +1077,29 @@ function goBackHome() {
 .method-switch {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 8rpx;
+  gap: 10rpx;
   margin-bottom: 24rpx;
-  padding: 6rpx;
-  border-radius: 22rpx;
+  padding: 8rpx;
+  border-radius: 24rpx;
   background: #f4f7fc;
   border: 2rpx solid #e8edf7;
 }
 
 .method-btn {
-  min-height: 62rpx;
+  width: 100%;
+  min-height: 70rpx;
+  margin: 0;
   border: 0;
-  border-radius: 17rpx;
+  border-radius: 18rpx;
   background: transparent;
   color: #667085;
   font-size: 24rpx;
-  line-height: 62rpx;
+  line-height: 1;
   font-weight: 900;
   padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .method-btn.active {
