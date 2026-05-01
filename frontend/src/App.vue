@@ -1,10 +1,16 @@
 <script>
+import { enforceAuthOnCurrentPage } from './utils/routeGuard'
+
 export default {
   onLaunch() {
     const examCode = uni.getStorageSync('examCode')
     if (!examCode) {
       uni.setStorageSync('examCode', 'Z001')
     }
+    enforceAuthOnCurrentPage()
+  },
+  onShow() {
+    enforceAuthOnCurrentPage()
   }
 }
 </script>

@@ -297,6 +297,7 @@ import {
   sendResetCode
 } from '../../api/auth'
 import { saveAuthSession } from '../../utils/auth'
+import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
 
 const mode = ref('login')
@@ -430,7 +431,10 @@ onLoad((options) => {
   if (wechatParams.code) {
     mode.value = 'login'
     handleWechatCodeLogin(wechatParams)
+    return
   }
+
+  redirectIfAlreadyAuthed(redirect.value)
 })
 
 function switchMode(nextMode) {
@@ -664,7 +668,7 @@ function saveSessionAndRedirect(response, successText) {
   uni.showToast({ title: successText, icon: 'success' })
 
   setTimeout(() => {
-    uni.redirectTo({ url: redirect.value })
+    uni.reLaunch({ url: redirect.value })
   }, 200)
 }
 
@@ -750,7 +754,7 @@ async function submitLogin() {
     uni.showToast({ title: '登录成功', icon: 'success' })
 
     setTimeout(() => {
-      uni.redirectTo({ url: redirect.value })
+      uni.reLaunch({ url: redirect.value })
     }, 200)
   } catch (error) {
     const message = normalizeUiError(error, '登录失败，请检查邮箱和密码')
@@ -799,7 +803,7 @@ async function submitRegister() {
       uni.showToast({ title: '注册成功', icon: 'success' })
 
       setTimeout(() => {
-        uni.redirectTo({ url: redirect.value })
+        uni.reLaunch({ url: redirect.value })
       }, 200)
       return
     }

@@ -53,6 +53,7 @@
               :key="count"
               class="scale-value"
               :class="{ active: selectedQuestionSize === count }"
+              :style="{ left: getQuestionScalePosition(count) }"
             >
               {{ count }}
             </text>
@@ -172,7 +173,7 @@
               {{ currentFavorited ? '★' : '☆' }}
             </button>
           </view>
-          <view class="question-title">{{ formattedQuestionStem }}</view>
+          <MathText class="question-title" :value="currentQuestion.stem" />
           <view class="helper-box">{{ questionHelperText }}</view>
         </view>
       </view>
@@ -242,11 +243,11 @@ import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
+import MathText from '../../components/MathText.vue'
 import QuestionOption from '../../components/QuestionOption.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { getSubjectTree } from '../../utils/knowledgeTree'
-import { formatMathText } from '../../utils/mathText'
 
 const practiceModeOptions = [
   {
@@ -309,7 +310,6 @@ const plannedQuestionLimit = computed(() => selectedQuestionSize.value)
 const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
-const formattedQuestionStem = computed(() => formatMathText(currentQuestion.value.stem))
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
@@ -654,6 +654,13 @@ function normalizeQuestionSize(value) {
   const max = questionCountOptions[questionCountOptions.length - 1]
   const snapped = Math.round(numeric / 5) * 5
   return Math.min(max, Math.max(min, snapped))
+}
+
+function getQuestionScalePosition(count) {
+  const min = questionCountOptions[0]
+  const max = questionCountOptions[questionCountOptions.length - 1]
+  const percent = ((Number(count) - min) / (max - min)) * 100
+  return `${percent}%`
 }
 
 function handleQuestionSizeChange(event) {
@@ -1635,23 +1642,24 @@ function scrollToResultSection() {
 
 .count-slider-wrap {
   margin-top: 26rpx;
-  padding: 8rpx 8rpx 0;
+  padding: 8rpx 18rpx 0;
 }
 
 .count-slider {
-  margin: 0 -8rpx;
+  margin: 0;
 }
 
 .count-scale {
-  display: grid;
-  grid-template-columns: repeat(6, minmax(0, 1fr));
-  align-items: center;
-  justify-items: center;
-  padding: 0 18rpx;
-  margin-top: 0;
+  position: relative;
+  height: 54rpx;
+  padding: 0;
+  margin-top: -2rpx;
 }
 
 .scale-value {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
   min-width: 38rpx;
   display: flex;
   flex-direction: column;

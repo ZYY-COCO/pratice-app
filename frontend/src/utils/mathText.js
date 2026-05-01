@@ -116,7 +116,7 @@ function replaceSubscripts(value) {
   return value.replace(/_\{?([0-9xyen+\-])\}?/g, (_, subscript) => toSubscript(subscript))
 }
 
-function tidyMathText(value) {
+function tidyMathTextBase(value) {
   return value
     .replace(/\s+/g, ' ')
     .replace(/\s*→\s*/g, '→')
@@ -124,6 +124,10 @@ function tidyMathText(value) {
     .replace(/([(])\s+/g, '$1')
     .replace(/\s+([)])/g, '$1')
     .replace(/lim\s*\(([^)]+)\)/g, 'lim($1)')
+}
+
+function tidyMathText(value) {
+  return tidyMathTextBase(value)
     .trim()
 }
 
@@ -140,4 +144,102 @@ export function formatMathText(value) {
   result = replacePowers(result)
   result = replaceSubscripts(result)
   return tidyMathText(result)
+}
+
+function formatMathSegment(value) {
+  let result = String(value || '')
+  result = normalizeLatexCommands(result)
+  result = replacePowers(result)
+  result = replaceSubscripts(result)
+  return tidyMathTextBase(result)
+}
+
+function cleanFractionPart(value) {
+  const text = formatMathSegment(value).trim()
+  if ((text.startsWith('(') && text.endsWith(')')) || (text.startsWith('[') && text.endsWith(']'))) {
+    return text.slice(1, -1).trim()
+  }
+  return text
+}
+
+function createFractionToken(numerator, denominator) {
+  return {
+    type: 'fraction',
+    numerator: cleanFractionPart(numerator),
+    denominator: cleanFractionPart(denominator)
+  }
+}
+
+function extractLatexFractionTokens(value) {
+  let result = value
+  const fractions = []
+  const fractionPattern = /\\frac\{([^{}]+)\}\{([^{}]+)\}/g
+  let previous = ''
+
+  while (previous !== result) {
+    previous = result
+    result = result.replace(fractionPattern, (_, numerator, denominator) => {
+      const marker = `@@MATHFRAC${fractions.length}@@`
+      fractions.push(createFractionToken(numerator, denominator))
+      return marker
+    })
+  }
+
+  return { result, fractions }
+}
+
+const SUPERSCRIPT_CHARS = '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ˣʸⁿ'
+const SUBSCRIPT_CHARS = '₀₁₂₃₄₅₆₇₈₉₊₋ₓᵧₐₑₙ'
+const SIMPLE_MATH_PART = `[A-Za-z0-9π∞∂]+[A-Za-z0-9π∞∂${SUPERSCRIPT_CHARS}${SUBSCRIPT_CHARS}]*`
+const GROUPED_MATH_PART = `\\[[^\\]]+\\]|\\([^)]+\\)|${SIMPLE_MATH_PART}`
+const PLAIN_FRACTION_PATTERN = new RegExp(`(${GROUPED_MATH_PART})\\s*\\/\\s*(${GROUPED_MATH_PART})`, 'g')
+
+function pushTextToken(tokens, text) {
+  if (!text) return
+  tokens.push({ type: 'text', text })
+}
+
+function pushPlainMathTokens(tokens, value) {
+  const text = formatMathSegment(value)
+  let cursor = 0
+  let match
+
+  PLAIN_FRACTION_PATTERN.lastIndex = 0
+  while ((match = PLAIN_FRACTION_PATTERN.exec(text)) !== null) {
+    pushTextToken(tokens, text.slice(cursor, match.index))
+    tokens.push(createFractionToken(match[1], match[2]))
+    cursor = match.index + match[0].length
+  }
+
+  pushTextToken(tokens, text.slice(cursor))
+}
+
+export function tokenizeMathText(value) {
+  if (value === null || value === undefined) {
+    return []
+  }
+
+  let result = String(value)
+  result = stripMathDelimiters(result)
+  result = replaceLimits(result)
+
+  const extracted = extractLatexFractionTokens(result)
+  result = formatMathSegment(extracted.result)
+
+  const tokens = []
+  const markerPattern = /@@MATHFRAC(\d+)@@/g
+  let cursor = 0
+  let match
+
+  while ((match = markerPattern.exec(result)) !== null) {
+    pushPlainMathTokens(tokens, result.slice(cursor, match.index))
+    const fraction = extracted.fractions[Number(match[1])]
+    if (fraction) {
+      tokens.push(fraction)
+    }
+    cursor = match.index + match[0].length
+  }
+
+  pushPlainMathTokens(tokens, result.slice(cursor))
+  return tokens.filter((token) => token.type === 'fraction' || token.text)
 }

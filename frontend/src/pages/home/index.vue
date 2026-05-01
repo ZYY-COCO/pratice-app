@@ -102,7 +102,7 @@
 
         <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`" subtitle="作答后立即查看本题解析。">
           <view class="wrong-detail retest-detail">
-            <view class="wrong-stem">{{ formatMathText(retestDetail.question.stem) }}</view>
+            <MathText class="wrong-stem" :value="retestDetail.question.stem" />
             <view class="wrong-options">
               <button
                 v-for="option in retestOptions"
@@ -112,13 +112,13 @@
                 @tap="selectRetestAnswer(option.key)"
               >
                 <text class="option-key">{{ option.key }}</text>
-                <text class="option-text">{{ option.text }}</text>
+                <MathText class="option-text" :value="option.text" />
               </button>
             </view>
             <view v-if="!retestResultText" class="review-hint">请选择一个答案后提交，本题会立即显示正误和解析。</view>
             <view v-if="retestResultText" class="state-box" :class="{ mastered: retestMastered }">{{ retestResultText }}</view>
             <view v-if="retestResultText" class="answer-line">正确答案：{{ retestDetail.question.answer }}</view>
-            <view v-if="retestResultText" class="explain-text">{{ formatMathText(retestDetail.question.explanation) }}</view>
+            <MathText v-if="retestResultText" class="explain-text" :value="retestDetail.question.explanation" />
             <view class="detail-actions">
               <button
                 v-if="!retestResultText"
@@ -198,7 +198,7 @@
           </view>
           <scroll-view scroll-y class="wrong-modal-scroll">
             <view class="wrong-detail">
-              <view class="wrong-stem">{{ formatMathText(selectedWrongDetail.question.stem) }}</view>
+              <MathText class="wrong-stem" :value="selectedWrongDetail.question.stem" />
               <view class="wrong-options">
                 <button
                   v-for="option in wrongDetailOptions"
@@ -208,7 +208,7 @@
                   @tap="selectReviewAnswer(option.key)"
                 >
                   <text class="option-key">{{ option.key }}</text>
-                  <text class="option-text">{{ option.text }}</text>
+                  <MathText class="option-text" :value="option.text" />
                 </button>
               </view>
               <view v-if="!reviewResultText" class="review-hint">
@@ -216,7 +216,7 @@
               </view>
               <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
               <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
-              <view v-if="reviewResultText" class="explain-text">{{ formatMathText(selectedWrongDetail.question.explanation) }}</view>
+              <MathText v-if="reviewResultText" class="explain-text" :value="selectedWrongDetail.question.explanation" />
               <view class="detail-actions">
                 <button
                   v-if="!reviewResultText"
@@ -609,6 +609,7 @@ import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
+import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
@@ -623,7 +624,6 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
-import { formatMathText } from '../../utils/mathText'
 import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
@@ -1588,7 +1588,7 @@ async function loadLearningSummary() {
 
 function formatWrongQuestion(item) {
   const question = item?.question || {}
-  const title = formatMathText(question.stem || `错题 ${item?.question_id || ''}`)
+  const title = question.stem || `错题 ${item?.question_id || ''}`
   const tags = [
     question.subject,
     question.module,
@@ -1753,7 +1753,7 @@ function buildQuestionOptions(question) {
   return ['A', 'B', 'C', 'D']
     .map((key) => ({
       key,
-      text: formatMathText(question[`option_${key.toLowerCase()}`] || '')
+      text: question[`option_${key.toLowerCase()}`] || ''
     }))
     .filter((option) => option.text)
 }

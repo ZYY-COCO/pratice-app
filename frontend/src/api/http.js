@@ -1,8 +1,8 @@
 import { API_BASE_URL } from './config'
-import { clearAuthSession } from '../utils/auth'
+import { clearAuthSession, getAccessToken } from '../utils/auth'
 
 export function request(options) {
-  const token = uni.getStorageSync('accessToken')
+  const token = getAccessToken()
 
   return new Promise((resolve, reject) => {
     uni.request({

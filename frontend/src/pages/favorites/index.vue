@@ -59,7 +59,7 @@
           <text class="subject-tag">{{ item.subject }}</text>
           <text class="module-tag">{{ item.module }}</text>
         </view>
-        <view class="stem">{{ item.stem }}</view>
+        <MathText class="stem" :value="item.stem" />
         <view class="card-footer">
           <text class="saved-time">收藏于 {{ formatTime(item.saved_at) }}</text>
           <text class="view-link">查看 ›</text>
@@ -80,7 +80,7 @@
           </view>
         </view>
 
-        <view class="detail-stem">{{ selectedItem.stem }}</view>
+        <MathText class="detail-stem" :value="selectedItem.stem" />
         <view class="option-list">
           <view
             v-for="option in selectedOptions"
@@ -89,12 +89,12 @@
             :class="{ correct: option.key === selectedItem.answer }"
           >
             <text class="option-key">{{ option.key }}</text>
-            <text class="option-text">{{ option.text }}</text>
+            <MathText class="option-text" :value="option.text" />
           </view>
         </view>
         <view class="answer-box">
           <view class="answer-title">正确答案：{{ selectedItem.answer }}</view>
-          <view class="answer-text">{{ selectedItem.explanation || '暂无解析' }}</view>
+          <MathText class="answer-text" :value="selectedItem.explanation || '暂无解析'" />
         </view>
       </view>
     </view>
@@ -105,6 +105,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
+import MathText from '../../components/MathText.vue'
 
 const keyword = ref('')
 const activeSubject = ref('全部')

@@ -59,7 +59,7 @@
             {{ item.is_correct ? '✓ 答对' : '× 答错' }}
           </view>
         </view>
-        <view class="stem">{{ formatHistoryText(item.question?.stem || '题目内容暂不可用') }}</view>
+        <MathText class="stem" :value="item.question?.stem || '题目内容暂不可用'" />
         <view class="answer-row">
           <text>{{ formatTime(item.created_at) }}</text>
           <text>我的答案：{{ item.selected_answer || '--' }}</text>
@@ -158,7 +158,7 @@
           </view>
           <view class="close-btn" @tap="closeDetail">×</view>
         </view>
-        <view class="detail-stem">{{ formatHistoryText(selectedItem.question?.stem) }}</view>
+        <MathText class="detail-stem" :value="selectedItem.question?.stem" />
         <view class="option-list">
           <view
             v-for="option in selectedOptions"
@@ -167,12 +167,12 @@
             :class="getOptionClass(option.key)"
           >
             <text class="option-key">{{ option.key }}</text>
-            <text class="option-text">{{ option.text }}</text>
+            <MathText class="option-text" :value="option.text" />
           </view>
         </view>
         <view class="explanation">
           <view class="explain-title">解析</view>
-          <view class="explain-text">{{ formatHistoryText(selectedItem.question?.explanation || '暂无解析') }}</view>
+          <MathText class="explain-text" :value="selectedItem.question?.explanation || '暂无解析'" />
         </view>
       </view>
     </view>
@@ -183,7 +183,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
-import { formatMathText } from '../../utils/mathText'
+import MathText from '../../components/MathText.vue'
 
 const filters = [
   { key: 'all', label: '全部' },
@@ -392,15 +392,11 @@ function formatTime(value) {
 
 function buildOptions(question = {}) {
   return [
-    { key: 'A', text: formatHistoryText(question.option_a) },
-    { key: 'B', text: formatHistoryText(question.option_b) },
-    { key: 'C', text: formatHistoryText(question.option_c) },
-    { key: 'D', text: formatHistoryText(question.option_d) }
+    { key: 'A', text: question.option_a },
+    { key: 'B', text: question.option_b },
+    { key: 'C', text: question.option_c },
+    { key: 'D', text: question.option_d }
   ].filter((item) => item.text)
-}
-
-function formatHistoryText(value) {
-  return formatMathText(value || '')
 }
 
 function openDetail(item) {

@@ -1,16 +1,16 @@
 {
   "pages": [
     {
+      "path": "pages/login/index",
+      "style": {
+        "navigationBarTitleText": "登录注册"
+      }
+    },
+    {
       "path": "pages/home/index",
       "style": {
         "navigationBarTitleText": "港研通",
         "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/login/index",
-      "style": {
-        "navigationBarTitleText": "登录注册"
       }
     },
     {

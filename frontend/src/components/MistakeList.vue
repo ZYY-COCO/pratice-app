@@ -1,7 +1,7 @@
 <template>
   <view class="mistake-list">
     <view v-for="item in items" :key="item.id || item.title" class="mistake-item" @tap="$emit('select', item)">
-      <view class="title">{{ item.title }}</view>
+      <MathText class="title" :value="item.title" />
       <view v-if="item.meta" class="meta">{{ item.meta }}</view>
       <view class="tags">
         <text v-for="tag in item.tags" :key="tag" class="tag">{{ tag }}</text>
@@ -11,6 +11,8 @@
 </template>
 
 <script setup>
+import MathText from './MathText.vue'
+
 defineProps({
   items: {
     type: Array,

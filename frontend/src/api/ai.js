@@ -1,5 +1,6 @@
 import { API_BASE_URL } from './config'
 import { request } from './http'
+import { getAccessToken } from '../utils/auth'
 
 function normalizeAiRequestError(error) {
   const message = error?.errMsg || ''
@@ -16,7 +17,7 @@ function normalizeAiRequestError(error) {
 }
 
 export function createAiTrainingRequestTask(data, handlers = {}) {
-  const token = uni.getStorageSync('accessToken')
+  const token = getAccessToken()
 
   return uni.request({
     url: `${API_BASE_URL}/ai/training/generate`,
