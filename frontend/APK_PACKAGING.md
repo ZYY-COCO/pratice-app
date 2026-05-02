@@ -1,0 +1,64 @@
+# 港研通 Android 内测 APK 打包清单
+
+当前阶段建议先打内测 APK，在安卓真机上验证体验。正式上架、正式签名、微信登录和短信登录可以后续再补。
+
+## 当前后端地址
+
+本次 APK 暂时使用 Render HTTPS 后端：
+
+```text
+https://pratice-app.onrender.com
+```
+
+代码里有两层保障：
+
+- `frontend/.env.production` 配置 `VITE_API_BASE_URL=https://pratice-app.onrender.com`
+- `frontend/src/api/config.js` 在没有读到环境变量时，也会兜底到 Render HTTPS
+
+## 打包前确认
+
+1. 打开 HBuilderX。
+2. 导入 `frontend` 目录，不要导入仓库根目录。
+3. 打开 `src/manifest.json`。
+4. 确认应用名称为 `港研通`。
+5. 如果 HBuilderX 提示 AppID 无效，点击重新获取或注册 DCloud AppID。
+6. Android 权限至少保留网络权限：
+   - `INTERNET`
+   - `ACCESS_NETWORK_STATE`
+7. 第一次内测可以使用公共测试证书云打包。
+
+## HBuilderX 云打包步骤
+
+1. 菜单选择：发行。
+2. 选择：原生 App - 云打包。
+3. 平台选择：Android。
+4. 包名建议先用测试包名，例如：
+
+```text
+com.gangyantong.practice
+```
+
+5. 证书：第一次选择公共测试证书即可。
+6. 勾选 `arm64-v8a` 和 `armeabi-v7a`。
+7. 开始云打包，等待生成 APK。
+
+## 真机测试重点
+
+安装到安卓手机后，优先测试：
+
+- 首次打开是否进入登录/注册页
+- 登录后是否能免登录一段时间
+- 首页、我的、学习报告、会员中心是否正常显示
+- 外观主题切换后，重启 App 是否保留
+- 专项刷题、综合刷题、提交答案、查看解析是否正常
+- 错题本、收藏夹、练习历史是否能打开
+- AI 专项出题是否能生成、答题、查看总结
+- 网络较慢或请求失败时，提示是否清楚
+- 安卓物理返回键是否符合预期
+
+## 暂不建议马上处理
+
+- 不急着上架应用市场。
+- 不急着配置正式签名证书。
+- 不急着接正式微信登录。微信登录通常需要正式域名、HTTPS、微信开放平台资质和包名签名信息。
+- 不急着接正式短信。腾讯云短信签名和模板需要资质审核。

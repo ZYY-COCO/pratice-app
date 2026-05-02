@@ -1,11 +1,30 @@
 {
   "name": "港研通",
   "appid": "__UNI__GATS_MVP",
-  "description": "面向港澳台考研初试用户的刷题 MVP",
+  "description": "面向港澳台考研初试用户的刷题与学习分析工具",
   "versionName": "0.1.0",
   "versionCode": "1",
   "transformPx": false,
+  "h5": {
+    "title": "港研通"
+  },
   "app-plus": {
-    "usingComponents": true
+    "usingComponents": true,
+    "splashscreen": {
+      "alwaysShowBeforeRender": false,
+      "waiting": true,
+      "autoclose": true,
+      "delay": 0
+    },
+    "modules": {},
+    "distribute": {
+      "android": {
+        "permissions": [
+          "<uses-permission android:name=\"android.permission.INTERNET\"/>",
+          "<uses-permission android:name=\"android.permission.ACCESS_NETWORK_STATE\"/>"
+        ],
+        "abiFilters": ["armeabi-v7a", "arm64-v8a"]
+      }
+    }
   }
 }
