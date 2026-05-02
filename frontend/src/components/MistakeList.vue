@@ -58,7 +58,7 @@ defineEmits(['select'])
 .tag {
   padding: 10rpx 16rpx;
   border-radius: 999rpx;
-  background: #eef4ff;
+  background: var(--gyt-primary-soft);
   color: #4c5f85;
   font-size: 20rpx;
 }

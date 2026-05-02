@@ -254,7 +254,7 @@ async function bindEmail() {
   height: 82rpx;
   border-radius: 26rpx;
   background: #ffffff;
-  color: #2563eb;
+  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -262,7 +262,7 @@ async function bindEmail() {
   font-size: 24rpx;
   line-height: 1;
   font-weight: 950;
-  box-shadow: 0 12rpx 28rpx rgba(37, 99, 235, 0.1);
+  box-shadow: 0 12rpx 28rpx var(--gyt-primary-shadow);
 }
 
 .head-copy {
@@ -271,7 +271,7 @@ async function bindEmail() {
 }
 
 .head-eyebrow {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 22rpx;
   line-height: 1.3;
   font-weight: 900;
@@ -311,14 +311,14 @@ async function bindEmail() {
   height: 112rpx;
   flex: 0 0 112rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4f7dff, #87aaff);
+  background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 38rpx;
   font-weight: 950;
-  box-shadow: 0 14rpx 26rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 14rpx 26rpx var(--gyt-primary-shadow);
 }
 
 .profile-card-copy {
@@ -358,9 +358,9 @@ async function bindEmail() {
   width: 100%;
   min-height: 92rpx;
   padding: 0 24rpx;
-  border: 2rpx solid #dbe3f2;
+  border: 2rpx solid var(--gyt-primary-border);
   border-radius: 24rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   color: #172033;
   font-size: 26rpx;
   box-sizing: border-box;
@@ -382,7 +382,7 @@ async function bindEmail() {
 .choice-btn {
   min-height: 80rpx;
   margin: 0;
-  border: 2rpx solid #dbe4f5;
+  border: 2rpx solid var(--gyt-primary-border);
   border-radius: 22rpx;
   background: #ffffff;
   color: #475467;
@@ -393,10 +393,10 @@ async function bindEmail() {
 
 .avatar-option.active,
 .choice-btn.active {
-  border-color: #2563eb;
-  background: #edf3ff;
-  color: #2563eb;
-  box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.12);
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
 }
 
 .save-hint {
@@ -435,8 +435,8 @@ async function bindEmail() {
   margin: 14rpx 0 0;
   border: 0;
   border-radius: 24rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 24rpx;
   line-height: 92rpx;
   font-weight: 900;

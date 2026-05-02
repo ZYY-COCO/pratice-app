@@ -49,7 +49,7 @@ export const THEME_PRESETS = [
   {
     key: 'lavender',
     name: '浅紫蓝',
-    desc: '轻盈紫蓝，适合夜间低亮度使用。',
+    desc: '轻盈紫蓝，适合低亮度环境。',
     primary: '#7668df',
     primarySoft: '#f1efff',
     primaryTint: '#f8f7ff',

@@ -62,8 +62,8 @@ const optionClass = computed(() => {
 }
 
 .option.selected {
-  border-color: #2563eb;
-  background: #f4f8ff;
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-tint);
 }
 
 .option.correct {
@@ -80,8 +80,8 @@ const optionClass = computed(() => {
   width: 58rpx;
   height: 58rpx;
   border-radius: 20rpx;
-  background: #eef3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;

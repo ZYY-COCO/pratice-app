@@ -40,8 +40,8 @@
             :min="questionCountOptions[0]"
             :max="questionCountOptions[questionCountOptions.length - 1]"
             :step="5"
-            activeColor="#3478f6"
-            backgroundColor="#e6ebf5"
+            :activeColor="currentTheme.primary"
+            :backgroundColor="currentTheme.primaryBorder"
             block-color="#ffffff"
             block-size="26"
             @changing="handleQuestionSizeChange"
@@ -238,6 +238,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
+import { getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
@@ -307,6 +308,7 @@ const subjectTree = computed(() => getSubjectTree(subject.value))
 const openMap = ref(buildOpenMap(subjectTree.value))
 const hasAccessToken = computed(() => Boolean(accessToken.value))
 const plannedQuestionLimit = computed(() => selectedQuestionSize.value)
+const currentTheme = computed(() => getThemePreset(getStoredThemeKey()))
 const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
@@ -1471,8 +1473,8 @@ function scrollToResultSection() {
   min-height: 100dvh;
   padding: calc(var(--status-bar-height) + 16rpx) 28rpx calc(env(safe-area-inset-bottom) + 188rpx);
   background:
-    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 28%),
+    var(--gyt-page-bg);
 }
 
 .top-nav {
@@ -1521,13 +1523,13 @@ function scrollToResultSection() {
   border-radius: 36rpx;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.94), rgba(238, 244, 255, 0.96)),
-    radial-gradient(circle at 0 0, rgba(37, 99, 235, 0.14), transparent 46%);
+    radial-gradient(circle at 0 0, var(--gyt-primary-shadow), transparent 46%);
   border: 2rpx solid rgba(219, 228, 245, 0.92);
   box-shadow: 0 20rpx 46rpx rgba(20, 31, 66, 0.08);
 }
 
 .setup-eyebrow {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 900;
 }
@@ -1568,17 +1570,17 @@ function scrollToResultSection() {
   min-height: 138rpx;
   padding: 26rpx 22rpx;
   border-radius: 28rpx;
-  border: 2rpx solid #dbe4f5;
-  background: #f8fbff;
+  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-tint);
   display: flex;
   flex-direction: column;
   justify-content: center;
 }
 
 .mode-option.active {
-  border-color: #2563eb;
-  background: linear-gradient(180deg, #f4f8ff 0%, #edf3ff 100%);
-  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.12);
+  border-color: var(--gyt-primary);
+  background: linear-gradient(180deg, var(--gyt-primary-tint) 0%, var(--gyt-primary-soft) 100%);
+  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
 }
 
 .mode-title,
@@ -1602,8 +1604,8 @@ function scrollToResultSection() {
   margin-bottom: 20rpx;
   padding: 20rpx 22rpx;
   border-radius: 22rpx;
-  background: #f4f8ff;
-  border: 2rpx dashed #c8d8ff;
+  background: var(--gyt-primary-tint);
+  border: 2rpx dashed var(--gyt-primary-border);
   color: #36527f;
   font-size: 24rpx;
   line-height: 1.6;
@@ -1631,8 +1633,8 @@ function scrollToResultSection() {
   min-width: 104rpx;
   padding: 10rpx 18rpx;
   border-radius: 999rpx;
-  background: #edf4ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 26rpx;
   line-height: 1.2;
   font-weight: 900;
@@ -1672,7 +1674,7 @@ function scrollToResultSection() {
 }
 
 .scale-value.active {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 950;
 }
@@ -1690,7 +1692,7 @@ function scrollToResultSection() {
 .scale-value.active::before {
   width: 8rpx;
   height: 8rpx;
-  background: #2563eb;
+  background: var(--gyt-primary);
 }
 
 .sticky-bar {
@@ -1730,7 +1732,7 @@ function scrollToResultSection() {
 }
 
 .sticky-tip {
-  color: #2563eb;
+  color: var(--gyt-primary);
 }
 
 .sticky-btn {
@@ -1739,11 +1741,11 @@ function scrollToResultSection() {
   padding: 0 24rpx;
   border: 0;
   border-radius: 28rpx;
-  background: #2563eb;
+  background: var(--gyt-primary);
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
 .sticky-btn[disabled] {
@@ -1763,7 +1765,7 @@ function scrollToResultSection() {
   border-radius: 36rpx;
   background:
     linear-gradient(180deg, rgba(255, 255, 255, 0.86), rgba(245, 248, 255, 0.94)),
-    radial-gradient(circle at top left, rgba(37, 99, 235, 0.08), transparent 42%);
+    radial-gradient(circle at top left, var(--gyt-primary-shadow), transparent 42%);
   border: 2rpx solid rgba(230, 235, 245, 0.9);
   box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
 }
@@ -1773,8 +1775,8 @@ function scrollToResultSection() {
   align-items: center;
   padding: 12rpx 18rpx;
   border-radius: 999rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 900;
 }
@@ -1847,8 +1849,8 @@ function scrollToResultSection() {
   margin-top: 22rpx;
   padding: 22rpx;
   border-radius: 24rpx;
-  border: 2rpx dashed #c8d3ea;
-  background: #f8fbff;
+  border: 2rpx dashed var(--gyt-primary-border);
+  background: var(--gyt-primary-tint);
   color: #476089;
   font-size: 24rpx;
   line-height: 1.6;
@@ -1867,11 +1869,11 @@ function scrollToResultSection() {
   min-height: 104rpx;
   border: 0;
   border-radius: 28rpx;
-  background: #2563eb;
+  background: var(--gyt-primary);
   color: #ffffff;
   font-size: 30rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
 .submit-btn[disabled] {
@@ -1890,7 +1892,7 @@ function scrollToResultSection() {
 .ai-summary-card {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(235, 244, 255, 0.96)),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 42%);
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 42%);
 }
 
 .ai-diagnosis-card {
@@ -1932,14 +1934,14 @@ function scrollToResultSection() {
 .ai-weak-tags text {
   padding: 9rpx 14rpx;
   border-radius: 999rpx;
-  background: #eef4ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 22rpx;
   font-weight: 800;
 }
 
 .summary-kicker {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 800;
 }
@@ -2002,7 +2004,7 @@ function scrollToResultSection() {
 
 .result-note {
   margin-top: 18rpx;
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 700;
   text-align: center;
@@ -2042,8 +2044,8 @@ function scrollToResultSection() {
 
 .next-btn.outline {
   background: #ffffff;
-  color: #2563eb;
-  border: 2rpx solid #bfd0f7;
+  color: var(--gyt-primary);
+  border: 2rpx solid var(--gyt-primary-border);
   box-shadow: none;
 }
 

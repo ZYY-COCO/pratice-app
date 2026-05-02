@@ -33,7 +33,7 @@ const emit = defineEmits(['update:modelValue'])
   padding: 8rpx;
   gap: 8rpx;
   border-radius: 28rpx;
-  background: #eef3ff;
+  background: var(--gyt-primary-soft);
 }
 
 .segment-btn {
@@ -49,7 +49,7 @@ const emit = defineEmits(['update:modelValue'])
 
 .segment-btn.active {
   background: #ffffff;
-  color: #2563eb;
-  box-shadow: 0 6rpx 16rpx rgba(37, 99, 235, 0.12);
+  color: var(--gyt-primary);
+  box-shadow: 0 6rpx 16rpx var(--gyt-primary-shadow);
 }
 </style>

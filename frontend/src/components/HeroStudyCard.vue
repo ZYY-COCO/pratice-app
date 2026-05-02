@@ -34,9 +34,9 @@ defineProps({
 .hero-card {
   padding: 34rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, #1e50d4, #5f8dff);
+  background: var(--gyt-primary-gradient);
   color: #ffffff;
-  box-shadow: 0 20rpx 40rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 20rpx 40rpx var(--gyt-primary-shadow);
 }
 
 .tag {
@@ -70,7 +70,7 @@ defineProps({
   border: 0;
   border-radius: 24rpx;
   background: #ffffff;
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 28rpx;
   font-weight: 800;
 }

@@ -128,8 +128,8 @@ async function submit() {
   margin-top: 14rpx;
   width: 100%;
   border-radius: 28rpx;
-  border: 2rpx solid #dbe3f2;
-  background: #f8fbff;
+  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-tint);
   color: #172033;
   font-size: 26rpx;
   box-sizing: border-box;
@@ -158,18 +158,18 @@ async function submit() {
 .choice-btn {
   flex: 1;
   min-height: 84rpx;
-  border: 2rpx solid #dbe4f5;
+  border: 2rpx solid var(--gyt-primary-border);
   border-radius: 26rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   color: #476089;
   font-size: 23rpx;
   font-weight: 800;
 }
 
 .choice-btn.active {
-  border-color: #2563eb;
-  background: #edf3ff;
-  color: #2563eb;
-  box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.12);
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
 }
 </style>

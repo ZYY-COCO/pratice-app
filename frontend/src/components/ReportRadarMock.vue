@@ -4,22 +4,22 @@
     <view class="chart-wrap">
       <svg class="chart" viewBox="0 0 310 250">
         <g transform="translate(155 125)">
-          <polygon points="0,-90 85,-28 53,73 -53,73 -85,-28" fill="none" stroke="#d9e3f4" stroke-width="1.2" />
-          <polygon points="0,-68 64,-21 40,55 -40,55 -64,-21" fill="none" stroke="#d9e3f4" stroke-width="1.2" />
-          <polygon points="0,-46 43,-14 27,37 -27,37 -43,-14" fill="none" stroke="#d9e3f4" stroke-width="1.2" />
-          <polygon points="0,-24 22,-7 14,19 -14,19 -22,-7" fill="none" stroke="#d9e3f4" stroke-width="1.2" />
-          <line x1="0" y1="0" x2="0" y2="-90" stroke="#d9e3f4" />
-          <line x1="0" y1="0" x2="85" y2="-28" stroke="#d9e3f4" />
-          <line x1="0" y1="0" x2="53" y2="73" stroke="#d9e3f4" />
-          <line x1="0" y1="0" x2="-53" y2="73" stroke="#d9e3f4" />
-          <line x1="0" y1="0" x2="-85" y2="-28" stroke="#d9e3f4" />
+          <polygon points="0,-90 85,-28 53,73 -53,73 -85,-28" fill="none" stroke="var(--gyt-primary-border)" stroke-width="1.2" />
+          <polygon points="0,-68 64,-21 40,55 -40,55 -64,-21" fill="none" stroke="var(--gyt-primary-border)" stroke-width="1.2" />
+          <polygon points="0,-46 43,-14 27,37 -27,37 -43,-14" fill="none" stroke="var(--gyt-primary-border)" stroke-width="1.2" />
+          <polygon points="0,-24 22,-7 14,19 -14,19 -22,-7" fill="none" stroke="var(--gyt-primary-border)" stroke-width="1.2" />
+          <line x1="0" y1="0" x2="0" y2="-90" stroke="var(--gyt-primary-border)" />
+          <line x1="0" y1="0" x2="85" y2="-28" stroke="var(--gyt-primary-border)" />
+          <line x1="0" y1="0" x2="53" y2="73" stroke="var(--gyt-primary-border)" />
+          <line x1="0" y1="0" x2="-53" y2="73" stroke="var(--gyt-primary-border)" />
+          <line x1="0" y1="0" x2="-85" y2="-28" stroke="var(--gyt-primary-border)" />
 
-          <polygon points="0,-58 61,-20 31,42 -24,34 -70,-23" fill="rgba(37,99,235,0.18)" stroke="#2563eb" stroke-width="2.4" />
-          <circle cx="0" cy="-58" r="4" fill="#2563eb" />
-          <circle cx="61" cy="-20" r="4" fill="#2563eb" />
-          <circle cx="31" cy="42" r="4" fill="#2563eb" />
-          <circle cx="-24" cy="34" r="4" fill="#2563eb" />
-          <circle cx="-70" cy="-23" r="4" fill="#2563eb" />
+          <polygon points="0,-58 61,-20 31,42 -24,34 -70,-23" fill="var(--gyt-primary-shadow)" stroke="var(--gyt-primary)" stroke-width="2.4" />
+          <circle cx="0" cy="-58" r="4" fill="var(--gyt-primary)" />
+          <circle cx="61" cy="-20" r="4" fill="var(--gyt-primary)" />
+          <circle cx="31" cy="42" r="4" fill="var(--gyt-primary)" />
+          <circle cx="-24" cy="34" r="4" fill="var(--gyt-primary)" />
+          <circle cx="-70" cy="-23" r="4" fill="var(--gyt-primary)" />
 
           <text x="0" y="-103" text-anchor="middle" font-size="12" fill="#41506a">词汇量</text>
           <text x="96" y="-30" text-anchor="start" font-size="12" fill="#41506a">阅读逻辑</text>
@@ -57,7 +57,7 @@ defineProps({
 .chart-shell {
   padding: 28rpx;
   border-radius: 34rpx;
-  background: linear-gradient(180deg, #fbfcff, #f5f8ff);
+  background: linear-gradient(180deg, #fbfcff, var(--gyt-primary-tint));
   border: 2rpx solid #e6ebf5;
 }
 
@@ -107,7 +107,7 @@ defineProps({
 }
 
 .metric-value {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 800;
 }

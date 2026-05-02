@@ -412,8 +412,8 @@ function getMembershipExpiresAt(user) {
 }
 
 .compare-card.pro {
-  border-color: rgba(37, 99, 235, 0.35);
-  background: #f4f8ff;
+  border-color: var(--gyt-primary-shadow);
+  background: var(--gyt-primary-tint);
 }
 
 .plan-title,
@@ -431,7 +431,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .feature-line.strong {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-weight: 800;
 }
 
@@ -451,8 +451,8 @@ function getMembershipExpiresAt(user) {
 }
 
 .price-card.hot {
-  border-color: #2563eb;
-  background: linear-gradient(135deg, #ffffff, #edf4ff);
+  border-color: var(--gyt-primary);
+  background: linear-gradient(135deg, #ffffff, var(--gyt-primary-soft));
 }
 
 .price-content {
@@ -469,7 +469,7 @@ function getMembershipExpiresAt(user) {
 .price-badge {
   padding: 6rpx 12rpx;
   border-radius: 999rpx;
-  background: #2563eb;
+  background: var(--gyt-primary);
   color: #ffffff;
   font-size: 18rpx;
   line-height: 1.2;
@@ -506,12 +506,12 @@ function getMembershipExpiresAt(user) {
   padding: 0 18rpx;
   border: 0;
   border-radius: 16rpx;
-  background: linear-gradient(135deg, #2563eb, #4f86ff);
+  background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
   font-size: 23rpx;
   line-height: 58rpx;
   font-weight: 900;
-  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.18);
+  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
 }
 
 .price-action-btn:disabled {

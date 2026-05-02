@@ -63,8 +63,8 @@ const props = defineProps({
   margin-top: 16rpx;
   padding: 22rpx;
   border-radius: 22rpx;
-  background: #f8fbff;
-  border: 2rpx dashed #c8d3ea;
+  background: var(--gyt-primary-tint);
+  border: 2rpx dashed var(--gyt-primary-border);
 }
 
 .pending-title {

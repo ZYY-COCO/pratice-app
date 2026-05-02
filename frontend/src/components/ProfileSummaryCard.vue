@@ -63,7 +63,7 @@ function handleTargetChange(code) {
   border-radius: 40rpx;
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(244, 248, 255, 0.98)),
-    radial-gradient(circle at top right, rgba(37, 99, 235, 0.12), transparent 44%);
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 44%);
   border: 2rpx solid rgba(230, 235, 245, 0.96);
   box-shadow: 0 20rpx 48rpx rgba(20, 31, 66, 0.07);
 }
@@ -86,14 +86,14 @@ function handleTargetChange(code) {
   width: 96rpx;
   height: 96rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #2563eb, #7aa2ff);
+  background: var(--gyt-primary-gradient);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 34rpx;
   font-weight: 800;
-  box-shadow: 0 14rpx 26rpx rgba(37, 99, 235, 0.24);
+  box-shadow: 0 14rpx 26rpx var(--gyt-primary-shadow);
 }
 
 .name {
@@ -113,8 +113,8 @@ function handleTargetChange(code) {
 .badge {
   padding: 14rpx 18rpx;
   border-radius: 22rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 900;
   white-space: nowrap;
@@ -166,19 +166,19 @@ function handleTargetChange(code) {
   min-height: 62rpx;
   margin: 0;
   padding: 0 20rpx;
-  border: 2rpx solid #d7e3fb;
+  border: 2rpx solid var(--gyt-primary-border);
   border-radius: 22rpx;
   background: #ffffff;
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 900;
   line-height: 62rpx;
 }
 
 .target-option.active {
-  background: #2563eb;
+  background: var(--gyt-primary);
   color: #ffffff;
-  border-color: #2563eb;
-  box-shadow: 0 8rpx 18rpx rgba(37, 99, 235, 0.2);
+  border-color: var(--gyt-primary);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
 }
 </style>

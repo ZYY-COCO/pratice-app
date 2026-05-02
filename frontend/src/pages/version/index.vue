@@ -61,12 +61,12 @@ function confirm() {
 }
 
 .version-card.active {
-  border-color: rgba(37, 99, 235, 0.4);
+  border-color: var(--gyt-primary-shadow);
   background: #f7faff;
 }
 
 .card-code {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 900;
 }
@@ -89,7 +89,7 @@ function confirm() {
   margin-top: 14rpx;
   padding: 16rpx 18rpx;
   border-radius: 22rpx;
-  background: #eef3ff;
+  background: var(--gyt-primary-soft);
   color: #29417a;
   font-size: 22rpx;
   line-height: 1.6;

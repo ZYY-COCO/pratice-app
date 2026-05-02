@@ -103,7 +103,7 @@ function isSectionPartial(section) {
   width: 50rpx;
   height: 50rpx;
   border-radius: 17rpx;
-  border: 2rpx solid #c7d2fe;
+  border: 2rpx solid var(--gyt-primary-border);
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -115,15 +115,15 @@ function isSectionPartial(section) {
 }
 
 .section-check.checked {
-  border-color: #2563eb;
-  background: #2563eb;
-  box-shadow: 0 8rpx 16rpx rgba(37, 99, 235, 0.18);
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary);
+  box-shadow: 0 8rpx 16rpx var(--gyt-primary-shadow);
 }
 
 .section-check.partial {
-  border-color: #5b8cff;
-  background: #edf3ff;
-  color: #2563eb;
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
 }
 
 .header-copy {
@@ -152,7 +152,7 @@ function isSectionPartial(section) {
 .accordion-body {
   padding: 10rpx 24rpx 22rpx;
   border-top: 2rpx solid #edf1f7;
-  background: linear-gradient(180deg, #fcfdff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, #fcfdff 0%, var(--gyt-primary-tint) 100%);
 }
 
 .check-row {
@@ -175,7 +175,7 @@ function isSectionPartial(section) {
   width: 48rpx;
   height: 48rpx;
   border-radius: 16rpx;
-  border: 2rpx solid #c7d2fe;
+  border: 2rpx solid var(--gyt-primary-border);
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -187,9 +187,9 @@ function isSectionPartial(section) {
 }
 
 .check-box.checked {
-  border-color: #2563eb;
-  background: #2563eb;
-  box-shadow: 0 8rpx 16rpx rgba(37, 99, 235, 0.18);
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary);
+  box-shadow: 0 8rpx 16rpx var(--gyt-primary-shadow);
 }
 
 .check-copy {

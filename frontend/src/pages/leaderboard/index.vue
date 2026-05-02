@@ -189,7 +189,7 @@ function formatAccuracy(value) {
 }
 
 .refresh-btn {
-  color: #2f7cf6;
+  color: var(--gyt-primary);
   font-size: 34rpx;
 }
 
@@ -200,7 +200,7 @@ function formatAccuracy(value) {
 }
 
 .head-eyebrow {
-  color: #2f7cf6;
+  color: var(--gyt-primary);
   font-size: 22rpx;
   line-height: 1.3;
   font-weight: 800;
@@ -221,9 +221,9 @@ function formatAccuracy(value) {
   gap: 24rpx;
   padding: 34rpx 30rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, #1b2a52 0%, #2563eb 54%, #4f8cff 100%);
+  background: linear-gradient(135deg, #1b2a52 0%, var(--gyt-primary) 54%, var(--gyt-primary) 100%);
   color: #ffffff;
-  box-shadow: 0 22rpx 48rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 22rpx 48rpx var(--gyt-primary-shadow);
 }
 
 .hero-kicker {
@@ -288,7 +288,7 @@ function formatAccuracy(value) {
 }
 
 .summary-value {
-  color: #2f7cf6;
+  color: var(--gyt-primary);
   font-size: 32rpx;
   line-height: 1.2;
   font-weight: 900;
@@ -328,8 +328,8 @@ function formatAccuracy(value) {
   width: 220rpx;
   height: 72rpx;
   border-radius: 22rpx;
-  background: #eef4ff;
-  color: #2f7cf6;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 800;
 }
@@ -353,13 +353,13 @@ function formatAccuracy(value) {
 }
 
 .leaderboard-row.podium {
-  border-color: rgba(47, 124, 246, 0.28);
-  background: linear-gradient(180deg, #ffffff, #f4f8ff);
+  border-color: var(--gyt-primary-shadow);
+  background: linear-gradient(180deg, #ffffff, var(--gyt-primary-tint));
 }
 
 .leaderboard-row.current {
-  border-color: rgba(47, 124, 246, 0.58);
-  box-shadow: 0 16rpx 38rpx rgba(47, 124, 246, 0.14);
+  border-color: var(--gyt-primary-shadow);
+  box-shadow: 0 16rpx 38rpx var(--gyt-primary-shadow);
 }
 
 .rank-index {
@@ -382,8 +382,8 @@ function formatAccuracy(value) {
 }
 
 .rank-index.rank-2 {
-  background: #eef3ff;
-  color: #4c6fb8;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
 }
 
 .rank-index.rank-3 {
@@ -395,8 +395,8 @@ function formatAccuracy(value) {
   width: 72rpx;
   height: 72rpx;
   border-radius: 24rpx;
-  background: linear-gradient(145deg, #edf4ff, #dce8ff);
-  color: #2f7cf6;
+  background: linear-gradient(145deg, var(--gyt-primary-soft), #dce8ff);
+  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -407,7 +407,7 @@ function formatAccuracy(value) {
 
 .image-avatar {
   display: block;
-  background: #eef4ff;
+  background: var(--gyt-primary-soft);
 }
 
 .user-info {
@@ -436,8 +436,8 @@ function formatAccuracy(value) {
 .me-badge {
   padding: 4rpx 12rpx;
   border-radius: 999rpx;
-  background: #eef4ff;
-  color: #2f7cf6;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 20rpx;
   font-weight: 900;
   flex-shrink: 0;
@@ -457,7 +457,7 @@ function formatAccuracy(value) {
 }
 
 .accuracy {
-  color: #2f7cf6;
+  color: var(--gyt-primary);
   font-size: 32rpx;
   line-height: 1.2;
   font-weight: 900;

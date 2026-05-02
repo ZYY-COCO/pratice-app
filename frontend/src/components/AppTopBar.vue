@@ -46,14 +46,14 @@ const avatarText = computed(() => props.userName.slice(0, 1))
   width: 80rpx;
   height: 80rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #2563eb, #7aa2ff);
+  background: var(--gyt-primary-gradient);
   color: #ffffff;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 30rpx;
   font-weight: 800;
-  box-shadow: 0 12rpx 24rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 12rpx 24rpx var(--gyt-primary-shadow);
 }
 
 .user-copy {

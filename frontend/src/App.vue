@@ -18,17 +18,24 @@ export default {
 </script>
 
 <style>
+:root {
+  --gyt-primary: #3478f6;
+  --gyt-primary-soft: #edf4ff;
+  --gyt-primary-tint: #f4f8ff;
+  --gyt-primary-border: #d7e5ff;
+  --gyt-primary-gradient: linear-gradient(135deg, #3478f6, #68a0ff);
+  --gyt-primary-shadow: rgba(52, 120, 246, 0.2);
+  --gyt-page-bg: radial-gradient(circle at top right, rgba(52, 120, 246, 0.1), transparent 25%), linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
+  --gyt-panel-bg: radial-gradient(circle at 86% 10%, rgba(52, 120, 246, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+}
+
 page {
   width: 100%;
   min-height: 100%;
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
-  background: var(
-    --gyt-page-bg,
-    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%)
-  );
+  background: var(--gyt-page-bg);
   color: #172033;
   font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
 }

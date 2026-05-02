@@ -491,9 +491,9 @@ function goBack() {
 }
 
 .top-action-btn.active {
-  color: #1677ff;
-  background: #edf4ff;
-  border-color: #dbeafe;
+  color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  border-color: var(--gyt-primary-border);
 }
 
 .search-glyph {
@@ -630,7 +630,7 @@ function goBack() {
 }
 
 .filter-tab.active {
-  background: #1677ff;
+  background: var(--gyt-primary);
   color: #ffffff;
 }
 
@@ -638,8 +638,8 @@ function goBack() {
   margin: -6rpx 0 18rpx;
   padding: 16rpx 18rpx;
   border-radius: 20rpx;
-  background: #edf4ff;
-  color: #315d9b;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 22rpx;
   line-height: 1.45;
   display: flex;
@@ -650,7 +650,7 @@ function goBack() {
 
 .summary-clear {
   flex-shrink: 0;
-  color: #1677ff;
+  color: var(--gyt-primary);
   font-weight: 900;
 }
 
@@ -731,7 +731,7 @@ function goBack() {
 }
 
 .detail-link {
-  color: #1677ff;
+  color: var(--gyt-primary);
   font-weight: 900;
 }
 
@@ -834,9 +834,9 @@ function goBack() {
 }
 
 .filter-chip.active {
-  border-color: #1677ff;
-  background: #edf4ff;
-  color: #1677ff;
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
 }
 
 .sheet-actions {
@@ -869,9 +869,9 @@ function goBack() {
 
 .primary-action {
   border: 0;
-  background: #1677ff;
+  background: var(--gyt-primary);
   color: #ffffff;
-  box-shadow: 0 14rpx 28rpx rgba(22, 119, 255, 0.22);
+  box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
 .detail-mask {
@@ -925,7 +925,7 @@ function goBack() {
   gap: 14rpx;
   padding: 18rpx;
   border-radius: 22rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   border: 2rpx solid #edf2fb;
 }
 
@@ -943,8 +943,8 @@ function goBack() {
   width: 44rpx;
   height: 44rpx;
   border-radius: 14rpx;
-  background: #edf4ff;
-  color: #1677ff;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -964,7 +964,7 @@ function goBack() {
   margin-top: 22rpx;
   padding: 20rpx;
   border-radius: 24rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
 }
 
 .explain-title {

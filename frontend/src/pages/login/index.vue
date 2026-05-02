@@ -981,8 +981,8 @@ function goBackHome() {
   min-height: 100dvh;
   padding: calc(var(--status-bar-height) + 14rpx) 30rpx calc(env(safe-area-inset-bottom) + 40rpx);
   background:
-    radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 28%),
-    linear-gradient(180deg, #f8fbff 0%, #f2f6fc 100%);
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 28%),
+    var(--gyt-page-bg);
 }
 
 .login-page view,
@@ -999,7 +999,7 @@ function goBackHome() {
   padding: 26rpx 30rpx 28rpx;
   border-radius: 30rpx;
   background:
-    radial-gradient(circle at 88% 18%, rgba(37, 99, 235, 0.13), transparent 32%),
+    radial-gradient(circle at 88% 18%, var(--gyt-primary-shadow), transparent 32%),
     linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 255, 0.98));
   border: 2rpx solid rgba(219, 228, 245, 0.92);
   box-shadow: 0 14rpx 34rpx rgba(20, 31, 66, 0.06);
@@ -1010,8 +1010,8 @@ function goBackHome() {
   align-items: center;
   padding: 8rpx 15rpx;
   border-radius: 999rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 22rpx;
   font-weight: 900;
 }
@@ -1064,9 +1064,9 @@ function goBackHome() {
 }
 
 .segment-btn.active {
-  background: linear-gradient(135deg, #3b82f6, #2563eb);
+  background: var(--gyt-primary-gradient);
   color: #ffffff;
-  box-shadow: 0 10rpx 22rpx rgba(37, 99, 235, 0.2);
+  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
 }
 
 .login-card {
@@ -1085,7 +1085,7 @@ function goBackHome() {
   margin-bottom: 24rpx;
   padding: 8rpx;
   border-radius: 24rpx;
-  background: #f4f7fc;
+  background: var(--gyt-primary-tint);
   border: 2rpx solid #e8edf7;
 }
 
@@ -1108,7 +1108,7 @@ function goBackHome() {
 
 .method-btn.active {
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  color: #2563eb;
+  color: var(--gyt-primary);
   box-shadow: 0 8rpx 18rpx rgba(20, 31, 66, 0.075);
 }
 
@@ -1128,8 +1128,8 @@ function goBackHome() {
   min-height: 86rpx;
   padding: 0 24rpx;
   border-radius: 22rpx;
-  border: 2rpx solid #dbe3f2;
-  background: #f8fbff;
+  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-tint);
   font-size: 28rpx;
   color: #172033;
   display: flex;
@@ -1151,8 +1151,8 @@ function goBackHome() {
   min-height: 86rpx;
   border: 0;
   border-radius: 22rpx;
-  background: linear-gradient(180deg, #edf5ff 0%, #e4efff 100%);
-  color: #1677ff;
+  background: linear-gradient(180deg, var(--gyt-primary-soft) 0%, var(--gyt-primary-soft) 100%);
+  color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 900;
   line-height: 86rpx;
@@ -1167,7 +1167,7 @@ function goBackHome() {
   margin-top: 16rpx;
   padding: 16rpx 20rpx;
   border-radius: 20rpx;
-  background: linear-gradient(180deg, #f8fbff 0%, #f5f9ff 100%);
+  background: linear-gradient(180deg, var(--gyt-primary-tint) 0%, var(--gyt-primary-tint) 100%);
   color: #667085;
   font-size: 23rpx;
   line-height: 1.55;

@@ -29,7 +29,7 @@ defineProps({
 }
 
 .eyebrow {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 22rpx;
   font-weight: 800;
   letter-spacing: 1rpx;

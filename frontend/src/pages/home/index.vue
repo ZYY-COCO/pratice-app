@@ -2411,8 +2411,8 @@ function getMembershipExpiresAt(user) {
   margin-bottom: 18rpx;
   padding: 20rpx 22rpx;
   border-radius: 22rpx;
-  background: #f4f8ff;
-  border: 2rpx dashed #c8d8ff;
+  background: var(--gyt-primary-tint);
+  border: 2rpx dashed var(--gyt-primary-border);
   color: #36527f;
   font-size: 24rpx;
   line-height: 1.6;
@@ -2445,14 +2445,14 @@ function getMembershipExpiresAt(user) {
 .beta-item {
   padding: 18rpx 20rpx;
   border-radius: 24rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   color: #344054;
   font-size: 24rpx;
   line-height: 1.7;
 }
 
 .beta-item.muted {
-  background: #f4f8ff;
+  background: var(--gyt-primary-tint);
   color: #667085;
 }
 
@@ -2478,9 +2478,9 @@ function getMembershipExpiresAt(user) {
   display: inline-flex;
   margin-right: 12rpx;
   padding: 12rpx 18rpx;
-  border: 2rpx solid #dbe4f5;
+  border: 2rpx solid var(--gyt-primary-border);
   border-radius: 999rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   color: #476089;
   font-size: 21rpx;
   font-weight: 700;
@@ -2496,7 +2496,7 @@ function getMembershipExpiresAt(user) {
   margin-top: 22rpx;
   padding: 18rpx 20rpx;
   border-radius: 24rpx;
-  background: #f8fbff;
+  background: var(--gyt-primary-tint);
   color: #667085;
   text-align: center;
   font-size: 23rpx;
@@ -2550,7 +2550,7 @@ function getMembershipExpiresAt(user) {
   padding: 28rpx 24rpx 22rpx;
   background: var(
     --gyt-panel-bg,
-    radial-gradient(circle at 86% 10%, rgba(22, 119, 255, 0.14), transparent 30%),
+    radial-gradient(circle at 86% 10%, var(--gyt-primary-shadow), transparent 30%),
     linear-gradient(135deg, #ffffff 0%, #eef6ff 100%)
   );
 }
@@ -3452,7 +3452,7 @@ function getMembershipExpiresAt(user) {
   padding: 24rpx;
   border: 2rpx solid #e7eefb;
   border-radius: 26rpx;
-  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  background: linear-gradient(180deg, #ffffff 0%, var(--gyt-primary-tint) 100%);
 }
 
 .advice-subject-head {
@@ -3972,7 +3972,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .head-eyebrow {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 22rpx;
   font-weight: 800;
 }
@@ -3999,16 +3999,16 @@ function getMembershipExpiresAt(user) {
   padding: 0 22rpx;
   border: 0;
   border-radius: 22rpx;
-  background: #2563eb;
+  background: var(--gyt-primary);
   color: #ffffff;
   font-size: 24rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
 .retest-entry-btn.ghost,
 .retest-entry-btn:disabled {
-  background: #eef3ff;
+  background: var(--gyt-primary-soft);
   color: #7a8aa6;
   box-shadow: none;
 }
@@ -4043,8 +4043,8 @@ function getMembershipExpiresAt(user) {
 }
 
 .wrong-option.selected {
-  border-color: #2563eb;
-  background: #edf3ff;
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
 }
 
 .wrong-option.correct {
@@ -4061,8 +4061,8 @@ function getMembershipExpiresAt(user) {
   width: 42rpx;
   height: 42rpx;
   border-radius: 14rpx;
-  background: #eef3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4072,7 +4072,7 @@ function getMembershipExpiresAt(user) {
 .task-btn.ghost {
   background: #ffffff;
   color: #475467;
-  border: 2rpx solid #dbe4f5;
+  border: 2rpx solid var(--gyt-primary-border);
 }
 
 .wrong-modal-mask {
@@ -4237,11 +4237,11 @@ function getMembershipExpiresAt(user) {
   margin: 0;
   border: 0;
   border-radius: 28rpx;
-  background: linear-gradient(135deg, #2563eb, #4f86ff);
+  background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
   font-size: 28rpx;
   font-weight: 900;
-  box-shadow: 0 16rpx 30rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow);
 }
 
 .modal-submit-btn:disabled {
@@ -4262,7 +4262,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .summary-score {
-  color: #2563eb;
+  color: var(--gyt-primary);
   font-size: 58rpx;
   line-height: 1;
   font-weight: 950;
@@ -4330,7 +4330,7 @@ function getMembershipExpiresAt(user) {
 .pro-preview-item {
   padding: 18rpx 20rpx;
   border-radius: 22rpx;
-  background: #f4f8ff;
+  background: var(--gyt-primary-tint);
   color: #36527f;
   font-size: 24rpx;
   line-height: 1.6;
@@ -4373,8 +4373,8 @@ function getMembershipExpiresAt(user) {
 .ability-pill {
   padding: 12rpx 16rpx;
   border-radius: 999rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 22rpx;
   font-weight: 800;
   white-space: nowrap;
@@ -4386,8 +4386,8 @@ function getMembershipExpiresAt(user) {
 }
 
 .ability-pill.normal {
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
 }
 
 .ability-pill.weak {
@@ -4404,7 +4404,7 @@ function getMembershipExpiresAt(user) {
   margin-top: 20rpx;
   padding: 28rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(128, 90, 213, 0.08));
+  background: linear-gradient(135deg, var(--gyt-primary-shadow), rgba(128, 90, 213, 0.08));
   border: 2rpx solid rgba(91, 140, 255, 0.28);
 }
 
@@ -4463,8 +4463,8 @@ function getMembershipExpiresAt(user) {
   padding: 18rpx 22rpx;
   border: 0;
   border-radius: 22rpx;
-  background: #edf3ff;
-  color: #2563eb;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   font-size: 24rpx;
   font-weight: 800;
 }
@@ -4522,8 +4522,8 @@ function getMembershipExpiresAt(user) {
   align-items: flex-start;
   background: var(
     --gyt-panel-bg,
-    radial-gradient(circle at 94% 20%, rgba(22, 119, 255, 0.1), transparent 30%),
-    linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%)
+    radial-gradient(circle at 94% 20%, var(--gyt-primary-shadow), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, var(--gyt-primary-tint) 100%)
   );
 }
 
@@ -4632,8 +4632,8 @@ function getMembershipExpiresAt(user) {
   padding: 30rpx 24rpx 24rpx;
   background: var(
     --gyt-panel-bg,
-    radial-gradient(circle at 82% 26%, rgba(22, 119, 255, 0.16), transparent 28%),
-    linear-gradient(135deg, #ffffff 0%, #eef5ff 100%)
+    radial-gradient(circle at 82% 26%, var(--gyt-primary-shadow), transparent 28%),
+    linear-gradient(135deg, #ffffff 0%, var(--gyt-primary-soft) 100%)
   );
 }
 
