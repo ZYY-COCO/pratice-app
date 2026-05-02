@@ -59,7 +59,7 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active {
-  background: #edf4ff;
+  background: var(--gyt-primary-soft, #edf4ff);
 }
 
 .tab-icon {
@@ -77,10 +77,10 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active .tab-icon {
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
 }
 
 .tab-item.active .tab-label {
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
 }
 </style>

@@ -22,6 +22,18 @@ export function fetchLearningSummary(params = {}) {
   })
 }
 
+export function fetchStudyAdvice(params = {}) {
+  const query = Object.keys(params)
+    .filter((key) => params[key] !== undefined && params[key] !== '')
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+    .join('&')
+
+  return request({
+    url: query ? `/report/study-advice?${query}` : '/report/study-advice',
+    timeout: 45000
+  })
+}
+
 export function fetchLeaderboard(params = {}) {
   const query = Object.keys(params)
     .filter((key) => params[key] !== undefined && params[key] !== '')

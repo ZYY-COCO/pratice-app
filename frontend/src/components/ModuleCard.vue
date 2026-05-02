@@ -48,7 +48,7 @@ defineProps({
   width: 98rpx;
   height: 98rpx;
   border-radius: 30rpx;
-  background: #f1f6ff;
+  background: var(--gyt-primary-soft, #f1f6ff);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -78,7 +78,7 @@ defineProps({
 
 .entry-row {
   margin-top: 16rpx;
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 29rpx;
   font-weight: 900;
   display: flex;

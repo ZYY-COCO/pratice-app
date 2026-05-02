@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class AbilityStatItem(BaseModel):
@@ -44,3 +44,22 @@ class LeaderboardItem(BaseModel):
 class LeaderboardResponse(BaseModel):
     items: list[LeaderboardItem]
     total_users: int
+
+
+class StudySubjectAdvice(BaseModel):
+    subject: str
+    status: str = ""
+    accuracy: float | None = None
+    weak_points: list[str] = Field(default_factory=list)
+    fear_points: list[str] = Field(default_factory=list)
+    score_tips: list[str] = Field(default_factory=list)
+    next_actions: list[str] = Field(default_factory=list)
+
+
+class StudyAdviceResponse(BaseModel):
+    exam_code: str
+    source: str = "rule"
+    summary: str
+    summary_items: list[str] = Field(default_factory=list)
+    subject_advices: list[StudySubjectAdvice] = Field(default_factory=list)
+    next_training: str = ""

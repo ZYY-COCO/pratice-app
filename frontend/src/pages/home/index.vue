@@ -238,11 +238,11 @@
       <view class="report-dashboard">
         <view class="report-topbar">
           <button class="icon-back-btn" @tap="activeTab = 'profile'">‹</button>
-          <view class="report-top-title">能力报告</view>
+          <view class="report-top-title">学习报告</view>
           <view class="report-top-spacer"></view>
         </view>
 
-        <view v-if="reportLoading" class="state-box">正在生成真实能力报告...</view>
+        <view v-if="reportLoading" class="state-box">正在生成真实学习报告...</view>
         <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
 
         <view class="report-overview-card">
@@ -311,17 +311,21 @@
               <view class="advice-icon">💡</view>
               <view>
                 <view class="advice-title">学习建议</view>
-                <view class="advice-subtitle">当前为规则生成，后续接入 DeepSeek 输出简洁建议。</view>
+                <view class="advice-subtitle">{{ studyAdviceSubtitle }}</view>
               </view>
             </view>
-            <button class="advice-pro-btn" @tap="goPro">AI升级</button>
           </view>
+          <view v-if="studyAdviceLoading" class="state-box advice-loading">正在分析你的薄弱点...</view>
+          <view v-else-if="studyAdviceError" class="state-box warning advice-loading">{{ studyAdviceError }}</view>
           <view class="advice-list">
             <view v-for="item in reportAdvice" :key="item" class="advice-item">
               <text class="advice-dot">✓</text>
               <text>{{ item }}</text>
             </view>
           </view>
+          <button v-if="isAuthed" class="advice-detail-btn" @tap="openStudyAdviceDetail">
+            查看详细建议
+          </button>
           <button v-if="dailyPlan.length" class="report-action-btn" @tap="openRecommendedTrainingSheet">
             开始推荐训练
           </button>
@@ -451,7 +455,7 @@
             </view>
             <switch
               :checked="smartMode"
-              color="#3478f6"
+              :color="currentTheme.primary"
               @change="handleSmartModeChange"
             />
           </view>
@@ -508,7 +512,7 @@
               :min="5"
               :max="30"
               :step="5"
-              activeColor="#3478f6"
+              :activeColor="currentTheme.primary"
               backgroundColor="#e5ebf5"
               block-color="#ffffff"
               :block-size="22"
@@ -549,6 +553,55 @@
           <view class="generating-progress-bar" :style="{ width: generateProgressWidth }"></view>
         </view>
         <button class="generating-cancel-btn" @tap="cancelGenerateTraining">取消生成</button>
+      </view>
+    </view>
+
+    <view v-if="showStudyAdviceDetail" class="advice-detail-mask" @tap="closeStudyAdviceDetail">
+      <view class="advice-detail-sheet" @tap.stop>
+        <view class="advice-detail-handle"></view>
+        <button class="advice-detail-close" @tap="closeStudyAdviceDetail">×</button>
+        <view class="advice-detail-head">
+          <view class="advice-detail-title">详细学习建议</view>
+          <view class="advice-detail-subtitle">{{ studyAdviceSummary }}</view>
+        </view>
+        <scroll-view scroll-y class="advice-detail-scroll">
+          <view
+            v-for="item in studyAdviceDetails"
+            :key="item.subject"
+            class="advice-subject-card"
+          >
+            <view class="advice-subject-head">
+              <view>
+                <view class="advice-subject-title">{{ item.subject }}</view>
+                <view class="advice-subject-meta">
+                  {{ item.accuracyText }} · {{ item.status || '待分析' }}
+                </view>
+              </view>
+              <view class="advice-subject-badge">{{ item.subject }}</view>
+            </view>
+
+            <view class="detail-block">
+              <view class="detail-block-title">薄弱点</view>
+              <view v-for="point in item.weak_points" :key="point" class="detail-line">{{ point }}</view>
+            </view>
+
+            <view class="detail-block">
+              <view class="detail-block-title">容易害怕的地方</view>
+              <view v-for="point in item.fear_points" :key="point" class="detail-line">{{ point }}</view>
+            </view>
+
+            <view class="detail-block">
+              <view class="detail-block-title">提分建议</view>
+              <view v-for="point in item.score_tips" :key="point" class="detail-line strong">{{ point }}</view>
+            </view>
+
+            <view class="detail-block">
+              <view class="detail-block-title">下一步</view>
+              <view v-for="point in item.next_actions" :key="point" class="detail-line">{{ point }}</view>
+            </view>
+          </view>
+        </scroll-view>
+        <button class="advice-detail-action" @tap="openRecommendedTrainingSheet">按建议生成训练</button>
       </view>
     </view>
 
@@ -597,6 +650,36 @@
       </view>
     </view>
 
+    <view v-if="showThemeModal" class="theme-modal-mask" @tap="handleCloseThemeModal">
+      <view class="theme-modal-sheet" @tap.stop>
+        <view class="theme-modal-handle"></view>
+        <button class="theme-modal-close" @tap="handleCloseThemeModal">×</button>
+        <view class="theme-modal-head">
+          <view class="theme-modal-title">外观主题</view>
+          <view class="theme-modal-subtitle">选择一套浅色主题，首页和常用页面会立即更新。</view>
+        </view>
+        <view class="theme-option-list">
+          <view
+            v-for="item in themePresets"
+            :key="item.key"
+            class="theme-option"
+            :class="{ active: selectedThemeKey === item.key }"
+            @tap="selectTheme(item.key)"
+          >
+            <view class="theme-preview" :style="{ background: item.panelBg }">
+              <view class="theme-preview-dot" :style="{ background: item.primary }"></view>
+              <view class="theme-preview-line" :style="{ background: item.primarySoft }"></view>
+            </view>
+            <view class="theme-option-copy">
+              <view class="theme-option-name">{{ item.name }}</view>
+              <view class="theme-option-desc">{{ item.desc }}</view>
+            </view>
+            <view v-if="selectedThemeKey === item.key" class="theme-option-check">✓</view>
+          </view>
+        </view>
+      </view>
+    </view>
+
     <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
   </view>
 </template>
@@ -613,7 +696,7 @@ import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
-import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
+import { fetchAbilityReport, fetchLearningSummary, fetchStudyAdvice } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
   getFullMistakes,
@@ -624,9 +707,11 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { THEME_PRESETS, applyThemeByKey, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
+const themePresets = THEME_PRESETS
 const initialAuthUser = getAuthUser()
 const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
 const activeTab = ref('home')
@@ -638,6 +723,10 @@ const wrongError = ref('')
 const visibleMistakeCount = ref(15)
 const abilityReport = ref(null)
 const learningSummary = ref(null)
+const studyAdvice = ref(null)
+const studyAdviceLoading = ref(false)
+const studyAdviceError = ref('')
+const studyAdviceExamCode = ref('')
 const reportLoading = ref(false)
 const reportError = ref('')
 const wrongFilters = ref({
@@ -664,8 +753,13 @@ const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
 const showProModal = ref(false)
 const showFeedbackModal = ref(false)
+const showStudyAdviceDetail = ref(false)
+const showThemeModal = ref(false)
+const selectedThemeKey = ref(getStoredThemeKey())
 const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
+
+applyThemeByKey(selectedThemeKey.value)
 const smartMode = ref(true)
 const manualDifficulty = ref('标准提升')
 const manualQuestionCount = ref(10)
@@ -798,7 +892,7 @@ const dashboard = computed(() => {
     statusText: '今日学习状态：已登录，可直连真实题库',
     heroTitle: `本周已刷真题：${weeklyAnswers} 道`,
     heroSubtitle: totalAnswers
-      ? `累计已完成 ${totalAnswers} 道，当前总正确率 ${Math.round(accuracy)}%。继续刷题后，错题本和能力报告会自动同步。`
+      ? `累计已完成 ${totalAnswers} 道，当前总正确率 ${Math.round(accuracy)}%。继续刷题后，错题本和学习报告会自动同步。`
       : '你已经登录成功。本周刷题数暂为 0，完成第一轮练习后这里会自动更新真实数据。'
   }
 })
@@ -882,7 +976,10 @@ const practiceTools = computed(() => {
     }
   ]
 })
+const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
+const currentThemeName = computed(() => currentTheme.value.name)
 const serviceTools = computed(() => [
+  { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
   { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
   { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
 ])
@@ -1002,9 +1099,38 @@ const subjectReportCards = computed(() => {
       return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex)
     })
 })
+const fallbackReportAdvice = computed(() => buildFallbackReportAdvice())
 const reportAdvice = computed(() => {
+  if (studyAdvice.value?.summary_items?.length) {
+    return studyAdvice.value.summary_items.slice(0, 4)
+  }
+  return fallbackReportAdvice.value
+})
+const studyAdviceSubtitle = computed(() => {
+  if (!isAuthed.value) return '登录后会根据真实作答记录生成建议。'
+  if (studyAdviceLoading.value) return '正在结合正确率、错题和薄弱模块分析。'
+  if (studyAdvice.value?.source === 'deepseek') return '已结合真实记录生成个性化提分建议。'
+  return '已根据真实做题记录生成当前阶段建议。'
+})
+const studyAdviceSummary = computed(() => studyAdvice.value?.summary || fallbackReportAdvice.value[0] || '先完成一组练习，系统会继续更新建议。')
+const studyAdviceDetails = computed(() => {
+  const items = studyAdvice.value?.subject_advices || []
+  if (!items.length) {
+    return buildFallbackSubjectAdvice()
+  }
+  return items.map((item) => ({
+    ...item,
+    accuracyText: item.accuracy === null || item.accuracy === undefined ? '暂无正确率' : `正确率 ${Math.round(Number(item.accuracy || 0))}%`,
+    weak_points: safeAdviceList(item.weak_points, ['先完成一组基础练习建立样本']),
+    fear_points: safeAdviceList(item.fear_points, ['题干变长时容易紧张，先把关键词圈出来再判断。']),
+    score_tips: safeAdviceList(item.score_tips, ['我建议先用 10 题小组练习，错题当天复盘。']),
+    next_actions: safeAdviceList(item.next_actions, ['完成一组 10 题专项训练。'])
+  }))
+})
+
+function buildFallbackReportAdvice() {
   if (!isAuthed.value) {
-    return ['登录后会基于真实作答记录生成能力报告。', '完成一组专项或综合刷题后，可查看科目正确率和薄弱项。']
+    return ['登录后会基于真实作答记录生成学习报告。', '完成一组专项或综合刷题后，可查看科目正确率和薄弱项。']
   }
   if (report.value.items.length === 0) {
     return ['当前还没有足够的作答数据，建议先完成 10 道专项练习。', '系统会在提交答案后自动更新正确率、错题和能力统计。']
@@ -1019,15 +1145,31 @@ const reportAdvice = computed(() => {
   weakestStats.forEach((item) => {
     advice.push(`重点复盘 ${item.module}${item.submodule ? ` - ${item.submodule}` : ''}，先看错题解析，再做同类题。`)
   })
-  advice.push('后续接入 DeepSeek 后，这里会自动生成更简洁的个性化学习建议。')
   return advice.slice(0, 4)
-})
+}
+
+function buildFallbackSubjectAdvice() {
+  return subjectReportCards.value.map((item) => ({
+    subject: item.subject,
+    status: item.status,
+    accuracy: item.accuracy,
+    accuracyText: `正确率 ${item.accuracy}%`,
+    weak_points: [item.weakestModule || '当前薄弱点还在积累中'],
+    fear_points: ['遇到不熟悉题型时容易急着选答案，建议先回到题干条件。'],
+    score_tips: [`我建议先围绕 ${item.weakestModule || item.subject} 做一组 10 题短练。`],
+    next_actions: ['先看错题解析，再做同类题确认是否掌握。']
+  }))
+}
+
+function safeAdviceList(value, fallback) {
+  return Array.isArray(value) && value.length ? value : fallback
+}
 const reportSubtitle = computed(() => {
   if (!isAuthed.value) {
-    return '登录后会基于真实作答统计生成报告；当前展示示例诊断。'
+    return '登录后会基于真实作答统计生成学习报告；当前展示示例诊断。'
   }
   if (abilityReport.value?.items?.length) {
-    return '已根据真实作答记录生成能力报告，先用规则诊断，后续可升级 AI 总结。'
+    return '已根据真实作答记录生成学习报告。'
   }
   return '已连接真实能力统计接口，完成几道题后这里会出现你的准确率与薄弱项。'
 })
@@ -1069,9 +1211,14 @@ const profile = computed(() => {
 watch(examCode, (value) => {
   uni.setStorageSync('examCode', value)
   syncTrainingSubject()
+  studyAdvice.value = null
+  studyAdviceExamCode.value = ''
   if (isAuthed.value) {
     loadAbilityReport()
     loadLearningSummary()
+    if (activeTab.value === 'report') {
+      loadStudyAdvice({ force: true })
+    }
   }
 })
 
@@ -1083,6 +1230,9 @@ watch(activeTab, (value) => {
     }
   } else {
     resetMistakeVisibleCount()
+  }
+  if (value === 'report') {
+    loadStudyAdvice()
   }
 })
 
@@ -1224,6 +1374,7 @@ function selectTrainingSubject(subject) {
 }
 
 function openRecommendedTrainingSheet() {
+  showStudyAdviceDetail.value = false
   smartMode.value = true
   manualDifficulty.value = '标准提升'
   manualQuestionCount.value = 10
@@ -1515,6 +1666,10 @@ function handleMenu(item) {
     handleOpenFeedbackModal()
     return
   }
+  if (item.action === 'theme') {
+    handleOpenThemeModal()
+    return
+  }
   if (item.action === 'about') {
     uni.showToast({ title: '当前版本：内测版，专注刷题闭环验证', icon: 'none' })
     return
@@ -1534,11 +1689,28 @@ function handleCloseFeedbackModal() {
   showFeedbackModal.value = false
 }
 
+function handleOpenThemeModal() {
+  showThemeModal.value = true
+}
+
+function handleCloseThemeModal() {
+  showThemeModal.value = false
+}
+
+function selectTheme(key) {
+  selectedThemeKey.value = getThemePreset(key).key
+  applyThemeByKey(selectedThemeKey.value)
+  uni.showToast({ title: '主题已更新', icon: 'none' })
+}
+
 async function refreshLearningData() {
   if (!isAuthed.value) {
     wrongItems.value = []
     abilityReport.value = null
     learningSummary.value = null
+    studyAdvice.value = null
+    studyAdviceError.value = ''
+    studyAdviceExamCode.value = ''
     wrongError.value = ''
     reportError.value = ''
     return
@@ -1547,6 +1719,9 @@ async function refreshLearningData() {
   loadWrongQuestions()
   loadAbilityReport()
   loadLearningSummary()
+  if (activeTab.value === 'report') {
+    loadStudyAdvice()
+  }
 }
 
 async function loadWrongQuestions() {
@@ -1572,7 +1747,7 @@ async function loadAbilityReport() {
   try {
     abilityReport.value = await fetchAbilityReport({ exam_code: examCode.value })
   } catch (error) {
-    reportError.value = getSafeError(error, '能力报告同步失败，请稍后重试')
+    reportError.value = getSafeError(error, '学习报告同步失败，请稍后重试')
   } finally {
     reportLoading.value = false
   }
@@ -1584,6 +1759,45 @@ async function loadLearningSummary() {
   } catch (error) {
     learningSummary.value = null
   }
+}
+
+async function loadStudyAdvice(options = {}) {
+  if (!isAuthed.value) {
+    studyAdvice.value = null
+    studyAdviceError.value = ''
+    studyAdviceExamCode.value = ''
+    return
+  }
+  if (studyAdviceLoading.value) return
+  if (!options.force && studyAdvice.value && studyAdviceExamCode.value === examCode.value) {
+    return
+  }
+
+  studyAdviceLoading.value = true
+  studyAdviceError.value = ''
+  try {
+    studyAdvice.value = await fetchStudyAdvice({ exam_code: examCode.value })
+    studyAdviceExamCode.value = examCode.value
+  } catch (error) {
+    studyAdvice.value = null
+    studyAdviceExamCode.value = ''
+    studyAdviceError.value = getSafeError(error, '学习建议生成失败，已显示本地建议')
+  } finally {
+    studyAdviceLoading.value = false
+  }
+}
+
+function openStudyAdviceDetail() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  showStudyAdviceDetail.value = true
+  loadStudyAdvice()
+}
+
+function closeStudyAdviceDetail() {
+  showStudyAdviceDetail.value = false
 }
 
 function formatWrongQuestion(item) {
@@ -2056,8 +2270,8 @@ function getMembershipExpiresAt(user) {
 .brand-badge {
   padding: 10rpx 20rpx;
   border-radius: 18rpx;
-  background: #edf4ff;
-  color: #1677ff;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
   font-size: 28rpx;
   line-height: 1.2;
   font-weight: 800;
@@ -2067,8 +2281,8 @@ function getMembershipExpiresAt(user) {
   width: 78rpx;
   height: 78rpx;
   border-radius: 39rpx;
-  background: linear-gradient(180deg, #f2f5fb, #e3e9f4);
-  color: #8b95a8;
+  background: linear-gradient(180deg, var(--gyt-primary-tint, #f2f5fb), var(--gyt-primary-soft, #e3e9f4));
+  color: var(--gyt-primary, #8b95a8);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2107,7 +2321,7 @@ function getMembershipExpiresAt(user) {
   width: 70rpx;
   height: 70rpx;
   border-radius: 22rpx;
-  background: #edf4ff;
+  background: var(--gyt-primary-soft, #edf4ff);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2141,7 +2355,7 @@ function getMembershipExpiresAt(user) {
   position: absolute;
   right: -12rpx;
   top: -8rpx;
-  color: rgba(22, 119, 255, 0.12);
+  color: var(--gyt-primary-soft, rgba(22, 119, 255, 0.12));
   font-size: 118rpx;
   transform: rotate(-10deg);
   z-index: -1;
@@ -2168,7 +2382,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .stat-value {
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 40rpx;
   line-height: 1;
   font-weight: 900;
@@ -2273,9 +2487,9 @@ function getMembershipExpiresAt(user) {
 }
 
 .filter-chip.active {
-  border-color: #2563eb;
-  background: #edf3ff;
-  color: #2563eb;
+  border-color: var(--gyt-primary, #2563eb);
+  background: var(--gyt-primary-soft, #edf3ff);
+  color: var(--gyt-primary, #2563eb);
 }
 
 .list-load-state {
@@ -2334,9 +2548,11 @@ function getMembershipExpiresAt(user) {
   position: relative;
   overflow: hidden;
   padding: 28rpx 24rpx 22rpx;
-  background:
+  background: var(
+    --gyt-panel-bg,
     radial-gradient(circle at 86% 10%, rgba(22, 119, 255, 0.14), transparent 30%),
-    linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+    linear-gradient(135deg, #ffffff 0%, #eef6ff 100%)
+  );
 }
 
 .overview-copy {
@@ -2387,10 +2603,10 @@ function getMembershipExpiresAt(user) {
   align-items: center;
   justify-content: center;
   background: rgba(255, 255, 255, 0.72);
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 56rpx;
   transform: rotate(-5deg);
-  box-shadow: 0 16rpx 34rpx rgba(22, 119, 255, 0.12);
+  box-shadow: 0 16rpx 34rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.12));
 }
 
 .overview-metrics {
@@ -2425,8 +2641,8 @@ function getMembershipExpiresAt(user) {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #1677ff;
-  background: #eef5ff;
+  color: var(--gyt-primary, #1677ff);
+  background: var(--gyt-primary-soft, #eef5ff);
   font-size: 28rpx;
   font-weight: 900;
 }
@@ -2448,7 +2664,7 @@ function getMembershipExpiresAt(user) {
 
 .metric-value {
   margin-top: 4rpx;
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 38rpx;
   line-height: 1;
   font-weight: 950;
@@ -2486,13 +2702,13 @@ function getMembershipExpiresAt(user) {
   height: 124rpx;
   flex: 0 0 124rpx;
   border-radius: 50%;
-  border: 12rpx solid #1677ff;
+  border: 12rpx solid var(--gyt-primary, #1677ff);
   background: #ffffff;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  box-shadow: inset 0 0 0 8rpx #eef5ff;
+  box-shadow: inset 0 0 0 8rpx var(--gyt-primary-soft, #eef5ff);
 }
 
 .ring-wrap.orange {
@@ -2506,7 +2722,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .ring-score {
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 30rpx;
   line-height: 1;
   font-weight: 950;
@@ -2572,8 +2788,8 @@ function getMembershipExpiresAt(user) {
 .subject-status {
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
-  color: #1677ff;
-  background: #eef5ff;
+  color: var(--gyt-primary, #1677ff);
+  background: var(--gyt-primary-soft, #eef5ff);
   font-size: 20rpx;
   font-weight: 900;
   white-space: nowrap;
@@ -2621,7 +2837,7 @@ function getMembershipExpiresAt(user) {
 .progress-fill {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(90deg, #1677ff, #63a4ff);
+  background: var(--gyt-primary-gradient, linear-gradient(90deg, #1677ff, #63a4ff));
 }
 
 .progress-fill.orange {
@@ -2653,7 +2869,7 @@ function getMembershipExpiresAt(user) {
   width: 150rpx;
   height: 150rpx;
   border-radius: 38rpx;
-  background: linear-gradient(135deg, rgba(22, 119, 255, 0.12), rgba(22, 119, 255, 0.02));
+  background: var(--gyt-primary-soft, linear-gradient(135deg, rgba(22, 119, 255, 0.12), rgba(22, 119, 255, 0.02)));
   transform: rotate(-10deg);
 }
 
@@ -2699,19 +2915,6 @@ function getMembershipExpiresAt(user) {
   line-height: 1.45;
 }
 
-.advice-pro-btn {
-  margin: 0;
-  padding: 0 18rpx;
-  height: 54rpx;
-  border: 0;
-  border-radius: 999rpx;
-  background: #111827;
-  color: #ffffff;
-  font-size: 21rpx;
-  line-height: 54rpx;
-  font-weight: 900;
-}
-
 .advice-list {
   position: relative;
   z-index: 1;
@@ -2737,12 +2940,34 @@ function getMembershipExpiresAt(user) {
   flex: 0 0 28rpx;
   margin-top: 4rpx;
   border-radius: 50%;
-  background: #1677ff;
+  background: var(--gyt-primary, #1677ff);
   color: #ffffff;
   text-align: center;
   font-size: 18rpx;
   line-height: 28rpx;
   font-weight: 900;
+}
+
+.advice-loading {
+  position: relative;
+  z-index: 1;
+  margin-top: 18rpx;
+}
+
+.advice-detail-btn {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  min-height: 72rpx;
+  margin: 20rpx 0 0;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 22rpx;
+  background: var(--gyt-primary-tint, #f7fbff);
+  color: var(--gyt-primary, #1677ff);
+  font-size: 24rpx;
+  line-height: 72rpx;
+  font-weight: 900;
+  box-shadow: none;
 }
 
 .report-action-btn {
@@ -2753,11 +2978,11 @@ function getMembershipExpiresAt(user) {
   margin-top: 22rpx;
   border: 0;
   border-radius: 24rpx;
-  background: linear-gradient(135deg, #1677ff, #4f86ff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #1677ff, #4f86ff));
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 900;
-  box-shadow: 0 16rpx 28rpx rgba(22, 119, 255, 0.18);
+  box-shadow: 0 16rpx 28rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
 }
 
 .training-sheet-mask {
@@ -2853,7 +3078,7 @@ function getMembershipExpiresAt(user) {
   gap: 16rpx;
   padding: 20rpx;
   border-radius: 20rpx;
-  background: #eef5ff;
+  background: var(--gyt-primary-soft, #eef5ff);
 }
 
 .smart-tip-icon {
@@ -2861,7 +3086,7 @@ function getMembershipExpiresAt(user) {
   height: 42rpx;
   flex: 0 0 42rpx;
   border-radius: 50%;
-  background: linear-gradient(135deg, #3478f6, #7ca7ff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #7ca7ff));
   color: #ffffff;
   text-align: center;
   font-size: 24rpx;
@@ -2901,7 +3126,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .recommend-value {
-  color: #3478f6;
+  color: var(--gyt-primary, #3478f6);
   font-weight: 950;
 }
 
@@ -2945,10 +3170,10 @@ function getMembershipExpiresAt(user) {
 }
 
 .difficulty-chip.active {
-  border-color: #3478f6;
-  background: #eef5ff;
-  color: #3478f6;
-  box-shadow: 0 8rpx 20rpx rgba(52, 120, 246, 0.12);
+  border-color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary-soft, #eef5ff);
+  color: var(--gyt-primary, #3478f6);
+  box-shadow: 0 8rpx 20rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
 }
 
 .manual-count-head {
@@ -2956,7 +3181,7 @@ function getMembershipExpiresAt(user) {
 }
 
 .manual-count-value {
-  color: #3478f6;
+  color: var(--gyt-primary, #3478f6);
   font-size: 24rpx;
   font-weight: 950;
 }
@@ -3000,9 +3225,9 @@ function getMembershipExpiresAt(user) {
 }
 
 .sheet-generate-btn {
-  background: linear-gradient(135deg, #3478f6, #4f86ff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #4f86ff));
   color: #ffffff;
-  box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
+  box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.22));
 }
 
 .sheet-generate-btn[disabled] {
@@ -3039,10 +3264,10 @@ function getMembershipExpiresAt(user) {
 }
 
 .subject-chip.active {
-  border-color: #3478f6;
-  background: #eef5ff;
-  color: #3478f6;
-  box-shadow: 0 10rpx 24rpx rgba(52, 120, 246, 0.12);
+  border-color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary-soft, #eef5ff);
+  color: var(--gyt-primary, #3478f6);
+  box-shadow: 0 10rpx 24rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
 }
 
 .generating-modal-mask {
@@ -3077,7 +3302,7 @@ function getMembershipExpiresAt(user) {
   height: 78rpx;
   margin: 0 auto 22rpx;
   border: 6rpx solid #e8f0ff;
-  border-top-color: #3478f6;
+  border-top-color: var(--gyt-primary, #3478f6);
   border-radius: 50%;
   animation: generating-spin 0.9s linear infinite;
 }
@@ -3089,7 +3314,7 @@ function getMembershipExpiresAt(user) {
   width: 14rpx;
   height: 14rpx;
   border-radius: 50%;
-  background: #3478f6;
+  background: var(--gyt-primary, #3478f6);
 }
 
 .generating-title {
@@ -3109,7 +3334,7 @@ function getMembershipExpiresAt(user) {
 
 .generating-countdown {
   margin-top: 22rpx;
-  color: #3478f6;
+  color: var(--gyt-primary, #3478f6);
   font-size: 26rpx;
   line-height: 1.3;
   font-weight: 950;
@@ -3126,7 +3351,7 @@ function getMembershipExpiresAt(user) {
 .generating-progress-bar {
   height: 100%;
   border-radius: inherit;
-  background: linear-gradient(135deg, #3478f6, #75a2ff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #75a2ff));
   transition: width 0.25s ease;
 }
 
@@ -3147,6 +3372,168 @@ function getMembershipExpiresAt(user) {
   to {
     transform: rotate(360deg);
   }
+}
+
+.advice-detail-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.advice-detail-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 88vh;
+  padding: 16rpx 36rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.18);
+  box-sizing: border-box;
+  overflow: hidden;
+}
+
+.advice-detail-handle {
+  width: 74rpx;
+  height: 8rpx;
+  margin: 0 auto 18rpx;
+  border-radius: 999rpx;
+  background: #d8deea;
+}
+
+.advice-detail-close {
+  position: absolute;
+  right: 26rpx;
+  top: 22rpx;
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f3f6fb;
+  color: #98a2b3;
+  font-size: 34rpx;
+  line-height: 58rpx;
+  font-weight: 900;
+}
+
+.advice-detail-head {
+  padding: 0 64rpx 18rpx;
+  text-align: center;
+}
+
+.advice-detail-title {
+  color: #101828;
+  font-size: 34rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.advice-detail-subtitle {
+  margin-top: 10rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.advice-detail-scroll {
+  max-height: 60vh;
+}
+
+.advice-subject-card {
+  margin-bottom: 18rpx;
+  padding: 24rpx;
+  border: 2rpx solid #e7eefb;
+  border-radius: 26rpx;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.advice-subject-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.advice-subject-title {
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.advice-subject-meta {
+  margin-top: 6rpx;
+  color: #667085;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.advice-subject-badge {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft, #eef5ff);
+  color: var(--gyt-primary, #1677ff);
+  font-size: 20rpx;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.detail-block {
+  margin-top: 18rpx;
+}
+
+.detail-block-title {
+  color: #1f2a44;
+  font-size: 23rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.detail-line {
+  position: relative;
+  margin-top: 10rpx;
+  padding-left: 22rpx;
+  color: #52627a;
+  font-size: 22rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.detail-line::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: 15rpx;
+  width: 8rpx;
+  height: 8rpx;
+  border-radius: 50%;
+  background: var(--gyt-primary, #3478f6);
+}
+
+.detail-line.strong {
+  color: #1f2a44;
+}
+
+.advice-detail-action {
+  width: 100%;
+  min-height: 82rpx;
+  margin-top: 18rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #1677ff, #4f86ff));
+  color: #ffffff;
+  font-size: 26rpx;
+  line-height: 82rpx;
+  font-weight: 900;
+  box-shadow: 0 16rpx 28rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
 }
 
 .pro-modal-mask {
@@ -3265,8 +3652,8 @@ function getMembershipExpiresAt(user) {
 }
 
 .pro-benefit-icon.blue {
-  color: #3478f6;
-  background: #eef5ff;
+  color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary-soft, #eef5ff);
 }
 
 .pro-benefit-icon.green {
@@ -3329,9 +3716,9 @@ function getMembershipExpiresAt(user) {
 }
 
 .pro-open-btn {
-  background: linear-gradient(135deg, #3478f6, #4f86ff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #4f86ff));
   color: #ffffff;
-  box-shadow: 0 16rpx 30rpx rgba(52, 120, 246, 0.22);
+  box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.22));
 }
 
 .feedback-modal-mask {
@@ -3406,6 +3793,155 @@ function getMembershipExpiresAt(user) {
   max-height: 70vh;
   padding-bottom: 4rpx;
   box-sizing: border-box;
+}
+
+.theme-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 86;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.36);
+}
+
+.theme-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 86vh;
+  padding: 16rpx 34rpx calc(env(safe-area-inset-bottom) + 30rpx);
+  border-radius: 48rpx 48rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
+  box-sizing: border-box;
+}
+
+.theme-modal-handle {
+  width: 74rpx;
+  height: 8rpx;
+  margin: 0 auto 18rpx;
+  border-radius: 999rpx;
+  background: #d8deea;
+}
+
+.theme-modal-close {
+  position: absolute;
+  top: 20rpx;
+  right: 28rpx;
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f5f7fb;
+  color: #8a95a8;
+  font-size: 36rpx;
+  line-height: 56rpx;
+  font-weight: 800;
+}
+
+.theme-modal-head {
+  padding: 0 58rpx 18rpx;
+  text-align: center;
+}
+
+.theme-modal-title {
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.theme-modal-subtitle {
+  margin-top: 10rpx;
+  color: #8a95a8;
+  font-size: 23rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.theme-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.theme-option {
+  min-height: 112rpx;
+  padding: 16rpx 18rpx;
+  border: 2rpx solid #edf1f7;
+  border-radius: 24rpx;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  box-shadow: 0 8rpx 24rpx rgba(25, 48, 89, 0.04);
+}
+
+.theme-option.active {
+  border-color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary-tint, #f7fbff);
+}
+
+.theme-preview {
+  width: 96rpx;
+  height: 72rpx;
+  flex: 0 0 96rpx;
+  border-radius: 22rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.76);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  box-shadow: inset 0 0 0 2rpx rgba(255, 255, 255, 0.45);
+}
+
+.theme-preview-dot {
+  width: 24rpx;
+  height: 24rpx;
+  border-radius: 999rpx;
+}
+
+.theme-preview-line {
+  width: 34rpx;
+  height: 12rpx;
+  border-radius: 999rpx;
+}
+
+.theme-option-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.theme-option-name {
+  color: #172033;
+  font-size: 26rpx;
+  line-height: 1.35;
+  font-weight: 950;
+}
+
+.theme-option-desc {
+  margin-top: 6rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.theme-option-check {
+  width: 42rpx;
+  height: 42rpx;
+  flex: 0 0 42rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary, #3478f6);
+  color: #ffffff;
+  text-align: center;
+  font-size: 25rpx;
+  line-height: 42rpx;
+  font-weight: 950;
 }
 
 .mistake-page-head {
@@ -3984,16 +4520,18 @@ function getMembershipExpiresAt(user) {
 
 .account-card.guest {
   align-items: flex-start;
-  background:
+  background: var(
+    --gyt-panel-bg,
     radial-gradient(circle at 94% 20%, rgba(22, 119, 255, 0.1), transparent 30%),
-    linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%);
+    linear-gradient(135deg, #ffffff 0%, #f3f7ff 100%)
+  );
 }
 
 .account-avatar {
   width: 96rpx;
   height: 96rpx;
   border-radius: 999rpx;
-  background: linear-gradient(135deg, #4f7dff, #87aaff);
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #4f7dff, #87aaff));
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -4001,7 +4539,7 @@ function getMembershipExpiresAt(user) {
   flex-shrink: 0;
   font-size: 36rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 26rpx rgba(37, 99, 235, 0.22);
+  box-shadow: 0 14rpx 26rpx var(--gyt-primary-shadow, rgba(37, 99, 235, 0.22));
 }
 
 .account-main {
@@ -4025,8 +4563,8 @@ function getMembershipExpiresAt(user) {
 .account-badge {
   padding: 6rpx 12rpx;
   border-radius: 14rpx;
-  background: #edf4ff;
-  color: #1677ff;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
   font-size: 21rpx;
   font-weight: 900;
 }
@@ -4051,10 +4589,10 @@ function getMembershipExpiresAt(user) {
   min-height: 54rpx;
   margin: 0;
   padding: 0 18rpx;
-  border: 2rpx solid #dbe7ff;
+  border: 2rpx solid var(--gyt-primary-border, #dbe7ff);
   border-radius: 18rpx;
   background: #ffffff;
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 23rpx;
   font-weight: 900;
   line-height: 54rpx;
@@ -4062,9 +4600,9 @@ function getMembershipExpiresAt(user) {
 
 .exam-pill.active {
   color: #ffffff;
-  border-color: #1677ff;
-  background: #1677ff;
-  box-shadow: 0 8rpx 18rpx rgba(22, 119, 255, 0.18);
+  border-color: var(--gyt-primary, #1677ff);
+  background: var(--gyt-primary, #1677ff);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
 }
 
 .account-login-btn {
@@ -4073,12 +4611,12 @@ function getMembershipExpiresAt(user) {
   margin: 18rpx 0 0;
   border: 0;
   border-radius: 18rpx;
-  background: #1677ff;
+  background: var(--gyt-primary, #1677ff);
   color: #ffffff;
   font-size: 26rpx;
   line-height: 72rpx;
   font-weight: 900;
-  box-shadow: 0 12rpx 26rpx rgba(22, 119, 255, 0.18);
+  box-shadow: 0 12rpx 26rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
 }
 
 .account-arrow,
@@ -4092,9 +4630,11 @@ function getMembershipExpiresAt(user) {
   position: relative;
   overflow: hidden;
   padding: 30rpx 24rpx 24rpx;
-  background:
+  background: var(
+    --gyt-panel-bg,
     radial-gradient(circle at 82% 26%, rgba(22, 119, 255, 0.16), transparent 28%),
-    linear-gradient(135deg, #ffffff 0%, #eef5ff 100%);
+    linear-gradient(135deg, #ffffff 0%, #eef5ff 100%)
+  );
 }
 
 .member-card.active {
@@ -4114,8 +4654,8 @@ function getMembershipExpiresAt(user) {
   margin-bottom: 12rpx;
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
-  background: rgba(22, 119, 255, 0.1);
-  color: #1677ff;
+  background: var(--gyt-primary-soft, rgba(22, 119, 255, 0.1));
+  color: var(--gyt-primary, #1677ff);
   font-size: 21rpx;
   line-height: 1.2;
   font-weight: 900;
@@ -4147,7 +4687,7 @@ function getMembershipExpiresAt(user) {
   min-height: 72rpx;
   border: 0;
   border-radius: 18rpx;
-  background: #1677ff;
+  background: var(--gyt-primary, #1677ff);
   color: #ffffff;
   font-size: 26rpx;
   font-weight: 900;
@@ -4161,7 +4701,7 @@ function getMembershipExpiresAt(user) {
   width: 150rpx;
   height: 150rpx;
   border-radius: 42rpx;
-  background: linear-gradient(145deg, #72a5ff, #1677ff);
+  background: var(--gyt-primary-gradient, linear-gradient(145deg, #72a5ff, #1677ff));
   color: #ffffff;
   display: flex;
   align-items: center;
@@ -4169,7 +4709,7 @@ function getMembershipExpiresAt(user) {
   font-size: 82rpx;
   font-weight: 900;
   transform: rotate(-8deg);
-  box-shadow: 0 18rpx 36rpx rgba(22, 119, 255, 0.28);
+  box-shadow: 0 18rpx 36rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.28));
   opacity: 0.92;
 }
 
@@ -4203,7 +4743,7 @@ function getMembershipExpiresAt(user) {
   margin: 0 auto 10rpx;
   border-radius: 18rpx;
   background: #ffffff;
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -4317,8 +4857,8 @@ function getMembershipExpiresAt(user) {
   width: 58rpx;
   height: 58rpx;
   border-radius: 18rpx;
-  background: #edf4ff;
-  color: #1677ff;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
   display: flex;
   align-items: center;
   justify-content: center;

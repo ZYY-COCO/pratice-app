@@ -1,8 +1,10 @@
 <script>
 import { enforceAuthOnCurrentPage } from './utils/routeGuard'
+import { applyThemeByKey, getStoredThemeKey } from './utils/theme'
 
 export default {
   onLaunch() {
+    applyThemeByKey(getStoredThemeKey())
     const examCode = uni.getStorageSync('examCode')
     if (!examCode) {
       uni.setStorageSync('examCode', 'Z001')
@@ -22,9 +24,11 @@ page {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
-  background:
+  background: var(
+    --gyt-page-bg,
     radial-gradient(circle at top right, rgba(22, 119, 255, 0.08), transparent 24%),
-    linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
+    linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%)
+  );
   color: #172033;
   font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
 }
@@ -66,11 +70,11 @@ page {
   width: 100%;
   min-height: 102rpx;
   border-radius: 28rpx;
-  background: #1677ff;
+  background: var(--gyt-primary, #1677ff);
   color: #ffffff;
   font-size: 32rpx;
   font-weight: 900;
-  box-shadow: 0 14rpx 28rpx rgba(37, 99, 235, 0.18);
+  box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow, rgba(37, 99, 235, 0.18));
 }
 
 .ghost-button {
@@ -82,7 +86,7 @@ page {
   border-radius: 28rpx;
   border: 2rpx solid #e6ebf5;
   background: #ffffff;
-  color: #1677ff;
+  color: var(--gyt-primary, #1677ff);
   font-size: 30rpx;
   font-weight: 800;
 }
