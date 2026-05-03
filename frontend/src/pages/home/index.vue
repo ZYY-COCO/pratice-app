@@ -1328,7 +1328,7 @@ function openMockExamIntro() {
   const thirdSubject = mockExamThirdSubject.value
   uni.showModal({
     title: '模拟测试说明',
-    content: `本次为 105 分轻量模拟测试，共 55 题：中华文化常识 20 题、英语语言知识 20 题、${thirdSubject} 15 题。不包含中华文化阅读理解和英语阅读理解题型，完成后会生成分数与复盘。`,
+    content: `本次为 105 分轻量模拟测试，共 55 题：中华文化常识 20 题、英语语言知识 20 题、${thirdSubject} 15 题。不包含中华文化阅读理解和英语阅读理解题型，按标准卷难度组卷：基础 35%、中等 50%、较难 15%，完成后会生成分数与复盘。`,
     confirmText: '开始测试',
     cancelText: '稍后再说',
     success(result) {

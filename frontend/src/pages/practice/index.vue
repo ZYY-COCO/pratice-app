@@ -310,6 +310,11 @@ import { getSubjectTree } from '../../utils/knowledgeTree'
 
 const MOCK_EXAM_TOTAL_SCORE = 105
 const MOCK_EXAM_TOTAL_COUNT = 55
+const MOCK_EXAM_DIFFICULTY_PROFILE = [
+  { key: 'basic', label: '基础', ratio: 0.35 },
+  { key: 'medium', label: '中等', ratio: 0.5 },
+  { key: 'hard', label: '较难', ratio: 0.15 }
+]
 
 const practiceModeOptions = [
   {
@@ -656,6 +661,7 @@ function buildApiQuestion(apiQuestion, meta) {
     subject: apiQuestion.subject,
     module: apiQuestion.module,
     submodule: apiQuestion.submodule,
+    difficulty: apiQuestion.difficulty,
     mockSection: meta.mockSection || '',
     mockSectionKey: meta.mockSectionKey || '',
     pointValue: meta.pointValue || 1
@@ -699,6 +705,77 @@ function getMockExamConfig(code) {
 function isReadingQuestion(item) {
   const text = [item.module, item.submodule, item.stem].filter(Boolean).join(' ')
   return text.includes('阅读理解') || text.includes('阅读')
+}
+
+function getDifficultyBand(item) {
+  const value = item?.difficulty
+  if (typeof value === 'number') {
+    if (value <= 2) return 'basic'
+    if (value === 3) return 'medium'
+    return 'hard'
+  }
+
+  const text = String(value || '').trim()
+  if (text.includes('较难') || text.includes('困难') || text.includes('挑战')) return 'hard'
+  if (text.includes('中等') || text.includes('标准') || text.includes('提升')) return 'medium'
+  if (text.includes('基础') || text.includes('简单') || text.includes('巩固')) return 'basic'
+  return 'medium'
+}
+
+function getMockDifficultyTargets(total) {
+  const targets = MOCK_EXAM_DIFFICULTY_PROFILE.map((item) => {
+    const exact = item.ratio * total
+    return {
+      ...item,
+      count: Math.floor(exact),
+      remainder: exact - Math.floor(exact)
+    }
+  })
+  let remaining = total - targets.reduce((sum, item) => sum + item.count, 0)
+  const byRemainder = [...targets].sort((a, b) => b.remainder - a.remainder)
+
+  for (let index = 0; remaining > 0; index = (index + 1) % byRemainder.length) {
+    byRemainder[index].count += 1
+    remaining -= 1
+  }
+
+  return targets
+}
+
+function selectStandardMockExamItems(items, count) {
+  const shuffled = shuffleArray(items)
+  const grouped = {
+    basic: [],
+    medium: [],
+    hard: []
+  }
+
+  shuffled.forEach((item) => {
+    grouped[getDifficultyBand(item)].push(item)
+  })
+
+  const selected = []
+  const usedIds = new Set()
+  const targets = getMockDifficultyTargets(count)
+
+  targets.forEach((target) => {
+    const group = grouped[target.key] || []
+    while (selected.length < count && group.length && selected.filter((item) => getDifficultyBand(item) === target.key).length < target.count) {
+      const item = group.shift()
+      if (!item || usedIds.has(item.id)) continue
+      selected.push(item)
+      usedIds.add(item.id)
+    }
+  })
+
+  for (const item of shuffled) {
+    if (selected.length >= count) break
+    if (!item || usedIds.has(item.id)) continue
+    selected.push(item)
+    usedIds.add(item.id)
+  }
+
+  return shuffleArray(selected).slice(0, count)
 }
 
 function buildMockPool() {
@@ -992,8 +1069,7 @@ async function fetchMockExamSectionPool(section, usedIds) {
     .filter((item) => !usedIds.has(item.id))
     .filter(section.include)
 
-  return shuffleArray(items)
-    .slice(0, section.count)
+  return selectStandardMockExamItems(items, section.count)
     .map((item) => {
       usedIds.add(item.id)
       return buildApiQuestion(item, {
