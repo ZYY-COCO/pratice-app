@@ -50,6 +50,22 @@
           />
         </view>
 
+        <view class="mock-exam-card" @tap="openMockExamIntro">
+          <view class="mock-exam-main">
+            <view class="mock-exam-icon">卷</view>
+            <view class="mock-exam-copy">
+              <view class="mock-exam-title">模拟测试</view>
+              <view class="mock-exam-sub">55 题 / 105 分，按 {{ examCode }} 轻量组卷</view>
+            </view>
+          </view>
+          <view class="mock-exam-meta">
+            <text>中华文化常识</text>
+            <text>英语语言知识</text>
+            <text>{{ mockExamThirdSubject }}</text>
+          </view>
+          <view class="mock-exam-arrow">›</view>
+        </view>
+
       </view>
     </template>
 
@@ -919,6 +935,7 @@ const homeStats = computed(() => {
 })
 
 const moduleCards = computed(() => getHomeModules(examCode.value))
+const mockExamThirdSubject = computed(() => (examCode.value === 'Z002' ? '数学基础' : '逻辑推理'))
 const trainingSubjectOptions = computed(() => {
   const option = EXAM_OPTIONS.find((item) => item.code === examCode.value) || EXAM_OPTIONS[0]
   return (option?.subjects || []).map((subject) => ({
@@ -1305,6 +1322,23 @@ async function refreshMembershipStatus() {
 function goModule(subject) {
   uni.setStorageSync('subject', subject)
   uni.navigateTo({ url: `/pages/practice/index?subject=${encodeURIComponent(subject)}` })
+}
+
+function openMockExamIntro() {
+  const thirdSubject = mockExamThirdSubject.value
+  uni.showModal({
+    title: '模拟测试说明',
+    content: `本次为 105 分轻量模拟测试，共 55 题：中华文化常识 20 题、英语语言知识 20 题、${thirdSubject} 15 题。不包含中华文化阅读理解和英语阅读理解题型，完成后会生成分数与复盘。`,
+    confirmText: '开始测试',
+    cancelText: '稍后再说',
+    success(result) {
+      if (!result.confirm) return
+      uni.setStorageSync('subject', thirdSubject)
+      uni.navigateTo({
+        url: `/pages/practice/index?mock_exam=1&exam_code=${encodeURIComponent(examCode.value)}`
+      })
+    }
+  })
 }
 
 function goPractice() {
@@ -2409,6 +2443,82 @@ function getMembershipExpiresAt(user) {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
+}
+
+.mock-exam-card {
+  position: relative;
+  margin-top: 18rpx;
+  padding: 26rpx 28rpx;
+  border-radius: 28rpx;
+  background:
+    linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.96)),
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 45%);
+  border: 2rpx solid var(--gyt-primary-border);
+  box-shadow: 0 16rpx 34rpx rgba(20, 31, 66, 0.08);
+}
+
+.mock-exam-main {
+  display: flex;
+  align-items: center;
+  gap: 20rpx;
+  padding-right: 46rpx;
+}
+
+.mock-exam-icon {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 24rpx;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-shadow: 0 12rpx 26rpx var(--gyt-primary-shadow);
+}
+
+.mock-exam-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.mock-exam-title {
+  color: #172033;
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.mock-exam-sub {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.45;
+}
+
+.mock-exam-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+  margin-top: 20rpx;
+}
+
+.mock-exam-meta text {
+  padding: 8rpx 12rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-tint);
+  color: var(--gyt-primary);
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.mock-exam-arrow {
+  position: absolute;
+  right: 28rpx;
+  top: 34rpx;
+  color: var(--gyt-primary);
+  font-size: 44rpx;
+  font-weight: 700;
 }
 
 .state-box {

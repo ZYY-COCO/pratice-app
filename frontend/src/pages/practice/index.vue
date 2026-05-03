@@ -4,7 +4,7 @@
       <button class="back-btn" @tap="goBack">‹</button>
       <view class="top-copy">
         <view class="top-title">{{ pageTitle }}</view>
-        <view class="top-sub">{{ examCode }} / {{ subject }}</view>
+        <view class="top-sub">{{ topSubtitle }}</view>
       </view>
     </view>
 
@@ -130,10 +130,27 @@
       </template>
 
       <template v-else-if="summaryMode">
-        <view class="summary-card">
-          <view class="summary-kicker">综合刷题结果</view>
-          <view class="summary-score">{{ correctCount }} / {{ reviewResults.length }}</view>
-          <view class="summary-sub">绿色代表答对，红色代表答错，橙色代表网络回包异常但不会阻断结果页。点击题号可查看对应解析。</view>
+        <view class="summary-card" :class="{ 'mock-summary-card': mockExamMode }">
+          <view class="summary-kicker">{{ mockExamMode ? '模拟测试成绩' : '综合刷题结果' }}</view>
+          <view class="summary-score">{{ mockExamMode ? `${mockExamScore} / ${mockExamTotalScore}` : `${correctCount} / ${reviewResults.length}` }}</view>
+          <view class="summary-sub">
+            {{ mockExamMode ? mockExamSummaryText : '绿色代表答对，红色代表答错，橙色代表网络回包异常但不会阻断结果页。点击题号可查看对应解析。' }}
+          </view>
+        </view>
+
+        <view v-if="mockExamMode" class="mock-section-card">
+          <view class="mock-section-title">分项得分</view>
+          <view
+            v-for="item in mockExamSectionScores"
+            :key="item.key"
+            class="mock-section-row"
+          >
+            <view>
+              <view class="mock-section-name">{{ item.label }}</view>
+              <view class="mock-section-sub">答对 {{ item.correct }} / {{ item.totalQuestions }} 题</view>
+            </view>
+            <view class="mock-section-score">{{ item.score }} / {{ item.totalScore }}</view>
+          </view>
         </view>
 
         <view class="summary-grid">
@@ -150,7 +167,7 @@
 
         <view class="summary-actions">
           <button class="next-btn" @tap="openReviewQuestion(0)">从第 1 题开始看解析</button>
-          <button class="ghost-button back-tags" @tap="resetToTags">返回刷题范围</button>
+          <button class="ghost-button back-tags" @tap="handleSummaryBack">{{ mockExamMode ? '返回首页' : '返回刷题范围' }}</button>
         </view>
       </template>
 
@@ -158,6 +175,13 @@
       <view class="quiz-shell">
         <view class="quiz-top">
           <view class="badge">{{ quizProgressText }}</view>
+          <button
+            v-if="showQuestionSheetEntry"
+            class="question-map-btn"
+            @tap="openAnswerSheet"
+          >
+            题卡
+          </button>
           <view class="timer">⏱ {{ formattedTimer }}</view>
         </view>
 
@@ -230,9 +254,43 @@
         </template>
       </view>
 
-      <button class="ghost-button back-tags" @tap="resetToTags">返回刷题范围</button>
+      <button class="ghost-button back-tags" @tap="mockExamMode ? confirmExitPractice() : resetToTags">
+        {{ mockExamMode ? '退出模拟测试' : '返回刷题范围' }}
+      </button>
       </template>
     </template>
+
+    <view v-if="showAnswerSheet" class="answer-sheet-mask" @tap="closeAnswerSheet">
+      <view class="answer-sheet" @tap.stop>
+        <view class="sheet-handle"></view>
+        <view class="sheet-title">答题卡</view>
+        <view class="sheet-subtitle">蓝色为已作答，白色为当前题，灰色为未作答。</view>
+
+        <view
+          v-for="section in answerSheetSections"
+          :key="section.label"
+          class="sheet-section"
+        >
+          <view class="sheet-section-head">
+            <text>{{ section.label }}</text>
+            <text>{{ section.answered }} / {{ section.items.length }}</text>
+          </view>
+          <view class="sheet-grid">
+            <button
+              v-for="item in section.items"
+              :key="item.index"
+              class="sheet-number"
+              :class="{ answered: item.answered, current: item.index === currentQuestionIndex }"
+              @tap="jumpToQuestion(item.index)"
+            >
+              {{ item.index + 1 }}
+            </button>
+          </view>
+        </view>
+
+        <button class="sheet-close-btn" @tap="closeAnswerSheet">继续答题</button>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -249,6 +307,9 @@ import QuestionOption from '../../components/QuestionOption.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { getSubjectTree } from '../../utils/knowledgeTree'
+
+const MOCK_EXAM_TOTAL_SCORE = 105
+const MOCK_EXAM_TOTAL_COUNT = 55
 
 const practiceModeOptions = [
   {
@@ -300,6 +361,8 @@ const summaryMode = ref(false)
 const aiSummaryMode = ref(false)
 const aiSummary = ref(null)
 const aiReviewResults = ref([])
+const mockExamMode = ref(false)
+const showAnswerSheet = ref(false)
 
 const questionCache = new Map()
 let timerId = null
@@ -329,6 +392,9 @@ const canFavoriteCurrent = computed(() => {
 })
 const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
 const pageTitle = computed(() => {
+  if (mockExamMode.value) {
+    return '模拟测试'
+  }
   if (isAiTrainingMode.value) {
     return 'AI 专项出题'
   }
@@ -337,6 +403,7 @@ const pageTitle = computed(() => {
   }
   return practiceMode.value === 'comprehensive' ? '综合刷题' : '专项刷题'
 })
+const topSubtitle = computed(() => (mockExamMode.value ? `${examCode.value} / 105分轻量模拟` : `${examCode.value} / ${subject.value}`))
 const dataModeLabel = computed(() => (hasAccessToken.value ? '将使用真实题库' : '当前使用 mock 题目'))
 const selectedQuestionCount = computed(() => selectedTags.value.reduce((sum, tag) => sum + getCount(tag), 0))
 const stickyTitle = computed(() => {
@@ -357,12 +424,22 @@ const quizProgressText = computed(() => {
   return `${prefix} ${currentQuestionIndex.value + 1} / ${questionPool.value.length}`
 })
 const questionBadgeText = computed(() => {
+  if (mockExamMode.value) {
+    return reviewMode.value
+      ? `${currentQuestion.value.mockSection || '模拟测试'} · 解析回顾`
+      : `${currentQuestion.value.mockSection || '模拟测试'} · ${currentQuestion.value.pointValue || 1}分题`
+  }
   if (practiceMode.value === 'comprehensive') {
     return reviewMode.value ? '综合刷题 · 解析回顾' : '综合刷题 · 隐藏知识点'
   }
   return `${currentQuestion.value.year} · ${currentQuestion.value.badge}`
 })
 const questionHelperText = computed(() => {
+  if (mockExamMode.value) {
+    return reviewMode.value
+      ? '本题答案和解析已公布，可对照复盘。'
+      : '本题属于 105 分轻量模拟测试，完成整卷后统一公布答案与解析。'
+  }
   if (practiceMode.value === 'comprehensive') {
     return reviewMode.value ? '答案和解析已公布，可逐题回看。' : '本题知识点已隐藏，完成本轮后统一公布答案。'
   }
@@ -373,9 +450,51 @@ const primaryButtonText = computed(() => {
     if (submitting.value) {
       return '正在提交整卷...'
     }
-    return hasNextQuestion.value ? '下一题' : '提交整卷并查看答案'
+    return hasNextQuestion.value ? '下一题' : (mockExamMode.value ? '交卷并查看成绩' : '提交整卷并查看答案')
   }
   return submitted.value ? '解析已展开' : submitting.value ? '正在判题...' : '提交并查看解析'
+})
+const showQuestionSheetEntry = computed(() => mockExamMode.value || practiceMode.value === 'comprehensive')
+const mockExamTotalScore = computed(() => MOCK_EXAM_TOTAL_SCORE)
+const mockExamScore = computed(() =>
+  reviewResults.value.reduce((sum, item) => sum + (item.isCorrect ? Number(item.question?.pointValue || 0) : 0), 0)
+)
+const mockExamSummaryText = computed(() => {
+  const total = reviewResults.value.length || questionPool.value.length || MOCK_EXAM_TOTAL_COUNT
+  return `本次答对 ${correctCount.value} / ${total} 题，用时 ${formattedTimer.value}。建议先复盘红色题号，再按薄弱模块做专项训练。`
+})
+const mockExamSectionScores = computed(() => {
+  const config = getMockExamConfig(examCode.value)
+  return config.map((section) => {
+    const items = reviewResults.value.filter((item) => item.question?.mockSectionKey === section.key)
+    const correct = items.filter((item) => item.isCorrect).length
+    return {
+      key: section.key,
+      label: section.label,
+      correct,
+      totalQuestions: section.count,
+      score: correct * section.pointValue,
+      totalScore: section.count * section.pointValue
+    }
+  })
+})
+const answerSheetSections = computed(() => {
+  if (!questionPool.value.length) return []
+  const groups = []
+  questionPool.value.forEach((question, index) => {
+    const label = mockExamMode.value ? question.mockSection || '模拟测试' : '本轮题目'
+    let group = groups.find((item) => item.label === label)
+    if (!group) {
+      group = { label, items: [] }
+      groups.push(group)
+    }
+    const answered = isQuestionAnswered(question)
+    group.items.push({ index, answered })
+  })
+  return groups.map((group) => ({
+    ...group,
+    answered: group.items.filter((item) => item.answered).length
+  }))
 })
 
 const formattedTimer = computed(() => {
@@ -385,7 +504,7 @@ const formattedTimer = computed(() => {
 })
 
 watch(subject, () => {
-  if (isAiTrainingMode.value) {
+  if (isAiTrainingMode.value || mockExamMode.value) {
     return
   }
   openMap.value = buildOpenMap(getSubjectTree(subject.value))
@@ -396,6 +515,19 @@ watch(subject, () => {
 
 onLoad((options) => {
   syncAccessToken()
+  if (options?.mock_exam === '1') {
+    const nextExamCode = decodeURIComponent(options.exam_code || examCode.value || 'Z001')
+    examCode.value = nextExamCode
+    subject.value = getMockExamThirdSubject(nextExamCode)
+    uni.setStorageSync('examCode', nextExamCode)
+    uni.setStorageSync('subject', subject.value)
+    mockExamMode.value = true
+    practiceMode.value = 'comprehensive'
+    selectedQuestionSize.value = MOCK_EXAM_TOTAL_COUNT
+    openMap.value = buildOpenMap(getSubjectTree(subject.value))
+    startMockExam()
+    return
+  }
   if (options?.subject) {
     subject.value = decodeURIComponent(options.subject)
     uni.setStorageSync('subject', subject.value)
@@ -521,9 +653,52 @@ function buildApiQuestion(apiQuestion, meta) {
     explanation: '',
     autoTag: '',
     questionId: apiQuestion.id,
+    subject: apiQuestion.subject,
     module: apiQuestion.module,
-    submodule: apiQuestion.submodule
+    submodule: apiQuestion.submodule,
+    mockSection: meta.mockSection || '',
+    mockSectionKey: meta.mockSectionKey || '',
+    pointValue: meta.pointValue || 1
   }
+}
+
+function getMockExamThirdSubject(code) {
+  return code === 'Z002' ? '数学基础' : '逻辑推理'
+}
+
+function getMockExamConfig(code) {
+  const thirdSubject = getMockExamThirdSubject(code)
+  return [
+    {
+      key: 'culture',
+      label: '中华文化常识',
+      subject: '中华文化',
+      count: 20,
+      pointValue: 2,
+      include: (item) => !isReadingQuestion(item)
+    },
+    {
+      key: 'english',
+      label: '英语语言知识',
+      subject: '英语运用',
+      count: 20,
+      pointValue: 1,
+      include: (item) => item.module === '语言知识' && !isReadingQuestion(item)
+    },
+    {
+      key: 'third',
+      label: thirdSubject,
+      subject: thirdSubject,
+      count: 15,
+      pointValue: 3,
+      include: () => true
+    }
+  ]
+}
+
+function isReadingQuestion(item) {
+  const text = [item.module, item.submodule, item.stem].filter(Boolean).join(' ')
+  return text.includes('阅读理解') || text.includes('阅读')
 }
 
 function buildMockPool() {
@@ -632,12 +807,22 @@ function returnToProfilePage() {
 
 function confirmExitPractice() {
   uni.showModal({
-    title: '退出本次练习？',
-    content: '退出后本轮未完成的题目不会继续保留，已提交的答案仍会保存。',
+    title: mockExamMode.value ? '退出模拟测试？' : '退出本次练习？',
+    content: mockExamMode.value ? '退出后本次模拟测试进度不会继续保留。' : '退出后本轮未完成的题目不会继续保留，已提交的答案仍会保存。',
     confirmText: '退出',
     cancelText: '继续做题',
     success(result) {
       if (result.confirm) {
+        if (mockExamMode.value) {
+          clearTimer()
+          uni.reLaunch({
+            url: '/pages/home/index',
+            fail() {
+              uni.redirectTo({ url: '/pages/home/index' })
+            }
+          })
+          return
+        }
         resetToTags()
       }
     }
@@ -788,6 +973,39 @@ async function fetchSubjectSupplement(existingIds) {
     )
 }
 
+async function fetchMockExamSectionPool(section, usedIds) {
+  const query = new URLSearchParams({
+    exam_code: examCode.value,
+    subject: section.subject,
+    limit: '100',
+    randomize: 'true'
+  }).toString()
+
+  const data = await request({
+    url: `/questions?${query}`,
+    header: {
+      Authorization: `Bearer ${accessToken.value}`
+    }
+  })
+
+  const items = (data.items || [])
+    .filter((item) => !usedIds.has(item.id))
+    .filter(section.include)
+
+  return shuffleArray(items)
+    .slice(0, section.count)
+    .map((item) => {
+      usedIds.add(item.id)
+      return buildApiQuestion(item, {
+        module: item.module,
+        submodule: item.submodule,
+        mockSection: section.label,
+        mockSectionKey: section.key,
+        pointValue: section.pointValue
+      })
+    })
+}
+
 function applyQuestionAt(index) {
   currentQuestionIndex.value = index
   const nextQuestion = questionPool.value[index]
@@ -803,7 +1021,9 @@ function applyQuestionAt(index) {
   submitted.value = false
   submitting.value = false
   abilityAccuracy.value = null
-  timerSeconds.value = 0
+  if (!mockExamMode.value) {
+    timerSeconds.value = 0
+  }
   loadCurrentFavoriteStatus()
   startTimer()
   scrollToQuestionTop()
@@ -854,6 +1074,102 @@ async function loadAiTrainingSession(sessionId) {
     loadError.value = detail
     uni.showModal({
       title: '加载失败',
+      content: detail,
+      showCancel: false,
+      confirmText: '知道了',
+      success() {
+        uni.navigateBack({
+          delta: 1,
+          fail() {
+            uni.redirectTo({ url: '/pages/home/index' })
+          }
+        })
+      }
+    })
+  } finally {
+    loading.value = false
+    uni.hideLoading()
+  }
+}
+
+async function startMockExam() {
+  syncAccessToken()
+  loadError.value = ''
+  shortageTip.value = ''
+  showAnswerSheet.value = false
+
+  if (!hasAccessToken.value) {
+    uni.showModal({
+      title: '请先登录',
+      content: '登录后才能使用真实题库生成模拟测试，并保存分数与复盘记录。',
+      confirmText: '去登录',
+      cancelText: '先不登录',
+      success(result) {
+        if (result.confirm) {
+          const redirect = `/pages/practice/index?mock_exam=1&exam_code=${encodeURIComponent(examCode.value)}`
+          uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent(redirect)}` })
+        } else {
+          uni.navigateBack({
+            delta: 1,
+            fail() {
+              uni.redirectTo({ url: '/pages/home/index' })
+            }
+          })
+        }
+      }
+    })
+    return
+  }
+
+  loading.value = true
+  resetQuizState()
+  reviewMode.value = false
+  reviewResults.value = []
+  summaryMode.value = false
+  aiSummaryMode.value = false
+  comprehensiveAnswers.value = {}
+  questionPool.value = []
+  mode.value = 'quiz'
+  uni.showLoading({ title: '正在组卷...' })
+
+  try {
+    const usedIds = new Set()
+    const config = getMockExamConfig(examCode.value)
+    const sectionPools = []
+    const shortageSections = []
+
+    for (const section of config) {
+      const pool = await fetchMockExamSectionPool(section, usedIds)
+      if (pool.length < section.count) {
+        shortageSections.push(`${section.label} ${pool.length}/${section.count}`)
+      }
+      sectionPools.push(pool)
+    }
+
+    const nextPool = sectionPools.flat()
+    if (!nextPool.length) {
+      throw new Error('当前题库暂无可用于模拟测试的题目，请稍后再试')
+    }
+
+    if (shortageSections.length) {
+      shortageTip.value = `题库数量暂不足：${shortageSections.join('，')}。本次先按可用题目组卷。`
+    }
+
+    questionPool.value = nextPool
+    selectedQuestionSize.value = nextPool.length
+    subject.value = getMockExamThirdSubject(examCode.value)
+    timerSeconds.value = 0
+    applyQuestionAt(0)
+
+    if (shortageTip.value) {
+      uni.showToast({ title: '题库暂不足，已按可用题目组卷', icon: 'none' })
+    }
+  } catch (error) {
+    const detail = error?.detail || error?.message || '模拟测试组卷失败'
+    loadError.value = detail
+    mode.value = 'tags'
+    uni.showModal({
+      title: '组卷失败',
       content: detail,
       showCancel: false,
       confirmText: '知道了',
@@ -974,6 +1290,28 @@ function selectOption(key) {
   }
 }
 
+function isQuestionAnswered(question) {
+  const key = question?.questionId || question?.id
+  return Boolean(key && comprehensiveAnswers.value[key])
+}
+
+function openAnswerSheet() {
+  showAnswerSheet.value = true
+}
+
+function closeAnswerSheet() {
+  showAnswerSheet.value = false
+}
+
+function jumpToQuestion(index) {
+  showAnswerSheet.value = false
+  if (reviewMode.value) {
+    applyReviewAt(index)
+  } else {
+    applyQuestionAt(index)
+  }
+}
+
 async function handlePrimaryAction() {
   if (practiceMode.value === 'comprehensive') {
     await handleComprehensiveAction()
@@ -1002,18 +1340,36 @@ async function handleComprehensiveAction() {
 
 async function submitComprehensiveAnswers() {
   syncAccessToken()
+  const entries = questionPool.value.map((question) => {
+    const key = question.questionId || question.id
+    return {
+      question,
+      selected: comprehensiveAnswers.value[key]
+    }
+  })
+  const firstUnansweredIndex = entries.findIndex((item) => !item.selected)
+  if (firstUnansweredIndex >= 0) {
+    uni.showModal({
+      title: '还有未作答题目',
+      content: `还有 ${entries.filter((item) => !item.selected).length} 道题未完成，建议先补齐后再交卷。`,
+      confirmText: '去补题',
+      cancelText: '查看题卡',
+      success(result) {
+        if (result.confirm) {
+          applyQuestionAt(firstUnansweredIndex)
+        } else {
+          openAnswerSheet()
+        }
+      }
+    })
+    return
+  }
+
   submitting.value = true
   await nextTick()
   scrollToResultSection()
 
   try {
-    const entries = questionPool.value.map((question) => {
-      const key = question.questionId || question.id
-      return {
-        question,
-        selected: comprehensiveAnswers.value[key]
-      }
-    })
     const useRealSubmit = entries.every(({ question }) => isRealSubmitQuestion(question))
     const results = useRealSubmit ? await submitComprehensiveBatch(entries) : entries.map(buildLocalComprehensiveResult)
 
@@ -1342,6 +1698,20 @@ function showSummary() {
   })
 }
 
+function handleSummaryBack() {
+  if (mockExamMode.value) {
+    clearTimer()
+    uni.reLaunch({
+      url: '/pages/home/index',
+      fail() {
+        uni.redirectTo({ url: '/pages/home/index' })
+      }
+    })
+    return
+  }
+  resetToTags()
+}
+
 function buildAiReviewResultFromSummaryItem(item) {
   const question = questionPool.value.find((row) => (row.questionId || row.id) === item.question_id)
   if (!question) {
@@ -1416,6 +1786,8 @@ function resetQuizState() {
 
 function resetToTags() {
   aiSessionId.value = ''
+  mockExamMode.value = false
+  showAnswerSheet.value = false
   mode.value = 'tags'
   questionPool.value = buildMockPool()
   currentQuestionIndex.value = 0
@@ -1760,6 +2132,20 @@ function scrollToResultSection() {
   margin-bottom: 16rpx;
 }
 
+.question-map-btn {
+  min-width: 92rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: #ffffff;
+  color: var(--gyt-primary);
+  font-size: 23rpx;
+  font-weight: 900;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.08);
+}
+
 .quiz-shell {
   padding: 24rpx 22rpx 22rpx;
   border-radius: 36rpx;
@@ -1887,6 +2273,58 @@ function scrollToResultSection() {
   background: #ffffff;
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+}
+
+.mock-summary-card {
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(240, 246, 255, 0.96)),
+    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 48%);
+}
+
+.mock-section-card {
+  margin-top: 22rpx;
+  padding: 26rpx;
+  border-radius: 32rpx;
+  background: #ffffff;
+  border: 2rpx solid #e6ebf5;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
+}
+
+.mock-section-title {
+  color: #172033;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.mock-section-row {
+  margin-top: 18rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 24rpx;
+  background: #f8fbff;
+  border: 2rpx solid #eef3fb;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.mock-section-name {
+  color: #172033;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.mock-section-sub {
+  margin-top: 6rpx;
+  color: #667085;
+  font-size: 21rpx;
+}
+
+.mock-section-score {
+  color: var(--gyt-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  white-space: nowrap;
 }
 
 .ai-summary-card {
@@ -2057,5 +2495,108 @@ function scrollToResultSection() {
 
 .back-tags {
   margin-top: 20rpx;
+}
+
+.answer-sheet-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 80;
+  background: rgba(15, 23, 42, 0.38);
+  display: flex;
+  align-items: flex-end;
+}
+
+.answer-sheet {
+  width: 100%;
+  max-height: 78vh;
+  padding: 18rpx 32rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  border-radius: 40rpx 40rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 48rpx rgba(15, 23, 42, 0.18);
+  overflow-y: auto;
+}
+
+.sheet-handle {
+  width: 76rpx;
+  height: 8rpx;
+  margin: 0 auto 22rpx;
+  border-radius: 999rpx;
+  background: #d7deea;
+}
+
+.sheet-title {
+  text-align: center;
+  color: #172033;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.sheet-subtitle {
+  margin-top: 8rpx;
+  text-align: center;
+  color: #8a95a8;
+  font-size: 22rpx;
+}
+
+.sheet-section {
+  margin-top: 26rpx;
+}
+
+.sheet-section-head {
+  display: flex;
+  justify-content: space-between;
+  color: #344054;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.sheet-grid {
+  margin-top: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.sheet-number {
+  min-height: 70rpx;
+  margin: 0;
+  padding: 0;
+  border: 2rpx solid #e4eaf4;
+  border-radius: 20rpx;
+  background: #f2f5fa;
+  color: #8a95a8;
+  font-size: 25rpx;
+  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.sheet-number.answered {
+  background: var(--gyt-primary);
+  border-color: var(--gyt-primary);
+  color: #ffffff;
+}
+
+.sheet-number.current {
+  background: #ffffff;
+  border-color: var(--gyt-primary);
+  color: var(--gyt-primary);
+  box-shadow: 0 10rpx 24rpx var(--gyt-primary-shadow);
+}
+
+.sheet-close-btn {
+  width: 100%;
+  min-height: 92rpx;
+  margin-top: 28rpx;
+  border: 0;
+  border-radius: 28rpx;
+  background: var(--gyt-primary);
+  color: #ffffff;
+  font-size: 28rpx;
+  font-weight: 900;
 }
 </style>
