@@ -1,5 +1,5 @@
 <template>
-  <view class="page home-page">
+  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }">
     <template v-if="activeTab === 'home'">
       <view class="home-dashboard">
         <view class="home-header">
@@ -57,8 +57,7 @@
       <view class="mistake-page-head">
         <button class="icon-back-btn" @tap="handleMistakeBack">‹</button>
         <view class="mistake-head-copy">
-          <view class="head-eyebrow">错题本</view>
-          <view class="head-title">{{ retestMode ? '错题重测' : '错题复盘' }}</view>
+          <view class="head-title">{{ retestMode ? '错题重测' : '错题本' }}</view>
           <view class="head-subtitle">{{ retestMode ? retestScopeText : mistakeSubtitle }}</view>
         </view>
         <button
@@ -680,7 +679,7 @@
       </view>
     </view>
 
-    <BottomTabBar v-if="!retestMode" v-model="activeTab" :items="tabs" />
+    <BottomTabBar v-if="showBottomTab" v-model="activeTab" :items="tabs" />
   </view>
 </template>
 
@@ -774,6 +773,7 @@ const tabs = [
   { key: 'home', label: '首页', icon: '⌂' },
   { key: 'profile', label: '我的', icon: '☺' }
 ]
+const showBottomTab = computed(() => !retestMode.value && !['mistakes', 'report'].includes(activeTab.value))
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
 const fallbackSmartRecommendation = {
   subject: '逻辑推理',
@@ -2219,6 +2219,10 @@ function getMembershipExpiresAt(user) {
   min-height: 100dvh;
   overflow-x: hidden;
   padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
+}
+
+.home-page.no-tab-page {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 36rpx);
 }
 
 .home-dashboard {
@@ -3971,16 +3975,9 @@ function getMembershipExpiresAt(user) {
   min-width: 0;
 }
 
-.head-eyebrow {
-  color: var(--gyt-primary);
-  font-size: 22rpx;
-  font-weight: 800;
-}
-
 .head-title {
-  margin-top: 6rpx;
   color: #101828;
-  font-size: 38rpx;
+  font-size: 46rpx;
   line-height: 1.25;
   font-weight: 950;
 }
