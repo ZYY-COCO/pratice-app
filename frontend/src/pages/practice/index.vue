@@ -755,24 +755,26 @@ function selectStandardMockExamItems(items, count) {
   })
 
   const selected = []
-  const usedIds = new Set()
+  const usedKeys = new Set()
   const targets = getMockDifficultyTargets(count)
 
   targets.forEach((target) => {
     const group = grouped[target.key] || []
     while (selected.length < count && group.length && selected.filter((item) => getDifficultyBand(item) === target.key).length < target.count) {
       const item = group.shift()
-      if (!item || usedIds.has(item.id)) continue
+      const key = getQuestionIdentityKey(item)
+      if (!item || usedKeys.has(key)) continue
       selected.push(item)
-      usedIds.add(item.id)
+      usedKeys.add(key)
     }
   })
 
   for (const item of shuffled) {
     if (selected.length >= count) break
-    if (!item || usedIds.has(item.id)) continue
+    const key = getQuestionIdentityKey(item)
+    if (!item || usedKeys.has(key)) continue
     selected.push(item)
-    usedIds.add(item.id)
+    usedKeys.add(key)
   }
 
   return shuffleArray(selected).slice(0, count)
@@ -791,20 +793,32 @@ function shuffleArray(items) {
   return result
 }
 
+function normalizeQuestionStem(value) {
+  return String(value || '')
+    .replace(/\s+/g, '')
+    .replace(/[，。！？；：,.!?;:()[\]（）【】“”‘’"']/g, '')
+    .toLowerCase()
+}
+
+function getQuestionIdentityKey(item) {
+  const stemKey = normalizeQuestionStem(item?.stem)
+  return stemKey || String(item?.questionId || item?.id || '')
+}
+
 function buildRandomQuestionPool(candidateGroups) {
   const groups = candidateGroups.map((group) => shuffleArray(group)).filter((group) => group.length)
   const selected = []
-  const usedIds = new Set()
+  const usedKeys = new Set()
 
   while (selected.length < plannedQuestionLimit.value && groups.some((group) => group.length)) {
     for (const group of groups) {
       const item = group.shift()
-      const key = item?.questionId || item?.id
-      if (!item || usedIds.has(key)) {
+      const key = getQuestionIdentityKey(item)
+      if (!item || usedKeys.has(key)) {
         continue
       }
       selected.push(item)
-      usedIds.add(key)
+      usedKeys.add(key)
       if (selected.length >= plannedQuestionLimit.value) {
         break
       }
@@ -1025,7 +1039,7 @@ async function fetchRealQuestionCandidates(moduleInfos) {
     .filter((items) => items.length)
 }
 
-async function fetchSubjectSupplement(existingIds) {
+async function fetchSubjectSupplement(existingKeys) {
   const query = new URLSearchParams({
     exam_code: examCode.value,
     subject: subject.value,
@@ -1041,7 +1055,7 @@ async function fetchSubjectSupplement(existingIds) {
   })
 
   return (data.items || [])
-    .filter((item) => !existingIds.has(item.id))
+    .filter((item) => !existingKeys.has(getQuestionIdentityKey(item)))
     .map((item) =>
       buildApiQuestion(item, {
         module: item.module,
@@ -1050,7 +1064,7 @@ async function fetchSubjectSupplement(existingIds) {
     )
 }
 
-async function fetchMockExamSectionPool(section, usedIds) {
+async function fetchMockExamSectionPool(section, usedKeys) {
   const query = new URLSearchParams({
     exam_code: examCode.value,
     subject: section.subject,
@@ -1066,12 +1080,12 @@ async function fetchMockExamSectionPool(section, usedIds) {
   })
 
   const items = (data.items || [])
-    .filter((item) => !usedIds.has(item.id))
+    .filter((item) => !usedKeys.has(getQuestionIdentityKey(item)))
     .filter(section.include)
 
   return selectStandardMockExamItems(items, section.count)
     .map((item) => {
-      usedIds.add(item.id)
+      usedKeys.add(getQuestionIdentityKey(item))
       return buildApiQuestion(item, {
         module: item.module,
         submodule: item.submodule,
@@ -1209,13 +1223,13 @@ async function startMockExam() {
   uni.showLoading({ title: '正在组卷...' })
 
   try {
-    const usedIds = new Set()
+    const usedKeys = new Set()
     const config = getMockExamConfig(examCode.value)
     const sectionPools = []
     const shortageSections = []
 
     for (const section of config) {
-      const pool = await fetchMockExamSectionPool(section, usedIds)
+      const pool = await fetchMockExamSectionPool(section, usedKeys)
       if (pool.length < section.count) {
         shortageSections.push(`${section.label} ${pool.length}/${section.count}`)
       }
@@ -1321,10 +1335,10 @@ async function startQuiz() {
     }
 
     if (nextPool.length < plannedQuestionLimit.value) {
-      const existingIds = new Set(nextPool.map((item) => item.questionId || item.id))
-      const supplement = await fetchSubjectSupplement(existingIds)
+      const existingKeys = new Set(nextPool.map((item) => getQuestionIdentityKey(item)))
+      const supplement = await fetchSubjectSupplement(existingKeys)
       if (supplement.length) {
-        nextPool = shuffleArray([...nextPool, ...supplement]).slice(0, plannedQuestionLimit.value)
+        nextPool = buildRandomQuestionPool([nextPool, supplement])
         shortageTip.value = '当前题库较少，已为你随机补充同科目题目。'
       }
     }

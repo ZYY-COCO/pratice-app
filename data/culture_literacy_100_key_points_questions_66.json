@@ -9,7 +9,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代图书文物",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "目前已知中国境内较早的人类遗址之一、位于云南的是哪一项？",
       "options": {
         "A": "元谋人",
@@ -26,7 +26,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代衣食住行",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "北京人遗址位于北京周口店龙骨山，下列哪项最能体现北京人的生产生活特征？",
       "options": {
         "A": "会使用和保存天然火",
@@ -43,7 +43,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代经济发展",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "半坡文化位于黄河流域，其农业生产中较具代表性的作物是：",
       "options": {
         "A": "粟",
@@ -60,7 +60,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代衣食住行",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "河姆渡文化位于长江流域，其建筑形式中常被提到的是：",
       "options": {
         "A": "干栏式建筑",
@@ -77,7 +77,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代职官与科举",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "我国历史上第一个王朝通常被认为是：",
       "options": {
         "A": "夏朝",
@@ -94,7 +94,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代图书文物",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "目前我们能够见到的较早的成熟汉字体系是：",
       "options": {
         "A": "甲骨文",
@@ -111,7 +111,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "秦统一六国后，作为官方统一文字推广的是：",
       "options": {
         "A": "小篆",
@@ -128,7 +128,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代军事战争",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "中国历史上第一次大规模农民起义通常指的是：",
       "options": {
         "A": "陈胜、吴广大泽乡起义",
@@ -145,7 +145,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代职官与科举",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "汉武帝采纳董仲舒建议后，思想文化政策的重要变化是：",
       "options": {
         "A": "罢黜百家，独尊儒术",
@@ -162,7 +162,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代经济发展",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "汉代张骞出使西域，与下列哪一历史现象关系最密切？",
       "options": {
         "A": "丝绸之路的开拓",
@@ -179,7 +179,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代军事战争",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "下列战役中，与“风声鹤唳、草木皆兵”成语相关的是：",
       "options": {
         "A": "淝水之战",
@@ -196,7 +196,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代职官与科举",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "隋炀帝设置进士科，标志着下列哪一制度正式形成？",
       "options": {
         "A": "科举制度",
@@ -213,7 +213,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代军事战争",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "唐朝由盛转衰的重要转折点是：",
       "options": {
         "A": "安史之乱",
@@ -230,7 +230,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "古代军事战争",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "“陈桥兵变、黄袍加身”与下列哪位历史人物有关？",
       "options": {
         "A": "赵匡胤",
@@ -247,7 +247,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "近现代史学常识",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "《马关条约》的签订与下列哪场战争直接相关？",
       "options": {
         "A": "甲午中日战争",
@@ -264,7 +264,7 @@
       "category": "历史",
       "module": "中国历史学常识",
       "submodule": "近现代史学常识",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "辛亥革命中，标志清政府统治瓦解的重要起义是：",
       "options": {
         "A": "武昌起义",
@@ -281,7 +281,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "文学总集",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "我国最早的一部诗歌总集是：",
       "options": {
         "A": "《诗经》",
@@ -298,7 +298,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "《离骚》的作者是：",
       "options": {
         "A": "屈原",
@@ -315,7 +315,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "文体流变",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "《左传》在史书体例上通常被归为：",
       "options": {
         "A": "编年体史书",
@@ -332,7 +332,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "我国第一部纪传体通史是：",
       "options": {
         "A": "《史记》",
@@ -349,7 +349,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "文体流变",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "汉代文学中，最能体现铺陈排比、辞藻华丽特征的文体是：",
       "options": {
         "A": "赋",
@@ -366,7 +366,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "创作群体及文学流派",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "“三曹”通常指曹操、曹丕和哪一位？",
       "options": {
         "A": "曹植",
@@ -383,7 +383,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "中国文学史上被称为“田园诗人”的代表人物是：",
       "options": {
         "A": "陶渊明",
@@ -400,7 +400,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "创作群体及文学流派",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "下列哪位属于“初唐四杰”？",
       "options": {
         "A": "王勃",
@@ -417,7 +417,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "“诗仙”通常指的是：",
       "options": {
         "A": "李白",
@@ -434,7 +434,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "“诗圣”通常指的是：",
       "options": {
         "A": "杜甫",
@@ -451,7 +451,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "创作群体及文学流派",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "“唐宋八大家”中，唐代文学家不包括下列哪一位？",
       "options": {
         "A": "苏轼",
@@ -468,7 +468,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "创作群体及文学流派",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "宋词中，苏轼、辛弃疾通常被归入哪一词派？",
       "options": {
         "A": "豪放派",
@@ -485,7 +485,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "元杂剧《窦娥冤》的作者是：",
       "options": {
         "A": "关汉卿",
@@ -502,7 +502,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "下列作品中，不属于中国古典四大名著的是：",
       "options": {
         "A": "《儒林外史》",
@@ -519,7 +519,7 @@
       "category": "文学",
       "module": "中国文学常识",
       "submodule": "代表作家及作品",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "中国现代文学史上第一篇白话小说通常被认为是：",
       "options": {
         "A": "《狂人日记》",
@@ -536,7 +536,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "二十四节气中，通常标志春季开始的是：",
       "options": {
         "A": "立春",
@@ -553,7 +553,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "下列节气中，同时也常作为传统节日被人们熟知的是：",
       "options": {
         "A": "清明",
@@ -570,7 +570,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "古代夜间“五更”计时中，“三更”大致对应的是：",
       "options": {
         "A": "子时",
@@ -587,7 +587,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "干支纪年中，天干地支组合一个完整循环共有多少年？",
       "options": {
         "A": "60年",
@@ -604,7 +604,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "端午节的传统纪念对象，民间最常见的说法是：",
       "options": {
         "A": "屈原",
@@ -621,7 +621,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "重阳节的传统习俗之一是：",
       "options": {
         "A": "登高",
@@ -638,7 +638,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "寒食节的传说通常与下列哪位人物有关？",
       "options": {
         "A": "介子推",
@@ -655,7 +655,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "古代兄弟排行常用“伯、仲、叔、季”表示，其中“仲”通常表示：",
       "options": {
         "A": "排行第二",
@@ -672,7 +672,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代礼俗与称谓",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "“花甲之年”通常指多少岁？",
       "options": {
         "A": "60岁",
@@ -689,7 +689,7 @@
       "category": "传统文化",
       "module": "中国历史学常识",
       "submodule": "古代职官与科举",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "科举考试中，通过乡试者通常称为：",
       "options": {
         "A": "举人",
@@ -706,7 +706,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "书法",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "秦统一文字时采用的标准字体是：",
       "options": {
         "A": "小篆",
@@ -723,7 +723,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "书法",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "被后世尊称为“书圣”的书法家是：",
       "options": {
         "A": "王羲之",
@@ -740,7 +740,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "绘画",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "东晋画家顾恺之的代表作之一是：",
       "options": {
         "A": "《洛神赋图》",
@@ -757,7 +757,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "绘画",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "唐代画家吴道子被后世称为：",
       "options": {
         "A": "画圣",
@@ -774,7 +774,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "绘画",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "《清明上河图》的作者是：",
       "options": {
         "A": "张择端",
@@ -791,7 +791,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "绘画",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "中国画传统题材中，通常不属于主要分类的是：",
       "options": {
         "A": "静物画",
@@ -808,7 +808,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "雕塑",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "秦始皇陵兵马俑主要属于下列哪类艺术遗存？",
       "options": {
         "A": "雕塑",
@@ -825,7 +825,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "雕塑",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "敦煌莫高窟最能集中体现的艺术类型是：",
       "options": {
         "A": "壁画与佛教造像",
@@ -842,7 +842,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "戏剧",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "被誉为“百戏之祖”的中国传统戏曲剧种是：",
       "options": {
         "A": "昆曲",
@@ -859,7 +859,7 @@
       "category": "艺术",
       "module": "中国艺术常识",
       "submodule": "建筑",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "中国古代木构建筑中常见的“斗拱”主要作用之一是：",
       "options": {
         "A": "承托屋檐并分散受力",
@@ -876,7 +876,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "下列不属于中国古代四大发明的是：",
       "options": {
         "A": "地动仪",
@@ -893,7 +893,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "东汉时期改进造纸术、推动纸张普及的人物是：",
       "options": {
         "A": "蔡伦",
@@ -910,7 +910,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "北宋时期发明活字印刷术的人物是：",
       "options": {
         "A": "毕昇",
@@ -927,7 +927,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "指南针在古代对世界文明交流影响最大的领域是：",
       "options": {
         "A": "航海活动",
@@ -944,7 +944,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "天文历法与算学",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "中国古代数学名著《九章算术》主要体现的是哪一领域的成就？",
       "options": {
         "A": "数学",
@@ -961,7 +961,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "天文历法与算学",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "把圆周率计算到小数点后第七位的南北朝数学家是：",
       "options": {
         "A": "祖冲之",
@@ -978,7 +978,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "天文历法与算学",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "东汉科学家张衡的重要发明之一是：",
       "options": {
         "A": "候风地动仪",
@@ -995,7 +995,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "医学",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "明代医药学家李时珍编写的药物学巨著是：",
       "options": {
         "A": "《本草纲目》",
@@ -1012,7 +1012,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "医学",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "被后世尊称为“医圣”的东汉医学家是：",
       "options": {
         "A": "张仲景",
@@ -1029,7 +1029,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "农业水利",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "明代徐光启编写、系统总结农业生产经验的著作是：",
       "options": {
         "A": "《农政全书》",
@@ -1046,7 +1046,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "中级",
+      "difficulty": 3,
       "question": "《梦溪笔谈》的作者是：",
       "options": {
         "A": "沈括",
@@ -1063,7 +1063,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "农业水利",
-      "difficulty": "基础",
+      "difficulty": 1,
       "question": "战国时期由李冰主持修建、至今仍发挥作用的大型水利工程是：",
       "options": {
         "A": "都江堰",
@@ -1080,7 +1080,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "地理舆图",
-      "difficulty": "高级",
+      "difficulty": 5,
       "question": "提出“制图六体”、被称为中国科学制图学之父的人物是：",
       "options": {
         "A": "裴秀",
@@ -1097,7 +1097,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "天文历法与算学",
-      "difficulty": "高级",
+      "difficulty": 5,
       "question": "元代郭守敬主持修订、在历法精度上具有重要地位的是：",
       "options": {
         "A": "《授时历》",
@@ -1114,7 +1114,7 @@
       "category": "科技",
       "module": "中国古代科技常识",
       "submodule": "科技发明",
-      "difficulty": "高级",
+      "difficulty": 5,
       "question": "明代宋应星的《天工开物》主要记录的是：",
       "options": {
         "A": "农业与手工业生产技术",

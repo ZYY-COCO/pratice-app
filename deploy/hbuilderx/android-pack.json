@@ -1,0 +1,19 @@
+{
+  "project": "C:/Users/1111/Documents/New project/frontend",
+  "platform": "android",
+  "iscustom": false,
+  "safemode": false,
+  "isconfusion": false,
+  "splashads": false,
+  "rpads": false,
+  "pushads": false,
+  "exchange": false,
+  "android": {
+    "packagename": "com.gangyantong.practice",
+    "androidpacktype": "1",
+    "certalias": "",
+    "certfile": "",
+    "certpassword": "",
+    "channels": ""
+  }
+}

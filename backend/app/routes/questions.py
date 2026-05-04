@@ -1,3 +1,6 @@
+import re
+import random
+
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
@@ -27,6 +30,27 @@ def hide_answer(row: dict, include_answer: bool = False) -> dict:
     return {**row, "answer": None, "explanation": None}
 
 
+def normalize_stem_key(value: object) -> str:
+    text = "" if value is None else str(value)
+    text = re.sub(r"\s+", "", text)
+    text = re.sub(r"[，。！？；：,.!?;:()\[\]（）【】“”‘’\"']", "", text)
+    return text.lower()
+
+
+def deduplicate_question_rows(rows: list[dict]) -> list[dict]:
+    seen: set[str] = set()
+    unique_rows: list[dict] = []
+    for row in rows:
+        stem_key = normalize_stem_key(row.get("stem"))
+        fallback_key = str(row.get("id") or "")
+        key = stem_key or fallback_key
+        if key in seen:
+            continue
+        seen.add(key)
+        unique_rows.append(row)
+    return unique_rows
+
+
 @router.get("/questions", response_model=QuestionListResponse)
 def list_questions(
     _: str = Depends(get_current_user_id),
@@ -48,10 +72,9 @@ def list_questions(
         query = query.order("created_at", desc=False)
 
     response = query.limit(1000 if randomize else limit).execute()
-    rows = response.data
+    rows = response.data or []
     if randomize:
-        import random
-
+        rows = deduplicate_question_rows(rows)
         rows = random.sample(rows, min(limit, len(rows)))
     items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
@@ -73,8 +96,9 @@ def list_questions_by_module(
         query = query.in_("exam_code", exam_codes)
     else:
         query = query.eq("exam_code", exam_codes[0])
-    response = query.eq("subject", subject).eq("module", module).eq("submodule", submodule).limit(limit).execute()
-    items = [Question(**hide_answer(row)) for row in response.data]
+    response = query.eq("subject", subject).eq("module", module).eq("submodule", submodule).limit(200).execute()
+    rows = deduplicate_question_rows(response.data or [])[:limit]
+    items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
 
 

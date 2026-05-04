@@ -423,6 +423,14 @@ def _build_deepseek_messages(
     exclude_text = "\n".join(f"- {item}" for item in (exclude_stems or []) if item)
     if not exclude_text:
         exclude_text = "无。"
+    english_trap_requirement = ""
+    if target.subject == "英语运用":
+        english_trap_requirement = (
+            "\n英语运用专项要求："
+            "错误选项必须具备真实干扰性，不能放明显离谱的选项。"
+            "干扰项应围绕近义词/形近词、固定搭配、介词误用、词性误用、时态语态、非谓语、从句连接词、语气语域或上下文逻辑设置陷阱。"
+            "解析必须用中文说明正确项为什么成立，并点出至少一个干扰项的陷阱。"
+        )
     return [
         {
             "role": "system",
@@ -431,6 +439,7 @@ def _build_deepseek_messages(
                 "题目必须为单选题，只有 A、B、C、D 四个选项，绝对不要生成 E 选项。"
                 "题干、选项、解析必须准确、简洁，贴近港澳台考研初试刷题训练。"
                 "同一批题目之间不得重复题干、不得只替换少量词语、不得复用示例题。"
+                "错误选项要有考试干扰性，避免一眼排除的无效选项。"
             ),
         },
         {
@@ -444,6 +453,7 @@ def _build_deepseek_messages(
                 f"推荐依据：{target.basis}\n"
                 f"最近错题参考：\n{context}\n\n"
                 f"以下题干近期已生成或本轮已采用，必须避开：\n{exclude_text}\n\n"
+                f"{english_trap_requirement}\n\n"
                 "输出 JSON 格式必须为："
                 '{"questions":[{"stem":"题干","option_a":"A选项","option_b":"B选项",'
                 '"option_c":"C选项","option_d":"D选项","answer":"A","explanation":"解析",'

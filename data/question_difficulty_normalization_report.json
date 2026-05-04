@@ -1,0 +1,352 @@
+{
+  "scanned_files": 60,
+  "updated_questions": 66,
+  "counts_by_source_label": {
+    "中级": 34,
+    "基础": 29,
+    "高级": 3
+  },
+  "counts_by_target": {
+    "1": 29,
+    "3": 34,
+    "5": 3
+  },
+  "files": [
+    {
+      "file": "data/culture_literacy_100_key_points_questions_66.json",
+      "changes": [
+        {
+          "index": 1,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 2,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 3,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 4,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 5,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 6,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 7,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 8,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 9,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 10,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 11,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 12,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 13,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 14,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 15,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 16,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 17,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 18,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 19,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 20,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 21,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 22,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 23,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 24,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 25,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 26,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 27,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 28,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 29,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 30,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 31,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 32,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 33,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 34,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 35,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 36,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 37,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 38,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 39,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 40,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 41,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 42,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 43,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 44,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 45,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 46,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 47,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 48,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 49,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 50,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 51,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 52,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 53,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 54,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 55,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 56,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 57,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 58,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 59,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 60,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 61,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 62,
+          "from": "中级",
+          "to": 3
+        },
+        {
+          "index": 63,
+          "from": "基础",
+          "to": 1
+        },
+        {
+          "index": 64,
+          "from": "高级",
+          "to": 5
+        },
+        {
+          "index": 65,
+          "from": "高级",
+          "to": 5
+        },
+        {
+          "index": 66,
+          "from": "高级",
+          "to": 5
+        }
+      ],
+      "count": 66
+    }
+  ]
+}
