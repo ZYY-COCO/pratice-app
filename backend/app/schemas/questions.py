@@ -36,6 +36,17 @@ class QuestionListResponse(BaseModel):
     count: int
 
 
+class QuestionProgressResponse(BaseModel):
+    exam_code: str
+    subject: str
+    total_questions: int
+    mastered_questions: int
+    progress_percent: int
+    review_due_count: int
+    next_review_label: str
+    review_days: list[int]
+
+
 class ByModuleQuery(BaseModel):
     exam_code: str = Field(pattern="^(Z001|Z002|COMMON)$")
     subject: str

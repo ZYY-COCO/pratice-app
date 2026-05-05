@@ -9,6 +9,33 @@
     </view>
 
     <template v-if="mode === 'tags'">
+      <view v-if="showCultureProgress" class="culture-progress-card">
+        <view class="culture-progress-head">
+          <view>
+            <view class="culture-progress-title">中华文化掌握进度</view>
+            <view class="culture-progress-sub">
+              {{ cultureProgressLoading ? '正在同步你的刷题记录...' : `已掌握 ${cultureMasteredText} / ${cultureTotalText}` }}
+            </view>
+          </view>
+          <view class="culture-percent">{{ cultureProgressPercent }}%</view>
+        </view>
+
+        <view class="culture-progress-track">
+          <view class="culture-progress-fill" :style="{ width: cultureProgressWidth }"></view>
+        </view>
+
+        <view class="culture-progress-foot">
+          <view class="culture-foot-item">
+            <text class="culture-foot-label">待复习</text>
+            <text class="culture-foot-value">{{ cultureReviewDueCount }}题</text>
+          </view>
+          <view class="culture-foot-item">
+            <text class="culture-foot-label">复习周期</text>
+            <text class="culture-foot-value">{{ cultureReviewCycleText }}</text>
+          </view>
+        </view>
+      </view>
+
       <view class="mode-card">
         <view
           v-for="item in practiceModeOptions"
@@ -87,9 +114,20 @@
           <view class="sticky-title">{{ stickyTitle }}</view>
           <view class="sticky-tip">本轮将加载 {{ plannedQuestionLimit }} 道题</view>
         </view>
-        <button class="sticky-btn" :disabled="loading" @tap="startQuiz">
-          {{ loading ? '加载中...' : startButtonText }}
-        </button>
+        <view class="sticky-actions" :class="{ dual: showCultureProgress }">
+          <button
+            v-if="showCultureProgress"
+            class="sticky-btn review-sticky-btn"
+            :disabled="cultureReviewDisabled"
+            @tap="startCultureReview"
+          >
+            <text>开始复习</text>
+            <text class="sticky-btn-sub">{{ cultureReviewButtonText }}</text>
+          </button>
+          <button class="sticky-btn" :disabled="loading" @tap="startQuiz">
+            {{ loading ? '加载中...' : startButtonText }}
+          </button>
+        </view>
       </view>
     </template>
 
@@ -301,6 +339,7 @@ import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
+import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import MathText from '../../components/MathText.vue'
 import QuestionOption from '../../components/QuestionOption.vue'
@@ -310,6 +349,14 @@ import { getSubjectTree } from '../../utils/knowledgeTree'
 
 const MOCK_EXAM_TOTAL_SCORE = 105
 const MOCK_EXAM_TOTAL_COUNT = 55
+const CULTURE_SUBJECT = '中华文化'
+const DEFAULT_CULTURE_PROGRESS = {
+  total_questions: 0,
+  mastered_questions: 0,
+  progress_percent: 0,
+  review_due_count: 0,
+  review_days: [1, 2, 4, 7, 15, 30]
+}
 const MOCK_EXAM_DIFFICULTY_PROFILE = [
   { key: 'basic', label: '基础', ratio: 0.35 },
   { key: 'medium', label: '中等', ratio: 0.5 },
@@ -343,6 +390,9 @@ const submitting = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const shortageTip = ref('')
+const cultureProgress = ref({ ...DEFAULT_CULTURE_PROGRESS })
+const cultureProgressLoading = ref(false)
+const cultureReviewLoading = ref(false)
 const timerSeconds = ref(0)
 const accessToken = ref(readAccessToken())
 const questionPool = ref([buildMockQuestion(subject.value, examCode.value)])
@@ -378,6 +428,8 @@ const hasAccessToken = computed(() => Boolean(accessToken.value))
 const plannedQuestionLimit = computed(() => selectedQuestionSize.value)
 const currentTheme = computed(() => getThemePreset(getStoredThemeKey()))
 const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
+const isCultureSubject = computed(() => subject.value === CULTURE_SUBJECT)
+const showCultureProgress = computed(() => mode.value === 'tags' && isCultureSubject.value)
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
@@ -424,6 +476,17 @@ const stickySub = computed(() => {
   return `预计 ${selectedQuestionCount.value} 道题 · ${dataModeLabel.value}`
 })
 const startButtonText = computed(() => (practiceMode.value === 'comprehensive' ? '开始综合刷题' : '开始刷题'))
+const cultureProgressPercent = computed(() => Math.max(0, Math.min(100, Number(cultureProgress.value.progress_percent || 0))))
+const cultureProgressWidth = computed(() => `${cultureProgressPercent.value}%`)
+const cultureReviewDueCount = computed(() => Number(cultureProgress.value.review_due_count || 0))
+const cultureMasteredText = computed(() => formatQuestionAmount(cultureProgress.value.mastered_questions))
+const cultureTotalText = computed(() => formatQuestionAmount(cultureProgress.value.total_questions))
+const cultureReviewCycleText = computed(() => (cultureProgress.value.review_days || DEFAULT_CULTURE_PROGRESS.review_days).join('/'))
+const cultureReviewDisabled = computed(() => loading.value || cultureReviewLoading.value || cultureReviewDueCount.value <= 0)
+const cultureReviewButtonText = computed(() => {
+  if (cultureReviewLoading.value) return '加载中'
+  return `${cultureReviewDueCount.value}题待复习`
+})
 const quizProgressText = computed(() => {
   const prefix = reviewMode.value ? '查看解析' : '当前进度'
   return `${prefix} ${currentQuestionIndex.value + 1} / ${questionPool.value.length}`
@@ -516,6 +579,7 @@ watch(subject, () => {
   questionPool.value = [buildMockQuestion(subject.value, examCode.value)]
   currentQuestionIndex.value = 0
   resetQuizState()
+  loadCultureProgress()
 })
 
 onLoad((options) => {
@@ -556,11 +620,14 @@ onLoad((options) => {
   if (options?.ai_session_id) {
     aiSessionId.value = decodeURIComponent(options.ai_session_id)
     loadAiTrainingSession(aiSessionId.value)
+    return
   }
+  loadCultureProgress()
 })
 
 onShow(() => {
   syncAccessToken()
+  loadCultureProgress()
 })
 
 onUnload(() => {
@@ -805,6 +872,15 @@ function getQuestionIdentityKey(item) {
   return stemKey || String(item?.questionId || item?.id || '')
 }
 
+function formatQuestionAmount(value) {
+  const numeric = Number(value || 0)
+  if (numeric >= 1000) {
+    const rounded = Math.round(numeric / 100) / 10
+    return `${rounded}k题`
+  }
+  return `${numeric}题`
+}
+
 function buildRandomQuestionPool(candidateGroups) {
   const groups = candidateGroups.map((group) => shuffleArray(group)).filter((group) => group.length)
   const selected = []
@@ -980,6 +1056,94 @@ function toggleSection(section) {
 
 function getCount(tag) {
   return getTagCount(subject.value, tag)
+}
+
+async function loadCultureProgress() {
+  if (!isCultureSubject.value || mode.value !== 'tags' || isAiTrainingMode.value || mockExamMode.value) {
+    return
+  }
+
+  syncAccessToken()
+  if (!hasAccessToken.value) {
+    cultureProgress.value = { ...DEFAULT_CULTURE_PROGRESS }
+    return
+  }
+
+  cultureProgressLoading.value = true
+  try {
+    const data = await fetchQuestionProgress({
+      exam_code: examCode.value,
+      subject: CULTURE_SUBJECT
+    })
+    cultureProgress.value = {
+      ...DEFAULT_CULTURE_PROGRESS,
+      ...data
+    }
+  } catch (error) {
+    cultureProgress.value = { ...DEFAULT_CULTURE_PROGRESS }
+  } finally {
+    cultureProgressLoading.value = false
+  }
+}
+
+async function startCultureReview() {
+  syncAccessToken()
+  if (!hasAccessToken.value) {
+    uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/practice/index')}` })
+    return
+  }
+
+  if (cultureReviewDueCount.value <= 0) {
+    uni.showToast({ title: '当前没有到期复习题', icon: 'none' })
+    return
+  }
+
+  cultureReviewLoading.value = true
+  loadError.value = ''
+  shortageTip.value = ''
+  uni.showLoading({ title: '正在加载复习题...' })
+
+  try {
+    const data = await fetchReviewDueQuestions({
+      exam_code: examCode.value,
+      subject: CULTURE_SUBJECT,
+      limit: plannedQuestionLimit.value
+    })
+    const items = (data.items || []).map((item) =>
+      buildApiQuestion(item, {
+        module: item.module,
+        submodule: item.submodule
+      })
+    )
+
+    if (!items.length) {
+      cultureProgress.value = {
+        ...cultureProgress.value,
+        review_due_count: 0
+      }
+      uni.showToast({ title: '当前没有到期复习题', icon: 'none' })
+      return
+    }
+
+    resetQuizState()
+    practiceMode.value = 'special'
+    selectedTags.value = []
+    reviewMode.value = false
+    reviewResults.value = []
+    summaryMode.value = false
+    aiSummaryMode.value = false
+    comprehensiveAnswers.value = {}
+    questionPool.value = items
+    mode.value = 'quiz'
+    applyQuestionAt(0)
+  } catch (error) {
+    const detail = error?.detail || '复习题加载失败'
+    loadError.value = detail
+    uni.showToast({ title: detail, icon: 'none' })
+  } finally {
+    cultureReviewLoading.value = false
+    uni.hideLoading()
+  }
 }
 
 async function fetchRealQuestionCandidates(moduleInfos) {
@@ -1894,6 +2058,7 @@ function resetToTags() {
   aiSummary.value = null
   aiReviewResults.value = []
   resetQuizState()
+  loadCultureProgress()
 }
 
 function startTimer() {
@@ -2079,6 +2244,96 @@ function scrollToResultSection() {
   color: #9a6510;
 }
 
+.culture-progress-card {
+  margin-bottom: 24rpx;
+  padding: 28rpx;
+  border-radius: 34rpx;
+  background:
+    linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(248, 250, 255, 0.94)),
+    radial-gradient(circle at 100% 0, var(--gyt-primary-shadow), transparent 42%);
+  border: 2rpx solid #e6ebf5;
+  box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
+}
+
+.culture-progress-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.culture-progress-title {
+  color: #172033;
+  font-size: 30rpx;
+  font-weight: 900;
+}
+
+.culture-progress-sub {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.5;
+}
+
+.culture-percent {
+  min-width: 100rpx;
+  padding: 10rpx 16rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  font-size: 27rpx;
+  font-weight: 950;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.culture-progress-track {
+  height: 14rpx;
+  margin-top: 24rpx;
+  border-radius: 999rpx;
+  background: #eef2f8;
+  overflow: hidden;
+}
+
+.culture-progress-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: linear-gradient(90deg, var(--gyt-primary), #7ea8ff);
+  box-shadow: 0 8rpx 20rpx var(--gyt-primary-shadow);
+}
+
+.culture-progress-foot {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  margin-top: 22rpx;
+}
+
+.culture-foot-item {
+  padding: 18rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.72);
+  border: 2rpx solid rgba(230, 235, 245, 0.82);
+}
+
+.culture-foot-label,
+.culture-foot-value {
+  display: block;
+}
+
+.culture-foot-label {
+  color: #98a2b3;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.culture-foot-value {
+  margin-top: 6rpx;
+  color: #172033;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
 .count-head {
   display: flex;
   align-items: flex-start;
@@ -2210,8 +2465,46 @@ function scrollToResultSection() {
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
+.sticky-actions {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  flex-shrink: 0;
+}
+
+.sticky-actions.dual .sticky-btn {
+  min-width: 168rpx;
+  padding: 0 20rpx;
+}
+
+.review-sticky-btn {
+  background: #ffffff;
+  color: var(--gyt-primary);
+  border: 2rpx solid var(--gyt-primary-border);
+  box-shadow: 0 12rpx 26rpx rgba(20, 31, 66, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+}
+
+.sticky-btn-sub {
+  margin-top: 6rpx;
+  font-size: 19rpx;
+  font-weight: 800;
+  opacity: 0.86;
+}
+
 .sticky-btn[disabled] {
   background: #c6d3f2;
+}
+
+.review-sticky-btn[disabled] {
+  background: #f2f4f7;
+  color: #98a2b3;
+  border-color: #e6ebf5;
+  box-shadow: none;
 }
 
 .quiz-top {
