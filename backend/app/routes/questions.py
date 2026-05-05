@@ -66,15 +66,26 @@ def parse_supabase_datetime(value: str | None) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
-def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[dict]:
-    query = supabase.table("questions").select("*")
-    exam_codes = get_question_exam_codes(exam_code, subject)
+def fetch_subject_question_rows_for_codes(supabase, exam_codes: list[str], subject: str) -> list[dict]:
+    query = supabase.table("questions").select("id, stem")
+    if not exam_codes:
+        return []
     if len(exam_codes) > 1:
         query = query.in_("exam_code", exam_codes)
     else:
         query = query.eq("exam_code", exam_codes[0])
     response = query.eq("subject", subject).range(0, 4999).execute()
     return deduplicate_question_rows(response.data or [])
+
+
+def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[dict]:
+    exam_codes = get_question_exam_codes(exam_code, subject)
+    rows = fetch_subject_question_rows_for_codes(supabase, exam_codes, subject)
+    if rows:
+        return rows
+    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
+        return fetch_subject_question_rows_for_codes(supabase, [exam_code], subject)
+    return rows
 
 
 def build_progress_summary(supabase, user_id: str, exam_code: str, subject: str) -> dict:
@@ -125,11 +136,7 @@ def build_progress_summary(supabase, user_id: str, exam_code: str, subject: str)
         stats["last_answer_at"] = created_at
 
     now = datetime.now(timezone.utc)
-    mastered_questions = sum(
-        1
-        for stats in stats_by_question.values()
-        if stats["first_is_correct"] is True or int(stats["correct_count"]) >= 2
-    )
+    learned_questions = sum(1 for stats in stats_by_question.values() if stats["first_is_correct"] is True)
     review_due: list[tuple[datetime, str]] = []
     for question_id, stats in stats_by_question.items():
         last_answer_at = stats["last_answer_at"]
@@ -144,11 +151,11 @@ def build_progress_summary(supabase, user_id: str, exam_code: str, subject: str)
             review_due.append((due_at, question_id))
 
     review_due_ids = [question_id for _, question_id in sorted(review_due, key=lambda item: item[0])]
-    progress_percent = round((mastered_questions / total_questions) * 100) if total_questions else 0
+    progress_percent = round((learned_questions / total_questions) * 100) if total_questions else 0
 
     return {
         "total_questions": total_questions,
-        "mastered_questions": mastered_questions,
+        "mastered_questions": learned_questions,
         "progress_percent": progress_percent,
         "review_due_count": len(review_due_ids),
         "review_due_ids": review_due_ids,
