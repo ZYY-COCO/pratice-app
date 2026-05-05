@@ -13,6 +13,7 @@ router = APIRouter(tags=["题目"])
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
 VERSION_EXAM_CODES = {"Z001", "Z002"}
 EBBINGHAUS_REVIEW_DAYS = [1, 2, 4, 7, 15, 30]
+CULTURE_SUBJECT = "中华文化"
 
 
 def get_question_exam_codes(exam_code: str | None, subject: str | None) -> list[str]:
@@ -21,6 +22,8 @@ def get_question_exam_codes(exam_code: str | None, subject: str | None) -> list[
         return []
     if exam_code == "COMMON":
         return ["COMMON"]
+    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
+        return ["COMMON", "Z001"]
     if subject in PUBLIC_SUBJECTS and exam_code in VERSION_EXAM_CODES:
         return ["COMMON", exam_code]
     return [exam_code]

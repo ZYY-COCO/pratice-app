@@ -22,6 +22,7 @@ from app.services.reports import build_ability_item
 router = APIRouter(prefix="/report", tags=["能力报告"])
 
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
+VERSION_EXAM_CODES = {"Z001", "Z002"}
 EXAM_SUBJECTS = {
     "Z001": ["中华文化", "英语运用", "逻辑推理"],
     "Z002": ["中华文化", "英语运用", "数学基础"],
@@ -36,7 +37,7 @@ def belongs_to_exam(question: dict | None, exam_code: str | None) -> bool:
     question_exam_code = question.get("exam_code")
     if question_exam_code == exam_code:
         return True
-    return question_exam_code == "COMMON" and question.get("subject") in PUBLIC_SUBJECTS
+    return question_exam_code in {"COMMON", *VERSION_EXAM_CODES} and question.get("subject") in PUBLIC_SUBJECTS
 
 
 def safe_int(value: object) -> int:

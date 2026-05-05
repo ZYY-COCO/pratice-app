@@ -6,6 +6,7 @@ from supabase import Client
 from app.db import get_supabase_admin
 
 VERSION_EXAM_CODES = {"Z001", "Z002"}
+PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
 
 
 def get_question_or_404(supabase: Client, question_id: str) -> dict:
@@ -23,6 +24,9 @@ def resolve_stats_exam_code(
 ) -> str:
     """COMMON 公共题按用户当前版本写入能力统计，避免报告里出现 COMMON 分组。"""
     question_exam_code = question["exam_code"]
+    if question.get("subject") in PUBLIC_SUBJECTS and requested_exam_code in VERSION_EXAM_CODES:
+        return requested_exam_code
+
     if question_exam_code != "COMMON":
         return question_exam_code
 

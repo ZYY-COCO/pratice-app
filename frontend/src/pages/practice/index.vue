@@ -12,9 +12,9 @@
       <view v-if="showCultureProgress" class="culture-progress-card">
         <view class="culture-progress-head">
           <view>
-            <view class="culture-progress-title">中华文化掌握进度</view>
+            <view class="culture-progress-title">学习范围</view>
             <view class="culture-progress-sub">
-              {{ cultureProgressLoading ? '正在同步你的刷题记录...' : `已掌握 ${cultureMasteredText} / ${cultureTotalText}` }}
+              {{ cultureProgressLoading ? '正在同步你的刷题记录...' : `已学习 ${cultureLearnedText} / 共 ${cultureTotalText}` }}
             </view>
           </view>
           <view class="culture-percent">{{ cultureProgressPercent }}%</view>
@@ -22,17 +22,6 @@
 
         <view class="culture-progress-track">
           <view class="culture-progress-fill" :style="{ width: cultureProgressWidth }"></view>
-        </view>
-
-        <view class="culture-progress-foot">
-          <view class="culture-foot-item">
-            <text class="culture-foot-label">待复习</text>
-            <text class="culture-foot-value">{{ cultureReviewDueCount }}题</text>
-          </view>
-          <view class="culture-foot-item">
-            <text class="culture-foot-label">复习周期</text>
-            <text class="culture-foot-value">{{ cultureReviewCycleText }}</text>
-          </view>
         </view>
       </view>
 
@@ -479,9 +468,8 @@ const startButtonText = computed(() => (practiceMode.value === 'comprehensive' ?
 const cultureProgressPercent = computed(() => Math.max(0, Math.min(100, Number(cultureProgress.value.progress_percent || 0))))
 const cultureProgressWidth = computed(() => `${cultureProgressPercent.value}%`)
 const cultureReviewDueCount = computed(() => Number(cultureProgress.value.review_due_count || 0))
-const cultureMasteredText = computed(() => formatQuestionAmount(cultureProgress.value.mastered_questions))
+const cultureLearnedText = computed(() => formatQuestionAmount(cultureProgress.value.mastered_questions))
 const cultureTotalText = computed(() => formatQuestionAmount(cultureProgress.value.total_questions))
-const cultureReviewCycleText = computed(() => (cultureProgress.value.review_days || DEFAULT_CULTURE_PROGRESS.review_days).join('/'))
 const cultureReviewDisabled = computed(() => loading.value || cultureReviewLoading.value || cultureReviewDueCount.value <= 0)
 const cultureReviewButtonText = computed(() => {
   if (cultureReviewLoading.value) return '加载中'
@@ -2300,38 +2288,6 @@ function scrollToResultSection() {
   border-radius: inherit;
   background: linear-gradient(90deg, var(--gyt-primary), #7ea8ff);
   box-shadow: 0 8rpx 20rpx var(--gyt-primary-shadow);
-}
-
-.culture-progress-foot {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 16rpx;
-  margin-top: 22rpx;
-}
-
-.culture-foot-item {
-  padding: 18rpx;
-  border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.72);
-  border: 2rpx solid rgba(230, 235, 245, 0.82);
-}
-
-.culture-foot-label,
-.culture-foot-value {
-  display: block;
-}
-
-.culture-foot-label {
-  color: #98a2b3;
-  font-size: 21rpx;
-  font-weight: 800;
-}
-
-.culture-foot-value {
-  margin-top: 6rpx;
-  color: #172033;
-  font-size: 24rpx;
-  font-weight: 900;
 }
 
 .count-head {
