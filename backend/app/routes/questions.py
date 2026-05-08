@@ -1,6 +1,7 @@
 import re
 import random
 from datetime import datetime, timedelta, timezone
+from urllib.parse import unquote
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -28,6 +29,19 @@ def get_question_exam_codes(exam_code: str | None, subject: str | None) -> list[
     if subject in PUBLIC_SUBJECTS and exam_code in VERSION_EXAM_CODES:
         return ["COMMON", exam_code]
     return [exam_code]
+
+
+def normalize_query_text(value: str | None) -> str | None:
+    if value is None:
+        return None
+
+    text = str(value).strip()
+    for _ in range(3):
+        decoded = unquote(text)
+        if decoded == text:
+            break
+        text = decoded
+    return text
 
 
 def hide_answer(row: dict, include_answer: bool = False) -> dict:
@@ -198,6 +212,7 @@ def list_questions(
     limit: int = Query(default=20, ge=1, le=100),
     randomize: bool = Query(default=False),
 ) -> QuestionListResponse:
+    subject = normalize_query_text(subject)
     supabase = get_supabase_admin()
     query = supabase.table("questions").select("*")
     exam_codes = get_question_exam_codes(exam_code, subject)
@@ -228,6 +243,9 @@ def list_questions_by_module(
     submodule: str = Query(min_length=1),
     limit: int = Query(default=10, ge=1, le=50),
 ) -> QuestionListResponse:
+    subject = normalize_query_text(subject) or subject
+    module = normalize_query_text(module) or module
+    submodule = normalize_query_text(submodule) or submodule
     supabase = get_supabase_admin()
     query = supabase.table("questions").select("*")
     exam_codes = get_question_exam_codes(exam_code, subject)
@@ -247,6 +265,7 @@ def get_question_progress(
     exam_code: str = Query(pattern="^(Z001|Z002|COMMON)$"),
     subject: str = Query(min_length=1),
 ) -> QuestionProgressResponse:
+    subject = normalize_query_text(subject) or subject
     supabase = get_supabase_admin()
     summary = build_progress_summary(supabase, user_id, exam_code, subject)
     return QuestionProgressResponse(
@@ -268,6 +287,7 @@ def list_review_due_questions(
     subject: str = Query(min_length=1),
     limit: int = Query(default=10, ge=1, le=30),
 ) -> QuestionListResponse:
+    subject = normalize_query_text(subject) or subject
     supabase = get_supabase_admin()
     summary = build_progress_summary(supabase, user_id, exam_code, subject)
     due_ids = summary["review_due_ids"][:limit]

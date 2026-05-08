@@ -29,6 +29,12 @@ echo "==> Publishing frontend"
 sudo mkdir -p "${WEB_DIR}"
 sudo rsync -a --delete frontend/dist/build/h5/ "${WEB_DIR}/"
 
+echo "==> Updating Nginx site"
+sudo cp deploy/tencent-cloud/nginx.conf /etc/nginx/sites-available/gangyantong
+sudo ln -sfn /etc/nginx/sites-available/gangyantong /etc/nginx/sites-enabled/gangyantong
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+
 echo "==> Restarting services"
 sudo systemctl restart gangyantong-backend
 sudo systemctl reload nginx

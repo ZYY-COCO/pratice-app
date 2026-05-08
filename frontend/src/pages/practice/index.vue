@@ -573,7 +573,7 @@ watch(subject, () => {
 onLoad((options) => {
   syncAccessToken()
   if (options?.mock_exam === '1') {
-    const nextExamCode = decodeURIComponent(options.exam_code || examCode.value || 'Z001')
+    const nextExamCode = decodeRouteValue(options.exam_code, examCode.value || 'Z001')
     examCode.value = nextExamCode
     subject.value = getMockExamThirdSubject(nextExamCode)
     uni.setStorageSync('examCode', nextExamCode)
@@ -586,19 +586,19 @@ onLoad((options) => {
     return
   }
   if (options?.subject) {
-    subject.value = decodeURIComponent(options.subject)
+    subject.value = decodeRouteValue(options.subject)
     uni.setStorageSync('subject', subject.value)
   }
   if (options?.count) {
-    const nextCount = Number(decodeURIComponent(options.count))
+    const nextCount = Number(decodeRouteValue(options.count))
     if (questionCountOptions.includes(nextCount)) {
       selectedQuestionSize.value = nextCount
     }
   }
   openMap.value = buildOpenMap(getSubjectTree(subject.value))
   if (options?.module && options?.submodule) {
-    const module = decodeURIComponent(options.module)
-    const submodule = decodeURIComponent(options.submodule)
+    const module = decodeRouteValue(options.module)
+    const submodule = decodeRouteValue(options.submodule)
     openMap.value = {
       ...openMap.value,
       [module]: true
@@ -606,7 +606,7 @@ onLoad((options) => {
     selectedTags.value = [submodule]
   }
   if (options?.ai_session_id) {
-    aiSessionId.value = decodeURIComponent(options.ai_session_id)
+    aiSessionId.value = decodeRouteValue(options.ai_session_id)
     loadAiTrainingSession(aiSessionId.value)
     return
   }
@@ -639,6 +639,20 @@ function buildOpenMap(sections) {
     result[item.module] = false
     return result
   }, {})
+}
+
+function decodeRouteValue(value, fallback = '') {
+  let text = value === undefined || value === null ? fallback : String(value)
+  for (let index = 0; index < 3; index += 1) {
+    try {
+      const decoded = decodeURIComponent(text)
+      if (decoded === text) break
+      text = decoded
+    } catch (error) {
+      break
+    }
+  }
+  return text
 }
 
 function readAccessToken() {
