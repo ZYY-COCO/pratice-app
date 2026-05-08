@@ -28,3 +28,16 @@ def get_current_user_id(token: Annotated[str, Depends(get_bearer_token)]) -> str
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
     return user.id
+
+
+def get_optional_current_user_id(authorization: Annotated[str | None, Header()] = None) -> str | None:
+    """Return the current user id when a bearer token exists, otherwise allow public access."""
+
+    if not authorization:
+        return None
+
+    scheme, _, token = authorization.partition(" ")
+    if scheme.lower() != "bearer" or not token:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid Authorization header")
+
+    return get_current_user_id(token)

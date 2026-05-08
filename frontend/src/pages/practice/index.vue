@@ -1052,11 +1052,6 @@ async function loadCultureProgress() {
   }
 
   syncAccessToken()
-  if (!hasAccessToken.value) {
-    cultureProgress.value = { ...DEFAULT_CULTURE_PROGRESS }
-    return
-  }
-
   cultureProgressLoading.value = true
   try {
     const data = await fetchQuestionProgress({

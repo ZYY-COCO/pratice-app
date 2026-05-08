@@ -5,7 +5,7 @@ from datetime import datetime, timedelta, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
-from app.dependencies import get_current_user_id
+from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.questions import Passage, Question, QuestionListResponse, QuestionProgressResponse
 
 router = APIRouter(tags=["题目"])
@@ -14,6 +14,7 @@ PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
 VERSION_EXAM_CODES = {"Z001", "Z002"}
 EBBINGHAUS_REVIEW_DAYS = [1, 2, 4, 7, 15, 30]
 CULTURE_SUBJECT = "中华文化"
+SUPABASE_PAGE_SIZE = 1000
 
 
 def get_question_exam_codes(exam_code: str | None, subject: str | None) -> list[str]:
@@ -67,15 +68,31 @@ def parse_supabase_datetime(value: str | None) -> datetime:
 
 
 def fetch_subject_question_rows_for_codes(supabase, exam_codes: list[str], subject: str) -> list[dict]:
-    query = supabase.table("questions").select("id, stem")
     if not exam_codes:
         return []
-    if len(exam_codes) > 1:
-        query = query.in_("exam_code", exam_codes)
-    else:
-        query = query.eq("exam_code", exam_codes[0])
-    response = query.eq("subject", subject).range(0, 4999).execute()
-    return deduplicate_question_rows(response.data or [])
+
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        query = supabase.table("questions").select("id, stem")
+        if len(exam_codes) > 1:
+            query = query.in_("exam_code", exam_codes)
+        else:
+            query = query.eq("exam_code", exam_codes[0])
+
+        response = (
+            query.eq("subject", subject)
+            .order("id")
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+            .execute()
+        )
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < SUPABASE_PAGE_SIZE:
+            break
+        offset += SUPABASE_PAGE_SIZE
+
+    return deduplicate_question_rows(rows)
 
 
 def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[dict]:
@@ -88,31 +105,42 @@ def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[
     return rows
 
 
-def build_progress_summary(supabase, user_id: str, exam_code: str, subject: str) -> dict:
+def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        response = (
+            supabase.table("user_answers")
+            .select("question_id, is_correct, created_at")
+            .eq("user_id", user_id)
+            .order("created_at", desc=False)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+            .execute()
+        )
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < SUPABASE_PAGE_SIZE:
+            break
+        offset += SUPABASE_PAGE_SIZE
+    return rows
+
+
+def build_progress_summary(supabase, user_id: str | None, exam_code: str, subject: str) -> dict:
     questions = fetch_subject_question_rows(supabase, exam_code, subject)
     question_ids = {row["id"] for row in questions}
     total_questions = len(questions)
 
-    if not question_ids:
+    if not question_ids or not user_id:
         return {
-            "total_questions": 0,
+            "total_questions": total_questions,
             "mastered_questions": 0,
             "progress_percent": 0,
             "review_due_count": 0,
             "review_due_ids": [],
         }
 
-    response = (
-        supabase.table("user_answers")
-        .select("question_id, is_correct, created_at")
-        .eq("user_id", user_id)
-        .order("created_at", desc=False)
-        .range(0, 9999)
-        .execute()
-    )
-
     stats_by_question: dict[str, dict] = {}
-    for row in response.data or []:
+    for row in fetch_user_answer_rows(supabase, user_id):
         question_id = row.get("question_id")
         if question_id not in question_ids:
             continue
@@ -215,7 +243,7 @@ def list_questions_by_module(
 
 @router.get("/questions/progress", response_model=QuestionProgressResponse)
 def get_question_progress(
-    user_id: str = Depends(get_current_user_id),
+    user_id: str | None = Depends(get_optional_current_user_id),
     exam_code: str = Query(pattern="^(Z001|Z002|COMMON)$"),
     subject: str = Query(min_length=1),
 ) -> QuestionProgressResponse:
