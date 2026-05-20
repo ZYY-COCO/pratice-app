@@ -51,14 +51,15 @@ function toSubscript(value) {
 }
 
 function stripMathDelimiters(value) {
-  return value
+  return String(value)
     .replace(/\\\((.*?)\\\)/g, '$1')
     .replace(/\\\[(.*?)\\\]/g, '$1')
     .replace(/\$(.*?)\$/g, '$1')
 }
 
 function normalizeLatexCommands(value) {
-  return value
+  return String(value)
+    .replace(/\\left\./g, '')
     .replace(/\\left/g, '')
     .replace(/\\right/g, '')
     .replace(/\\,/g, ' ')
@@ -74,9 +75,275 @@ function normalizeLatexCommands(value) {
     .replace(/\\geq?/g, '≥')
     .replace(/\\neq/g, '≠')
     .replace(/\\partial/g, '∂')
-    .replace(/\\sqrt\{([^{}]+)\}/g, '√($1)')
+    .replace(/\\int/g, '∫')
     .replace(/\\(sin|cos|tan|ln|log|sec)\b/g, '$1')
-    .replace(/\b(sin|cos|tan|ln|log|sec)(?=[0-9])/g, '$1 ')
+    .replace(/\b(sin|cos|tan|ln|log|sec)(?=[0-9A-Za-z])/g, '$1 ')
+}
+
+function replacePowers(value) {
+  return String(value)
+    .replace(/\^\{?(-?[0-9xyn])\}?/g, (_, power) => toSuperscript(power))
+    .replace(/\^\((-?\d+)\)/g, (_, power) => toSuperscript(power))
+}
+
+function replaceSubscripts(value) {
+  return String(value).replace(/_\{?([0-9xyen+\-])\}?/g, (_, subscript) => toSubscript(subscript))
+}
+
+function tidyMathTextBase(value) {
+  return String(value)
+    .replace(/\s+/g, ' ')
+    .replace(/\s*→\s*/g, '→')
+    .replace(/∂\s+(?=[A-Za-z])/g, '∂')
+    .replace(/(∂[⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ˣʸⁿ]*)\s+(?=[A-Za-z])/g, '$1')
+    .replace(/\bd\s+(?=[A-Za-z])/g, 'd')
+    .replace(/\s+([，。；：？！、)])/g, '$1')
+    .replace(/([(])\s+/g, '$1')
+    .replace(/\s+([)])/g, '$1')
+}
+
+function tidyMathText(value) {
+  return tidyMathTextBase(value).trim()
+}
+
+function parseBraceGroup(value, start) {
+  let cursor = start
+  while (value[cursor] === ' ') cursor += 1
+  if (value[cursor] !== '{') return null
+
+  let depth = 0
+  for (let index = cursor; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '{') {
+      depth += 1
+    } else if (char === '}') {
+      depth -= 1
+      if (depth === 0) {
+        return {
+          content: value.slice(cursor + 1, index),
+          end: index + 1
+        }
+      }
+    }
+  }
+
+  return null
+}
+
+function parseBracketGroup(value, start) {
+  let cursor = start
+  while (value[cursor] === ' ') cursor += 1
+  if (value[cursor] !== '[') return null
+
+  let depth = 0
+  for (let index = cursor; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '[') {
+      depth += 1
+    } else if (char === ']') {
+      depth -= 1
+      if (depth === 0) {
+        return { content: value.slice(cursor + 1, index), end: index + 1 }
+      }
+    }
+  }
+
+  return null
+}
+
+function parseParenGroup(value, start) {
+  let cursor = start
+  while (value[cursor] === ' ') cursor += 1
+  if (value[cursor] !== '(') return null
+
+  let depth = 0
+  for (let index = cursor; index < value.length; index += 1) {
+    const char = value[index]
+    if (char === '(') {
+      depth += 1
+    } else if (char === ')') {
+      depth -= 1
+      if (depth === 0) {
+        return { content: value.slice(cursor + 1, index), end: index + 1 }
+      }
+    }
+  }
+
+  return null
+}
+
+function parseLatexScript(value, start) {
+  let cursor = start
+  while (value[cursor] === ' ') cursor += 1
+  if (value[cursor] !== '_' && value[cursor] !== '^') return null
+
+  const marker = value[cursor]
+  cursor += 1
+  while (value[cursor] === ' ') cursor += 1
+
+  const group = parseBraceGroup(value, cursor)
+  if (group) {
+    return {
+      marker,
+      content: group.content,
+      end: group.end
+    }
+  }
+
+  if (cursor < value.length) {
+    return {
+      marker,
+      content: value[cursor],
+      end: cursor + 1
+    }
+  }
+
+  return null
+}
+
+function parseLatexScripts(value, start) {
+  let cursor = start
+  let lower = ''
+  let upper = ''
+
+  for (let index = 0; index < 2; index += 1) {
+    const script = parseLatexScript(value, cursor)
+    if (!script) break
+    if (script.marker === '_') {
+      lower = script.content
+    } else {
+      upper = script.content
+    }
+    cursor = script.end
+  }
+
+  if (!lower && !upper) return null
+  return { lower, upper, end: cursor }
+}
+
+function parseStructuredLatex(value) {
+  const raw = String(value || '')
+  const tokens = []
+  let cursor = 0
+  let index = 0
+
+  function pushText(end) {
+    if (end > cursor) {
+      tokens.push({ type: 'rawText', text: raw.slice(cursor, end) })
+    }
+  }
+
+  while (index < raw.length) {
+    if (raw.startsWith('\\frac', index)) {
+      const numerator = parseBraceGroup(raw, index + 5)
+      const denominator = numerator ? parseBraceGroup(raw, numerator.end) : null
+      if (numerator && denominator) {
+        pushText(index)
+        tokens.push({ type: 'fraction', numerator: numerator.content, denominator: denominator.content })
+        index = denominator.end
+        cursor = index
+        continue
+      }
+    }
+
+    if (raw.startsWith('\\left.', index)) {
+      pushText(index)
+      index += 6
+      cursor = index
+      continue
+    }
+
+    if (raw.startsWith('\\right|', index)) {
+      pushText(index)
+      const scripts = parseLatexScripts(raw, index + 7)
+      tokens.push({ type: 'evalBar', condition: scripts?.lower || '' })
+      index = scripts?.end || index + 7
+      cursor = index
+      continue
+    }
+
+    if (raw[index] === '|') {
+      const scripts = parseLatexScripts(raw, index + 1)
+      if (scripts?.lower) {
+        pushText(index)
+        tokens.push({ type: 'evalBar', condition: scripts.lower })
+        index = scripts.end
+        cursor = index
+        continue
+      }
+    }
+
+    if (raw.startsWith('\\int', index)) {
+      pushText(index)
+      const scripts = parseLatexScripts(raw, index + 4)
+      tokens.push({ type: 'integral', lower: scripts?.lower || '', upper: scripts?.upper || '' })
+      index = scripts?.end || index + 4
+      cursor = index
+      continue
+    }
+
+    if (raw.startsWith('\\sqrt', index)) {
+      let groupStart = index + 5
+      const optionalRoot = parseBracketGroup(raw, groupStart)
+      if (optionalRoot) {
+        groupStart = optionalRoot.end
+      }
+      const radicand = parseBraceGroup(raw, groupStart)
+      if (radicand) {
+        pushText(index)
+        tokens.push({ type: 'sqrt', radicand: radicand.content })
+        index = radicand.end
+        cursor = index
+        continue
+      }
+    }
+
+    if (raw[index] === '√') {
+      const radicand = parseParenGroup(raw, index + 1)
+      if (radicand) {
+        pushText(index)
+        tokens.push({ type: 'sqrt', radicand: radicand.content })
+        index = radicand.end
+        cursor = index
+        continue
+      }
+    }
+
+    if (raw.startsWith('\\lim_', index)) {
+      const condition = parseBraceGroup(raw, index + 5)
+      if (condition) {
+        pushText(index)
+        tokens.push({ type: 'limit', condition: condition.content })
+        index = condition.end
+        cursor = index
+        continue
+      }
+    }
+
+    if (raw.startsWith('lim', index)) {
+      const condition = parseParenGroup(raw, index + 3)
+      if (condition) {
+        pushText(index)
+        tokens.push({ type: 'limit', condition: condition.content })
+        index = condition.end
+        cursor = index
+        continue
+      }
+    }
+
+    index += 1
+  }
+
+  pushText(raw.length)
+  return tokens
+}
+
+function formatRawText(value) {
+  let result = String(value || '')
+  result = normalizeLatexCommands(result)
+  result = replacePowers(result)
+  result = replaceSubscripts(result)
+  return tidyMathTextBase(result)
 }
 
 function wrapFractionPart(value) {
@@ -85,77 +352,46 @@ function wrapFractionPart(value) {
   return /[\s+\-*/]/.test(value) ? `(${value})` : value
 }
 
-function replaceFractions(value) {
-  let result = value
-  const fractionPattern = /\\frac\{([^{}]+)\}\{([^{}]+)\}/g
-  let previous = ''
-
-  while (previous !== result) {
-    previous = result
-    result = result.replace(fractionPattern, (_, numerator, denominator) => {
-      return `(${wrapFractionPart(formatMathText(numerator))} / ${wrapFractionPart(formatMathText(denominator))})`
+function formatForPlain(value) {
+  const raw = stripMathDelimiters(value || '')
+  const parts = parseStructuredLatex(raw)
+  const text = parts
+    .map((part) => {
+      if (part.type === 'rawText') {
+        return formatRawText(part.text)
+      }
+      if (part.type === 'fraction') {
+        return `${wrapFractionPart(formatForPlain(part.numerator))}/${wrapFractionPart(formatForPlain(part.denominator))}`
+      }
+      if (part.type === 'sqrt') {
+        return `√(${formatForPlain(part.radicand)})`
+      }
+      if (part.type === 'limit') {
+        return `lim(${formatForPlain(part.condition)})`
+      }
+      if (part.type === 'integral') {
+        const lower = part.lower ? `_${formatForPlain(part.lower)}` : ''
+        const upper = part.upper ? `^${formatForPlain(part.upper)}` : ''
+        return `∫${lower}${upper}`
+      }
+      if (part.type === 'evalBar') {
+        return `|_${formatForPlain(part.condition)}`
+      }
+      return ''
     })
-  }
-
-  return result
-}
-
-function replaceLimits(value) {
-  return value.replace(/\\lim_\{([^{}]+)\}/g, (_, condition) => {
-    return `lim(${formatMathText(condition)})`
-  })
-}
-
-function replacePowers(value) {
-  return value
-    .replace(/\^\{?(-?[0-9xyn])\}?/g, (_, power) => toSuperscript(power))
-    .replace(/\^\((-?\d+)\)/g, (_, power) => toSuperscript(power))
-}
-
-function replaceSubscripts(value) {
-  return value.replace(/_\{?([0-9xyen+\-])\}?/g, (_, subscript) => toSubscript(subscript))
-}
-
-function tidyMathTextBase(value) {
-  return value
-    .replace(/\s+/g, ' ')
-    .replace(/\s*→\s*/g, '→')
-    .replace(/\s+([，。；：？！、])/g, '$1')
-    .replace(/([(])\s+/g, '$1')
-    .replace(/\s+([)])/g, '$1')
-    .replace(/lim\s*\(([^)]+)\)/g, 'lim($1)')
-}
-
-function tidyMathText(value) {
-  return tidyMathTextBase(value)
-    .trim()
+    .join('')
+  return tidyMathText(text)
 }
 
 export function formatMathText(value) {
   if (value === null || value === undefined) {
     return ''
   }
-
-  let result = String(value)
-  result = stripMathDelimiters(result)
-  result = replaceLimits(result)
-  result = replaceFractions(result)
-  result = normalizeLatexCommands(result)
-  result = replacePowers(result)
-  result = replaceSubscripts(result)
-  return tidyMathText(result)
-}
-
-function formatMathSegment(value) {
-  let result = String(value || '')
-  result = normalizeLatexCommands(result)
-  result = replacePowers(result)
-  result = replaceSubscripts(result)
-  return tidyMathTextBase(result)
+  return formatForPlain(value)
 }
 
 function cleanFractionPart(value) {
-  const text = formatMathSegment(value).trim()
+  const text = formatForPlain(value).trim()
   if ((text.startsWith('(') && text.endsWith(')')) || (text.startsWith('[') && text.endsWith(']'))) {
     return text.slice(1, -1).trim()
   }
@@ -170,27 +406,38 @@ function createFractionToken(numerator, denominator) {
   }
 }
 
-function extractLatexFractionTokens(value) {
-  let result = value
-  const fractions = []
-  const fractionPattern = /\\frac\{([^{}]+)\}\{([^{}]+)\}/g
-  let previous = ''
-
-  while (previous !== result) {
-    previous = result
-    result = result.replace(fractionPattern, (_, numerator, denominator) => {
-      const marker = `@@MATHFRAC${fractions.length}@@`
-      fractions.push(createFractionToken(numerator, denominator))
-      return marker
-    })
+function createSqrtToken(radicand) {
+  return {
+    type: 'sqrt',
+    radicand: formatForPlain(radicand)
   }
+}
 
-  return { result, fractions }
+function createLimitToken(condition) {
+  return {
+    type: 'limit',
+    condition: formatForPlain(condition)
+  }
+}
+
+function createIntegralToken(lower, upper) {
+  return {
+    type: 'integral',
+    lower: formatForPlain(lower),
+    upper: formatForPlain(upper)
+  }
+}
+
+function createEvalBarToken(condition) {
+  return {
+    type: 'evalBar',
+    condition: formatForPlain(condition)
+  }
 }
 
 const SUPERSCRIPT_CHARS = '⁰¹²³⁴⁵⁶⁷⁸⁹⁺⁻ˣʸⁿ'
 const SUBSCRIPT_CHARS = '₀₁₂₃₄₅₆₇₈₉₊₋ₓᵧₐₑₙ'
-const SIMPLE_MATH_PART = `[A-Za-z0-9π∞∂]+[A-Za-z0-9π∞∂${SUPERSCRIPT_CHARS}${SUBSCRIPT_CHARS}]*`
+const SIMPLE_MATH_PART = `[A-Za-z0-9π∞∂√${SUPERSCRIPT_CHARS}${SUBSCRIPT_CHARS}]+`
 const GROUPED_MATH_PART = `\\[[^\\]]+\\]|\\([^)]+\\)|${SIMPLE_MATH_PART}`
 const PLAIN_FRACTION_PATTERN = new RegExp(`(${GROUPED_MATH_PART})\\s*\\/\\s*(${GROUPED_MATH_PART})`, 'g')
 
@@ -200,7 +447,7 @@ function pushTextToken(tokens, text) {
 }
 
 function pushPlainMathTokens(tokens, value) {
-  const text = formatMathSegment(value)
+  const text = formatRawText(value)
   let cursor = 0
   let match
 
@@ -219,27 +466,272 @@ export function tokenizeMathText(value) {
     return []
   }
 
-  let result = String(value)
-  result = stripMathDelimiters(result)
-  result = replaceLimits(result)
-
-  const extracted = extractLatexFractionTokens(result)
-  result = formatMathSegment(extracted.result)
-
+  const raw = stripMathDelimiters(value)
+  const parsed = parseStructuredLatex(raw)
   const tokens = []
-  const markerPattern = /@@MATHFRAC(\d+)@@/g
-  let cursor = 0
-  let match
 
-  while ((match = markerPattern.exec(result)) !== null) {
-    pushPlainMathTokens(tokens, result.slice(cursor, match.index))
-    const fraction = extracted.fractions[Number(match[1])]
-    if (fraction) {
-      tokens.push(fraction)
+  parsed.forEach((part) => {
+    if (part.type === 'rawText') {
+      pushPlainMathTokens(tokens, part.text)
+      return
     }
-    cursor = match.index + match[0].length
+    if (part.type === 'fraction') {
+      tokens.push(createFractionToken(part.numerator, part.denominator))
+      return
+    }
+    if (part.type === 'sqrt') {
+      tokens.push(createSqrtToken(part.radicand))
+      return
+    }
+    if (part.type === 'limit') {
+      tokens.push(createLimitToken(part.condition))
+      return
+    }
+    if (part.type === 'integral') {
+      tokens.push(createIntegralToken(part.lower, part.upper))
+      return
+    }
+    if (part.type === 'evalBar') {
+      tokens.push(createEvalBarToken(part.condition))
+    }
+  })
+
+  return tokens.filter((token) => token.type !== 'text' || token.text)
+}
+
+const KATEX_COMMAND_PATTERN =
+  /\\(?:frac|dfrac|tfrac|sqrt|lim|int|partial|left|right|sum|prod|sin|cos|tan|ln|log|cdot|times|leq|le|geq|ge|neq|infty|pi|to|mathrm)(?=[^A-Za-z]|$)/g
+
+const CJK_PATTERN = /[\u3400-\u9fff]/
+const CJK_OR_STOP_PUNCT_PATTERN = /[\u3400-\u9fff\u3002\uff0c\uff1b\uff1a\uff1f\uff01\uff0e]/
+const WHOLE_NUMBER_FRACTION_PATTERN = /^[-+]?\d+(?:\.\d+)?\s*\/\s*[-+]?\d+(?:\.\d+)?$/
+
+function normalizeMathSource(value) {
+  return String(value ?? '').replace(/\r?\n/g, ' ').trim()
+}
+
+function normalizeKatexLatex(value) {
+  return String(value ?? '')
+    .replace(/\u221a\s*\(([^()]*)\)/g, '\\sqrt{$1}')
+    .replace(/\u221e/g, '\\infty')
+    .replace(/\u2192/g, '\\to')
+    .replace(/\u00b9/g, '^1')
+    .replace(/\u00b2/g, '^2')
+    .replace(/\u00b3/g, '^3')
+    .trim()
+}
+
+export function escapeMathTextHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;')
+}
+
+function pushKatexPart(parts, math, content) {
+  if (!content) return
+  parts.push({
+    math,
+    content: math ? normalizeKatexLatex(content) : content
+  })
+}
+
+function findNextDelimiter(text, start) {
+  const candidates = [
+    { open: '\\(', close: '\\)', display: false },
+    { open: '\\[', close: '\\]', display: true },
+    { open: '$', close: '$', display: false }
+  ]
+    .map((delimiter) => ({ ...delimiter, index: text.indexOf(delimiter.open, start) }))
+    .filter((delimiter) => delimiter.index >= 0)
+    .sort((left, right) => left.index - right.index)
+
+  return candidates[0] || null
+}
+
+function splitExplicitMath(text) {
+  const parts = []
+  let cursor = 0
+  let foundMath = false
+
+  while (cursor < text.length) {
+    const delimiter = findNextDelimiter(text, cursor)
+    if (!delimiter) break
+
+    if (delimiter.open === '$' && delimiter.index > 0 && text[delimiter.index - 1] === '\\') {
+      cursor = delimiter.index + 1
+      continue
+    }
+
+    const contentStart = delimiter.index + delimiter.open.length
+    const closeIndex = text.indexOf(delimiter.close, contentStart)
+    if (closeIndex < 0) break
+
+    pushTextWithImplicitMath(parts, text.slice(cursor, delimiter.index))
+    pushKatexPart(parts, true, text.slice(contentStart, closeIndex))
+    foundMath = true
+    cursor = closeIndex + delimiter.close.length
   }
 
-  pushPlainMathTokens(tokens, result.slice(cursor))
-  return tokens.filter((token) => token.type === 'fraction' || token.text)
+  pushTextWithImplicitMath(parts, text.slice(cursor))
+  return foundMath ? parts : null
+}
+
+function findNextCommandStart(text, start) {
+  KATEX_COMMAND_PATTERN.lastIndex = start
+  const match = KATEX_COMMAND_PATTERN.exec(text)
+  return match ? match.index : -1
+}
+
+function readCommandMathRun(text, start) {
+  let cursor = start
+  let braceDepth = 0
+  let parenDepth = 0
+  let bracketDepth = 0
+
+  while (cursor < text.length) {
+    const char = text[cursor]
+
+    if (char === '\\') {
+      cursor += 1
+      continue
+    }
+
+    if (char === '{') braceDepth += 1
+    if (char === '}') braceDepth = Math.max(0, braceDepth - 1)
+    if (char === '(') parenDepth += 1
+    if (char === ')') parenDepth = Math.max(0, parenDepth - 1)
+    if (char === '[') bracketDepth += 1
+    if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1)
+
+    const depth = braceDepth + parenDepth + bracketDepth
+    if (cursor > start && depth === 0 && (CJK_OR_STOP_PUNCT_PATTERN.test(char) || char === '?' || char === '!')) {
+      break
+    }
+
+    cursor += 1
+  }
+
+  return cursor
+}
+
+function hasUsefulPlainMathSignal(value) {
+  const text = value.trim()
+  if (!text) return false
+  if (WHOLE_NUMBER_FRACTION_PATTERN.test(text)) return true
+  if (!/[A-Za-z0-9]/.test(text)) return false
+  const words = text.match(/[A-Za-z]{3,}/g) || []
+  const allowedMathWords = new Set(['sin', 'cos', 'tan', 'log', 'lim', 'max', 'min'])
+  if (words.some((word) => !allowedMathWords.has(word))) return false
+  if (/[=^_]/.test(text)) return true
+  return /^[([-]?\d+(?:\.\d+)?\s*\/\s*[-+]?\d+(?:\.\d+)?[\])]?$/.test(text)
+}
+
+function readPlainMathRun(text, start) {
+  let cursor = start
+  let braceDepth = 0
+  let parenDepth = 0
+  let bracketDepth = 0
+
+  while (cursor < text.length) {
+    const char = text[cursor]
+    if (char === '{') braceDepth += 1
+    if (char === '}') braceDepth = Math.max(0, braceDepth - 1)
+    if (char === '(') parenDepth += 1
+    if (char === ')') parenDepth = Math.max(0, parenDepth - 1)
+    if (char === '[') bracketDepth += 1
+    if (char === ']') bracketDepth = Math.max(0, bracketDepth - 1)
+
+    const depth = braceDepth + parenDepth + bracketDepth
+    if (cursor > start && depth === 0 && CJK_OR_STOP_PUNCT_PATTERN.test(char)) {
+      break
+    }
+
+    cursor += 1
+  }
+
+  return cursor
+}
+
+function pushTextWithImplicitMath(parts, value) {
+  const text = String(value || '')
+  let plainCursor = 0
+  let searchCursor = 0
+
+  while (searchCursor < text.length) {
+    let start = -1
+    for (let index = searchCursor; index < text.length; index += 1) {
+      const char = text[index]
+      const previous = index > 0 ? text[index - 1] : ''
+      if (/[A-Za-z0-9]/.test(previous)) continue
+      if (/[A-Za-z0-9([]/.test(char)) {
+        start = index
+        break
+      }
+    }
+
+    if (start < 0) {
+      pushKatexPart(parts, false, text.slice(plainCursor))
+      return
+    }
+
+    const end = readPlainMathRun(text, start)
+    const candidate = text.slice(start, end).trim()
+
+    if (hasUsefulPlainMathSignal(candidate) && !CJK_PATTERN.test(candidate)) {
+      pushKatexPart(parts, false, text.slice(plainCursor, start))
+      pushKatexPart(parts, true, candidate)
+      plainCursor = end
+      searchCursor = end
+    } else {
+      searchCursor = start + 1
+    }
+  }
+
+  pushKatexPart(parts, false, text.slice(plainCursor))
+}
+
+function splitImplicitCommandMath(text) {
+  const parts = []
+  let cursor = 0
+
+  while (cursor < text.length) {
+    const start = findNextCommandStart(text, cursor)
+    if (start < 0) break
+
+    pushTextWithImplicitMath(parts, text.slice(cursor, start))
+    const end = readCommandMathRun(text, start)
+    pushKatexPart(parts, true, text.slice(start, end))
+    cursor = end
+  }
+
+  pushTextWithImplicitMath(parts, text.slice(cursor))
+  return parts
+}
+
+function isWholeMathText(text) {
+  if (!text || CJK_PATTERN.test(text)) return false
+  KATEX_COMMAND_PATTERN.lastIndex = 0
+  if (KATEX_COMMAND_PATTERN.test(text)) {
+    KATEX_COMMAND_PATTERN.lastIndex = 0
+    return true
+  }
+  KATEX_COMMAND_PATTERN.lastIndex = 0
+  return hasUsefulPlainMathSignal(text)
+}
+
+export function splitMathTextForKatex(value) {
+  const text = normalizeMathSource(value)
+  if (!text) return []
+
+  const explicitParts = splitExplicitMath(text)
+  if (explicitParts) return explicitParts
+
+  if (isWholeMathText(text)) {
+    return [{ math: true, content: normalizeKatexLatex(text) }]
+  }
+
+  return splitImplicitCommandMath(text)
 }
