@@ -75,12 +75,17 @@
         </view>
       </view>
     </view>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import IcpFooter from '../../components/IcpFooter.vue'
 import { fetchLeaderboard } from '../../api/reports'
 import { getAuthUser, isLoggedIn } from '../../utils/auth'
 

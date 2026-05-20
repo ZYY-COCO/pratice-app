@@ -78,12 +78,17 @@
         {{ bindingEmail ? '换绑中...' : '确认换绑' }}
       </button>
     </SectionCard>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { changeEmailWithCode, sendChangeEmailCode, updateProfile } from '../../api/auth'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'

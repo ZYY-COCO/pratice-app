@@ -695,6 +695,9 @@
       </view>
     </view>
 
+    <!-- #ifdef H5 -->
+    <IcpFooter :compact="showBottomTab" />
+    <!-- #endif -->
     <BottomTabBar v-if="showBottomTab" v-model="activeTab" :items="tabs" />
   </view>
 </template>
@@ -703,6 +706,7 @@
 import { computed, ref, watch } from 'vue'
 import { onLoad, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import IcpFooter from '../../components/IcpFooter.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'

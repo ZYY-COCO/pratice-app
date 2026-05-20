@@ -318,6 +318,10 @@
         <button class="sheet-close-btn" @tap="closeAnswerSheet">继续答题</button>
       </view>
     </view>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
@@ -330,6 +334,7 @@ import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
+import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 import QuestionOption from '../../components/QuestionOption.vue'
 import TagAccordion from '../../components/TagAccordion.vue'

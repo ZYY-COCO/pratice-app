@@ -277,12 +277,17 @@
       <view class="tip-title">{{ tipType === 'success' ? '操作结果' : '提示信息' }}</view>
       <view class="tip-text">{{ tipText }}</view>
     </view>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import IcpFooter from '../../components/IcpFooter.vue'
 import {
   checkBackendHealth,
   fetchWechatAuthUrl,

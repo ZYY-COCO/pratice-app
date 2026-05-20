@@ -16,11 +16,16 @@
     </view>
 
     <button class="ghost-button" @tap="changeVersion">切换考试版本</button>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { computed } from 'vue'
+import IcpFooter from '../../components/IcpFooter.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { getExamOption } from '../../utils/exam'
 

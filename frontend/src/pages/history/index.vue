@@ -176,6 +176,10 @@
         </view>
       </view>
     </view>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
@@ -183,6 +187,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
+import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 
 const filters = [

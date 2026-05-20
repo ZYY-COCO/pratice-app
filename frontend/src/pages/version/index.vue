@@ -22,12 +22,17 @@
     </view>
 
     <button class="primary-button" @tap="confirm">进入科目选择</button>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { ref } from 'vue'
 import ExamSegment from '../../components/ExamSegment.vue'
+import IcpFooter from '../../components/IcpFooter.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { EXAM_OPTIONS } from '../../utils/exam'
 

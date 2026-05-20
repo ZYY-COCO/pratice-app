@@ -91,12 +91,17 @@
         </view>
       </SectionCard>
     </template>
+
+    <!-- #ifdef H5 -->
+    <IcpFooter />
+    <!-- #endif -->
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
+import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
