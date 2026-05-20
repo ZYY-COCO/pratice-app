@@ -241,14 +241,16 @@
         />
       </view>
 
-      <button
-        v-if="!reviewMode"
-        class="submit-btn"
-        :disabled="!selectedOption || submitted || submitting"
-        @tap="handlePrimaryAction"
-      >
-        {{ primaryButtonText }}
-      </button>
+      <view v-if="!reviewMode && !submitted" class="primary-action-row">
+        <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
+        <button
+          class="submit-btn"
+          :disabled="!selectedOption || submitting"
+          @tap="handlePrimaryAction"
+        >
+          {{ primaryButtonText }}
+        </button>
+      </view>
 
       <view id="result-anchor">
         <ExplanationPanel
@@ -276,8 +278,11 @@
         </template>
 
         <template v-else>
-          <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
-          <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
+          <view class="review-nav-row">
+            <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
+            <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
+            <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
+          </view>
         </template>
       </view>
 
@@ -406,6 +411,7 @@ const questionMeta = ref({
 const comprehensiveAnswers = ref({})
 const reviewMode = ref(false)
 const reviewResults = ref([])
+const instantQuestionResults = ref({})
 const summaryMode = ref(false)
 const aiSummaryMode = ref(false)
 const aiSummary = ref(null)
@@ -1265,23 +1271,37 @@ async function fetchMockExamSectionPool(section, usedKeys) {
 function applyQuestionAt(index) {
   currentQuestionIndex.value = index
   const nextQuestion = questionPool.value[index]
+  const nextQuestionKey = nextQuestion.questionId || nextQuestion.id
+  const savedInstantResult = practiceMode.value === 'comprehensive' ? null : instantQuestionResults.value[nextQuestionKey]
   questionMeta.value = {
-    questionId: nextQuestion.questionId || nextQuestion.id,
+    questionId: nextQuestionKey,
     module: nextQuestion.module || '',
     submodule: nextQuestion.submodule || ''
   }
-  correctAnswer.value = ''
-  answerExplanation.value = ''
-  resultTag.value = ''
-  selectedOption.value = practiceMode.value === 'comprehensive' ? comprehensiveAnswers.value[nextQuestion.questionId || nextQuestion.id] || '' : ''
-  submitted.value = false
   submitting.value = false
-  abilityAccuracy.value = null
-  if (!mockExamMode.value) {
-    timerSeconds.value = 0
+
+  if (savedInstantResult) {
+    selectedOption.value = savedInstantResult.selectedAnswer
+    correctAnswer.value = savedInstantResult.correctAnswer
+    answerExplanation.value = savedInstantResult.explanation
+    resultTag.value = savedInstantResult.resultTag
+    abilityAccuracy.value = savedInstantResult.abilityAccuracy ?? null
+    submitted.value = true
+    clearTimer()
+  } else {
+    correctAnswer.value = ''
+    answerExplanation.value = ''
+    resultTag.value = ''
+    selectedOption.value = practiceMode.value === 'comprehensive' ? comprehensiveAnswers.value[nextQuestionKey] || '' : ''
+    submitted.value = false
+    abilityAccuracy.value = null
+    if (!mockExamMode.value) {
+      timerSeconds.value = 0
+    }
+    startTimer()
   }
+
   loadCurrentFavoriteStatus()
-  startTimer()
   scrollToQuestionTop()
 }
 
@@ -1682,6 +1702,28 @@ function buildPendingComprehensiveResult(question, selected, error) {
   }
 }
 
+function saveInstantQuestionResult(answerResult) {
+  if (!answerResult || practiceMode.value === 'comprehensive') {
+    return
+  }
+
+  const key = answerResult.question?.questionId || answerResult.question?.id
+  if (!key) {
+    return
+  }
+
+  instantQuestionResults.value = {
+    ...instantQuestionResults.value,
+    [key]: {
+      selectedAnswer: answerResult.selectedAnswer,
+      correctAnswer: answerResult.correctAnswer,
+      explanation: answerResult.explanation,
+      resultTag: resultTag.value,
+      abilityAccuracy: abilityAccuracy.value
+    }
+  }
+}
+
 async function submitComprehensiveBatch(entries) {
   try {
     const response = await request({
@@ -1789,6 +1831,7 @@ async function submitAnswer() {
     if (isAiTrainingMode.value && answerResult) {
       upsertAiReviewResult(answerResult)
     }
+    saveInstantQuestionResult(answerResult)
     submitted.value = true
     clearTimer()
     await nextTick()
@@ -1801,6 +1844,7 @@ async function submitAnswer() {
       resultTag.value = '本题已尝试提交，网络返回异常，稍后可在 AI 总结页重新读取结果。'
       abilityAccuracy.value = null
       upsertAiReviewResult(pending)
+      saveInstantQuestionResult(pending)
       submitted.value = true
       clearTimer()
       await nextTick()
@@ -1923,10 +1967,16 @@ async function toggleCurrentFavorite() {
 }
 
 function goPrevQuestion() {
-  if (!reviewMode.value || !hasPrevQuestion.value) {
+  if (!hasPrevQuestion.value) {
     return
   }
-  applyReviewAt(currentQuestionIndex.value - 1)
+
+  if (reviewMode.value) {
+    applyReviewAt(currentQuestionIndex.value - 1)
+  } else {
+    applyQuestionAt(currentQuestionIndex.value - 1)
+  }
+
   scrollToQuestionTop()
 }
 
@@ -2037,6 +2087,7 @@ function resetQuizState() {
   correctAnswer.value = ''
   answerExplanation.value = ''
   resultTag.value = ''
+  instantQuestionResults.value = {}
   clearTimer()
 }
 
@@ -2799,6 +2850,39 @@ function scrollToResultSection() {
   font-size: 24rpx;
   font-weight: 700;
   text-align: center;
+}
+
+.primary-action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 16rpx;
+}
+
+.prev-btn {
+  flex: 0 0 35%;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid var(--gyt-primary-border);
+  background: #ffffff;
+  color: var(--gyt-primary);
+  font-size: 28rpx;
+  font-weight: 900;
+  box-shadow: 0 10rpx 22rpx rgba(20, 31, 66, 0.06);
+}
+
+.primary-action-row .submit-btn {
+  flex: 1;
+  width: auto;
+  margin: 0;
+}
+
+.prev-btn[disabled] {
+  border-color: #e6ebf5;
+  background: #f2f4f7;
+  color: #98a2b3;
+  box-shadow: none;
 }
 
 .action-row {
