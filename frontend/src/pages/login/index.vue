@@ -69,13 +69,23 @@
 
           <view class="field">
             <view class="label">密码</view>
-            <input
-              v-model="loginForm.password"
-              class="input"
-              password
-              type="text"
-              placeholder="请输入密码"
-            />
+            <view class="password-input-wrap">
+              <input
+                v-model="loginForm.password"
+                class="input password-input"
+                :password="!passwordVisible.login"
+                type="text"
+                placeholder="请输入密码"
+              />
+              <button
+                class="eye-toggle"
+                :class="{ visible: passwordVisible.login }"
+                :aria-label="passwordVisible.login ? '隐藏密码' : '显示密码'"
+                @tap="togglePasswordVisibility('login')"
+              >
+                <text class="eye-icon"></text>
+              </button>
+            </view>
           </view>
         </template>
       </template>
@@ -149,24 +159,44 @@
 
           <view class="field">
             <view class="label">密码</view>
-            <input
-              v-model="registerForm.password"
-              class="input"
-              password
-              type="text"
-              placeholder="请输入至少 6 位密码"
-            />
+            <view class="password-input-wrap">
+              <input
+                v-model="registerForm.password"
+                class="input password-input"
+                :password="!passwordVisible.register"
+                type="text"
+                placeholder="请输入至少 6 位密码"
+              />
+              <button
+                class="eye-toggle"
+                :class="{ visible: passwordVisible.register }"
+                :aria-label="passwordVisible.register ? '隐藏密码' : '显示密码'"
+                @tap="togglePasswordVisibility('register')"
+              >
+                <text class="eye-icon"></text>
+              </button>
+            </view>
           </view>
 
           <view class="field">
             <view class="label">确认密码</view>
-            <input
-              v-model="registerForm.confirmPassword"
-              class="input"
-              password
-              type="text"
-              placeholder="请再次输入密码"
-            />
+            <view class="password-input-wrap">
+              <input
+                v-model="registerForm.confirmPassword"
+                class="input password-input"
+                :password="!passwordVisible.registerConfirm"
+                type="text"
+                placeholder="请再次输入密码"
+              />
+              <button
+                class="eye-toggle"
+                :class="{ visible: passwordVisible.registerConfirm }"
+                :aria-label="passwordVisible.registerConfirm ? '隐藏密码' : '显示密码'"
+                @tap="togglePasswordVisibility('registerConfirm')"
+              >
+                <text class="eye-icon"></text>
+              </button>
+            </view>
           </view>
         </template>
 
@@ -239,24 +269,44 @@
 
           <view class="field">
             <view class="label">新密码</view>
-            <input
-              v-model="resetForm.newPassword"
-              class="input"
-              password
-              type="text"
-              placeholder="请输入新密码"
-            />
+            <view class="password-input-wrap">
+              <input
+                v-model="resetForm.newPassword"
+                class="input password-input"
+                :password="!passwordVisible.reset"
+                type="text"
+                placeholder="请输入新密码"
+              />
+              <button
+                class="eye-toggle"
+                :class="{ visible: passwordVisible.reset }"
+                :aria-label="passwordVisible.reset ? '隐藏密码' : '显示密码'"
+                @tap="togglePasswordVisibility('reset')"
+              >
+                <text class="eye-icon"></text>
+              </button>
+            </view>
           </view>
 
           <view class="field">
             <view class="label">确认新密码</view>
-            <input
-              v-model="resetForm.confirmPassword"
-              class="input"
-              password
-              type="text"
-              placeholder="请再次输入新密码"
-            />
+            <view class="password-input-wrap">
+              <input
+                v-model="resetForm.confirmPassword"
+                class="input password-input"
+                :password="!passwordVisible.resetConfirm"
+                type="text"
+                placeholder="请再次输入新密码"
+              />
+              <button
+                class="eye-toggle"
+                :class="{ visible: passwordVisible.resetConfirm }"
+                :aria-label="passwordVisible.resetConfirm ? '隐藏密码' : '显示密码'"
+                @tap="togglePasswordVisibility('resetConfirm')"
+              >
+                <text class="eye-icon"></text>
+              </button>
+            </view>
           </view>
         </template>
       </template>
@@ -317,6 +367,13 @@ const sendingCode = reactive({
   phoneLogin: false,
   phoneRegister: false,
   phoneReset: false
+})
+const passwordVisible = reactive({
+  login: false,
+  register: false,
+  registerConfirm: false,
+  reset: false,
+  resetConfirm: false
 })
 
 const loginForm = reactive({
@@ -404,6 +461,10 @@ const submitButtonText = computed(() => {
   }
   return authMethod.value === 'phone' ? '验证并登录' : '验证并重置密码'
 })
+
+function togglePasswordVisibility(key) {
+  passwordVisible[key] = !passwordVisible[key]
+}
 
 onLoad((options) => {
   if (options?.redirect) {
@@ -1139,6 +1200,85 @@ function goBackHome() {
   color: #172033;
   display: flex;
   align-items: center;
+}
+
+.password-input-wrap {
+  position: relative;
+  margin-top: 10rpx;
+}
+
+.password-input-wrap .input {
+  margin-top: 0;
+}
+
+.password-input {
+  padding-right: 92rpx;
+}
+
+.eye-toggle {
+  position: absolute;
+  right: 14rpx;
+  top: 50%;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 20rpx;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translateY(-50%);
+}
+
+.eye-toggle::after {
+  border: 0;
+}
+
+.eye-icon {
+  position: relative;
+  width: 36rpx;
+  height: 24rpx;
+  border: 4rpx solid #98a2b3;
+  border-radius: 50%;
+}
+
+.eye-icon::before {
+  content: '';
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 10rpx;
+  height: 10rpx;
+  border-radius: 50%;
+  background: #98a2b3;
+  transform: translate(-50%, -50%);
+}
+
+.eye-icon::after {
+  content: '';
+  position: absolute;
+  left: -8rpx;
+  top: 50%;
+  width: 52rpx;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: #98a2b3;
+  transform: translateY(-50%) rotate(-38deg);
+  transform-origin: center;
+}
+
+.eye-toggle.visible .eye-icon {
+  border-color: var(--gyt-primary);
+}
+
+.eye-toggle.visible .eye-icon::before {
+  background: var(--gyt-primary);
+}
+
+.eye-toggle.visible .eye-icon::after {
+  opacity: 0;
 }
 
 .code-row {
