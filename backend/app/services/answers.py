@@ -120,6 +120,13 @@ def calculate_next_accuracy(current: dict | None, is_correct: bool) -> float:
     return round(correct_count / total_count * 100, 2)
 
 
+def pick_wrong_answer(correct_answer: str) -> str:
+    for option in ("A", "B", "C", "D"):
+        if option != correct_answer:
+            return option
+    return "A"
+
+
 def persist_answer_submission(
     user_id: str,
     question: dict,
@@ -175,6 +182,33 @@ def submit_answer(
         "explanation": question["explanation"],
         "added_to_wrong_questions": not is_correct,
         "ability_accuracy": calculate_next_accuracy(current_ability, is_correct),
+    }
+
+
+def mark_unfamiliar_answer(
+    supabase: Client,
+    user_id: str,
+    question_id: str,
+    requested_exam_code: str | None = None,
+) -> dict:
+    question = get_question_or_404(supabase, question_id)
+    stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
+    stats_question = {**question, "exam_code": stats_exam_code}
+    current_ability = get_current_ability_stats(supabase, user_id, stats_question)
+    selected_answer = pick_wrong_answer(question["answer"])
+
+    return {
+        "question_id": question_id,
+        "exam_code": stats_exam_code,
+        "subject": question["subject"],
+        "module": question["module"],
+        "submodule": question["submodule"],
+        "selected_answer": selected_answer,
+        "correct_answer": question["answer"],
+        "is_correct": False,
+        "explanation": question["explanation"],
+        "added_to_wrong_questions": True,
+        "ability_accuracy": calculate_next_accuracy(current_ability, False),
     }
 
 

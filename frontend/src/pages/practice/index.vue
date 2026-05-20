@@ -245,12 +245,20 @@
         <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
         <button
           class="submit-btn"
-          :disabled="!selectedOption || submitting"
+          :disabled="!selectedOption || submitting || markingUnfamiliar"
           @tap="handlePrimaryAction"
         >
           {{ primaryButtonText }}
         </button>
       </view>
+      <button
+        v-if="showUnfamiliarShortcut"
+        class="unfamiliar-btn"
+        :disabled="markingUnfamiliar || submitting"
+        @tap="markCurrentUnfamiliarAndNext"
+      >
+        {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习' }}
+      </button>
 
       <view id="result-anchor">
         <ExplanationPanel
@@ -278,6 +286,14 @@
         </template>
 
         <template v-else>
+          <button
+            v-if="showUnfamiliarAfterCorrect"
+            class="unfamiliar-btn"
+            :disabled="markingUnfamiliar"
+            @tap="markCurrentUnfamiliarAndNext"
+          >
+            {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习' }}
+          </button>
           <view class="review-nav-row">
             <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
             <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
@@ -335,6 +351,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
+import { markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
@@ -386,6 +403,7 @@ const aiSessionId = ref('')
 const selectedOption = ref('')
 const submitted = ref(false)
 const submitting = ref(false)
+const markingUnfamiliar = ref(false)
 const loading = ref(false)
 const loadError = ref('')
 const shortageTip = ref('')
@@ -412,6 +430,7 @@ const comprehensiveAnswers = ref({})
 const reviewMode = ref(false)
 const reviewResults = ref([])
 const instantQuestionResults = ref({})
+const unfamiliarQuestionMap = ref({})
 const summaryMode = ref(false)
 const aiSummaryMode = ref(false)
 const aiSummary = ref(null)
@@ -432,6 +451,7 @@ const isCultureSubject = computed(() => subject.value === CULTURE_SUBJECT)
 const showCultureProgress = computed(() => mode.value === 'tags' && isCultureSubject.value)
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
+const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.value[currentQuestionKey.value]))
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
@@ -448,6 +468,19 @@ const canFavoriteCurrent = computed(() => {
   return Boolean(questionId) && !String(questionId).startsWith('mock-')
 })
 const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
+const canMarkCurrentUnfamiliar = computed(() =>
+  isCultureSubject.value &&
+  practiceMode.value === 'special' &&
+  !reviewMode.value &&
+  canFavoriteCurrent.value &&
+  !isCurrentMarkedUnfamiliar.value
+)
+const showUnfamiliarShortcut = computed(() => canMarkCurrentUnfamiliar.value && !submitted.value)
+const showUnfamiliarAfterCorrect = computed(() =>
+  canMarkCurrentUnfamiliar.value &&
+  submitted.value &&
+  selectedOption.value === correctAnswer.value
+)
 const pageTitle = computed(() => {
   if (mockExamMode.value) {
     return '模拟测试'
@@ -1596,6 +1629,66 @@ async function handlePrimaryAction() {
   await submitAnswer()
 }
 
+async function markCurrentUnfamiliarAndNext() {
+  syncAccessToken()
+
+  if (!hasAccessToken.value) {
+    uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/practice/index')}` })
+    return
+  }
+
+  if (!canMarkCurrentUnfamiliar.value || markingUnfamiliar.value) {
+    return
+  }
+
+  markingUnfamiliar.value = true
+  const question = currentQuestion.value
+  const questionKey = currentQuestionKey.value
+
+  try {
+    const result = await markQuestionUnfamiliar({
+      question_id: questionMeta.value.questionId,
+      used_time: timerSeconds.value,
+      exam_code: examCode.value
+    })
+
+    unfamiliarQuestionMap.value = {
+      ...unfamiliarQuestionMap.value,
+      [questionKey]: true
+    }
+
+    if (!selectedOption.value) {
+      selectedOption.value = result.selected_answer
+    }
+    correctAnswer.value = result.correct_answer
+    answerExplanation.value = result.explanation
+    resultTag.value = '已标记不熟悉，已加入错题本和复习队列。'
+    abilityAccuracy.value = result.ability_accuracy
+    submitted.value = true
+    clearTimer()
+
+    saveInstantQuestionResult({
+      question,
+      selectedAnswer: selectedOption.value || result.selected_answer,
+      correctAnswer: result.correct_answer,
+      explanation: result.explanation,
+      isCorrect: false,
+      syncFailed: false
+    })
+
+    uni.showToast({ title: '已加入复习', icon: 'none' })
+    if (hasNextQuestion.value) {
+      applyQuestionAt(currentQuestionIndex.value + 1)
+    } else {
+      finishQuiz()
+    }
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '标记不熟悉失败', icon: 'none' })
+  } finally {
+    markingUnfamiliar.value = false
+  }
+}
+
 async function handleComprehensiveAction() {
   if (!selectedOption.value) {
     return
@@ -2082,12 +2175,14 @@ function resetQuizState() {
   selectedOption.value = ''
   submitted.value = false
   submitting.value = false
+  markingUnfamiliar.value = false
   timerSeconds.value = 0
   abilityAccuracy.value = null
   correctAnswer.value = ''
   answerExplanation.value = ''
   resultTag.value = ''
   instantQuestionResults.value = {}
+  unfamiliarQuestionMap.value = {}
   clearTimer()
 }
 
@@ -2876,6 +2971,30 @@ function scrollToResultSection() {
   flex: 1;
   width: auto;
   margin: 0;
+}
+
+.unfamiliar-btn {
+  width: 100%;
+  min-height: 88rpx;
+  margin-top: 16rpx;
+  padding: 0 24rpx;
+  border-radius: 26rpx;
+  border: 2rpx solid #fed7aa;
+  background: #fff7ed;
+  color: #c2410c;
+  font-size: 27rpx;
+  font-weight: 900;
+  box-shadow: none;
+}
+
+.unfamiliar-btn[disabled] {
+  border-color: #e6ebf5;
+  background: #f2f4f7;
+  color: #98a2b3;
+}
+
+.action-row .unfamiliar-btn {
+  margin-top: 0;
 }
 
 .prev-btn[disabled] {

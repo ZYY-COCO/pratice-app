@@ -13,3 +13,11 @@ export function fetchAnswerHistory(params = {}) {
     url: query ? `/answers/history?${query}` : '/answers/history'
   })
 }
+
+export function markQuestionUnfamiliar(payload) {
+  return request({
+    url: '/answers/mark-unfamiliar',
+    method: 'POST',
+    data: payload
+  })
+}

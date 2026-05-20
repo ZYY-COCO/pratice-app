@@ -178,7 +178,7 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
         stats["last_answer_at"] = created_at
 
     now = datetime.now(timezone.utc)
-    learned_questions = sum(1 for stats in stats_by_question.values() if stats["first_is_correct"] is True)
+    learned_questions = sum(1 for stats in stats_by_question.values() if stats["last_is_correct"] is True)
     review_due: list[tuple[datetime, str]] = []
     for question_id, stats in stats_by_question.items():
         last_answer_at = stats["last_answer_at"]

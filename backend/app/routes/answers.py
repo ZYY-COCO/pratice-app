@@ -4,12 +4,13 @@ from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
 from app.schemas.answers import (
     AnswerHistoryResponse,
+    MarkUnfamiliarRequest,
     SubmitAnswerRequest,
     SubmitAnswerResponse,
     SubmitBatchAnswerRequest,
     SubmitBatchAnswerResponse,
 )
-from app.services.answers import list_answer_history, persist_answer_submission, submit_answer
+from app.services.answers import list_answer_history, mark_unfamiliar_answer, persist_answer_submission, submit_answer
 
 router = APIRouter(prefix="/answers", tags=["作答"])
 
@@ -101,3 +102,31 @@ def submit_batch(
         items.append(SubmitAnswerResponse(**result))
 
     return SubmitBatchAnswerResponse(items=items)
+
+
+@router.post("/mark-unfamiliar", response_model=SubmitAnswerResponse)
+def mark_unfamiliar(
+    payload: MarkUnfamiliarRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> SubmitAnswerResponse:
+    supabase = get_supabase_admin()
+    result = mark_unfamiliar_answer(
+        supabase=supabase,
+        user_id=user_id,
+        question_id=payload.question_id,
+        requested_exam_code=payload.exam_code,
+    )
+    persist_answer_submission(
+        user_id=user_id,
+        question={
+            "id": result["question_id"],
+            "exam_code": result.get("exam_code"),
+            "subject": result.get("subject"),
+            "module": result.get("module"),
+            "submodule": result.get("submodule"),
+        },
+        selected_answer=result["selected_answer"],
+        used_time=payload.used_time,
+        is_correct=False,
+    )
+    return SubmitAnswerResponse(**result)
