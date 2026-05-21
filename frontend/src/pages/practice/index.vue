@@ -308,6 +308,16 @@
       </template>
     </template>
 
+    <AiQuestionAssistant
+      v-if="showQuestionAssistant"
+      :subject="subject"
+      :module-name="questionMeta.module || currentQuestion.module"
+      :submodule="questionMeta.submodule || currentQuestion.submodule"
+      :submitted="assistantQuestionSubmitted"
+      :selected-answer="selectedOption"
+      :correct-answer="correctAnswer"
+    />
+
     <view v-if="showAnswerSheet" class="answer-sheet-mask" @tap="closeAnswerSheet">
       <view class="answer-sheet" @tap.stop>
         <view class="sheet-handle"></view>
@@ -355,6 +365,7 @@ import { markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
+import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
@@ -451,6 +462,8 @@ const isCultureSubject = computed(() => subject.value === CULTURE_SUBJECT)
 const showCultureProgress = computed(() => mode.value === 'tags' && isCultureSubject.value)
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
+const assistantQuestionSubmitted = computed(() => submitted.value || reviewMode.value)
+const showQuestionAssistant = computed(() => mode.value !== 'tags' && !summaryMode.value && !aiSummaryMode.value && !showAnswerSheet.value)
 const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.value[currentQuestionKey.value]))
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
