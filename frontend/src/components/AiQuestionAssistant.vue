@@ -47,6 +47,7 @@
               v-for="item in promptOptions"
               :key="item"
               class="prompt-chip"
+              :disabled="sending"
               @tap="sendPrompt(item)"
             >
               {{ item }}
@@ -77,7 +78,9 @@
             placeholder="向 AI 助教提问"
             @confirm="sendDraft"
           />
-          <button class="send-btn" :disabled="!draft.trim()" @tap="sendDraft">发送</button>
+          <button class="send-btn" :disabled="!draft.trim() || sending" @tap="sendDraft">
+            {{ sending ? '发送中' : '发送' }}
+          </button>
         </view>
       </view>
     </view>
@@ -86,8 +89,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
+import { sendQuestionChat } from '../api/ai'
 
 const props = defineProps({
+  questionId: {
+    type: String,
+    default: ''
+  },
   subject: {
     type: String,
     default: ''
@@ -117,6 +125,7 @@ const props = defineProps({
 const visible = ref(false)
 const draft = ref('')
 const messages = ref([])
+const sending = ref(false)
 
 const moduleDisplay = computed(() => {
   const parts = [props.moduleName, props.submodule].filter(Boolean)
@@ -137,31 +146,58 @@ function closePanel() {
   visible.value = false
 }
 
-function pushMockReply() {
+function buildFallbackReply() {
+  return '这是 AI 助教的测试回复，后续将接入真实接口。'
+}
+
+function pushAssistantReply(content) {
   messages.value.push({
     role: 'assistant',
-    content: '这是 AI 助教的测试回复，后续将接入真实接口。'
+    content: content || buildFallbackReply()
   })
 }
 
-function sendPrompt(text) {
-  if (!text) return
-  messages.value.push({ role: 'user', content: text })
-  pushMockReply()
+async function requestAssistantReply(text) {
+  if (!props.questionId || String(props.questionId).startsWith('mock-')) {
+    pushAssistantReply(buildFallbackReply())
+    return
+  }
+
+  sending.value = true
+  try {
+    const data = await sendQuestionChat({
+      question_id: props.questionId,
+      user_message: text,
+      submitted: props.submitted,
+      user_answer: props.selectedAnswer || null
+    })
+    pushAssistantReply(data?.reply || buildFallbackReply())
+  } catch (error) {
+    pushAssistantReply(error?.detail || 'AI 助教暂时无法连接，请稍后再试。')
+  } finally {
+    sending.value = false
+  }
 }
 
-function sendDraft() {
+async function sendPrompt(text) {
+  if (!text || sending.value) return
+  messages.value.push({ role: 'user', content: text })
+  await requestAssistantReply(text)
+}
+
+async function sendDraft() {
   const text = draft.value.trim()
-  if (!text) return
+  if (!text || sending.value) return
   draft.value = ''
-  sendPrompt(text)
+  await sendPrompt(text)
 }
 
 watch(
-  () => [props.subject, props.moduleName, props.submodule, props.submitted, props.selectedAnswer, props.correctAnswer],
+  () => [props.questionId, props.subject, props.moduleName, props.submodule, props.submitted, props.selectedAnswer, props.correctAnswer],
   () => {
     draft.value = ''
     messages.value = []
+    sending.value = false
   }
 )
 </script>
@@ -350,6 +386,10 @@ watch(
 
 .prompt-chip::after {
   border: 0;
+}
+
+.prompt-chip[disabled] {
+  opacity: 0.62;
 }
 
 .empty-message {

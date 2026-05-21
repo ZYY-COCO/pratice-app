@@ -75,3 +75,12 @@ export function fetchAiTrainingSummary(sessionId) {
     timeout: 30000
   })
 }
+
+export function sendQuestionChat(payload) {
+  return request({
+    url: '/ai/question-chat',
+    method: 'POST',
+    timeout: 30000,
+    data: payload
+  })
+}

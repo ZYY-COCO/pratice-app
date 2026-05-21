@@ -27,6 +27,18 @@ class SimilarQuestionResponse(BaseModel):
     items: list[dict]
 
 
+class QuestionChatRequest(BaseModel):
+    question_id: str = Field(min_length=1)
+    user_message: str = Field(min_length=1, max_length=1000)
+    submitted: bool = False
+    user_answer: str | None = Field(default=None, max_length=8)
+
+
+class QuestionChatResponse(BaseModel):
+    reply: str
+    usage: dict[str, str] = Field(default_factory=dict)
+
+
 class AiTrainingGenerateRequest(BaseModel):
     smart_mode: bool = True
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")

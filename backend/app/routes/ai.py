@@ -17,6 +17,8 @@ from app.schemas.ai import (
     AiTrainingTarget,
     ExplainWrongRequest,
     ExplainWrongResponse,
+    QuestionChatRequest,
+    QuestionChatResponse,
     SimilarQuestionRequest,
     SimilarQuestionResponse,
     WeaknessAnalysisResponse,
@@ -212,6 +214,58 @@ def _safe_question_row(raw: dict, target: AiTrainingTarget, exam_code: str) -> d
 
 def _hide_answer(question: dict) -> dict:
     return {**question, "answer": None, "explanation": None}
+
+
+def _format_question_options(question: dict) -> str:
+    return "\n".join(
+        [
+            f"A. {_compact_text(question.get('option_a'), 500)}",
+            f"B. {_compact_text(question.get('option_b'), 500)}",
+            f"C. {_compact_text(question.get('option_c'), 500)}",
+            f"D. {_compact_text(question.get('option_d'), 500)}",
+        ]
+    )
+
+
+def _build_question_chat_prompt(question: dict, payload: QuestionChatRequest) -> str:
+    prompt_parts = [
+        "你是港研通 App 的 AI 解题助教，请基于当前题目回答用户问题。",
+        f"科目：{question.get('subject')}",
+        f"模块：{question.get('module')} / {question.get('submodule')}",
+        f"题干：{_compact_text(question.get('stem'), 1600)}",
+        f"选项：\n{_format_question_options(question)}",
+        f"用户问题：{_compact_text(payload.user_message, 1000)}",
+    ]
+
+    if payload.submitted:
+        prompt_parts.extend(
+            [
+                f"用户选择：{_compact_text(payload.user_answer, 8) or '未提供'}",
+                f"正确答案：{question.get('answer')}",
+                f"题目解析：{_compact_text(question.get('explanation'), 1800)}",
+            ]
+        )
+    else:
+        prompt_parts.append("用户尚未提交答案，只能给思路、考点和排除方向，不能透露正确答案或原解析。")
+
+    return "\n".join(prompt_parts)
+
+
+def _build_question_chat_mock_reply(question: dict, payload: QuestionChatRequest) -> str:
+    knowledge_point = f"{question.get('subject')} / {question.get('module')} / {question.get('submodule')}"
+    if payload.submitted:
+        selected_answer = _compact_text(payload.user_answer, 8) or "未提供"
+        return (
+            "这是 AI 助教的测试回复，后续将接入真实接口。"
+            f"当前题目属于 {knowledge_point}。你选择了 {selected_answer}，"
+            f"正确答案是 {question.get('answer')}。正式接入后会结合题干、选项和解析逐步说明。"
+        )
+
+    return (
+        "这是 AI 助教的测试回复，后续将接入真实接口。"
+        f"当前题目属于 {knowledge_point}。你还未提交答案，"
+        "所以我只会提示解题思路、考点和排除方向，不会透露正确答案。"
+    )
 
 
 def _candidate_key(row: dict) -> tuple[str, str, str]:
@@ -647,6 +701,24 @@ def explain_wrong(payload: ExplainWrongRequest, _: str = Depends(get_current_use
         why_wrong=f"你选择了 {payload.selected_answer}，建议先对照题干关键词与选项含义，排除不符合知识点的选项。",
         why_correct=f"正确答案是 {question['answer']}。标准解析：{question['explanation']}",
         knowledge_point=f"{question['subject']} / {question['module']} / {question['submodule']}",
+    )
+
+
+@router.post("/question-chat", response_model=QuestionChatResponse)
+def question_chat(
+    payload: QuestionChatRequest,
+    _: str = Depends(get_current_user_id),
+) -> QuestionChatResponse:
+    supabase = get_supabase_admin()
+    question = get_question_or_404(supabase, payload.question_id)
+    _build_question_chat_prompt(question, payload)
+
+    return QuestionChatResponse(
+        reply=_build_question_chat_mock_reply(question, payload),
+        usage={
+            "model": "mock",
+            "mode": "question_assistant",
+        },
     )
 
 

@@ -310,6 +310,7 @@
 
     <AiQuestionAssistant
       v-if="showQuestionAssistant"
+      :question-id="assistantQuestionId"
       :subject="subject"
       :module-name="questionMeta.module || currentQuestion.module"
       :submodule="questionMeta.submodule || currentQuestion.submodule"
@@ -462,6 +463,10 @@ const isCultureSubject = computed(() => subject.value === CULTURE_SUBJECT)
 const showCultureProgress = computed(() => mode.value === 'tags' && isCultureSubject.value)
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
+const assistantQuestionId = computed(() => {
+  const id = questionMeta.value.questionId || currentQuestion.value.questionId || currentQuestion.value.id || ''
+  return String(id).startsWith('mock-') ? '' : id
+})
 const assistantQuestionSubmitted = computed(() => submitted.value || reviewMode.value)
 const showQuestionAssistant = computed(() => mode.value !== 'tags' && !summaryMode.value && !aiSummaryMode.value && !showAnswerSheet.value)
 const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.value[currentQuestionKey.value]))
