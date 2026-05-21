@@ -66,6 +66,9 @@
             >
               <view class="message-bubble">{{ message.content }}</view>
             </view>
+            <view v-if="sending" class="message-row assistant">
+              <view class="message-bubble thinking">AI 正在思考...</view>
+            </view>
           </view>
         </scroll-view>
 
@@ -89,7 +92,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { sendQuestionChat } from '../api/ai'
+import { aiQuestionChat } from '../api/ai'
 
 const props = defineProps({
   questionId: {
@@ -165,7 +168,7 @@ async function requestAssistantReply(text) {
 
   sending.value = true
   try {
-    const data = await sendQuestionChat({
+    const data = await aiQuestionChat({
       question_id: props.questionId,
       user_message: text,
       submitted: props.submitted,
@@ -173,7 +176,7 @@ async function requestAssistantReply(text) {
     })
     pushAssistantReply(data?.reply || buildFallbackReply())
   } catch (error) {
-    pushAssistantReply(error?.detail || 'AI 助教暂时无法连接，请稍后再试。')
+    pushAssistantReply('暂时无法连接 AI，请稍后再试')
   } finally {
     sending.value = false
   }
@@ -428,6 +431,11 @@ watch(
 .message-row.user .message-bubble {
   color: #ffffff;
   background: #3478f6;
+}
+
+.message-bubble.thinking {
+  color: #667085;
+  background: #f7f9fd;
 }
 
 .input-bar {

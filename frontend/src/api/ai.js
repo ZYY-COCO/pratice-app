@@ -76,7 +76,7 @@ export function fetchAiTrainingSummary(sessionId) {
   })
 }
 
-export function sendQuestionChat(payload) {
+export function aiQuestionChat(payload) {
   return request({
     url: '/ai/question-chat',
     method: 'POST',
