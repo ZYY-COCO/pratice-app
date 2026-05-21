@@ -119,6 +119,34 @@ def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[
     return rows
 
 
+def apply_exam_code_filter(query, column: str, exam_codes: list[str]):
+    if len(exam_codes) > 1:
+        return query.in_(column, exam_codes)
+    if len(exam_codes) == 1:
+        return query.eq(column, exam_codes[0])
+    return query
+
+
+def fetch_subject_question_count_for_codes(supabase, exam_codes: list[str], subject: str) -> int:
+    if not exam_codes:
+        return 0
+
+    query = supabase.table("questions").select("id", count="exact").eq("subject", subject)
+    query = apply_exam_code_filter(query, "exam_code", exam_codes)
+    response = query.limit(1).execute()
+    return int(response.count or 0)
+
+
+def fetch_subject_question_count(supabase, exam_code: str, subject: str) -> int:
+    exam_codes = get_question_exam_codes(exam_code, subject)
+    total = fetch_subject_question_count_for_codes(supabase, exam_codes, subject)
+    if total:
+        return total
+    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
+        return fetch_subject_question_count_for_codes(supabase, [exam_code], subject)
+    return total
+
+
 def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
     rows: list[dict] = []
     offset = 0
@@ -139,12 +167,50 @@ def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
     return rows
 
 
-def build_progress_summary(supabase, user_id: str | None, exam_code: str, subject: str) -> dict:
-    questions = fetch_subject_question_rows(supabase, exam_code, subject)
-    question_ids = {row["id"] for row in questions}
-    total_questions = len(questions)
+def fetch_user_answer_rows_for_subject_codes(
+    supabase,
+    user_id: str,
+    exam_codes: list[str],
+    subject: str,
+) -> list[dict]:
+    if not exam_codes:
+        return []
 
-    if not question_ids or not user_id:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        query = (
+            supabase.table("user_answers")
+            .select("question_id,is_correct,created_at,questions!inner(id,exam_code,subject)")
+            .eq("user_id", user_id)
+            .eq("questions.subject", subject)
+            .order("created_at", desc=False)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+        )
+        query = apply_exam_code_filter(query, "questions.exam_code", exam_codes)
+        response = query.execute()
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < SUPABASE_PAGE_SIZE:
+            break
+        offset += SUPABASE_PAGE_SIZE
+    return rows
+
+
+def fetch_user_answer_rows_for_subject(supabase, user_id: str, exam_code: str, subject: str) -> list[dict]:
+    exam_codes = get_question_exam_codes(exam_code, subject)
+    rows = fetch_user_answer_rows_for_subject_codes(supabase, user_id, exam_codes, subject)
+    if rows:
+        return rows
+    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
+        return fetch_user_answer_rows_for_subject_codes(supabase, user_id, [exam_code], subject)
+    return rows
+
+
+def build_progress_summary(supabase, user_id: str | None, exam_code: str, subject: str) -> dict:
+    total_questions = fetch_subject_question_count(supabase, exam_code, subject)
+
+    if not total_questions or not user_id:
         return {
             "total_questions": total_questions,
             "mastered_questions": 0,
@@ -154,9 +220,9 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
         }
 
     stats_by_question: dict[str, dict] = {}
-    for row in fetch_user_answer_rows(supabase, user_id):
+    for row in fetch_user_answer_rows_for_subject(supabase, user_id, exam_code, subject):
         question_id = row.get("question_id")
-        if question_id not in question_ids:
+        if not question_id:
             continue
         created_at = parse_supabase_datetime(row.get("created_at"))
         stats = stats_by_question.setdefault(

@@ -514,9 +514,10 @@ const cultureProgressWidth = computed(() => `${cultureProgressPercent.value}%`)
 const cultureReviewDueCount = computed(() => Number(cultureProgress.value.review_due_count || 0))
 const cultureLearnedText = computed(() => formatQuestionAmount(cultureProgress.value.mastered_questions))
 const cultureTotalText = computed(() => formatQuestionAmount(cultureProgress.value.total_questions))
-const cultureReviewDisabled = computed(() => loading.value || cultureReviewLoading.value || cultureReviewDueCount.value <= 0)
+const cultureReviewDisabled = computed(() => loading.value || cultureReviewLoading.value || (hasAccessToken.value && cultureReviewDueCount.value <= 0))
 const cultureReviewButtonText = computed(() => {
   if (cultureReviewLoading.value) return '加载中'
+  if (!hasAccessToken.value) return '登录后同步'
   return `${cultureReviewDueCount.value}题待复习`
 })
 const quizProgressText = computed(() => {
