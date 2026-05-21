@@ -24,6 +24,7 @@ from app.schemas.ai import (
     WeaknessAnalysisResponse,
 )
 from app.services.answers import get_question_or_404
+from app.services.ai_client import call_deepseek_chat
 from app.services.reports import build_ability_item
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -251,21 +252,32 @@ def _build_question_chat_prompt(question: dict, payload: QuestionChatRequest) ->
     return "\n".join(prompt_parts)
 
 
-def _build_question_chat_mock_reply(question: dict, payload: QuestionChatRequest) -> str:
-    knowledge_point = f"{question.get('subject')} / {question.get('module')} / {question.get('submodule')}"
-    if payload.submitted:
-        selected_answer = _compact_text(payload.user_answer, 8) or "未提供"
-        return (
-            "这是 AI 助教的测试回复，后续将接入真实接口。"
-            f"当前题目属于 {knowledge_point}。你选择了 {selected_answer}，"
-            f"正确答案是 {question.get('answer')}。正式接入后会结合题干、选项和解析逐步说明。"
+def _build_question_chat_messages(question: dict, payload: QuestionChatRequest) -> list[dict[str, str]]:
+    guardrail = (
+        "用户尚未提交答案。禁止直接或变相透露正确答案、答案字母、原题解析。"
+        "只能给解题思路、知识点提醒、审题方向和排除法角度。"
+        if not payload.submitted
+        else (
+            "用户已经提交答案。可以解释正确答案、用户选择的可能错误原因、"
+            "每个选项含义或差异，以及同类题判断方法。"
         )
-
-    return (
-        "这是 AI 助教的测试回复，后续将接入真实接口。"
-        f"当前题目属于 {knowledge_point}。你还未提交答案，"
-        "所以我只会提示解题思路、考点和排除方向，不会透露正确答案。"
     )
+
+    return [
+        {
+            "role": "system",
+            "content": (
+                "你是“港研通 AI 助教”，服务港澳台考研 App 用户。"
+                "请使用简体中文回答，表达清楚，适合大学生备考理解。"
+                "回答要围绕当前题目，不要过度冗长，不要编造真题来源，"
+                "不要承诺一定提分。"
+            ),
+        },
+        {
+            "role": "user",
+            "content": f"{guardrail}\n\n{_build_question_chat_prompt(question, payload)}",
+        },
+    ]
 
 
 def _candidate_key(row: dict) -> tuple[str, str, str]:
@@ -705,18 +717,18 @@ def explain_wrong(payload: ExplainWrongRequest, _: str = Depends(get_current_use
 
 
 @router.post("/question-chat", response_model=QuestionChatResponse)
-def question_chat(
+async def question_chat(
     payload: QuestionChatRequest,
     _: str = Depends(get_current_user_id),
 ) -> QuestionChatResponse:
     supabase = get_supabase_admin()
     question = get_question_or_404(supabase, payload.question_id)
-    _build_question_chat_prompt(question, payload)
+    result = await call_deepseek_chat(_build_question_chat_messages(question, payload))
 
     return QuestionChatResponse(
-        reply=_build_question_chat_mock_reply(question, payload),
+        reply=result["reply"],
         usage={
-            "model": "mock",
+            "model": result["model"],
             "mode": "question_assistant",
         },
     )
