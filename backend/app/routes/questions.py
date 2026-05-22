@@ -88,7 +88,7 @@ def fetch_subject_question_rows_for_codes(supabase, exam_codes: list[str], subje
     rows: list[dict] = []
     offset = 0
     while True:
-        query = supabase.table("questions").select("id, stem")
+        query = apply_active_question_filter(supabase.table("questions").select("id, stem"))
         if len(exam_codes) > 1:
             query = query.in_("exam_code", exam_codes)
         else:
@@ -127,11 +127,15 @@ def apply_exam_code_filter(query, column: str, exam_codes: list[str]):
     return query
 
 
+def apply_active_question_filter(query, column: str = "status"):
+    return query.eq(column, "active")
+
+
 def fetch_subject_question_count_for_codes(supabase, exam_codes: list[str], subject: str) -> int:
     if not exam_codes:
         return 0
 
-    query = supabase.table("questions").select("id", count="exact").eq("subject", subject)
+    query = apply_active_question_filter(supabase.table("questions").select("id", count="exact")).eq("subject", subject)
     query = apply_exam_code_filter(query, "exam_code", exam_codes)
     response = query.limit(1).execute()
     return int(response.count or 0)
@@ -184,6 +188,7 @@ def fetch_user_answer_rows_for_subject_codes(
             .select("question_id,is_correct,created_at,questions!inner(id,exam_code,subject)")
             .eq("user_id", user_id)
             .eq("questions.subject", subject)
+            .eq("questions.status", "active")
             .order("created_at", desc=False)
             .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
         )
@@ -280,7 +285,7 @@ def list_questions(
 ) -> QuestionListResponse:
     subject = normalize_query_text(subject)
     supabase = get_supabase_admin()
-    query = supabase.table("questions").select("*")
+    query = apply_active_question_filter(supabase.table("questions").select("*"))
     exam_codes = get_question_exam_codes(exam_code, subject)
     if len(exam_codes) > 1:
         query = query.in_("exam_code", exam_codes)
@@ -313,7 +318,7 @@ def list_questions_by_module(
     module = normalize_query_text(module) or module
     submodule = normalize_query_text(submodule) or submodule
     supabase = get_supabase_admin()
-    query = supabase.table("questions").select("*")
+    query = apply_active_question_filter(supabase.table("questions").select("*"))
     exam_codes = get_question_exam_codes(exam_code, subject)
     if len(exam_codes) > 1:
         query = query.in_("exam_code", exam_codes)
@@ -362,7 +367,7 @@ def list_review_due_questions(
     if not due_ids:
         return QuestionListResponse(items=[], count=0)
 
-    response = supabase.table("questions").select("*").in_("id", due_ids).execute()
+    response = apply_active_question_filter(supabase.table("questions").select("*")).in_("id", due_ids).execute()
     row_by_id = {row["id"]: row for row in response.data or []}
     rows = [row_by_id[question_id] for question_id in due_ids if question_id in row_by_id]
     items = [Question(**hide_answer(row)) for row in rows]

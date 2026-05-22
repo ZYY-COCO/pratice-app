@@ -6,10 +6,14 @@ from app.db import get_supabase_admin
 from app.dependencies import is_admin_profile, require_admin_user
 from app.schemas.admin import (
     AdminFeedbackListResponse,
+    AdminFeedbackStatusRequest,
     AdminGrantMembershipRequest,
     AdminMeResponse,
     AdminOverviewResponse,
+    AdminQuestionDetailResponse,
     AdminQuestionListResponse,
+    AdminQuestionStatusRequest,
+    AdminUserDetailResponse,
     AdminUserItem,
     AdminUserListResponse,
 )
@@ -71,6 +75,38 @@ def _safe_int(value: int | str | None, fallback: int) -> int:
         return fallback
 
 
+def _build_admin_user_item(row: dict, answer_count: int = 0) -> AdminUserItem:
+    return AdminUserItem(
+        id=str(row.get("id")),
+        email=row.get("email"),
+        phone=row.get("phone"),
+        nickname=row.get("nickname"),
+        auth_provider=row.get("auth_provider"),
+        exam_target=row.get("exam_target"),
+        role=row.get("role") or "user",
+        disabled_at=row.get("disabled_at"),
+        membership_status=row.get("membership_status"),
+        membership_plan=row.get("membership_plan"),
+        membership_expires_at=row.get("membership_expires_at"),
+        created_at=row.get("created_at"),
+        answer_count=answer_count,
+    )
+
+
+def _get_user_or_404(supabase, user_id: str) -> dict:
+    response = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
+    return response.data[0]
+
+
+def _get_question_or_404(supabase, question_id: str) -> dict:
+    response = supabase.table("questions").select("*").eq("id", question_id).limit(1).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+    return response.data[0]
+
+
 def _log_admin_action(supabase, admin_profile: dict, action: str, target_type: str, target_id: str | None, details: dict | None = None) -> None:
     row = {
         "admin_user_id": admin_profile.get("id"),
@@ -104,7 +140,9 @@ def admin_overview(_: dict = Depends(require_admin_user)) -> AdminOverviewRespon
         active_year=_distinct_active_users(supabase, current - timedelta(days=365)),
         total_questions=_count_table(supabase, "questions"),
         total_feedback=total_feedback,
-        pending_feedback=total_feedback,
+        pending_feedback=_count_query(
+            supabase.table("beta_feedback").select("id", count="exact").eq("status", "open")
+        ),
         active_members=_count_query(
             supabase.table("users").select("id", count="exact").eq("membership_status", "active")
         ),
@@ -147,26 +185,93 @@ def admin_users(
         except Exception:
             answer_counts = {}
 
-    items = [
-        AdminUserItem(
-            id=str(row.get("id")),
-            email=row.get("email"),
-            phone=row.get("phone"),
-            nickname=row.get("nickname"),
-            auth_provider=row.get("auth_provider"),
-            exam_target=row.get("exam_target"),
-            role=row.get("role") or "user",
-            disabled_at=row.get("disabled_at"),
-            membership_status=row.get("membership_status"),
-            membership_plan=row.get("membership_plan"),
-            membership_expires_at=row.get("membership_expires_at"),
-            created_at=row.get("created_at"),
-            answer_count=answer_counts.get(str(row.get("id")), 0),
-        )
-        for row in rows
-        if row.get("id")
-    ]
+    items = [_build_admin_user_item(row, answer_counts.get(str(row.get("id")), 0)) for row in rows if row.get("id")]
     return AdminUserListResponse(items=items, count=int(response.count or len(items)))
+
+
+@router.get("/users/{user_id}", response_model=AdminUserDetailResponse)
+def admin_user_detail(user_id: str, _: dict = Depends(require_admin_user)) -> AdminUserDetailResponse:
+    supabase = get_supabase_admin()
+    profile = _get_user_or_404(supabase, user_id)
+    answer_summary = {"total": 0, "correct": 0, "wrong": 0, "accuracy": 0}
+    recent_answers: list[dict] = []
+    membership_orders: list[dict] = []
+    admin_actions: list[dict] = []
+
+    try:
+        total_response = (
+            supabase.table("user_answers")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        )
+        correct_response = (
+            supabase.table("user_answers")
+            .select("id", count="exact")
+            .eq("user_id", user_id)
+            .eq("is_correct", True)
+            .limit(1)
+            .execute()
+        )
+        total = int(total_response.count or 0)
+        correct = int(correct_response.count or 0)
+        answer_summary = {
+            "total": total,
+            "correct": correct,
+            "wrong": max(total - correct, 0),
+            "accuracy": round((correct / total) * 100, 1) if total else 0,
+        }
+    except Exception:
+        answer_summary = {"total": 0, "correct": 0, "wrong": 0, "accuracy": 0}
+
+    try:
+        answer_response = (
+            supabase.table("user_answers")
+            .select("id,question_id,selected_answer,is_correct,used_time,created_at,questions(exam_code,subject,module,submodule,stem)")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(50)
+            .execute()
+        )
+        recent_answers = answer_response.data or []
+    except Exception:
+        recent_answers = []
+
+    try:
+        order_response = (
+            supabase.table("membership_orders")
+            .select("*")
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        membership_orders = order_response.data or []
+    except Exception:
+        membership_orders = []
+
+    try:
+        action_response = (
+            supabase.table("admin_action_logs")
+            .select("*")
+            .eq("target_type", "user")
+            .eq("target_id", user_id)
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        )
+        admin_actions = action_response.data or []
+    except Exception:
+        admin_actions = []
+
+    return AdminUserDetailResponse(
+        profile=profile,
+        answer_summary=answer_summary,
+        recent_answers=recent_answers,
+        membership_orders=membership_orders,
+        admin_actions=admin_actions,
+    )
 
 
 @router.patch("/users/{user_id}/membership", response_model=AdminUserItem)
@@ -176,11 +281,7 @@ def admin_grant_membership(
     admin_profile: dict = Depends(require_admin_user),
 ) -> AdminUserItem:
     supabase = get_supabase_admin()
-    profile_response = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
-    if not profile_response.data:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User not found")
-
-    profile = profile_response.data[0]
+    profile = _get_user_or_404(supabase, user_id)
     current = _now()
     current_expires = _parse_datetime(profile.get("membership_expires_at"))
     base_time = current_expires if current_expires and current_expires > current else current
@@ -205,38 +306,49 @@ def admin_grant_membership(
         details={"months": payload.months, "plan": payload.plan},
     )
     row = updated_response.data[0]
-    return AdminUserItem(
-        id=str(row.get("id")),
-        email=row.get("email"),
-        phone=row.get("phone"),
-        nickname=row.get("nickname"),
-        auth_provider=row.get("auth_provider"),
-        exam_target=row.get("exam_target"),
-        role=row.get("role") or "user",
-        disabled_at=row.get("disabled_at"),
-        membership_status=row.get("membership_status"),
-        membership_plan=row.get("membership_plan"),
-        membership_expires_at=row.get("membership_expires_at"),
-        created_at=row.get("created_at"),
-        answer_count=0,
-    )
+    return _build_admin_user_item(row)
 
 
 @router.get("/feedback", response_model=AdminFeedbackListResponse)
 def admin_feedback(
+    feedback_status: str | None = Query(default=None, alias="status", max_length=20),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_admin_user),
 ) -> AdminFeedbackListResponse:
     supabase = get_supabase_admin()
-    response = (
-        supabase.table("beta_feedback")
-        .select("*", count="exact")
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-        .execute()
-    )
+    query = supabase.table("beta_feedback").select("*", count="exact").order("created_at", desc=True)
+    if feedback_status:
+        query = query.eq("status", feedback_status)
+    response = query.range(offset, offset + limit - 1).execute()
     return AdminFeedbackListResponse(items=response.data or [], count=int(response.count or 0))
+
+
+@router.patch("/feedback/{feedback_id}/status", response_model=dict)
+def admin_update_feedback_status(
+    feedback_id: str,
+    payload: AdminFeedbackStatusRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> dict:
+    supabase = get_supabase_admin()
+    update_data = {
+        "status": payload.status,
+        "admin_note": payload.admin_note,
+        "handled_by": admin_profile.get("id"),
+        "handled_at": _to_iso(_now()) if payload.status != "open" else None,
+    }
+    response = supabase.table("beta_feedback").update(update_data).eq("id", feedback_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Feedback not found")
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="update_feedback_status",
+        target_type="feedback",
+        target_id=feedback_id,
+        details={"status": payload.status},
+    )
+    return response.data[0]
 
 
 @router.get("/questions", response_model=AdminQuestionListResponse)
@@ -244,6 +356,7 @@ def admin_questions(
     exam_code: str | None = Query(default=None, max_length=20),
     subject: str | None = Query(default=None, max_length=40),
     module: str | None = Query(default=None, max_length=80),
+    question_status: str | None = Query(default=None, alias="status", max_length=20),
     search: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
@@ -257,9 +370,45 @@ def admin_questions(
         query = query.eq("subject", subject)
     if module:
         query = query.eq("module", module)
+    if question_status:
+        query = query.eq("status", question_status)
     if search:
         term = search.strip()
         if term:
             query = query.ilike("stem", f"%{term}%")
     response = query.range(offset, offset + limit - 1).execute()
     return AdminQuestionListResponse(items=response.data or [], count=int(response.count or 0))
+
+
+@router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
+def admin_question_detail(question_id: str, _: dict = Depends(require_admin_user)) -> AdminQuestionDetailResponse:
+    supabase = get_supabase_admin()
+    return AdminQuestionDetailResponse(question=_get_question_or_404(supabase, question_id))
+
+
+@router.patch("/questions/{question_id}/status", response_model=AdminQuestionDetailResponse)
+def admin_update_question_status(
+    question_id: str,
+    payload: AdminQuestionStatusRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionDetailResponse:
+    supabase = get_supabase_admin()
+    _get_question_or_404(supabase, question_id)
+    current = _now()
+    update_data = {
+        "status": payload.status,
+        "archived_at": _to_iso(current) if payload.status == "archived" else None,
+        "archived_by": admin_profile.get("id") if payload.status == "archived" else None,
+    }
+    response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question status update failed")
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="update_question_status",
+        target_type="question",
+        target_id=question_id,
+        details={"status": payload.status},
+    )
+    return AdminQuestionDetailResponse(question=response.data[0])

@@ -38,3 +38,7 @@ data/logic_sources/*_pages_fast/
 data/culture_sources/*.pdf
 data/culture_sources/*_extracted.txt
 data/culture_sources/*_ocr/
+
+# Local archives for extraction leftovers and dangerous manual-only SQL.
+archive/temp_extraction/
+archive/dangerous_sql/*.sql

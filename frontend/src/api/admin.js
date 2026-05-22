@@ -30,6 +30,13 @@ export function grantAdminMembership(userId, payload) {
   })
 }
 
+export function fetchAdminUserDetail(userId) {
+  return request({
+    url: `/admin/users/${userId}`,
+    method: 'GET'
+  })
+}
+
 export function fetchAdminFeedback(params = {}) {
   return request({
     url: '/admin/feedback',
@@ -38,10 +45,33 @@ export function fetchAdminFeedback(params = {}) {
   })
 }
 
+export function updateAdminFeedbackStatus(feedbackId, payload) {
+  return request({
+    url: `/admin/feedback/${feedbackId}/status`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchAdminQuestions(params = {}) {
   return request({
     url: '/admin/questions',
     method: 'GET',
     data: params
+  })
+}
+
+export function fetchAdminQuestionDetail(questionId) {
+  return request({
+    url: `/admin/questions/${questionId}`,
+    method: 'GET'
+  })
+}
+
+export function updateAdminQuestionStatus(questionId, payload) {
+  return request({
+    url: `/admin/questions/${questionId}/status`,
+    method: 'PATCH',
+    data: payload
   })
 }

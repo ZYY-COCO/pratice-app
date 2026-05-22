@@ -49,7 +49,7 @@
         <view v-if="usersLoading" class="inline-state">正在加载用户...</view>
         <view v-else-if="users.length === 0" class="inline-state">暂无用户数据</view>
         <view v-else class="record-list">
-          <view v-for="user in users" :key="user.id" class="record-card">
+          <view v-for="user in users" :key="user.id" class="record-card" @tap="openUser(user)">
             <view class="record-main">
               <view class="record-title">{{ user.email || user.phone || '未绑定账号' }}</view>
               <view class="record-subtitle">
@@ -63,7 +63,7 @@
                 <text v-if="user.membership_expires_at" class="record-date">至 {{ formatDate(user.membership_expires_at) }}</text>
               </view>
             </view>
-            <button class="small-btn" @tap="openGrantMembership(user)">授权会员</button>
+            <button class="small-btn" @tap.stop="openGrantMembership(user)">授权会员</button>
           </view>
         </view>
       </view>
@@ -82,7 +82,13 @@
           <view v-for="item in feedbackItems" :key="item.id" class="record-card feedback-card" @tap="openFeedback(item)">
             <view class="record-title">{{ item.feedback_type || '反馈' }}</view>
             <view class="record-subtitle clamp">{{ item.content }}</view>
-            <view class="record-date">{{ formatDate(item.created_at) }} · {{ item.source_page || '未知来源' }}</view>
+            <view class="badge-row">
+              <text class="badge" :class="{ active: item.status === 'resolved' || item.status === 'reviewed' }">
+                {{ feedbackStatusText(item.status) }}
+              </text>
+              <text class="record-date">{{ formatDate(item.created_at) }} · {{ item.source_page || '未知来源' }}</text>
+            </view>
+            <button class="small-btn inline-action" @tap.stop="openFeedbackStatusAction(item)">处理状态</button>
           </view>
         </view>
       </view>
@@ -99,6 +105,7 @@
           <input v-model="questionFilters.exam_code" class="search-input" placeholder="考试代码，如 Z001" />
           <input v-model="questionFilters.subject" class="search-input" placeholder="科目，如 中华文化" />
           <input v-model="questionFilters.module" class="search-input" placeholder="模块" />
+          <input v-model="questionFilters.status" class="search-input" placeholder="状态 active/archived" />
           <input v-model="questionFilters.search" class="search-input" placeholder="题干关键词" />
         </view>
         <button class="search-btn wide" @tap="loadQuestions">筛选题目</button>
@@ -112,8 +119,12 @@
             </view>
             <view class="badge-row">
               <text class="badge">难度 {{ item.difficulty }}</text>
+              <text class="badge" :class="{ archived: item.status === 'archived' }">{{ questionStatusText(item.status) }}</text>
               <text class="record-date">答案 {{ item.answer }}</text>
             </view>
+            <button class="small-btn inline-action" @tap.stop="toggleQuestionStatus(item)">
+              {{ item.status === 'archived' ? '恢复' : '下架' }}
+            </button>
           </view>
         </view>
       </view>
@@ -128,9 +139,13 @@ import {
   fetchAdminFeedback,
   fetchAdminMe,
   fetchAdminOverview,
+  fetchAdminQuestionDetail,
   fetchAdminQuestions,
+  fetchAdminUserDetail,
   fetchAdminUsers,
-  grantAdminMembership
+  grantAdminMembership,
+  updateAdminFeedbackStatus,
+  updateAdminQuestionStatus
 } from '../../api/admin'
 import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 
@@ -152,6 +167,7 @@ const questionFilters = reactive({
   exam_code: '',
   subject: '',
   module: '',
+  status: '',
   search: ''
 })
 
@@ -250,6 +266,7 @@ async function loadQuestions() {
       exam_code: questionFilters.exam_code || undefined,
       subject: questionFilters.subject || undefined,
       module: questionFilters.module || undefined,
+      status: questionFilters.status || undefined,
       search: questionFilters.search || undefined,
       limit: 50,
       offset: 0
@@ -278,30 +295,122 @@ function openGrantMembership(user) {
   })
 }
 
-function openFeedback(item) {
+async function openUser(user) {
+  try {
+    const detail = await fetchAdminUserDetail(user.id)
+    const profile = detail.profile || user
+    const summary = detail.answer_summary || {}
+    const latestOrder = (detail.membership_orders || [])[0]
+    const latestGrant = (detail.admin_actions || []).find((action) => action.action === 'grant_membership')
+    const content = [
+      `账号：${profile.email || profile.phone || '未绑定'}`,
+      `昵称：${profile.nickname || '未设置'}`,
+      `目标：${profile.exam_target || '未设置'}`,
+      `角色：${profile.role || 'user'}`,
+      `会员：${profile.membership_status || 'inactive'}`,
+      profile.membership_expires_at ? `到期：${formatDate(profile.membership_expires_at)}` : '',
+      `累计作答：${summary.total || 0} 题，正确 ${summary.correct || 0} 题，正确率 ${summary.accuracy || 0}%`,
+      latestOrder ? `最近订单：${latestOrder.plan_code || '-'} / ${latestOrder.status || '-'}` : '暂无会员订单记录',
+      latestGrant ? `最近后台授权：${latestGrant.details?.months || '-'} 个月 / ${formatDate(latestGrant.created_at)}` : '暂无后台授权记录'
+    ].filter(Boolean).join('\n')
+    uni.showModal({ title: '用户详情', content, showCancel: false, confirmText: '关闭' })
+  } catch (error) {
+    uni.showToast({ title: '用户详情加载失败', icon: 'none' })
+  }
+}
+
+function feedbackStatusText(status) {
+  const map = {
+    open: '待处理',
+    reviewed: '已查看',
+    resolved: '已解决',
+    ignored: '忽略'
+  }
+  return map[status] || '待处理'
+}
+
+function questionStatusText(status) {
+  return status === 'archived' ? '已下架' : '可刷题'
+}
+
+async function openFeedback(item) {
+  let latest = item
+  try {
+    // The list already contains full rows; keep this lightweight for now.
+    latest = item
+  } catch (error) {
+    latest = item
+  }
   uni.showModal({
-    title: item.feedback_type || '用户反馈',
-    content: `${item.content || ''}\n\n联系方式：${item.contact || '未填写'}`,
+    title: latest.feedback_type || '用户反馈',
+    content: `${latest.content || ''}\n\n状态：${feedbackStatusText(latest.status)}\n联系方式：${latest.contact || '未填写'}\n备注：${latest.admin_note || '无'}`,
     showCancel: false,
     confirmText: '知道了'
   })
 }
 
-function openQuestion(item) {
+function openFeedbackStatusAction(item) {
+  uni.showActionSheet({
+    itemList: ['标记已查看', '标记已解决', '标记忽略', '重新打开'],
+    success: async ({ tapIndex }) => {
+      const statuses = ['reviewed', 'resolved', 'ignored', 'open']
+      const nextStatus = statuses[tapIndex] || 'reviewed'
+      try {
+        await updateAdminFeedbackStatus(item.id, { status: nextStatus })
+        uni.showToast({ title: '反馈状态已更新', icon: 'success' })
+        await Promise.all([loadFeedback(), loadOverview()])
+      } catch (error) {
+        uni.showToast({ title: '状态更新失败', icon: 'none' })
+      }
+    }
+  })
+}
+
+async function openQuestion(item) {
+  let question = item
+  try {
+    const response = await fetchAdminQuestionDetail(item.id)
+    question = response.question || item
+  } catch (error) {
+    question = item
+  }
   const content = [
-    item.stem,
-    `A. ${item.option_a}`,
-    `B. ${item.option_b}`,
-    `C. ${item.option_c}`,
-    `D. ${item.option_d}`,
-    `答案：${item.answer}`,
-    item.explanation ? `解析：${item.explanation}` : ''
+    question.stem,
+    `A. ${question.option_a}`,
+    `B. ${question.option_b}`,
+    `C. ${question.option_c}`,
+    `D. ${question.option_d}`,
+    `答案：${question.answer}`,
+    `状态：${questionStatusText(question.status)}`,
+    question.explanation ? `解析：${question.explanation}` : ''
   ].filter(Boolean).join('\n')
   uni.showModal({
-    title: `${item.subject || '题目'}详情`,
+    title: `${question.subject || '题目'}详情`,
     content,
     showCancel: false,
     confirmText: '关闭'
+  })
+}
+
+function toggleQuestionStatus(item) {
+  const nextStatus = item.status === 'archived' ? 'active' : 'archived'
+  uni.showModal({
+    title: nextStatus === 'archived' ? '确认下架题目？' : '确认恢复题目？',
+    content: nextStatus === 'archived'
+      ? '下架后，该题不会再进入普通刷题抽题，但历史记录仍保留。'
+      : '恢复后，该题会重新进入普通刷题抽题范围。',
+    confirmText: nextStatus === 'archived' ? '下架' : '恢复',
+    confirmColor: nextStatus === 'archived' ? '#ef4444' : '#16a34a',
+    success: async (result) => {
+      if (!result.confirm) return
+      try {
+        await updateAdminQuestionStatus(item.id, { status: nextStatus })
+        uni.showToast({ title: nextStatus === 'archived' ? '题目已下架' : '题目已恢复', icon: 'success' })
+        await Promise.all([loadQuestions(), loadOverview()])
+      } catch (error) {
+        uni.showToast({ title: '题目状态更新失败', icon: 'none' })
+      }
+    }
   })
 }
 
@@ -589,6 +698,11 @@ function goBack() {
   background: #ede9fe;
 }
 
+.badge.archived {
+  color: #b42318;
+  background: #fee4e2;
+}
+
 .record-date {
   color: #98a2b3;
   font-size: 21rpx;
@@ -600,6 +714,10 @@ function goBack() {
   color: #ffffff;
   background: #0f172a;
   font-size: 23rpx;
+}
+
+.inline-action {
+  margin-top: 16rpx;
 }
 
 .filter-grid {

@@ -44,9 +44,30 @@ class AdminGrantMembershipRequest(BaseModel):
     plan: str = Field(default="admin_grant", max_length=40)
 
 
+class AdminUserDetailResponse(BaseModel):
+    profile: dict
+    answer_summary: dict
+    recent_answers: list[dict]
+    membership_orders: list[dict]
+    admin_actions: list[dict] = []
+
+
+class AdminFeedbackStatusRequest(BaseModel):
+    status: str = Field(pattern="^(open|reviewed|resolved|ignored)$")
+    admin_note: str | None = Field(default=None, max_length=500)
+
+
 class AdminFeedbackListResponse(BaseModel):
     items: list[dict]
     count: int
+
+
+class AdminQuestionStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|archived)$")
+
+
+class AdminQuestionDetailResponse(BaseModel):
+    question: dict
 
 
 class AdminQuestionListResponse(BaseModel):

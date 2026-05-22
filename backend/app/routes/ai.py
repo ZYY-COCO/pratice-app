@@ -772,6 +772,7 @@ def generate_similar_question(
         .eq("subject", question["subject"])
         .eq("module", question["module"])
         .eq("submodule", question["submodule"])
+        .eq("status", "active")
         .neq("id", payload.question_id)
         .limit(payload.limit)
         .execute()
