@@ -64,7 +64,18 @@
               class="message-row"
               :class="message.role"
             >
-              <view class="message-bubble">{{ message.content }}</view>
+              <view class="message-bubble">
+                <template v-if="message.role === 'assistant'">
+                  <MathText
+                    v-for="(paragraph, paragraphIndex) in splitAssistantParagraphs(message.content)"
+                    :key="paragraphIndex"
+                    class="assistant-message-text"
+                    :class="{ 'paragraph-gap': paragraphIndex > 0 }"
+                    :value="paragraph"
+                  />
+                </template>
+                <text v-else>{{ message.content }}</text>
+              </view>
             </view>
             <view v-if="sending" class="message-row assistant">
               <view class="message-bubble thinking">AI 正在思考...</view>
@@ -93,6 +104,7 @@
 <script setup>
 import { computed, ref, watch } from 'vue'
 import { aiQuestionChat } from '../api/ai'
+import MathText from './MathText.vue'
 
 const props = defineProps({
   questionId: {
@@ -153,10 +165,27 @@ function buildFallbackReply() {
   return '这是 AI 助教的测试回复，后续将接入真实接口。'
 }
 
+function normalizeAssistantReply(content) {
+  return String(content || '')
+    .replace(/```[\s\S]*?```/g, (match) => match.replace(/```/g, ''))
+    .replace(/`([^`]+)`/g, '$1')
+    .replace(/^#{1,6}\s*/gm, '')
+    .replace(/\*\*/g, '')
+    .replace(/^\s*[-*]\s+/gm, '• ')
+    .replace(/[ \t]+\n/g, '\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim()
+}
+
+function splitAssistantParagraphs(content) {
+  const normalized = normalizeAssistantReply(content || buildFallbackReply())
+  return normalized.split(/\n+/).map((item) => item.trim()).filter(Boolean)
+}
+
 function pushAssistantReply(content) {
   messages.value.push({
     role: 'assistant',
-    content: content || buildFallbackReply()
+    content: normalizeAssistantReply(content || buildFallbackReply())
   })
 }
 
@@ -436,6 +465,18 @@ watch(
 .message-bubble.thinking {
   color: #667085;
   background: #f7f9fd;
+}
+
+.assistant-message-text {
+  display: block;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.assistant-message-text.paragraph-gap {
+  margin-top: 12rpx;
 }
 
 .input-bar {
