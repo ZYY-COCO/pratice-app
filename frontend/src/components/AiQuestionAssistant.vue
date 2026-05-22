@@ -1,8 +1,16 @@
 <template>
   <view class="ai-assistant">
-    <button class="assistant-trigger" @tap="openPanel">
-      <text class="trigger-dot"></text>
-      <text>AI 助教</text>
+    <button
+      class="assistant-trigger"
+      :class="{ dragging: triggerDragging }"
+      :style="assistantTriggerStyle"
+      @tap="handleTriggerTap"
+      @touchstart.stop="startTriggerDrag"
+      @touchmove.stop.prevent="moveTriggerDrag"
+      @touchend.stop="endTriggerDrag"
+      @touchcancel.stop="endTriggerDrag"
+    >
+      <text>AI</text>
     </button>
 
     <view v-if="visible" class="assistant-mask" @tap="closePanel">
@@ -17,7 +25,12 @@
           <button class="close-btn" @tap="closePanel">×</button>
         </view>
 
-        <scroll-view class="panel-body" scroll-y>
+        <scroll-view
+          class="panel-body"
+          scroll-y
+          scroll-with-animation
+          :scroll-into-view="assistantScrollTarget"
+        >
           <view class="question-summary">
             <view class="summary-title">当前题目</view>
             <view class="summary-grid">
@@ -81,6 +94,7 @@
               <view class="message-bubble thinking">AI 正在思考...</view>
             </view>
           </view>
+          <view id="ai-chat-bottom" class="chat-bottom-anchor"></view>
         </scroll-view>
 
         <view class="input-bar">
@@ -102,7 +116,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { aiQuestionChat } from '../api/ai'
 import MathText from './MathText.vue'
 
@@ -141,6 +155,14 @@ const visible = ref(false)
 const draft = ref('')
 const messages = ref([])
 const sending = ref(false)
+const assistantScrollTarget = ref('')
+const triggerPosition = ref({ x: 0, y: 0 })
+const triggerReady = ref(false)
+const triggerDragging = ref(false)
+const suppressNextTriggerTap = ref(false)
+let triggerDragContext = null
+
+const TRIGGER_STORAGE_KEY = 'aiAssistantTriggerPosition'
 
 const moduleDisplay = computed(() => {
   const parts = [props.moduleName, props.submodule].filter(Boolean)
@@ -153,8 +175,154 @@ const promptOptions = computed(() =>
     : ['给我一点解题思路', '这题考什么知识点', '可以用排除法分析吗']
 )
 
+const assistantTriggerStyle = computed(() =>
+  triggerReady.value
+    ? {
+        left: `${triggerPosition.value.x}px`,
+        top: `${triggerPosition.value.y}px`,
+        right: 'auto',
+        bottom: 'auto'
+      }
+    : {}
+)
+
+function getTriggerViewport() {
+  const info = uni.getSystemInfoSync()
+  return {
+    width: Number(info.windowWidth) || 375,
+    height: Number(info.windowHeight) || 667,
+    size: uni.upx2px(88),
+    margin: uni.upx2px(24),
+    defaultBottom: uni.upx2px(250)
+  }
+}
+
+function clamp(value, min, max) {
+  return Math.min(Math.max(value, min), max)
+}
+
+function clampTriggerPosition(position) {
+  const viewport = getTriggerViewport()
+  return {
+    x: clamp(position.x, viewport.margin, viewport.width - viewport.size - viewport.margin),
+    y: clamp(position.y, viewport.margin, viewport.height - viewport.size - viewport.margin)
+  }
+}
+
+function getTouchPoint(event) {
+  const touch = event?.touches?.[0] || event?.changedTouches?.[0]
+  if (!touch) return null
+  return {
+    x: Number(touch.clientX),
+    y: Number(touch.clientY)
+  }
+}
+
+function snapTriggerToSide(position) {
+  const viewport = getTriggerViewport()
+  const leftX = viewport.margin
+  const rightX = viewport.width - viewport.size - viewport.margin
+  const centerX = position.x + viewport.size / 2
+  return {
+    x: centerX < viewport.width / 2 ? leftX : rightX,
+    y: clamp(position.y, viewport.margin, viewport.height - viewport.size - viewport.margin)
+  }
+}
+
+function saveTriggerPosition(position) {
+  const viewport = getTriggerViewport()
+  const side = position.x + viewport.size / 2 < viewport.width / 2 ? 'left' : 'right'
+  uni.setStorageSync(TRIGGER_STORAGE_KEY, {
+    side,
+    y: position.y
+  })
+}
+
+function initializeTriggerPosition() {
+  const viewport = getTriggerViewport()
+  let saved = null
+  try {
+    saved = uni.getStorageSync(TRIGGER_STORAGE_KEY)
+  } catch (error) {
+    saved = null
+  }
+
+  const defaultPosition = {
+    x: viewport.width - viewport.size - viewport.margin,
+    y: viewport.height - viewport.size - viewport.defaultBottom
+  }
+  const side = saved?.side === 'left' ? 'left' : 'right'
+  const restoredPosition = saved && typeof saved.y === 'number'
+    ? {
+        x: side === 'left' ? viewport.margin : viewport.width - viewport.size - viewport.margin,
+        y: saved.y
+      }
+    : defaultPosition
+
+  triggerPosition.value = clampTriggerPosition(restoredPosition)
+  triggerReady.value = true
+}
+
+function handleTriggerTap() {
+  if (suppressNextTriggerTap.value) {
+    suppressNextTriggerTap.value = false
+    return
+  }
+  openPanel()
+}
+
+function startTriggerDrag(event) {
+  const point = getTouchPoint(event)
+  if (!point) return
+  if (!triggerReady.value) initializeTriggerPosition()
+
+  triggerDragging.value = true
+  triggerDragContext = {
+    startX: point.x,
+    startY: point.y,
+    offsetX: point.x - triggerPosition.value.x,
+    offsetY: point.y - triggerPosition.value.y,
+    moved: false
+  }
+}
+
+function moveTriggerDrag(event) {
+  const point = getTouchPoint(event)
+  if (!point || !triggerDragContext) return
+
+  const deltaX = Math.abs(point.x - triggerDragContext.startX)
+  const deltaY = Math.abs(point.y - triggerDragContext.startY)
+  if (deltaX > 6 || deltaY > 6) {
+    triggerDragContext.moved = true
+  }
+
+  triggerPosition.value = clampTriggerPosition({
+    x: point.x - triggerDragContext.offsetX,
+    y: point.y - triggerDragContext.offsetY
+  })
+}
+
+function endTriggerDrag() {
+  if (!triggerDragContext) return
+
+  const moved = triggerDragContext.moved
+  triggerDragging.value = false
+  triggerDragContext = null
+
+  if (moved) {
+    const snappedPosition = snapTriggerToSide(triggerPosition.value)
+    triggerPosition.value = snappedPosition
+    saveTriggerPosition(snappedPosition)
+    suppressNextTriggerTap.value = true
+    setTimeout(() => {
+      suppressNextTriggerTap.value = false
+    }, 250)
+  }
+}
+
 function openPanel() {
   visible.value = true
+  scrollChatToBottom()
 }
 
 function closePanel() {
@@ -182,11 +350,19 @@ function splitAssistantParagraphs(content) {
   return normalized.split(/\n+/).map((item) => item.trim()).filter(Boolean)
 }
 
+function scrollChatToBottom() {
+  assistantScrollTarget.value = ''
+  nextTick(() => {
+    assistantScrollTarget.value = 'ai-chat-bottom'
+  })
+}
+
 function pushAssistantReply(content) {
   messages.value.push({
     role: 'assistant',
     content: normalizeAssistantReply(content || buildFallbackReply())
   })
+  scrollChatToBottom()
 }
 
 async function requestAssistantReply(text) {
@@ -196,6 +372,7 @@ async function requestAssistantReply(text) {
   }
 
   sending.value = true
+  scrollChatToBottom()
   try {
     const data = await aiQuestionChat({
       question_id: props.questionId,
@@ -214,6 +391,7 @@ async function requestAssistantReply(text) {
 async function sendPrompt(text) {
   if (!text || sending.value) return
   messages.value.push({ role: 'user', content: text })
+  scrollChatToBottom()
   await requestAssistantReply(text)
 }
 
@@ -230,8 +408,13 @@ watch(
     draft.value = ''
     messages.value = []
     sending.value = false
+    assistantScrollTarget.value = ''
   }
 )
+
+onMounted(() => {
+  initializeTriggerPosition()
+})
 </script>
 
 <style scoped>
@@ -247,28 +430,32 @@ watch(
   z-index: 80;
   display: inline-flex;
   align-items: center;
-  gap: 10rpx;
-  height: 76rpx;
-  padding: 0 24rpx;
+  justify-content: center;
+  width: 88rpx;
+  height: 88rpx;
+  min-width: 0;
+  padding: 0;
   border: 0;
-  border-radius: 999rpx;
+  border-radius: 50%;
   background: linear-gradient(135deg, #3478f6, #7c5cff);
   color: #ffffff;
-  font-size: 24rpx;
-  font-weight: 800;
-  box-shadow: 0 18rpx 34rpx rgba(52, 120, 246, 0.28);
+  font-size: 28rpx;
+  font-weight: 900;
+  letter-spacing: 0;
+  line-height: 88rpx;
+  box-shadow: 0 18rpx 34rpx rgba(52, 120, 246, 0.3);
+  transition: left 0.18s ease, top 0.18s ease, transform 0.18s ease;
+  touch-action: none;
+  user-select: none;
+}
+
+.assistant-trigger.dragging {
+  transform: scale(1.04);
+  transition: none;
 }
 
 .assistant-trigger::after {
   border: 0;
-}
-
-.trigger-dot {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 999rpx;
-  background: #dff7ff;
-  box-shadow: 0 0 0 8rpx rgba(255, 255, 255, 0.16);
 }
 
 .assistant-mask {
@@ -432,6 +619,10 @@ watch(
   color: #8b95a8;
   font-size: 23rpx;
   line-height: 1.6;
+}
+
+.chat-bottom-anchor {
+  height: 2rpx;
 }
 
 .message-row {
