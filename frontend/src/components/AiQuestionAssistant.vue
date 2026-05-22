@@ -18,11 +18,13 @@
         <view class="panel-handle"></view>
 
         <view class="panel-head">
-          <view>
+          <view class="panel-title-block">
             <view class="panel-title">AI 助教</view>
             <view class="panel-subtitle">基于当前题目为你解答</view>
           </view>
-          <button class="close-btn" @tap="closePanel">×</button>
+          <button class="close-btn" hover-class="close-btn-active" @tap.stop="closePanel">
+            <text class="close-icon">×</text>
+          </button>
         </view>
 
         <scroll-view
@@ -54,7 +56,7 @@
             </view>
           </view>
 
-          <view class="prompt-section">
+          <view v-if="!messages.length" class="prompt-section">
             <view class="section-title">推荐提问</view>
             <button
               v-for="item in promptOptions"
@@ -80,18 +82,39 @@
               <view class="message-bubble">
                 <template v-if="message.role === 'assistant'">
                   <MathText
-                    v-for="(paragraph, paragraphIndex) in splitAssistantParagraphs(message.content)"
+                    v-for="(paragraph, paragraphIndex) in visibleAssistantParagraphs(message)"
                     :key="paragraphIndex"
                     class="assistant-message-text"
                     :class="{ 'paragraph-gap': paragraphIndex > 0 }"
                     :value="paragraph"
                   />
+                  <button
+                    v-if="shouldCollapseAssistantMessage(message)"
+                    class="message-toggle"
+                    @tap.stop="toggleAssistantMessage(index)"
+                  >
+                    {{ message.expanded ? '收起' : '展开完整解析' }}
+                  </button>
                 </template>
                 <text v-else>{{ message.content }}</text>
               </view>
             </view>
             <view v-if="sending" class="message-row assistant">
               <view class="message-bubble thinking">AI 正在思考...</view>
+            </view>
+          </view>
+          <view v-if="messages.length" class="prompt-section compact">
+            <view class="section-title compact-title">继续追问</view>
+            <view class="compact-prompt-list">
+              <button
+                v-for="item in promptOptions"
+                :key="item"
+                class="prompt-chip compact-chip"
+                :disabled="sending"
+                @tap="sendPrompt(item)"
+              >
+                {{ item }}
+              </button>
             </view>
           </view>
           <view id="ai-chat-bottom" class="chat-bottom-anchor"></view>
@@ -106,7 +129,7 @@
             placeholder="向 AI 助教提问"
             @confirm="sendDraft"
           />
-          <button class="send-btn" :disabled="!draft.trim() || sending" @tap="sendDraft">
+          <button class="send-btn" :class="{ ready: canSend }" :disabled="!canSend" @tap="sendDraft">
             {{ sending ? '发送中' : '发送' }}
           </button>
         </view>
@@ -163,6 +186,8 @@ const suppressNextTriggerTap = ref(false)
 let triggerDragContext = null
 
 const TRIGGER_STORAGE_KEY = 'aiAssistantTriggerPosition'
+const COLLAPSED_PARAGRAPH_LIMIT = 4
+const COLLAPSED_CHAR_LIMIT = 360
 
 const moduleDisplay = computed(() => {
   const parts = [props.moduleName, props.submodule].filter(Boolean)
@@ -174,6 +199,8 @@ const promptOptions = computed(() =>
     ? ['为什么正确答案是这个', '每个选项分别是什么意思', '这类题以后怎么判断']
     : ['给我一点解题思路', '这题考什么知识点', '可以用排除法分析吗']
 )
+
+const canSend = computed(() => Boolean(draft.value.trim()) && !sending.value)
 
 const assistantTriggerStyle = computed(() =>
   triggerReady.value
@@ -350,6 +377,33 @@ function splitAssistantParagraphs(content) {
   return normalized.split(/\n+/).map((item) => item.trim()).filter(Boolean)
 }
 
+function getAssistantParagraphs(message) {
+  return splitAssistantParagraphs(message?.content || '')
+}
+
+function shouldCollapseAssistantMessage(message) {
+  if (!message || message.role !== 'assistant') return false
+  const paragraphs = getAssistantParagraphs(message)
+  return paragraphs.length > COLLAPSED_PARAGRAPH_LIMIT || String(message.content || '').length > COLLAPSED_CHAR_LIMIT
+}
+
+function visibleAssistantParagraphs(message) {
+  const paragraphs = getAssistantParagraphs(message)
+  if (!shouldCollapseAssistantMessage(message) || message.expanded) {
+    return paragraphs
+  }
+  return paragraphs.slice(0, COLLAPSED_PARAGRAPH_LIMIT)
+}
+
+function toggleAssistantMessage(index) {
+  const message = messages.value[index]
+  if (!message || message.role !== 'assistant') return
+  message.expanded = !message.expanded
+  if (message.expanded) {
+    scrollChatToBottom()
+  }
+}
+
 function scrollChatToBottom() {
   assistantScrollTarget.value = ''
   nextTick(() => {
@@ -360,7 +414,8 @@ function scrollChatToBottom() {
 function pushAssistantReply(content) {
   messages.value.push({
     role: 'assistant',
-    content: normalizeAssistantReply(content || buildFallbackReply())
+    content: normalizeAssistantReply(content || buildFallbackReply()),
+    expanded: false
   })
   scrollChatToBottom()
 }
@@ -489,11 +544,18 @@ onMounted(() => {
 }
 
 .panel-head {
+  position: relative;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
-  padding: 18rpx 30rpx 22rpx;
+  min-height: 96rpx;
+  padding: 20rpx 104rpx 24rpx 30rpx;
   border-bottom: 2rpx solid #eef2f8;
+  box-sizing: border-box;
+}
+
+.panel-title-block {
+  min-width: 0;
 }
 
 .panel-title {
@@ -509,15 +571,37 @@ onMounted(() => {
 }
 
 .close-btn {
-  width: 64rpx;
-  height: 64rpx;
+  position: absolute;
+  top: 22rpx;
+  right: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56rpx;
+  height: 56rpx;
+  min-width: 0;
   padding: 0;
-  border: 0;
+  border: 2rpx solid #e7edf7;
   border-radius: 999rpx;
-  background: #f4f7fb;
-  color: #667085;
-  font-size: 40rpx;
-  line-height: 64rpx;
+  background: #ffffff;
+  color: #8b95a8;
+  font-size: 0;
+  line-height: 1;
+  box-shadow: 0 8rpx 20rpx rgba(15, 23, 42, 0.06);
+}
+
+.close-icon {
+  color: inherit;
+  font-size: 34rpx;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-1rpx);
+}
+
+.close-btn-active {
+  background: #eef5ff;
+  border-color: #d5e4ff;
+  color: #2f6fed;
 }
 
 .close-btn::after {
@@ -589,6 +673,24 @@ onMounted(() => {
   margin-top: 26rpx;
 }
 
+.prompt-section.compact {
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx dashed #e7edf7;
+}
+
+.compact-title {
+  color: #667085;
+  font-size: 22rpx;
+}
+
+.compact-prompt-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
 .prompt-chip {
   display: block;
   width: 100%;
@@ -601,6 +703,21 @@ onMounted(() => {
   font-size: 24rpx;
   font-weight: 800;
   text-align: left;
+}
+
+.compact-chip {
+  display: inline-flex;
+  width: auto;
+  max-width: 100%;
+  min-height: 56rpx;
+  margin-top: 0;
+  padding: 12rpx 18rpx;
+  border-radius: 999rpx;
+  background: #f4f7fb;
+  color: #47617f;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1.3;
 }
 
 .prompt-chip::after {
@@ -670,6 +787,28 @@ onMounted(() => {
   margin-top: 12rpx;
 }
 
+.message-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 0;
+  height: 48rpx;
+  margin-top: 16rpx;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #2f6fed;
+  font-size: 21rpx;
+  font-weight: 900;
+  line-height: 48rpx;
+  box-shadow: inset 0 0 0 2rpx #dbe8ff;
+}
+
+.message-toggle::after {
+  border: 0;
+}
+
 .input-bar {
   display: flex;
   align-items: center;
@@ -695,19 +834,25 @@ onMounted(() => {
   padding: 0;
   border: 0;
   border-radius: 20rpx;
-  background: #3478f6;
+  background: #c9d5ea;
   color: #ffffff;
   font-size: 24rpx;
   font-weight: 900;
   line-height: 72rpx;
+  box-shadow: none;
+  transition: background 0.18s ease, box-shadow 0.18s ease;
 }
 
 .send-btn::after {
   border: 0;
 }
 
+.send-btn.ready {
+  background: linear-gradient(135deg, #3478f6, #6c5cff);
+  box-shadow: 0 12rpx 24rpx rgba(52, 120, 246, 0.22);
+}
+
 .send-btn[disabled] {
-  background: #c9d5ea;
   color: #ffffff;
 }
 </style>
