@@ -88,6 +88,8 @@ class AuthUser(BaseModel):
     membership_started_at: str | None = None
     membership_expires_at: str | None = None
     membership_updated_at: str | None = None
+    role: str | None = "user"
+    disabled_at: str | None = None
 
 
 class AuthResponse(BaseModel):

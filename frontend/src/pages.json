@@ -45,6 +45,13 @@
       }
     },
     {
+      "path": "pages/admin/index",
+      "style": {
+        "navigationBarTitleText": "后台管理",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/leaderboard/index",
       "style": {
         "navigationBarTitleText": "排行榜",

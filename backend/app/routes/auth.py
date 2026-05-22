@@ -54,6 +54,7 @@ MEMBERSHIP_FIELDS = (
     "membership_expires_at",
     "membership_updated_at",
 )
+PROFILE_ADMIN_FIELDS = ("role", "disabled_at")
 
 
 def _safe_error_summary(exc: Exception) -> str:
@@ -125,6 +126,9 @@ def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
         "exam_target": db_profile.get("exam_target") or profile.get("exam_target"),
     }
     for field in MEMBERSHIP_FIELDS:
+        if field in db_profile:
+            merged[field] = db_profile.get(field)
+    for field in PROFILE_ADMIN_FIELDS:
         if field in db_profile:
             merged[field] = db_profile.get(field)
     return merged

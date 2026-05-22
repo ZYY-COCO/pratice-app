@@ -999,11 +999,28 @@ const practiceTools = computed(() => {
 })
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
-const serviceTools = computed(() => [
-  { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
-  { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
-  { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
-])
+const isAdminUser = computed(() => {
+  const role = String(authUser.value?.role || '').toLowerCase()
+  const email = String(authUser.value?.email || '').toLowerCase()
+  return role === 'admin' || email === '2221073755@qq.com'
+})
+const serviceTools = computed(() => {
+  const items = [
+    { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
+    { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
+    { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
+  ]
+  if (isAdminUser.value) {
+    items.unshift({
+      label: '后台管理',
+      desc: '管理用户、反馈和题库数据',
+      icon: '管',
+      tone: 'purple',
+      action: 'admin'
+    })
+  }
+  return items
+})
 const filteredMistakes = computed(() =>
   realMistakes.value.filter((item) => {
     if (wrongFilters.value.subject && item.subject !== wrongFilters.value.subject) return false
@@ -1706,6 +1723,10 @@ function handleMenu(item) {
   }
   if (item.action === 'theme') {
     handleOpenThemeModal()
+    return
+  }
+  if (item.action === 'admin') {
+    uni.navigateTo({ url: '/pages/admin/index' })
     return
   }
   if (item.action === 'about') {

@@ -37,6 +37,7 @@ class Settings(BaseSettings):
     wechat_oauth_app_secret: str | None = None
     wechat_oauth_scope: str = "snsapi_userinfo"
     wechat_auth_password_secret: str | None = None
+    admin_emails: str = "2221073755@qq.com"
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
@@ -51,6 +52,14 @@ class Settings(BaseSettings):
         return bool(
             self.smtp_host and self.smtp_username and self.smtp_password and self.smtp_from_email
         )
+
+    @property
+    def admin_email_set(self) -> set[str]:
+        return {
+            email.strip().lower()
+            for email in self.admin_emails.split(",")
+            if email.strip()
+        }
 
 
 @lru_cache

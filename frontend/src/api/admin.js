@@ -1,0 +1,47 @@
+import { request } from './http'
+
+export function fetchAdminMe() {
+  return request({
+    url: '/admin/me',
+    method: 'GET'
+  })
+}
+
+export function fetchAdminOverview() {
+  return request({
+    url: '/admin/overview',
+    method: 'GET'
+  })
+}
+
+export function fetchAdminUsers(params = {}) {
+  return request({
+    url: '/admin/users',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function grantAdminMembership(userId, payload) {
+  return request({
+    url: `/admin/users/${userId}/membership`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminFeedback(params = {}) {
+  return request({
+    url: '/admin/feedback',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminQuestions(params = {}) {
+  return request({
+    url: '/admin/questions',
+    method: 'GET',
+    data: params
+  })
+}
