@@ -43,7 +43,7 @@
           <view class="count-copy">
             <view class="count-title">本轮题量</view>
             <view class="count-sub">
-              {{ practiceMode === 'comprehensive' ? '综合刷题会从全部知识点随机抽题。' : '进入刷题前先选择数量，当前会按你选择的题量整组加载。' }}
+              {{ practiceMode === 'comprehensive' ? '综合刷题会覆盖全部知识点，并按近期表现智能配题。' : '新用户先做五档难度诊断；有记录后按表现智能配题。' }}
             </view>
           </view>
           <view class="count-value">{{ selectedQuestionSize }}题</view>
@@ -362,7 +362,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
-import { markQuestionUnfamiliar } from '../../api/answers'
+import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
@@ -385,6 +385,9 @@ const DEFAULT_CULTURE_PROGRESS = {
   review_due_count: 0,
   review_days: [1, 2, 4, 7, 15, 30]
 }
+const ADAPTIVE_HISTORY_MIN_COUNT = 10
+const ADAPTIVE_HISTORY_LIMIT = 100
+const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5]
 const MOCK_EXAM_DIFFICULTY_PROFILE = [
   { key: 'basic', label: '基础', ratio: 0.35 },
   { key: 'medium', label: '中等', ratio: 0.5 },
@@ -969,6 +972,115 @@ function buildRandomQuestionPool(candidateGroups) {
   return shuffleArray(selected)
 }
 
+function normalizeDifficulty(value) {
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) return 3
+  return Math.min(5, Math.max(1, Math.round(numeric)))
+}
+
+function buildDiagnosticDifficultyTargets(limit) {
+  const targets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, 0]))
+  for (let index = 0; index < limit; index += 1) {
+    targets[DIFFICULTY_LEVELS[index % DIFFICULTY_LEVELS.length]] += 1
+  }
+  return targets
+}
+
+function buildAdaptiveDifficultyTargets(limit, historyItems = []) {
+  const recentItems = historyItems
+    .filter((item) => item?.question?.difficulty)
+    .slice(0, Math.max(ADAPTIVE_HISTORY_MIN_COUNT, 20))
+
+  if (recentItems.length < ADAPTIVE_HISTORY_MIN_COUNT) {
+    return {
+      mode: 'diagnostic',
+      mainDifficulty: 3,
+      targets: buildDiagnosticDifficultyTargets(limit)
+    }
+  }
+
+  const correctCount = recentItems.filter((item) => item.is_correct).length
+  const accuracy = correctCount / recentItems.length
+  const averageDifficulty =
+    recentItems.reduce((sum, item) => sum + normalizeDifficulty(item.question?.difficulty), 0) / recentItems.length
+  let mainDifficulty = normalizeDifficulty(averageDifficulty)
+
+  if (accuracy >= 0.8) {
+    mainDifficulty = normalizeDifficulty(mainDifficulty + 1)
+  } else if (accuracy < 0.55) {
+    mainDifficulty = normalizeDifficulty(mainDifficulty - 1)
+  }
+
+  const lowerDifficulty = normalizeDifficulty(mainDifficulty - 1)
+  const upperDifficulty = normalizeDifficulty(mainDifficulty + 1)
+  const targets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, 0]))
+  targets[mainDifficulty] += Math.max(1, Math.round(limit * 0.5))
+  if (lowerDifficulty !== mainDifficulty) {
+    targets[lowerDifficulty] += Math.max(1, Math.floor(limit * 0.2))
+  }
+  if (upperDifficulty !== mainDifficulty) {
+    targets[upperDifficulty] += Math.max(1, Math.floor(limit * 0.2))
+  }
+
+  let assigned = Object.values(targets).reduce((sum, count) => sum + count, 0)
+  while (assigned < limit) {
+    targets[mainDifficulty] += 1
+    assigned += 1
+  }
+  while (assigned > limit && targets[mainDifficulty] > 1) {
+    targets[mainDifficulty] -= 1
+    assigned -= 1
+  }
+
+  return {
+    mode: 'adaptive',
+    mainDifficulty,
+    targets
+  }
+}
+
+function buildAdaptiveQuestionPool(candidateGroups, historyItems = []) {
+  const limit = plannedQuestionLimit.value
+  const candidates = []
+  const seenKeys = new Set()
+
+  candidateGroups.flat().forEach((item) => {
+    const key = getQuestionIdentityKey(item)
+    if (!item || seenKeys.has(key)) return
+    candidates.push(item)
+    seenKeys.add(key)
+  })
+
+  const profile = buildAdaptiveDifficultyTargets(limit, historyItems)
+  const buckets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, []]))
+  shuffleArray(candidates).forEach((item) => {
+    buckets[normalizeDifficulty(item.difficulty)].push(item)
+  })
+
+  const selected = []
+  const usedKeys = new Set()
+  DIFFICULTY_LEVELS.forEach((level) => {
+    const targetCount = profile.targets[level] || 0
+    while (selected.length < limit && buckets[level].length && selected.filter((item) => normalizeDifficulty(item.difficulty) === level).length < targetCount) {
+      const item = buckets[level].shift()
+      const key = getQuestionIdentityKey(item)
+      if (!item || usedKeys.has(key)) continue
+      selected.push(item)
+      usedKeys.add(key)
+    }
+  })
+
+  for (const item of shuffleArray(candidates)) {
+    if (selected.length >= limit) break
+    const key = getQuestionIdentityKey(item)
+    if (!item || usedKeys.has(key)) continue
+    selected.push(item)
+    usedKeys.add(key)
+  }
+
+  return shuffleArray(selected)
+}
+
 function getSelectedModuleInfos() {
   return selectedTags.value
     .map((tag) => {
@@ -1146,6 +1258,20 @@ async function loadCultureProgress() {
   }
 }
 
+async function fetchAdaptiveHistory() {
+  if (!hasAccessToken.value) return []
+  try {
+    const data = await fetchAnswerHistory({
+      subject: subject.value,
+      limit: ADAPTIVE_HISTORY_LIMIT,
+      offset: 0
+    })
+    return data.items || []
+  } catch (error) {
+    return []
+  }
+}
+
 async function startCultureReview() {
   syncAccessToken()
   if (!hasAccessToken.value) {
@@ -1211,7 +1337,7 @@ async function fetchRealQuestionCandidates(moduleInfos) {
     const query = new URLSearchParams({
       exam_code: examCode.value,
       subject: subject.value,
-      limit: String(plannedQuestionLimit.value),
+      limit: String(Math.min(100, Math.max(plannedQuestionLimit.value * 8, 30))),
       randomize: 'true'
     }).toString()
 
@@ -1557,6 +1683,7 @@ async function startQuiz() {
     const cacheKey = getCacheKey(moduleInfos)
     let candidateGroups = questionCache.get(cacheKey)
     let nextPool = []
+    const adaptiveHistory = await fetchAdaptiveHistory()
 
     if (!candidateGroups) {
       if (hasAccessToken.value && moduleInfos.length) {
@@ -1569,14 +1696,14 @@ async function startQuiz() {
     }
 
     if (candidateGroups?.length) {
-      nextPool = buildRandomQuestionPool(candidateGroups)
+      nextPool = buildAdaptiveQuestionPool(candidateGroups, adaptiveHistory)
     }
 
     if (nextPool.length < plannedQuestionLimit.value) {
       const existingKeys = new Set(nextPool.map((item) => getQuestionIdentityKey(item)))
       const supplement = await fetchSubjectSupplement(existingKeys)
       if (supplement.length) {
-        nextPool = buildRandomQuestionPool([nextPool, supplement])
+        nextPool = buildAdaptiveQuestionPool([nextPool, supplement], adaptiveHistory)
         shortageTip.value = '当前题库较少，已为你随机补充同科目题目。'
       }
     }

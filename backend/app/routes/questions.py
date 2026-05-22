@@ -320,7 +320,9 @@ def list_questions_by_module(
     else:
         query = query.eq("exam_code", exam_codes[0])
     response = query.eq("subject", subject).eq("module", module).eq("submodule", submodule).limit(200).execute()
-    rows = deduplicate_question_rows(response.data or [])[:limit]
+    rows = deduplicate_question_rows(response.data or [])
+    random.shuffle(rows)
+    rows = rows[:limit]
     items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
 

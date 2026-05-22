@@ -45,6 +45,7 @@ class AnswerHistoryQuestion(BaseModel):
     subject: str
     module: str
     submodule: str
+    difficulty: int | None = None
     stem: str
     option_a: str
     option_b: str
