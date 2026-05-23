@@ -2,7 +2,7 @@
   <view class="admin-page">
     <view class="admin-hero">
       <button class="back-btn" @tap="goBack">‹</button>
-      <view>
+      <view class="admin-heading">
         <view class="admin-title">后台管理</view>
         <view class="admin-subtitle">用户、反馈与题库运营面板</view>
       </view>
@@ -16,9 +16,15 @@
 
     <template v-else>
       <view class="stat-grid">
-        <view v-for="item in overviewCards" :key="item.label" class="stat-card">
+        <view v-for="item in primaryOverviewCards" :key="item.label" class="stat-card primary">
           <view class="stat-label">{{ item.label }}</view>
           <view class="stat-value">{{ item.value }}</view>
+        </view>
+      </view>
+      <view class="metric-strip">
+        <view v-for="item in secondaryOverviewCards" :key="item.label" class="metric-item">
+          <text class="metric-label">{{ item.label }}</text>
+          <text class="metric-value">{{ item.value }}</text>
         </view>
       </view>
 
@@ -40,16 +46,27 @@
             <view class="panel-title">用户数据</view>
             <view class="panel-subtitle">账号、刷题量与会员状态</view>
           </view>
-          <button class="ghost-btn" @tap="loadUsers">刷新</button>
+          <button class="ghost-btn refresh-btn" @tap="loadUsers">刷新</button>
         </view>
         <view class="search-row">
           <input v-model="userSearch" class="search-input" placeholder="搜索邮箱" confirm-type="search" @confirm="loadUsers" />
           <button class="search-btn" @tap="loadUsers">搜索</button>
         </view>
+        <view class="filter-row">
+          <button
+            v-for="item in userFilterOptions"
+            :key="item.key"
+            class="filter-chip"
+            :class="{ active: userFilter === item.key }"
+            @tap="userFilter = item.key"
+          >
+            {{ item.label }}
+          </button>
+        </view>
         <view v-if="usersLoading" class="inline-state">正在加载用户...</view>
-        <view v-else-if="users.length === 0" class="inline-state">暂无用户数据</view>
+        <view v-else-if="visibleUsers.length === 0" class="inline-state">暂无匹配用户</view>
         <view v-else class="record-list">
-          <view v-for="user in users" :key="user.id" class="record-card" @tap="openUser(user)">
+          <view v-for="user in visibleUsers" :key="user.id" class="record-card" @tap="openUser(user)">
             <view class="record-main">
               <view class="record-title">{{ user.email || user.phone || '未绑定账号' }}</view>
               <view class="record-subtitle">
@@ -63,7 +80,7 @@
                 <text v-if="user.membership_expires_at" class="record-date">至 {{ formatDate(user.membership_expires_at) }}</text>
               </view>
             </view>
-            <button class="small-btn" @tap.stop="openMembershipActions(user)">会员操作</button>
+            <button class="small-btn" @tap.stop="openMembershipActions(user)">{{ membershipActionLabel(user) }}</button>
           </view>
         </view>
       </view>
@@ -74,7 +91,7 @@
             <view class="panel-title">用户反馈</view>
             <view class="panel-subtitle">来自 App 内帮助与反馈</view>
           </view>
-          <button class="ghost-btn" @tap="loadFeedback">刷新</button>
+          <button class="ghost-btn refresh-btn" @tap="loadFeedback">刷新</button>
         </view>
         <view v-if="feedbackLoading" class="inline-state">正在加载反馈...</view>
         <view v-else-if="feedbackItems.length === 0" class="inline-state">暂无反馈</view>
@@ -99,7 +116,7 @@
             <view class="panel-title">题库查看</view>
             <view class="panel-subtitle">按考试、科目、模块和题干检索</view>
           </view>
-          <button class="ghost-btn" @tap="loadQuestions">刷新</button>
+          <button class="ghost-btn refresh-btn" @tap="loadQuestions">刷新</button>
         </view>
         <view class="filter-grid">
           <input v-model="questionFilters.exam_code" class="search-input" placeholder="考试代码，如 Z001" />
@@ -159,7 +176,7 @@
 
         <view class="panel-head compact">
           <view class="panel-title small">消息列表</view>
-          <button class="ghost-btn" @tap="loadMessages">刷新</button>
+          <button class="ghost-btn refresh-btn" @tap="loadMessages">刷新</button>
         </view>
         <view v-if="messagesLoading" class="inline-state">正在加载消息...</view>
         <view v-else-if="officialMessageItems.length === 0" class="inline-state">暂无官方消息</view>
@@ -210,6 +227,7 @@ const activeTab = ref('users')
 const users = ref([])
 const usersLoading = ref(false)
 const userSearch = ref('')
+const userFilter = ref('all')
 const feedbackItems = ref([])
 const feedbackLoading = ref(false)
 const questions = ref([])
@@ -247,16 +265,39 @@ const tabs = [
   { key: 'messages', label: '消息' }
 ]
 
-const overviewCards = computed(() => [
+const userFilterOptions = [
+  { key: 'all', label: '全部' },
+  { key: 'member', label: '会员' },
+  { key: 'non_member', label: '非会员' },
+  { key: 'active', label: '有刷题' }
+]
+
+const primaryOverviewCards = computed(() => [
   { label: '总用户', value: overview.value.total_users || 0 },
   { label: '今日活跃', value: overview.value.active_today || 0 },
-  { label: '本周活跃', value: overview.value.active_week || 0 },
-  { label: '本月活跃', value: overview.value.active_month || 0 },
   { label: '会员数', value: overview.value.active_members || 0 },
-  { label: '题库量', value: overview.value.total_questions || 0 },
-  { label: '反馈数', value: overview.value.total_feedback || 0 },
   { label: '待处理', value: overview.value.pending_feedback || 0 }
 ])
+
+const secondaryOverviewCards = computed(() => [
+  { label: '本周活跃', value: overview.value.active_week || 0 },
+  { label: '本月活跃', value: overview.value.active_month || 0 },
+  { label: '题库量', value: overview.value.total_questions || 0 },
+  { label: '反馈数', value: overview.value.total_feedback || 0 }
+])
+
+const visibleUsers = computed(() => {
+  if (userFilter.value === 'member') {
+    return users.value.filter((user) => user.membership_status === 'active')
+  }
+  if (userFilter.value === 'non_member') {
+    return users.value.filter((user) => user.membership_status !== 'active')
+  }
+  if (userFilter.value === 'active') {
+    return users.value.filter((user) => Number(user.answer_count || 0) > 0)
+  }
+  return users.value
+})
 
 onLoad(async () => {
   await bootstrap()
@@ -430,6 +471,10 @@ function openMembershipActions(user) {
       await grantMembership(user, months, isActiveMember)
     }
   })
+}
+
+function membershipActionLabel(user) {
+  return user.membership_status === 'active' ? '管理会员' : '开通会员'
 }
 
 async function grantMembership(user, months, isRenewal = false) {
@@ -614,39 +659,67 @@ function goBack() {
 <style scoped>
 .admin-page {
   min-height: 100vh;
-  padding: 36rpx 24rpx 80rpx;
+  padding: 24rpx 24rpx 170rpx;
   background: linear-gradient(180deg, #eef5ff 0%, #f6f8fb 28%, #f6f8fb 100%);
   box-sizing: border-box;
 }
 
 .admin-hero {
+  position: relative;
   display: flex;
   align-items: center;
-  gap: 20rpx;
-  margin-bottom: 20rpx;
+  justify-content: center;
+  min-height: 100rpx;
+  padding: 2rpx 96rpx 12rpx;
+  margin-bottom: 12rpx;
+  box-sizing: border-box;
 }
 
 .back-btn {
-  width: 68rpx;
-  height: 68rpx;
+  position: absolute;
+  left: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 70rpx;
+  height: 70rpx;
+  transform: translateY(-50%);
   border-radius: 22rpx;
   border: 0;
   background: #ffffff;
   color: #101828;
   font-size: 42rpx;
-  box-shadow: 0 12rpx 32rpx rgba(15, 23, 42, 0.08);
+  line-height: 1;
+  box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.08);
+}
+
+.back-btn::after,
+.tab-btn::after,
+.ghost-btn::after,
+.search-btn::after,
+.small-btn::after,
+.status-chip::after {
+  border: 0;
+}
+
+.admin-heading {
+  min-width: 0;
+  text-align: center;
 }
 
 .admin-title {
   color: #101828;
   font-size: 38rpx;
   font-weight: 900;
+  line-height: 1.2;
 }
 
 .admin-subtitle {
-  margin-top: 4rpx;
+  margin-top: 8rpx;
   color: #667085;
-  font-size: 23rpx;
+  font-size: 24rpx;
+  line-height: 1.35;
 }
 
 .state-card,
@@ -680,39 +753,81 @@ function goBack() {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10rpx;
-  margin-bottom: 18rpx;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-bottom: 12rpx;
 }
 
 .stat-card {
-  min-height: 108rpx;
-  padding: 16rpx 14rpx;
-  border-radius: 18rpx;
+  min-height: 118rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 22rpx;
   background: #ffffff;
   border: 1rpx solid #e6edf6;
   box-sizing: border-box;
 }
 
+.stat-card.primary:first-child {
+  background: linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+  border-color: #d7e6ff;
+}
+
 .stat-label {
   color: #667085;
-  font-size: 20rpx;
+  font-size: 24rpx;
   line-height: 1.25;
 }
 
 .stat-value {
-  margin-top: 6rpx;
+  margin-top: 8rpx;
   color: #101828;
-  font-size: 32rpx;
+  font-size: 38rpx;
   font-weight: 900;
   line-height: 1.1;
+}
+
+.metric-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8rpx;
+  margin-bottom: 18rpx;
+  padding: 10rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.74);
+  border: 1rpx solid #e6edf6;
+}
+
+.metric-item {
+  min-width: 0;
+  text-align: center;
+}
+
+.metric-label {
+  display: block;
+  color: #667085;
+  font-size: 19rpx;
+  line-height: 1.2;
+}
+
+.metric-value {
+  display: block;
+  margin-top: 4rpx;
+  color: #101828;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1.15;
 }
 
 .tab-bar {
   display: grid;
   grid-template-columns: repeat(4, 1fr);
-  gap: 10rpx;
-  margin-bottom: 18rpx;
+  gap: 0;
+  margin-bottom: 20rpx;
+  padding: 8rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  border: 1rpx solid #e6edf6;
+  box-shadow: 0 12rpx 28rpx rgba(15, 23, 42, 0.05);
 }
 
 .tab-btn,
@@ -725,27 +840,35 @@ function goBack() {
 }
 
 .tab-btn {
-  height: 64rpx;
+  height: 60rpx;
+  border-radius: 18rpx;
   color: #475467;
-  background: #ffffff;
-  font-size: 26rpx;
+  background: transparent;
+  font-size: 25rpx;
+  box-shadow: none;
 }
 
 .tab-btn.active {
   color: #ffffff;
   background: #3b82f6;
+  box-shadow: 0 10rpx 22rpx rgba(59, 130, 246, 0.24);
 }
 
 .panel-card {
-  padding: 24rpx;
+  padding: 26rpx;
 }
 
 .panel-head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 20rpx;
   margin-bottom: 22rpx;
+}
+
+.panel-head > view {
+  min-width: 0;
+  flex: 1;
 }
 
 .panel-head.compact {
@@ -771,16 +894,53 @@ function goBack() {
 
 .ghost-btn {
   height: 56rpx;
-  padding: 0 22rpx;
+  min-width: 96rpx;
+  padding: 0 20rpx;
   color: #2563eb;
   background: #eff6ff;
   font-size: 24rpx;
+  box-shadow: 0 8rpx 20rpx rgba(37, 99, 235, 0.08);
+}
+
+.refresh-btn {
+  flex: 0 0 auto;
+  height: 58rpx;
+  min-width: 100rpx;
+  margin-top: 2rpx;
+  border-radius: 18rpx;
 }
 
 .search-row {
   display: flex;
   gap: 14rpx;
+  align-items: center;
+  margin-bottom: 14rpx;
+}
+
+.filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10rpx;
   margin-bottom: 22rpx;
+}
+
+.filter-chip {
+  height: 52rpx;
+  border: 0;
+  border-radius: 16rpx;
+  color: #475467;
+  background: #f3f6fb;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.filter-chip::after {
+  border: 0;
+}
+
+.filter-chip.active {
+  color: #2563eb;
+  background: #eff6ff;
 }
 
 .search-input {
@@ -830,8 +990,8 @@ function goBack() {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 20rpx;
-  border-radius: 20rpx;
+  padding: 22rpx;
+  border-radius: 22rpx;
   background: #f8fbff;
   border: 1rpx solid #e3ebf7;
 }
@@ -850,6 +1010,7 @@ function goBack() {
   font-size: 25rpx;
   font-weight: 900;
   line-height: 1.45;
+  word-break: break-all;
 }
 
 .record-subtitle {
@@ -904,11 +1065,12 @@ function goBack() {
 }
 
 .small-btn {
-  width: 136rpx;
+  flex: 0 0 auto;
+  width: 164rpx;
   height: 58rpx;
   color: #ffffff;
   background: #0f172a;
-  font-size: 22rpx;
+  font-size: 23rpx;
 }
 
 .inline-action {
