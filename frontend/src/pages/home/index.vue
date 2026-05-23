@@ -7,8 +7,14 @@
             <text class="brand-title">港研通</text>
             <text v-if="isAuthed" class="brand-badge">{{ examCode }}</text>
           </view>
-          <view class="profile-entry" @tap="activeTab = 'profile'">
-            <text>{{ avatarText }}</text>
+          <view class="home-actions">
+            <button v-if="isAuthed" class="message-bell" :class="{ unread: officialUnreadCount > 0 }" @tap="openOfficialMessages">
+              <text>🔔</text>
+              <view v-if="officialUnreadCount > 0" class="message-dot"></view>
+            </button>
+            <view class="profile-entry" @tap="activeTab = 'profile'">
+              <text>{{ avatarText }}</text>
+            </view>
           </view>
         </view>
 
@@ -695,6 +701,34 @@
       </view>
     </view>
 
+    <view v-if="showOfficialMessageModal" class="official-modal-mask" @tap="closeOfficialMessages">
+      <view class="official-modal-sheet" @tap.stop>
+        <view class="official-modal-handle"></view>
+        <button class="official-modal-close" @tap="closeOfficialMessages">×</button>
+        <view class="official-modal-head">
+          <view class="official-modal-title">官方消息</view>
+          <view class="official-modal-subtitle">港研通公告、更新与运营通知</view>
+        </view>
+        <scroll-view scroll-y class="official-modal-scroll">
+          <view v-if="officialMessages.length === 0" class="official-empty">暂无官方消息</view>
+          <view
+            v-for="message in officialMessages"
+            :key="message.id"
+            class="official-message-card"
+            :class="{ unread: !message.read }"
+          >
+            <view class="official-message-top">
+              <view class="official-message-title">{{ message.title }}</view>
+              <view v-if="!message.read" class="official-unread-badge">未读</view>
+            </view>
+            <view class="official-message-date">{{ formatDateTime(message.published_at || message.created_at) }}</view>
+            <view class="official-message-content">{{ message.content }}</view>
+          </view>
+        </scroll-view>
+        <button class="official-done-btn" @tap="closeOfficialMessages">我知道了</button>
+      </view>
+    </view>
+
     <!-- #ifdef H5 -->
     <IcpFooter :compact="showBottomTab" />
     <!-- #endif -->
@@ -715,6 +749,7 @@ import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
 import { fetchMembershipStatus } from '../../api/membership'
+import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
 import { fetchAbilityReport, fetchLearningSummary, fetchStudyAdvice } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
@@ -774,6 +809,11 @@ const showProModal = ref(false)
 const showFeedbackModal = ref(false)
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
+const showOfficialMessageModal = ref(false)
+const officialMessages = ref([])
+const officialUnreadCount = ref(0)
+const officialMessagesLoaded = ref(false)
+const officialAutoShown = ref(false)
 const selectedThemeKey = ref(getStoredThemeKey())
 const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
@@ -1293,6 +1333,7 @@ onShow(() => {
   authed.value = isLoggedIn()
   refreshMembershipStatus()
   refreshLearningData()
+  loadOfficialMessages(true)
 })
 
 onReachBottom(() => {
@@ -1635,6 +1676,47 @@ function goLeaderboard() {
 
 function goPro() {
   uni.navigateTo({ url: '/pages/pro/index' })
+}
+
+async function loadOfficialMessages(autoPopup = false) {
+  if (!isAuthed.value) {
+    officialMessages.value = []
+    officialUnreadCount.value = 0
+    officialMessagesLoaded.value = false
+    return
+  }
+  try {
+    const response = await fetchOfficialMessages()
+    officialMessages.value = response.items || []
+    officialUnreadCount.value = Number(response.unread_count || 0)
+    officialMessagesLoaded.value = true
+    if (autoPopup && !officialAutoShown.value && officialUnreadCount.value > 0) {
+      officialAutoShown.value = true
+      showOfficialMessageModal.value = true
+    }
+  } catch (error) {
+    officialMessagesLoaded.value = false
+  }
+}
+
+async function openOfficialMessages() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  if (!officialMessagesLoaded.value) {
+    await loadOfficialMessages(false)
+  }
+  showOfficialMessageModal.value = true
+}
+
+async function closeOfficialMessages() {
+  showOfficialMessageModal.value = false
+  const unreadItems = officialMessages.value.filter((item) => !item.read)
+  if (unreadItems.length === 0) return
+  officialMessages.value = officialMessages.value.map((item) => ({ ...item, read: true }))
+  officialUnreadCount.value = 0
+  await Promise.allSettled(unreadItems.map((item) => markOfficialMessageRead(item.id)))
 }
 
 function handleProEntry() {
@@ -2353,6 +2435,47 @@ function getMembershipExpiresAt(user) {
   font-size: 32rpx;
   font-weight: 900;
   box-shadow: inset 0 -4rpx 8rpx rgba(20, 31, 66, 0.04);
+}
+
+.home-actions {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  flex-shrink: 0;
+}
+
+.message-bell {
+  position: relative;
+  width: 72rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.72);
+  color: #344054;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 34rpx;
+  line-height: 72rpx;
+  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
+}
+
+.message-bell.unread {
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
+}
+
+.message-dot {
+  position: absolute;
+  right: 10rpx;
+  top: 10rpx;
+  width: 14rpx;
+  height: 14rpx;
+  border-radius: 999rpx;
+  background: #ef4444;
+  border: 3rpx solid #ffffff;
 }
 
 .welcome-card {
@@ -4081,6 +4204,154 @@ function getMembershipExpiresAt(user) {
   font-size: 25rpx;
   line-height: 42rpx;
   font-weight: 950;
+}
+
+.official-modal-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 58;
+  display: flex;
+  align-items: flex-end;
+  padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 28rpx);
+  background: rgba(15, 23, 42, 0.38);
+}
+
+.official-modal-sheet {
+  position: relative;
+  width: 100%;
+  max-height: 72vh;
+  border-radius: 36rpx;
+  background: #ffffff;
+  overflow: hidden;
+  box-shadow: 0 -18rpx 46rpx rgba(15, 23, 42, 0.18);
+}
+
+.official-modal-handle {
+  width: 76rpx;
+  height: 8rpx;
+  margin: 18rpx auto 0;
+  border-radius: 999rpx;
+  background: #d8dee9;
+}
+
+.official-modal-close {
+  position: absolute;
+  right: 26rpx;
+  top: 28rpx;
+  width: 64rpx;
+  height: 64rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: #f3f6fb;
+  color: #667085;
+  font-size: 40rpx;
+  line-height: 60rpx;
+  font-weight: 900;
+}
+
+.official-modal-head {
+  padding: 26rpx 32rpx 22rpx;
+  border-bottom: 2rpx solid #eef2f8;
+}
+
+.official-modal-title {
+  color: #101828;
+  font-size: 36rpx;
+  font-weight: 950;
+  line-height: 1.3;
+}
+
+.official-modal-subtitle {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.4;
+  font-weight: 700;
+}
+
+.official-modal-scroll {
+  max-height: 48vh;
+  padding: 24rpx 30rpx;
+  box-sizing: border-box;
+}
+
+.official-empty {
+  padding: 48rpx 0;
+  color: #98a2b3;
+  text-align: center;
+  font-size: 26rpx;
+}
+
+.official-message-card {
+  padding: 24rpx;
+  border-radius: 24rpx;
+  border: 2rpx solid #e6ebf5;
+  background: #fbfcff;
+}
+
+.official-message-card + .official-message-card {
+  margin-top: 18rpx;
+}
+
+.official-message-card.unread {
+  border-color: var(--gyt-primary-border, #dbe7ff);
+  background: var(--gyt-primary-tint, #f7fbff);
+}
+
+.official-message-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.official-message-title {
+  color: #172033;
+  font-size: 29rpx;
+  font-weight: 950;
+  line-height: 1.4;
+}
+
+.official-unread-badge {
+  flex: 0 0 auto;
+  padding: 6rpx 12rpx;
+  border-radius: 999rpx;
+  background: #ef4444;
+  color: #ffffff;
+  font-size: 18rpx;
+  font-weight: 900;
+}
+
+.official-message-date {
+  margin-top: 8rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  font-weight: 700;
+}
+
+.official-message-content {
+  margin-top: 16rpx;
+  color: #475467;
+  font-size: 25rpx;
+  line-height: 1.75;
+  font-weight: 650;
+  white-space: pre-wrap;
+}
+
+.official-done-btn {
+  width: calc(100% - 60rpx);
+  min-height: 82rpx;
+  margin: 0 30rpx 28rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: var(--gyt-primary, #1677ff);
+  color: #ffffff;
+  font-size: 28rpx;
+  line-height: 82rpx;
+  font-weight: 900;
 }
 
 .mistake-page-head {

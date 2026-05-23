@@ -128,6 +128,55 @@
           </view>
         </view>
       </view>
+
+      <view v-if="activeTab === 'messages'" class="panel-card">
+        <view class="panel-head">
+          <view>
+            <view class="panel-title">官方消息</view>
+            <view class="panel-subtitle">发布首页铃铛公告，用户读后不再自动弹出</view>
+          </view>
+          <button class="ghost-btn" @tap="resetMessageForm">新建</button>
+        </view>
+
+        <view class="message-editor">
+          <input v-model.trim="messageForm.title" class="search-input" placeholder="消息标题" />
+          <textarea v-model.trim="messageForm.content" class="message-textarea" placeholder="消息内容，支持换行" />
+          <view class="message-status-row">
+            <button
+              v-for="item in messageStatusOptions"
+              :key="item.value"
+              class="status-chip"
+              :class="{ active: messageForm.status === item.value }"
+              @tap="messageForm.status = item.value"
+            >
+              {{ item.label }}
+            </button>
+          </view>
+          <button class="search-btn wide" @tap="saveOfficialMessage">
+            {{ messageForm.id ? '保存消息' : '创建消息' }}
+          </button>
+        </view>
+
+        <view class="panel-head compact">
+          <view class="panel-title small">消息列表</view>
+          <button class="ghost-btn" @tap="loadMessages">刷新</button>
+        </view>
+        <view v-if="messagesLoading" class="inline-state">正在加载消息...</view>
+        <view v-else-if="officialMessageItems.length === 0" class="inline-state">暂无官方消息</view>
+        <view v-else class="record-list">
+          <view v-for="item in officialMessageItems" :key="item.id" class="record-card feedback-card" @tap="editOfficialMessage(item)">
+            <view class="record-title">{{ item.title }}</view>
+            <view class="record-subtitle clamp">{{ item.content }}</view>
+            <view class="badge-row">
+              <text class="badge" :class="{ active: item.status === 'published', archived: item.status === 'archived' }">
+                {{ messageStatusText(item.status) }}
+              </text>
+              <text class="record-date">{{ formatDate(item.published_at || item.created_at) }}</text>
+            </view>
+            <button class="small-btn inline-action" @tap.stop="editOfficialMessage(item)">编辑</button>
+          </view>
+        </view>
+      </view>
     </template>
   </view>
 </template>
@@ -137,14 +186,17 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   cancelAdminMembership,
+  createAdminMessage,
   fetchAdminFeedback,
   fetchAdminMe,
+  fetchAdminMessages,
   fetchAdminOverview,
   fetchAdminQuestionDetail,
   fetchAdminQuestions,
   fetchAdminUserDetail,
   fetchAdminUsers,
   grantAdminMembership,
+  updateAdminMessage,
   updateAdminFeedbackStatus,
   updateAdminQuestionStatus
 } from '../../api/admin'
@@ -162,7 +214,23 @@ const feedbackItems = ref([])
 const feedbackLoading = ref(false)
 const questions = ref([])
 const questionsLoading = ref(false)
+const officialMessageItems = ref([])
+const messagesLoading = ref(false)
 const authUser = ref(getAuthUser())
+
+const messageStatusOptions = [
+  { value: 'draft', label: '草稿' },
+  { value: 'published', label: '发布' },
+  { value: 'archived', label: '归档' }
+]
+
+const messageForm = reactive({
+  id: '',
+  title: '',
+  content: '',
+  status: 'draft',
+  expires_at: ''
+})
 
 const questionFilters = reactive({
   exam_code: '',
@@ -175,7 +243,8 @@ const questionFilters = reactive({
 const tabs = [
   { key: 'users', label: '用户' },
   { key: 'feedback', label: '反馈' },
-  { key: 'questions', label: '题库' }
+  { key: 'questions', label: '题库' },
+  { key: 'messages', label: '消息' }
 ]
 
 const overviewCards = computed(() => [
@@ -230,6 +299,7 @@ async function switchTab(tab) {
   if (tab === 'users' && users.value.length === 0) await loadUsers()
   if (tab === 'feedback' && feedbackItems.value.length === 0) await loadFeedback()
   if (tab === 'questions' && questions.value.length === 0) await loadQuestions()
+  if (tab === 'messages' && officialMessageItems.value.length === 0) await loadMessages()
 }
 
 async function loadUsers() {
@@ -277,6 +347,69 @@ async function loadQuestions() {
     uni.showToast({ title: '题库加载失败', icon: 'none' })
   } finally {
     questionsLoading.value = false
+  }
+}
+
+async function loadMessages() {
+  messagesLoading.value = true
+  try {
+    const response = await fetchAdminMessages({ limit: 50, offset: 0 })
+    officialMessageItems.value = response.items || []
+  } catch (error) {
+    uni.showToast({ title: '消息加载失败', icon: 'none' })
+  } finally {
+    messagesLoading.value = false
+  }
+}
+
+function resetMessageForm() {
+  messageForm.id = ''
+  messageForm.title = ''
+  messageForm.content = ''
+  messageForm.status = 'draft'
+  messageForm.expires_at = ''
+}
+
+function editOfficialMessage(item) {
+  messageForm.id = item.id || ''
+  messageForm.title = item.title || ''
+  messageForm.content = item.content || ''
+  messageForm.status = item.status || 'draft'
+  messageForm.expires_at = item.expires_at || ''
+}
+
+function messageStatusText(status) {
+  const map = {
+    draft: '草稿',
+    published: '已发布',
+    archived: '已归档'
+  }
+  return map[status] || '草稿'
+}
+
+async function saveOfficialMessage() {
+  if (!messageForm.title || !messageForm.content) {
+    uni.showToast({ title: '请填写标题和内容', icon: 'none' })
+    return
+  }
+  const payload = {
+    title: messageForm.title,
+    content: messageForm.content,
+    status: messageForm.status,
+    expires_at: messageForm.expires_at || null
+  }
+  try {
+    if (messageForm.id) {
+      await updateAdminMessage(messageForm.id, payload)
+      uni.showToast({ title: '消息已保存', icon: 'success' })
+    } else {
+      await createAdminMessage(payload)
+      uni.showToast({ title: payload.status === 'published' ? '消息已发布' : '消息已创建', icon: 'success' })
+    }
+    resetMessageForm()
+    await loadMessages()
+  } catch (error) {
+    uni.showToast({ title: '消息保存失败', icon: 'none' })
   }
 }
 
@@ -577,7 +710,7 @@ function goBack() {
 
 .tab-bar {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 10rpx;
   margin-bottom: 18rpx;
 }
@@ -615,10 +748,19 @@ function goBack() {
   margin-bottom: 22rpx;
 }
 
+.panel-head.compact {
+  margin-top: 26rpx;
+  margin-bottom: 14rpx;
+}
+
 .panel-title {
   color: #101828;
   font-size: 30rpx;
   font-weight: 900;
+}
+
+.panel-title.small {
+  font-size: 26rpx;
 }
 
 .panel-subtitle {
@@ -777,5 +919,48 @@ function goBack() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14rpx;
+}
+
+.message-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+  padding: 18rpx;
+  border-radius: 22rpx;
+  background: #f8fbff;
+  border: 1rpx solid #e3ebf7;
+}
+
+.message-textarea {
+  min-height: 180rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 18rpx;
+  background: #ffffff;
+  border: 1rpx solid #dbe6f5;
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.6;
+  box-sizing: border-box;
+}
+
+.message-status-row {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.status-chip {
+  height: 58rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: #eef2f7;
+  color: #475467;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.status-chip.active {
+  background: #3b82f6;
+  color: #ffffff;
 }
 </style>

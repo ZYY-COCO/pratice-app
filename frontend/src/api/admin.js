@@ -82,3 +82,27 @@ export function updateAdminQuestionStatus(questionId, payload) {
     data: payload
   })
 }
+
+export function fetchAdminMessages(params = {}) {
+  return request({
+    url: '/admin/messages',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createAdminMessage(payload) {
+  return request({
+    url: '/admin/messages',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function updateAdminMessage(messageId, payload) {
+  return request({
+    url: `/admin/messages/${messageId}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
