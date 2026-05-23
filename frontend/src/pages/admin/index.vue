@@ -63,7 +63,7 @@
                 <text v-if="user.membership_expires_at" class="record-date">至 {{ formatDate(user.membership_expires_at) }}</text>
               </view>
             </view>
-            <button class="small-btn" @tap.stop="openGrantMembership(user)">授权会员</button>
+            <button class="small-btn" @tap.stop="openMembershipActions(user)">会员操作</button>
           </view>
         </view>
       </view>
@@ -136,6 +136,7 @@
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
+  cancelAdminMembership,
   fetchAdminFeedback,
   fetchAdminMe,
   fetchAdminOverview,
@@ -279,19 +280,59 @@ async function loadQuestions() {
   }
 }
 
-function openGrantMembership(user) {
+function openMembershipActions(user) {
+  const isActiveMember = user.membership_status === 'active'
+  const itemList = isActiveMember
+    ? ['续期 1 个月', '续期 3 个月', '续期 6 个月', '续期 12 个月', '取消会员']
+    : ['开通 1 个月', '开通 3 个月', '开通 6 个月', '开通 12 个月']
+
   uni.showActionSheet({
-    itemList: ['开通 1 个月', '开通 3 个月', '开通 6 个月', '开通 12 个月'],
+    itemList,
     success: async ({ tapIndex }) => {
-      const months = [1, 3, 6, 12][tapIndex] || 1
-      try {
-        await grantAdminMembership(user.id, { months, plan: `admin_${months}_month` })
-        uni.showToast({ title: '会员已授权', icon: 'success' })
-        await Promise.all([loadUsers(), loadOverview()])
-      } catch (error) {
-        uni.showToast({ title: '授权失败', icon: 'none' })
+      if (isActiveMember && tapIndex === 4) {
+        await confirmCancelMembership(user)
+        return
       }
+      const months = [1, 3, 6, 12][tapIndex] || 1
+      await grantMembership(user, months, isActiveMember)
     }
+  })
+}
+
+async function grantMembership(user, months, isRenewal = false) {
+  try {
+    await grantAdminMembership(user.id, { months, plan: `admin_${months}_month` })
+    uni.showToast({ title: isRenewal ? '会员已续期' : '会员已授权', icon: 'success' })
+    await Promise.all([loadUsers(), loadOverview()])
+  } catch (error) {
+    uni.showToast({ title: isRenewal ? '续期失败' : '授权失败', icon: 'none' })
+  }
+}
+
+function confirmCancelMembership(user) {
+  return new Promise((resolve) => {
+    uni.showModal({
+      title: '确认取消会员？',
+      content: `将取消 ${user.email || user.phone || '该用户'} 的会员权益。取消后不会删除用户账号和刷题记录。`,
+      confirmText: '取消会员',
+      confirmColor: '#ef4444',
+      success: async (result) => {
+        if (!result.confirm) {
+          resolve(false)
+          return
+        }
+        try {
+          await cancelAdminMembership(user.id)
+          uni.showToast({ title: '会员已取消', icon: 'success' })
+          await Promise.all([loadUsers(), loadOverview()])
+          resolve(true)
+        } catch (error) {
+          uni.showToast({ title: '取消失败', icon: 'none' })
+          resolve(false)
+        }
+      },
+      fail: () => resolve(false)
+    })
   })
 }
 
@@ -301,7 +342,9 @@ async function openUser(user) {
     const profile = detail.profile || user
     const summary = detail.answer_summary || {}
     const latestOrder = (detail.membership_orders || [])[0]
-    const latestGrant = (detail.admin_actions || []).find((action) => action.action === 'grant_membership')
+    const latestMembershipAction = (detail.admin_actions || []).find((action) => (
+      action.action === 'grant_membership' || action.action === 'cancel_membership'
+    ))
     const content = [
       `账号：${profile.email || profile.phone || '未绑定'}`,
       `昵称：${profile.nickname || '未设置'}`,
@@ -311,12 +354,17 @@ async function openUser(user) {
       profile.membership_expires_at ? `到期：${formatDate(profile.membership_expires_at)}` : '',
       `累计作答：${summary.total || 0} 题，正确 ${summary.correct || 0} 题，正确率 ${summary.accuracy || 0}%`,
       latestOrder ? `最近订单：${latestOrder.plan_code || '-'} / ${latestOrder.status || '-'}` : '暂无会员订单记录',
-      latestGrant ? `最近后台授权：${latestGrant.details?.months || '-'} 个月 / ${formatDate(latestGrant.created_at)}` : '暂无后台授权记录'
+      latestMembershipAction ? `最近后台操作：${membershipActionText(latestMembershipAction)} / ${formatDate(latestMembershipAction.created_at)}` : '暂无后台会员操作记录'
     ].filter(Boolean).join('\n')
     uni.showModal({ title: '用户详情', content, showCancel: false, confirmText: '关闭' })
   } catch (error) {
     uni.showToast({ title: '用户详情加载失败', icon: 'none' })
   }
+}
+
+function membershipActionText(action) {
+  if (action.action === 'cancel_membership') return '取消会员'
+  return `授权 ${action.details?.months || '-'} 个月`
 }
 
 function feedbackStatusText(status) {
@@ -433,7 +481,7 @@ function goBack() {
 <style scoped>
 .admin-page {
   min-height: 100vh;
-  padding: 46rpx 30rpx 80rpx;
+  padding: 36rpx 24rpx 80rpx;
   background: linear-gradient(180deg, #eef5ff 0%, #f6f8fb 28%, #f6f8fb 100%);
   box-sizing: border-box;
 }
@@ -441,14 +489,14 @@ function goBack() {
 .admin-hero {
   display: flex;
   align-items: center;
-  gap: 24rpx;
-  margin-bottom: 24rpx;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
 }
 
 .back-btn {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 24rpx;
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 22rpx;
   border: 0;
   background: #ffffff;
   color: #101828;
@@ -458,14 +506,14 @@ function goBack() {
 
 .admin-title {
   color: #101828;
-  font-size: 42rpx;
+  font-size: 38rpx;
   font-weight: 900;
 }
 
 .admin-subtitle {
-  margin-top: 6rpx;
+  margin-top: 4rpx;
   color: #667085;
-  font-size: 25rpx;
+  font-size: 23rpx;
 }
 
 .state-card,
@@ -499,35 +547,39 @@ function goBack() {
 
 .stat-grid {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 18rpx;
-  margin-bottom: 24rpx;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10rpx;
+  margin-bottom: 18rpx;
 }
 
 .stat-card {
-  padding: 26rpx;
-  border-radius: 24rpx;
+  min-height: 108rpx;
+  padding: 16rpx 14rpx;
+  border-radius: 18rpx;
   background: #ffffff;
   border: 1rpx solid #e6edf6;
+  box-sizing: border-box;
 }
 
 .stat-label {
   color: #667085;
-  font-size: 24rpx;
+  font-size: 20rpx;
+  line-height: 1.25;
 }
 
 .stat-value {
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: #101828;
-  font-size: 40rpx;
+  font-size: 32rpx;
   font-weight: 900;
+  line-height: 1.1;
 }
 
 .tab-bar {
   display: grid;
   grid-template-columns: repeat(3, 1fr);
-  gap: 14rpx;
-  margin-bottom: 22rpx;
+  gap: 10rpx;
+  margin-bottom: 18rpx;
 }
 
 .tab-btn,
@@ -540,9 +592,10 @@ function goBack() {
 }
 
 .tab-btn {
-  height: 72rpx;
+  height: 64rpx;
   color: #475467;
   background: #ffffff;
+  font-size: 26rpx;
 }
 
 .tab-btn.active {
@@ -551,7 +604,7 @@ function goBack() {
 }
 
 .panel-card {
-  padding: 28rpx;
+  padding: 24rpx;
 }
 
 .panel-head {
@@ -564,19 +617,19 @@ function goBack() {
 
 .panel-title {
   color: #101828;
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 900;
 }
 
 .panel-subtitle {
   margin-top: 6rpx;
   color: #667085;
-  font-size: 24rpx;
+  font-size: 22rpx;
 }
 
 .ghost-btn {
-  height: 60rpx;
-  padding: 0 24rpx;
+  height: 56rpx;
+  padding: 0 22rpx;
   color: #2563eb;
   background: #eff6ff;
   font-size: 24rpx;
@@ -590,7 +643,7 @@ function goBack() {
 
 .search-input {
   min-width: 0;
-  height: 72rpx;
+  height: 68rpx;
   padding: 0 22rpx;
   border-radius: 18rpx;
   background: #f3f6fb;
@@ -606,7 +659,7 @@ function goBack() {
 
 .search-btn {
   width: 128rpx;
-  height: 72rpx;
+  height: 68rpx;
   color: #ffffff;
   background: #3b82f6;
   font-size: 26rpx;
@@ -627,7 +680,7 @@ function goBack() {
 .record-list {
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 14rpx;
 }
 
 .record-card {
@@ -635,8 +688,8 @@ function goBack() {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 24rpx;
-  border-radius: 22rpx;
+  padding: 20rpx;
+  border-radius: 20rpx;
   background: #f8fbff;
   border: 1rpx solid #e3ebf7;
 }
@@ -652,15 +705,15 @@ function goBack() {
 
 .record-title {
   color: #101828;
-  font-size: 27rpx;
+  font-size: 25rpx;
   font-weight: 900;
   line-height: 1.45;
 }
 
 .record-subtitle {
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: #667085;
-  font-size: 23rpx;
+  font-size: 22rpx;
   line-height: 1.5;
 }
 
@@ -709,11 +762,11 @@ function goBack() {
 }
 
 .small-btn {
-  width: 148rpx;
-  height: 62rpx;
+  width: 136rpx;
+  height: 58rpx;
   color: #ffffff;
   background: #0f172a;
-  font-size: 23rpx;
+  font-size: 22rpx;
 }
 
 .inline-action {

@@ -309,6 +309,37 @@ def admin_grant_membership(
     return _build_admin_user_item(row)
 
 
+@router.delete("/users/{user_id}/membership", response_model=AdminUserItem)
+def admin_cancel_membership(
+    user_id: str,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminUserItem:
+    supabase = get_supabase_admin()
+    _get_user_or_404(supabase, user_id)
+    current = _now()
+    update_data = {
+        "membership_status": "inactive",
+        "membership_plan": None,
+        "membership_started_at": None,
+        "membership_expires_at": None,
+        "membership_updated_at": _to_iso(current),
+    }
+    updated_response = supabase.table("users").update(update_data).eq("id", user_id).execute()
+    if not updated_response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Membership cancel failed")
+
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="cancel_membership",
+        target_type="user",
+        target_id=user_id,
+        details={"reason": "admin_manual_cancel"},
+    )
+    row = updated_response.data[0]
+    return _build_admin_user_item(row)
+
+
 @router.get("/feedback", response_model=AdminFeedbackListResponse)
 def admin_feedback(
     feedback_status: str | None = Query(default=None, alias="status", max_length=20),

@@ -30,6 +30,13 @@ export function grantAdminMembership(userId, payload) {
   })
 }
 
+export function cancelAdminMembership(userId) {
+  return request({
+    url: `/admin/users/${userId}/membership`,
+    method: 'DELETE'
+  })
+}
+
 export function fetchAdminUserDetail(userId) {
   return request({
     url: `/admin/users/${userId}`,
