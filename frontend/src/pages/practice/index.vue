@@ -979,7 +979,10 @@ function normalizeDifficulty(value) {
 }
 
 function buildDiagnosticDifficultyTargets(limit) {
-  const targets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, 0]))
+  const targets = {}
+  DIFFICULTY_LEVELS.forEach((level) => {
+    targets[level] = 0
+  })
   for (let index = 0; index < limit; index += 1) {
     targets[DIFFICULTY_LEVELS[index % DIFFICULTY_LEVELS.length]] += 1
   }
@@ -1013,7 +1016,10 @@ function buildAdaptiveDifficultyTargets(limit, historyItems = []) {
 
   const lowerDifficulty = normalizeDifficulty(mainDifficulty - 1)
   const upperDifficulty = normalizeDifficulty(mainDifficulty + 1)
-  const targets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, 0]))
+  const targets = {}
+  DIFFICULTY_LEVELS.forEach((level) => {
+    targets[level] = 0
+  })
   targets[mainDifficulty] += Math.max(1, Math.round(limit * 0.5))
   if (lowerDifficulty !== mainDifficulty) {
     targets[lowerDifficulty] += Math.max(1, Math.floor(limit * 0.2))
@@ -1052,7 +1058,10 @@ function buildAdaptiveQuestionPool(candidateGroups, historyItems = []) {
   })
 
   const profile = buildAdaptiveDifficultyTargets(limit, historyItems)
-  const buckets = Object.fromEntries(DIFFICULTY_LEVELS.map((level) => [level, []]))
+  const buckets = {}
+  DIFFICULTY_LEVELS.forEach((level) => {
+    buckets[level] = []
+  })
   shuffleArray(candidates).forEach((item) => {
     buckets[normalizeDifficulty(item.difficulty)].push(item)
   })
@@ -1117,6 +1126,13 @@ function getCacheKey(moduleInfos) {
     tags: moduleInfos.map((item) => `${item.module}:${item.submodule}`).sort(),
     seed: practiceMode.value === 'comprehensive' ? Date.now() : ''
   })
+}
+
+function buildQuery(params) {
+  return Object.keys(params)
+    .filter((key) => params[key] !== undefined && params[key] !== null && params[key] !== '')
+    .map((key) => `${encodeURIComponent(key)}=${encodeURIComponent(params[key])}`)
+    .join('&')
 }
 
 function goBack() {
@@ -1334,12 +1350,12 @@ async function startCultureReview() {
 
 async function fetchRealQuestionCandidates(moduleInfos) {
   if (practiceMode.value === 'comprehensive') {
-    const query = new URLSearchParams({
+    const query = buildQuery({
       exam_code: examCode.value,
       subject: subject.value,
       limit: String(Math.min(100, Math.max(plannedQuestionLimit.value * 8, 30))),
       randomize: 'true'
-    }).toString()
+    })
 
     const data = await request({
       url: `/questions?${query}`,
@@ -1361,15 +1377,15 @@ async function fetchRealQuestionCandidates(moduleInfos) {
   const perTagLimit =
     Math.min(50, Math.max(20, plannedQuestionLimit.value, Math.ceil(plannedQuestionLimit.value / moduleInfos.length) * 4))
 
-  const responses = await Promise.allSettled(
+  const responses = await Promise.all(
     moduleInfos.map((meta) => {
-      const query = new URLSearchParams({
+      const query = buildQuery({
         exam_code: examCode.value,
         subject: subject.value,
         module: meta.module,
         submodule: meta.submodule,
         limit: String(perTagLimit)
-      }).toString()
+      })
 
       return request({
         url: `/questions/by-module?${query}`,
@@ -1377,25 +1393,30 @@ async function fetchRealQuestionCandidates(moduleInfos) {
           Authorization: `Bearer ${accessToken.value}`
         }
       }).then((data) => ({
+        ok: true,
         meta,
         items: data.items || []
+      })).catch(() => ({
+        ok: false,
+        meta,
+        items: []
       }))
     })
   )
 
   return responses
-    .filter((response) => response.status === 'fulfilled')
-    .map((response) => response.value.items.map((item) => buildApiQuestion(item, response.value.meta)))
+    .filter((response) => response.ok)
+    .map((response) => response.items.map((item) => buildApiQuestion(item, response.meta)))
     .filter((items) => items.length)
 }
 
 async function fetchSubjectSupplement(existingKeys) {
-  const query = new URLSearchParams({
+  const query = buildQuery({
     exam_code: examCode.value,
     subject: subject.value,
     limit: String(Math.min(50, plannedQuestionLimit.value * 3)),
     randomize: 'true'
-  }).toString()
+  })
 
   const data = await request({
     url: `/questions?${query}`,
@@ -1415,12 +1436,12 @@ async function fetchSubjectSupplement(existingKeys) {
 }
 
 async function fetchMockExamSectionPool(section, usedKeys) {
-  const query = new URLSearchParams({
+  const query = buildQuery({
     exam_code: examCode.value,
     subject: section.subject,
     limit: '100',
     randomize: 'true'
-  }).toString()
+  })
 
   const data = await request({
     url: `/questions?${query}`,
