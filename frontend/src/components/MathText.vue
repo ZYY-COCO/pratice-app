@@ -38,8 +38,10 @@
 
 <script setup>
 import { computed } from 'vue'
+// #ifdef H5
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
+// #endif
 import { escapeMathTextHtml, splitMathTextForKatex, tokenizeMathText } from '../utils/mathText'
 
 const props = defineProps({
@@ -49,6 +51,7 @@ const props = defineProps({
   }
 })
 
+// #ifdef H5
 function renderKatex(latex) {
   try {
     return katex.renderToString(latex, {
@@ -68,8 +71,11 @@ const renderedHtml = computed(() =>
     .map((part) => (part.math ? renderKatex(part.content) : escapeMathTextHtml(part.content)))
     .join('')
 )
+// #endif
 
+// #ifndef H5
 const tokens = computed(() => tokenizeMathText(props.value))
+// #endif
 </script>
 
 <style scoped>
@@ -87,6 +93,7 @@ const tokens = computed(() => tokenizeMathText(props.value))
   white-space: normal;
 }
 
+/* #ifdef H5 */
 .katex-math-text :deep(.katex) {
   color: inherit;
   font-size: 1em;
@@ -102,6 +109,7 @@ const tokens = computed(() => tokenizeMathText(props.value))
 .katex-math-text :deep(.base) {
   max-width: 100%;
 }
+/* #endif */
 
 .math-segment {
   display: inline;

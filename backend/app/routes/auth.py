@@ -1,4 +1,5 @@
 import logging
+from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -55,6 +56,8 @@ MEMBERSHIP_FIELDS = (
     "membership_updated_at",
 )
 PROFILE_ADMIN_FIELDS = ("role", "disabled_at")
+NEW_USER_TRIAL_DAYS = 31
+NEW_USER_TRIAL_PLAN = "pro_monthly"
 
 
 def _safe_error_summary(exc: Exception) -> str:
@@ -132,6 +135,18 @@ def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
         if field in db_profile:
             merged[field] = db_profile.get(field)
     return merged
+
+
+def _new_user_trial_membership_fields() -> dict:
+    current = datetime.now(timezone.utc)
+    expires_at = current + timedelta(days=NEW_USER_TRIAL_DAYS)
+    return {
+        "membership_status": "active",
+        "membership_plan": NEW_USER_TRIAL_PLAN,
+        "membership_started_at": current.isoformat(),
+        "membership_expires_at": expires_at.isoformat(),
+        "membership_updated_at": current.isoformat(),
+    }
 
 
 def _send_code(email: str, purpose: str) -> None:
@@ -330,6 +345,7 @@ def phone_register(payload: PhoneRegisterRequest) -> AuthResponse:
         "auth_provider": "phone",
         "nickname": payload.nickname,
         "exam_target": payload.exam_target,
+        **_new_user_trial_membership_fields(),
     }
     supabase_admin.table("users").upsert(profile).execute()
     return _auth_response_from_profile(profile, phone_password)
@@ -457,6 +473,7 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
         "nickname": nickname,
         "avatar_url": wechat_profile.get("avatar_url"),
         "exam_target": "Z001",
+        **_new_user_trial_membership_fields(),
     }
     supabase_admin.table("users").upsert(profile).execute()
     return _auth_response_from_profile(profile, password)
@@ -507,6 +524,7 @@ def register(payload: RegisterRequest) -> AuthResponse:
         "email": normalized_email,
         "nickname": payload.nickname,
         "exam_target": payload.exam_target,
+        **_new_user_trial_membership_fields(),
     }
     supabase_admin.table("users").upsert(profile).execute()
 

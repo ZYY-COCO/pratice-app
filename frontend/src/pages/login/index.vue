@@ -16,13 +16,15 @@
 
     <view class="login-card">
       <view class="method-switch">
-        <button class="method-btn" :class="{ active: authMethod === 'phone' }" @tap="switchAuthMethod('phone')">
-          手机号
-        </button>
         <button class="method-btn" :class="{ active: authMethod === 'email' }" @tap="switchAuthMethod('email')">
-          邮箱
+          <text class="method-label">邮箱</text>
+        </button>
+        <button class="method-btn disabled" @tap="switchAuthMethod('phone')">
+          <text class="method-label">手机号</text>
+          <text class="soon-badge">即将开放</text>
         </button>
       </view>
+      <view class="login-mode-note">目前仅支持邮箱注册登录，新用户注册后自动赠送 1 个月会员。</view>
 
       <template v-if="mode === 'login'">
         <template v-if="authMethod === 'phone'">
@@ -315,9 +317,9 @@
         {{ submitButtonText }}
       </button>
 
-      <button class="wechat-button" @tap="handleWechatLogin">
+      <button class="wechat-button disabled" @tap="handleWechatLogin">
         <text class="wechat-icon">微</text>
-        <text>微信登录</text>
+        <text>微信登录 · 即将开放</text>
       </button>
 
       <button class="ghost-button home-btn" @tap="goBackHome">返回首页</button>
@@ -356,7 +358,9 @@ import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
 
 const mode = ref('login')
-const authMethod = ref('phone')
+const PHONE_AUTH_ENABLED = false
+const WECHAT_AUTH_ENABLED = false
+const authMethod = ref('email')
 const submitting = ref(false)
 const redirect = ref('/pages/home/index')
 const tipText = ref('')
@@ -489,8 +493,12 @@ onLoad((options) => {
     mode.value = options.mode
   }
 
-  if (options?.method === 'email' || options?.method === 'phone') {
-    authMethod.value = options.method
+  if (options?.method === 'email') {
+    authMethod.value = 'email'
+  }
+
+  if (options?.method === 'phone') {
+    showAuthMethodUnavailable()
   }
 
   const wechatParams = getWechatOAuthParams(options)
@@ -509,8 +517,19 @@ function switchMode(nextMode) {
 }
 
 function switchAuthMethod(nextMethod) {
+  if (nextMethod === 'phone' && !PHONE_AUTH_ENABLED) {
+    showAuthMethodUnavailable()
+    return
+  }
   authMethod.value = nextMethod
   tipText.value = ''
+}
+
+function showAuthMethodUnavailable() {
+  authMethod.value = 'email'
+  tipType.value = 'warning'
+  tipText.value = '目前仅支持邮箱注册和邮箱登录。手机号、微信登录正在适配中，新用户用邮箱注册后会自动赠送 1 个月会员。'
+  uni.showToast({ title: '请先使用邮箱登录', icon: 'none' })
 }
 
 function onExamChange(event) {
@@ -928,6 +947,11 @@ async function submitResetPassword() {
 }
 
 async function handleWechatLogin() {
+  if (!WECHAT_AUTH_ENABLED) {
+    showAuthMethodUnavailable()
+    return
+  }
+
   submitting.value = true
   tipText.value = ''
 
@@ -1170,12 +1194,42 @@ function goBackHome() {
   display: flex;
   align-items: center;
   justify-content: center;
+  gap: 8rpx;
 }
 
 .method-btn.active {
   background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
   color: var(--gyt-primary);
   box-shadow: 0 8rpx 18rpx rgba(20, 31, 66, 0.075);
+}
+
+.method-btn.disabled {
+  color: #98a2b3;
+}
+
+.method-label {
+  line-height: 1;
+}
+
+.soon-badge {
+  padding: 6rpx 10rpx;
+  border-radius: 999rpx;
+  background: #eef2f7;
+  color: #667085;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.login-mode-note {
+  margin: -8rpx 0 22rpx;
+  padding: 16rpx 20rpx;
+  border-radius: 20rpx;
+  background: #fff8eb;
+  border: 2rpx solid #fde7b0;
+  color: #8a5a13;
+  font-size: 23rpx;
+  line-height: 1.55;
 }
 
 .field + .field {
@@ -1340,6 +1394,15 @@ function goBackHome() {
   align-items: center;
   justify-content: center;
   gap: 12rpx;
+}
+
+.wechat-button.disabled {
+  background: #f4f6fa;
+  color: #98a2b3;
+}
+
+.wechat-button.disabled .wechat-icon {
+  background: #cbd5e1;
 }
 
 .wechat-icon {

@@ -8,6 +8,16 @@
     "h5" : {
         "title" : "港研通"
     },
+    "mp-weixin" : {
+        "appid" : "wx6f589394c3d604c5",
+        "setting" : {
+            "urlCheck" : true,
+            "es6" : true,
+            "postcss" : true,
+            "minified" : true
+        },
+        "usingComponents" : true
+    },
     "app-plus" : {
         "usingComponents" : true,
         "splashscreen" : {
