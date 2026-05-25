@@ -302,8 +302,8 @@
         </template>
       </view>
 
-      <button class="ghost-button back-tags" @tap="mockExamMode ? confirmExitPractice() : resetToTags">
-        {{ mockExamMode ? '退出模拟测试' : '返回刷题范围' }}
+      <button v-if="mockExamMode" class="ghost-button back-tags" @tap="confirmExitPractice">
+        退出模拟测试
       </button>
       </template>
     </template>
