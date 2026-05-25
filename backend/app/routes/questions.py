@@ -213,7 +213,9 @@ def fetch_user_answer_rows_for_subject(supabase, user_id: str, exam_code: str, s
 
 
 def build_progress_summary(supabase, user_id: str | None, exam_code: str, subject: str) -> dict:
-    total_questions = fetch_subject_question_count(supabase, exam_code, subject)
+    subject_question_rows = fetch_subject_question_rows(supabase, exam_code, subject)
+    active_question_ids = {str(row.get("id")) for row in subject_question_rows if row.get("id")}
+    total_questions = len(active_question_ids)
 
     if not total_questions or not user_id:
         return {
@@ -225,9 +227,9 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
         }
 
     stats_by_question: dict[str, dict] = {}
-    for row in fetch_user_answer_rows_for_subject(supabase, user_id, exam_code, subject):
+    for row in fetch_user_answer_rows(supabase, user_id):
         question_id = row.get("question_id")
-        if not question_id:
+        if not question_id or str(question_id) not in active_question_ids:
             continue
         created_at = parse_supabase_datetime(row.get("created_at"))
         stats = stats_by_question.setdefault(

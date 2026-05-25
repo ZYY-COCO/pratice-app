@@ -62,6 +62,7 @@
               v-for="item in promptOptions"
               :key="item"
               class="prompt-chip"
+              :class="{ disabled: sending }"
               :disabled="sending"
               @tap="sendPrompt(item)"
             >
@@ -110,6 +111,7 @@
                 v-for="item in promptOptions"
                 :key="item"
                 class="prompt-chip compact-chip"
+                :class="{ disabled: sending }"
                 :disabled="sending"
                 @tap="sendPrompt(item)"
               >
@@ -129,7 +131,7 @@
             placeholder="向 AI 助教提问"
             @confirm="sendDraft"
           />
-          <button class="send-btn" :class="{ ready: canSend }" :disabled="!canSend" @tap="sendDraft">
+          <button class="send-btn" :class="{ ready: canSend, disabled: !canSend }" :disabled="!canSend" @tap="sendDraft">
             {{ sending ? '发送中' : '发送' }}
           </button>
         </view>
@@ -724,7 +726,7 @@ onMounted(() => {
   border: 0;
 }
 
-.prompt-chip[disabled] {
+.prompt-chip.disabled {
   opacity: 0.62;
 }
 
@@ -852,7 +854,7 @@ onMounted(() => {
   box-shadow: 0 12rpx 24rpx rgba(52, 120, 246, 0.22);
 }
 
-.send-btn[disabled] {
+.send-btn.disabled {
   color: #ffffff;
 }
 </style>
