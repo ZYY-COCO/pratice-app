@@ -1,14 +1,25 @@
 <template>
   <!-- #ifdef H5 -->
   <view class="icp-footer" :class="{ compact }">
-    <a
-      class="icp-link"
-      href="https://beian.miit.gov.cn/"
-      target="_blank"
-      rel="noopener noreferrer"
-    >
-      粤ICP备2026058975号
-    </a>
+    <view class="icp-footer-inner">
+      <a
+        class="icp-link"
+        href="https://beian.miit.gov.cn/"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
+        粤ICP备2026058975号
+      </a>
+      <a
+        class="icp-link police-link"
+        href="https://beian.mps.gov.cn/#/query/webSearch?code=44011402001320"
+        target="_blank"
+        rel="noreferrer"
+      >
+        <image class="police-icon" src="/static/beian-gongan.png" mode="aspectFit" />
+        <text>粤公网安备44011402001320号</text>
+      </a>
+    </view>
   </view>
   <!-- #endif -->
 </template>
@@ -34,6 +45,14 @@ defineProps({
   text-align: center;
 }
 
+.icp-footer-inner {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-wrap: wrap;
+  gap: 12rpx 20rpx;
+}
+
 .icp-footer.compact {
   padding-bottom: calc(env(safe-area-inset-bottom) + 142rpx);
 }
@@ -41,6 +60,18 @@ defineProps({
 .icp-link {
   color: #8a94a6;
   text-decoration: none;
+}
+
+.police-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.police-icon {
+  width: 24rpx;
+  height: 24rpx;
+  flex: 0 0 24rpx;
 }
 
 .icp-link:active,
