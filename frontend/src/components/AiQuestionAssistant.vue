@@ -1,17 +1,21 @@
 <template>
   <view class="ai-assistant">
-    <button
-      class="assistant-trigger"
+    <view
+      class="assistant-trigger-hitbox"
       :class="{ dragging: triggerDragging }"
       :style="assistantTriggerStyle"
       @tap="handleTriggerTap"
+      @click="handleTriggerTap"
+      @longpress="openPanel"
       @touchstart.stop="startTriggerDrag"
       @touchmove.stop.prevent="moveTriggerDrag"
       @touchend.stop="endTriggerDrag"
       @touchcancel.stop="endTriggerDrag"
     >
-      <text>AI</text>
-    </button>
+      <view class="assistant-trigger">
+        <text>AI</text>
+      </view>
+    </view>
 
     <view v-if="visible" class="assistant-mask" @tap="closePanel">
       <view class="assistant-panel" @tap.stop>
@@ -220,7 +224,7 @@ function getTriggerViewport() {
   return {
     width: Number(info.windowWidth) || 375,
     height: Number(info.windowHeight) || 667,
-    size: uni.upx2px(88),
+    size: uni.upx2px(116),
     margin: uni.upx2px(24),
     defaultBottom: uni.upx2px(250)
   }
@@ -321,7 +325,7 @@ function moveTriggerDrag(event) {
 
   const deltaX = Math.abs(point.x - triggerDragContext.startX)
   const deltaY = Math.abs(point.y - triggerDragContext.startY)
-  if (deltaX > 6 || deltaY > 6) {
+  if (deltaX > 12 || deltaY > 12) {
     triggerDragContext.moved = true
   }
 
@@ -338,15 +342,18 @@ function endTriggerDrag() {
   triggerDragging.value = false
   triggerDragContext = null
 
-  if (moved) {
+  if (!moved) {
+    openPanel()
+  } else {
     const snappedPosition = snapTriggerToSide(triggerPosition.value)
     triggerPosition.value = snappedPosition
     saveTriggerPosition(snappedPosition)
-    suppressNextTriggerTap.value = true
-    setTimeout(() => {
-      suppressNextTriggerTap.value = false
-    }, 250)
   }
+
+  suppressNextTriggerTap.value = true
+  setTimeout(() => {
+    suppressNextTriggerTap.value = false
+  }, 250)
 }
 
 function openPanel() {
@@ -439,7 +446,8 @@ async function requestAssistantReply(text) {
     })
     pushAssistantReply(data?.reply || buildFallbackReply())
   } catch (error) {
-    pushAssistantReply('暂时无法连接 AI，请稍后再试')
+    const detail = error?.detail || error?.message || '暂时无法连接 AI，请稍后再试'
+    pushAssistantReply(detail)
   } finally {
     sending.value = false
   }
@@ -480,19 +488,31 @@ onMounted(() => {
   z-index: 80;
 }
 
-.assistant-trigger {
+.assistant-trigger-hitbox {
   position: fixed;
   right: 24rpx;
   bottom: calc(250rpx + env(safe-area-inset-bottom));
-  z-index: 80;
-  display: inline-flex;
+  z-index: 180;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 116rpx;
+  height: 116rpx;
+  min-width: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  transition: left 0.18s ease, top 0.18s ease, transform 0.18s ease;
+  touch-action: none;
+  user-select: none;
+}
+
+.assistant-trigger {
+  display: flex;
   align-items: center;
   justify-content: center;
   width: 88rpx;
   height: 88rpx;
-  min-width: 0;
-  padding: 0;
-  border: 0;
   border-radius: 50%;
   background: linear-gradient(135deg, #3478f6, #7c5cff);
   color: #ffffff;
@@ -501,12 +521,9 @@ onMounted(() => {
   letter-spacing: 0;
   line-height: 88rpx;
   box-shadow: 0 18rpx 34rpx rgba(52, 120, 246, 0.3);
-  transition: left 0.18s ease, top 0.18s ease, transform 0.18s ease;
-  touch-action: none;
-  user-select: none;
 }
 
-.assistant-trigger.dragging {
+.assistant-trigger-hitbox.dragging {
   transform: scale(1.04);
   transition: none;
 }
@@ -518,7 +535,7 @@ onMounted(() => {
 .assistant-mask {
   position: fixed;
   inset: 0;
-  z-index: 100;
+  z-index: 260;
   display: flex;
   align-items: flex-end;
   background: rgba(15, 23, 42, 0.22);

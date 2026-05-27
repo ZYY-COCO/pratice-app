@@ -74,11 +74,14 @@ def deduplicate_question_rows(rows: list[dict]) -> list[dict]:
 def parse_supabase_datetime(value: str | None) -> datetime:
     if not value:
         return datetime.now(timezone.utc)
-    normalized = value.replace("Z", "+00:00")
-    parsed = datetime.fromisoformat(normalized)
-    if parsed.tzinfo is None:
-        return parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(timezone.utc)
+    try:
+        normalized = str(value).replace("Z", "+00:00")
+        parsed = datetime.fromisoformat(normalized)
+        if parsed.tzinfo is None:
+            return parsed.replace(tzinfo=timezone.utc)
+        return parsed.astimezone(timezone.utc)
+    except (TypeError, ValueError):
+        return datetime.now(timezone.utc)
 
 
 def fetch_subject_question_rows_for_codes(supabase, exam_codes: list[str], subject: str) -> list[dict]:
@@ -227,13 +230,19 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
         }
 
     stats_by_question: dict[str, dict] = {}
-    for row in fetch_user_answer_rows(supabase, user_id):
+    try:
+        user_answer_rows = fetch_user_answer_rows(supabase, user_id)
+    except Exception:
+        user_answer_rows = []
+
+    for row in user_answer_rows:
         question_id = row.get("question_id")
-        if not question_id or str(question_id) not in active_question_ids:
+        question_id_key = str(question_id) if question_id else ""
+        if not question_id_key or question_id_key not in active_question_ids:
             continue
         created_at = parse_supabase_datetime(row.get("created_at"))
         stats = stats_by_question.setdefault(
-            question_id,
+            question_id_key,
             {
                 "attempt_count": 0,
                 "correct_count": 0,
