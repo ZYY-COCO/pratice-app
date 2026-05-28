@@ -57,8 +57,19 @@ function stripMathDelimiters(value) {
     .replace(/\$(.*?)\$/g, '$1')
 }
 
+function normalizeStructuralLatexSource(value) {
+  return String(value || '')
+    .replace(/\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*/g, '')
+    .replace(/\\(?:limits|nolimits)/g, '')
+    .replace(/\\[dt]frac/g, '\\frac')
+}
+
 function normalizeLatexCommands(value) {
   return String(value)
+    .replace(/\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*/g, '')
+    .replace(/\\(?:limits|nolimits)/g, '')
+    .replace(/\\[dt]frac/g, '\\frac')
+    .replace(/\\mathrm\{([^{}]*)\}/g, '$1')
     .replace(/\\left\./g, '')
     .replace(/\\left/g, '')
     .replace(/\\right/g, '')
@@ -74,20 +85,28 @@ function normalizeLatexCommands(value) {
     .replace(/\\leq?/g, '≤')
     .replace(/\\geq?/g, '≥')
     .replace(/\\neq/g, '≠')
+    .replace(/\\ne(?![A-Za-z])/g, '≠')
+    .replace(/\\begin\{cases\}/g, '')
+    .replace(/\\end\{cases\}/g, '')
+    .replace(/\\\\/g, '；')
+    .replace(/&/g, '，')
     .replace(/\\partial/g, '∂')
     .replace(/\\int/g, '∫')
-    .replace(/\\(sin|cos|tan|ln|log|sec)\b/g, '$1')
-    .replace(/\b(sin|cos|tan|ln|log|sec)(?=[0-9A-Za-z])/g, '$1 ')
+    .replace(/\\(arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min)\b/g, '$1')
+    .replace(/\b(arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min)(?=[0-9A-Za-z])/g, '$1 ')
 }
 
 function replacePowers(value) {
   return String(value)
-    .replace(/\^\{?(-?[0-9xyn])\}?/g, (_, power) => toSuperscript(power))
+    .replace(/\^\{(-?[0-9xyn+\-]+)\}/g, (_, power) => toSuperscript(power))
     .replace(/\^\((-?\d+)\)/g, (_, power) => toSuperscript(power))
+    .replace(/\^(-?[0-9xyn])/g, (_, power) => toSuperscript(power))
 }
 
 function replaceSubscripts(value) {
-  return String(value).replace(/_\{?([0-9xyen+\-])\}?/g, (_, subscript) => toSubscript(subscript))
+  return String(value)
+    .replace(/_\{([0-9xyena+\-]+)\}/g, (_, subscript) => toSubscript(subscript))
+    .replace(/_([0-9xyena+\-])/g, (_, subscript) => toSubscript(subscript))
 }
 
 function tidyMathTextBase(value) {
@@ -222,7 +241,7 @@ function parseLatexScripts(value, start) {
 }
 
 function parseStructuredLatex(value) {
-  const raw = String(value || '')
+  const raw = normalizeStructuralLatexSource(value)
   const tokens = []
   let cursor = 0
   let index = 0
@@ -234,6 +253,18 @@ function parseStructuredLatex(value) {
   }
 
   while (index < raw.length) {
+    if (raw.startsWith('\\begin{cases}', index)) {
+      const contentStart = index + '\\begin{cases}'.length
+      const contentEnd = raw.indexOf('\\end{cases}', contentStart)
+      if (contentEnd >= 0) {
+        pushText(index)
+        tokens.push({ type: 'cases', rows: parseCasesRows(raw.slice(contentStart, contentEnd)) })
+        index = contentEnd + '\\end{cases}'.length
+        cursor = index
+        continue
+      }
+    }
+
     if (raw.startsWith('\\frac', index)) {
       const numerator = parseBraceGroup(raw, index + 5)
       const denominator = numerator ? parseBraceGroup(raw, numerator.end) : null
@@ -338,6 +369,31 @@ function parseStructuredLatex(value) {
   return tokens
 }
 
+function cleanCasesCell(value) {
+  return String(value || '')
+    .trim()
+    .replace(/^[,，;；]+/, '')
+    .replace(/[,，;；.。]+$/, '')
+    .trim()
+}
+
+function parseCasesRows(value) {
+  const rows = String(value || '')
+    .split(/\\\\/)
+    .map((row) => row.trim())
+    .filter(Boolean)
+    .map((row) => {
+      const cells = row.split('&')
+      return {
+        expression: cleanCasesCell(cells[0]),
+        condition: cleanCasesCell(cells.slice(1).join(' '))
+      }
+    })
+    .filter((row) => row.expression || row.condition)
+
+  return rows.length ? rows : [{ expression: formatRawText(value), condition: '' }]
+}
+
 function formatRawText(value) {
   let result = String(value || '')
   result = normalizeLatexCommands(result)
@@ -376,6 +432,11 @@ function formatForPlain(value) {
       }
       if (part.type === 'evalBar') {
         return `|_${formatForPlain(part.condition)}`
+      }
+      if (part.type === 'cases') {
+        return part.rows
+          .map((row) => `${formatForPlain(row.expression)}${row.condition ? `, ${formatForPlain(row.condition)}` : ''}`)
+          .join('; ')
       }
       return ''
     })
@@ -432,6 +493,18 @@ function createEvalBarToken(condition) {
   return {
     type: 'evalBar',
     condition: formatForPlain(condition)
+  }
+}
+
+function createCasesToken(rows) {
+  return {
+    type: 'cases',
+    rows: (rows || [])
+      .map((row) => ({
+        expression: formatForPlain(row.expression),
+        condition: formatForPlain(row.condition)
+      }))
+      .filter((row) => row.expression || row.condition)
   }
 }
 
@@ -493,6 +566,10 @@ export function tokenizeMathText(value) {
     }
     if (part.type === 'evalBar') {
       tokens.push(createEvalBarToken(part.condition))
+      return
+    }
+    if (part.type === 'cases') {
+      tokens.push(createCasesToken(part.rows))
     }
   })
 
@@ -500,7 +577,7 @@ export function tokenizeMathText(value) {
 }
 
 const KATEX_COMMAND_PATTERN =
-  /\\(?:frac|dfrac|tfrac|sqrt|lim|int|partial|left|right|sum|prod|sin|cos|tan|ln|log|cdot|times|leq|le|geq|ge|neq|infty|pi|to|mathrm)(?=[^A-Za-z]|$)/g
+  /\\(?:begin|end|frac|dfrac|tfrac|sqrt|lim|int|partial|left|right|sum|prod|arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min|pm|cdot|times|leq|le|geq|ge|ne|neq|infty|pi|to|mathrm|displaystyle|textstyle|scriptstyle|scriptscriptstyle|limits|nolimits)(?=[^A-Za-z]|$)/g
 
 const CJK_PATTERN = /[\u3400-\u9fff]/
 const CJK_OR_STOP_PUNCT_PATTERN = /[\u3400-\u9fff\u3002\uff0c\uff1b\uff1a\uff1f\uff01\uff0e]/
@@ -515,6 +592,9 @@ function normalizeKatexLatex(value) {
     .replace(/\u221a\s*\(([^()]*)\)/g, '\\sqrt{$1}')
     .replace(/\u221e/g, '\\infty')
     .replace(/\u2192/g, '\\to')
+    .replace(/\\[dt]frac/g, '\\frac')
+    .replace(/\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*/g, '')
+    .replace(/\\(?:limits|nolimits)/g, '')
     .replace(/\u00b9/g, '^1')
     .replace(/\u00b2/g, '^2')
     .replace(/\u00b3/g, '^3')
@@ -734,4 +814,38 @@ export function splitMathTextForKatex(value) {
   }
 
   return splitImplicitCommandMath(text)
+}
+
+const FORMULA_IMAGE_SIGNAL_PATTERN =
+  /\\(?:begin\{cases\}|end\{cases\}|frac|dfrac|tfrac|sqrt|lim|int|partial|left|right|to|infty|pi|sin|cos|tan|ln|log)|\^|_|√|∫|∂|∞|→|π|lim\s*[\(_]|[A-Za-z0-9)\]\u00b9\u00b2\u00b3]\s*\/\s*[A-Za-z0-9([]/
+
+export function shouldUseMathImage(value) {
+  const text = normalizeMathSource(value)
+  if (!text) return false
+  return FORMULA_IMAGE_SIGNAL_PATTERN.test(text)
+}
+
+export function estimateMathImageDisplayRpx(value) {
+  const text = formatMathText(value)
+  if (!text) return 120
+
+  let width = 36
+  for (const char of text) {
+    if (/[\u3400-\u9fff]/.test(char)) {
+      width += 32
+    } else if (char === '/') {
+      width += 26
+    } else if (/[=+\-×·()[\]{}]/.test(char)) {
+      width += 20
+    } else if (char.trim() === '') {
+      width += 12
+    } else {
+      width += 18
+    }
+  }
+
+  if (/\\frac|\/|√|\\sqrt/.test(String(value || ''))) {
+    width += 24
+  }
+  return Math.max(92, Math.min(680, Math.round(width)))
 }

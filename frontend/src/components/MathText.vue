@@ -4,45 +4,34 @@
   <!-- #endif -->
 
   <!-- #ifndef H5 -->
-  <view class="math-text">
-    <template v-for="(token, index) in tokens" :key="`${token.type}-${index}`">
-      <text v-if="token.type === 'text'" class="math-segment">{{ token.text }}</text>
-      <text v-else-if="token.type === 'fraction'" class="math-fraction">
-        <text class="fraction-part numerator">{{ token.numerator }}</text>
-        <text class="fraction-line"></text>
-        <text class="fraction-part denominator">{{ token.denominator }}</text>
-      </text>
-      <text v-else-if="token.type === 'sqrt'" class="math-root">
-        <text class="sqrt-symbol">√</text>
-        <text class="sqrt-radicand">{{ token.radicand }}</text>
-      </text>
-      <text v-else-if="token.type === 'limit'" class="math-limit">
-        <text class="limit-base">lim</text>
-        <text class="limit-condition">{{ token.condition }}</text>
-      </text>
-      <text v-else-if="token.type === 'integral'" class="math-integral">
-        <text class="integral-symbol">∫</text>
-        <text v-if="token.upper || token.lower" class="integral-limits">
-          <text class="integral-upper">{{ token.upper }}</text>
-          <text class="integral-lower">{{ token.lower }}</text>
-        </text>
-      </text>
-      <text v-else-if="token.type === 'evalBar'" class="math-eval">
-        <text class="eval-bar">|</text>
-        <text class="eval-condition">{{ token.condition }}</text>
-      </text>
-    </template>
+  <view class="math-text math-text-plain">
+    <image
+      v-if="formulaImageSrc && !imageFailed"
+      class="math-formula-image"
+      :src="formulaImageSrc"
+      :style="{ width: `${formulaImageDisplayRpx}rpx` }"
+      mode="widthFix"
+      @error="handleImageError"
+    />
+    <text v-else class="math-text-inner">{{ plainText }}</text>
   </view>
   <!-- #endif -->
 </template>
 
 <script setup>
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 // #ifdef H5
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 // #endif
-import { escapeMathTextHtml, splitMathTextForKatex, tokenizeMathText } from '../utils/mathText'
+import { API_BASE_URL } from '../api/config'
+import {
+  escapeMathTextHtml,
+  estimateMathImageDisplayRpx,
+  formatMathText,
+  shouldUseMathImage,
+  splitMathTextForKatex
+} from '../utils/mathText'
 
 const props = defineProps({
   value: {
@@ -74,7 +63,38 @@ const renderedHtml = computed(() =>
 // #endif
 
 // #ifndef H5
-const tokens = computed(() => tokenizeMathText(props.value))
+const plainText = computed(() => formatMathText(props.value))
+const imageFailed = ref(false)
+
+function getWindowWidthPx() {
+  try {
+    return uni.getSystemInfoSync().windowWidth || 375
+  } catch (error) {
+    return 375
+  }
+}
+
+const windowWidthPx = getWindowWidthPx()
+const formulaImageDisplayRpx = computed(() => estimateMathImageDisplayRpx(props.value))
+const formulaImageRenderWidthPx = computed(() =>
+  Math.max(80, Math.round((formulaImageDisplayRpx.value / 750) * windowWidthPx))
+)
+const formulaImageSrc = computed(() => {
+  if (!shouldUseMathImage(props.value)) return ''
+  const text = encodeURIComponent(String(props.value ?? ''))
+  return `${API_BASE_URL}/formula/svg?text=${text}&width=${formulaImageRenderWidthPx.value}&size=24`
+})
+
+watch(
+  () => props.value,
+  () => {
+    imageFailed.value = false
+  }
+)
+
+function handleImageError() {
+  imageFailed.value = true
+}
 // #endif
 </script>
 
@@ -91,6 +111,23 @@ const tokens = computed(() => tokenizeMathText(props.value))
 
 .katex-math-text {
   white-space: normal;
+}
+
+.math-text-plain {
+  white-space: pre-wrap;
+}
+
+.math-text-inner {
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+  white-space: pre-wrap;
+}
+
+.math-formula-image {
+  display: block;
+  max-width: 100%;
 }
 
 /* #ifdef H5 */
@@ -286,5 +323,61 @@ const tokens = computed(() => tokenizeMathText(props.value))
   font-weight: 700;
   line-height: 1;
   transform: translateY(0.22em);
+}
+
+.math-cases {
+  display: inline-flex;
+  align-items: center;
+  max-width: 100%;
+  margin: 0 6rpx;
+  color: inherit;
+  line-height: 1.12;
+  vertical-align: middle;
+}
+
+.cases-brace {
+  display: inline-block;
+  margin-right: 8rpx;
+  color: inherit;
+  font-family: 'Times New Roman', 'STIX Two Math', serif;
+  font-size: 2.45em;
+  font-weight: 400;
+  line-height: 0.9;
+  transform: scaleX(0.74);
+}
+
+.cases-rows {
+  display: inline-flex;
+  flex-direction: column;
+  gap: 7rpx;
+  min-width: 0;
+}
+
+.cases-row {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  color: inherit;
+  font-size: 0.88em;
+  line-height: 1.14;
+}
+
+.cases-expression {
+  display: inline-flex;
+  min-width: 0;
+  color: inherit;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: inherit;
+}
+
+.cases-condition {
+  display: inline-block;
+  margin-left: 12rpx;
+  color: inherit;
+  font-size: 0.92em;
+  font-weight: inherit;
+  line-height: 1.14;
+  white-space: nowrap;
 }
 </style>
