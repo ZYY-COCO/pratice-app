@@ -82,7 +82,7 @@ const formulaImageRenderWidthPx = computed(() =>
 const formulaImageSrc = computed(() => {
   if (!shouldUseMathImage(props.value)) return ''
   const text = encodeURIComponent(String(props.value ?? ''))
-  return `${API_BASE_URL}/formula/svg?text=${text}&width=${formulaImageRenderWidthPx.value}&size=24`
+  return `${API_BASE_URL}/formula/svg?text=${text}&width=${formulaImageRenderWidthPx.value}&size=24&v=2`
 })
 
 watch(

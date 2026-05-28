@@ -236,8 +236,22 @@ def _split_plain_tokens(value: str) -> list[Token]:
 
 def _chars_to_tokens(value: str) -> list[Token]:
     tokens: list[Token] = []
-    for char in value:
-        tokens.append(Token(kind="space" if char.isspace() else "text", text=char))
+    cursor = 0
+    while cursor < len(value):
+        char = value[cursor]
+        if char.isspace():
+            tokens.append(Token(kind="space", text=char))
+            cursor += 1
+            continue
+
+        start = cursor
+        if "\u3400" <= char <= "\u9fff":
+            while cursor < len(value) and "\u3400" <= value[cursor] <= "\u9fff":
+                cursor += 1
+        else:
+            while cursor < len(value) and not value[cursor].isspace() and not ("\u3400" <= value[cursor] <= "\u9fff"):
+                cursor += 1
+        tokens.append(Token(kind="text", text=value[start:cursor]))
     return tokens
 
 
@@ -337,8 +351,12 @@ def _text_width(value: str, size: int) -> float:
             total += size * 0.34
         elif char in "()[]{}":
             total += size * 0.36
+        elif char in "+-=*/":
+            total += size * 0.5
+        elif "\u2070" <= char <= "\u209f" or char in {"\u00b9", "\u00b2", "\u00b3", "\u02e3", "\u02b8"}:
+            total += size * 0.38
         else:
-            total += size * 0.56
+            total += size * 0.52
     return max(total, size * 0.25)
 
 

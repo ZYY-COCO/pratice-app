@@ -829,23 +829,29 @@ export function estimateMathImageDisplayRpx(value) {
   const text = formatMathText(value)
   if (!text) return 120
 
-  let width = 36
+  const raw = String(value || '')
+  let width = 48
   for (const char of text) {
     if (/[\u3400-\u9fff]/.test(char)) {
       width += 32
     } else if (char === '/') {
-      width += 26
+      width += 30
     } else if (/[=+\-×·()[\]{}]/.test(char)) {
-      width += 20
+      width += 24
     } else if (char.trim() === '') {
-      width += 12
+      width += 16
+    } else if (/[\u2070-\u209f\u00b9\u00b2\u00b3\u02e3\u02b8]/.test(char)) {
+      width += 14
     } else {
-      width += 18
+      width += 22
     }
   }
 
-  if (/\\frac|\/|√|\\sqrt/.test(String(value || ''))) {
-    width += 24
+  if (/\\frac|\/|√|\\sqrt/.test(raw)) {
+    width += 42
+  }
+  if (/\\int|∫|\\lim|lim\s*[\(_]|\\begin\{cases\}/.test(raw)) {
+    width += 72
   }
   return Math.max(92, Math.min(680, Math.round(width)))
 }
