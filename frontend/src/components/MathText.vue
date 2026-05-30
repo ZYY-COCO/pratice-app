@@ -5,15 +5,17 @@
 
   <!-- #ifndef H5 -->
   <view class="math-text math-text-plain">
-    <image
-      v-if="formulaImageSrc && !imageFailed"
-      class="math-formula-image"
-      :src="formulaImageSrc"
-      :style="{ width: `${formulaImageDisplayRpx}rpx` }"
-      mode="widthFix"
-      @error="handleImageError"
-    />
-    <text v-else class="math-text-inner">{{ plainText }}</text>
+    <block v-for="part in miniProgramParts" :key="part.key">
+      <image
+        v-if="part.type === 'image' && !imageFailed"
+        class="math-formula-image"
+        :src="part.src"
+        :style="{ width: `${part.displayRpx}rpx` }"
+        mode="widthFix"
+        @error="handleImageError"
+      />
+      <text v-else class="math-text-inner">{{ part.text }}</text>
+    </block>
   </view>
   <!-- #endif -->
 </template>
@@ -75,14 +77,32 @@ function getWindowWidthPx() {
 }
 
 const windowWidthPx = getWindowWidthPx()
-const formulaImageDisplayRpx = computed(() => estimateMathImageDisplayRpx(props.value))
-const formulaImageRenderWidthPx = computed(() =>
-  Math.max(80, Math.round((formulaImageDisplayRpx.value / 750) * windowWidthPx))
-)
-const formulaImageSrc = computed(() => {
-  if (!shouldUseMathImage(props.value)) return ''
-  const text = encodeURIComponent(String(props.value ?? ''))
-  return `${API_BASE_URL}/formula/svg?text=${text}&width=${formulaImageRenderWidthPx.value}&size=24&v=2`
+const miniProgramParts = computed(() => {
+  const parts = splitMathTextForKatex(props.value)
+  if (!parts.length) {
+    return [{ key: 'plain-0', type: 'text', text: plainText.value }]
+  }
+
+  return parts.map((part, index) => {
+    if (!part.math || !shouldUseMathImage(part.content)) {
+      return {
+        key: `text-${index}`,
+        type: 'text',
+        text: part.math ? formatMathText(part.content) : part.content
+      }
+    }
+
+    const displayRpx = estimateMathImageDisplayRpx(part.content)
+    const renderWidthPx = Math.max(80, Math.round((displayRpx / 750) * windowWidthPx))
+    const text = encodeURIComponent(String(part.content ?? ''))
+    return {
+      key: `image-${index}`,
+      type: 'image',
+      text: formatMathText(part.content),
+      displayRpx,
+      src: `${API_BASE_URL}/formula/svg?text=${text}&width=${renderWidthPx}&size=24&v=3`
+    }
+  })
 })
 
 watch(
@@ -114,7 +134,10 @@ function handleImageError() {
 }
 
 .math-text-plain {
-  white-space: pre-wrap;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  white-space: normal;
 }
 
 .math-text-inner {
@@ -126,8 +149,10 @@ function handleImageError() {
 }
 
 .math-formula-image {
-  display: block;
+  display: inline-block;
   max-width: 100%;
+  margin: 0 4rpx;
+  vertical-align: middle;
 }
 
 /* #ifdef H5 */

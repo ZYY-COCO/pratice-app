@@ -441,7 +441,17 @@ def _render_token(token: Token, x: float, baseline: float, size: int) -> list[st
         )
         elements.append(f'<text x="{radicand_x:.1f}" y="{baseline:.1f}" font-size="{small}">{html.escape(token.radicand)}</text>')
     elif token.kind == "integral":
-        elements.append(f'<text x="{x:.1f}" y="{baseline:.1f}" font-size="{int(size * 1.25)}">\u222b</text>')
+        stroke = max(1.8, size * 0.11)
+        symbol_x = x + size * 0.34
+        top_y = baseline - size * 0.86
+        bottom_y = baseline + size * 0.66
+        elements.append(
+            '<path '
+            f'd="M {symbol_x + size * 0.22:.1f} {top_y:.1f} '
+            f'C {symbol_x - size * 0.40:.1f} {top_y:.1f}, {symbol_x + size * 0.18:.1f} {baseline - size * 0.10:.1f}, {symbol_x - size * 0.06:.1f} {bottom_y:.1f} '
+            f'C {symbol_x - size * 0.18:.1f} {bottom_y + size * 0.28:.1f}, {symbol_x - size * 0.58:.1f} {bottom_y + size * 0.06:.1f}, {symbol_x - size * 0.34:.1f} {bottom_y - size * 0.10:.1f}" '
+            f'fill="none" stroke="#172033" stroke-width="{stroke:.1f}" stroke-linecap="round" stroke-linejoin="round" />'
+        )
         limit_x = x + size * 0.56
         if token.upper:
             elements.append(f'<text x="{limit_x:.1f}" y="{baseline - size * 0.56:.1f}" font-size="{int(size * 0.5)}">{html.escape(token.upper)}</text>')
