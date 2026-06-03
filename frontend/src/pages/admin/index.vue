@@ -1026,7 +1026,7 @@ function goBack() {
 }
 
 .admin-page.question-mode {
-  padding-bottom: 220rpx;
+  padding-bottom: calc(env(safe-area-inset-bottom) + 270rpx);
   background:
     radial-gradient(circle at 12% 0%, rgba(186, 226, 255, 0.72) 0, rgba(186, 226, 255, 0) 300rpx),
     radial-gradient(circle at 92% 2%, rgba(205, 249, 216, 0.78) 0, rgba(205, 249, 216, 0) 320rpx),
@@ -1793,9 +1793,11 @@ function goBack() {
 }
 
 .question-bulk-bar {
-  position: sticky;
-  bottom: 24rpx;
-  z-index: 5;
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  z-index: 30;
   display: grid;
   grid-template-columns: 1.05fr 1fr 0.8fr 0.8fr;
   align-items: center;
