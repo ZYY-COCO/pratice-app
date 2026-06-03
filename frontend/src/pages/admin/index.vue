@@ -1,11 +1,12 @@
 <template>
-  <view class="admin-page" :style="themeInlineStyle">
+  <view class="admin-page" :class="{ 'question-mode': activeTab === 'questions' }" :style="themeInlineStyle">
     <view class="admin-hero">
       <button class="back-btn" @tap="goBack">‹</button>
       <view class="admin-heading">
         <view class="admin-title">{{ pageTitle }}</view>
         <view class="admin-subtitle">{{ pageSubtitle }}</view>
       </view>
+      <button v-if="activeTab === 'questions'" class="hero-refresh-btn" @tap="refreshQuestionManager">↻</button>
     </view>
 
     <view v-if="loading" class="state-card">正在读取后台数据...</view>
@@ -15,13 +16,13 @@
     </view>
 
     <template v-else>
-      <view class="stat-grid">
+      <view v-if="activeTab !== 'questions'" class="stat-grid">
         <view v-for="item in primaryOverviewCards" :key="item.label" class="stat-card primary">
           <view class="stat-label">{{ item.label }}</view>
           <view class="stat-value">{{ item.value }}</view>
         </view>
       </view>
-      <view class="metric-strip">
+      <view v-if="activeTab !== 'questions'" class="metric-strip">
         <view v-for="item in secondaryOverviewCards" :key="item.label" class="metric-item">
           <text class="metric-label">{{ item.label }}</text>
           <text class="metric-value">{{ item.value }}</text>
@@ -110,39 +111,123 @@
         </view>
       </view>
 
-      <view v-if="activeTab === 'questions'" class="panel-card">
-        <view class="panel-head">
-          <view>
-            <view class="panel-title">题库查看</view>
-            <view class="panel-subtitle">按考试、科目、模块和题干检索</view>
+      <view v-if="activeTab === 'questions'" class="question-manager">
+        <view class="question-stats-grid">
+          <view
+            v-for="item in questionStatCards"
+            :key="item.label"
+            class="question-stat-card"
+            :class="item.tone"
+          >
+            <view class="question-stat-head">
+              <view class="question-stat-icon">{{ item.icon }}</view>
+              <view class="question-stat-label">{{ item.label }}</view>
+            </view>
+            <view class="question-stat-value">{{ item.value }}</view>
           </view>
-          <button class="ghost-btn refresh-btn" @tap="loadQuestions">刷新</button>
         </view>
-        <view class="filter-grid">
-          <input v-model="questionFilters.exam_code" class="search-input" placeholder="考试代码，如 Z001" />
-          <input v-model="questionFilters.subject" class="search-input" placeholder="科目，如 中华文化" />
-          <input v-model="questionFilters.module" class="search-input" placeholder="模块" />
-          <input v-model="questionFilters.status" class="search-input" placeholder="状态 active/archived" />
-          <input v-model="questionFilters.search" class="search-input" placeholder="题干关键词" />
+
+        <view class="question-search-box">
+          <text class="question-search-icon">⌕</text>
+          <input
+            v-model.trim="questionFilters.search"
+            class="question-search-input"
+            placeholder="搜索题干 / ID"
+            confirm-type="search"
+            @confirm="loadQuestions"
+          />
         </view>
-        <button class="search-btn wide" @tap="loadQuestions">筛选题目</button>
+
+        <view class="question-filter-row">
+          <picker :range="questionSubjectLabels" :value="selectedQuestionSubjectIndex" @change="handleQuestionSubjectChange">
+            <view class="question-filter-pill">
+              <text>{{ selectedQuestionSubjectLabel }}</text>
+              <text class="question-filter-arrow">⌄</text>
+            </view>
+          </picker>
+          <picker :range="questionModuleLabels" :value="selectedQuestionModuleIndex" @change="handleQuestionModuleChange">
+            <view class="question-filter-pill">
+              <text>{{ selectedQuestionModuleLabel }}</text>
+              <text class="question-filter-arrow">⌄</text>
+            </view>
+          </picker>
+          <picker :range="questionDifficultyLabels" :value="selectedQuestionDifficultyIndex" @change="handleQuestionDifficultyChange">
+            <view class="question-filter-pill">
+              <text>{{ selectedQuestionDifficultyLabel }}</text>
+              <text class="question-filter-arrow">⌄</text>
+            </view>
+          </picker>
+          <picker :range="questionStatusLabels" :value="selectedQuestionStatusIndex" @change="handleQuestionStatusChange">
+            <view class="question-filter-pill">
+              <text>{{ selectedQuestionStatusLabel }}</text>
+              <text class="question-filter-arrow">⌄</text>
+            </view>
+          </picker>
+        </view>
+
+        <view class="question-action-row">
+          <button class="question-action-btn outline" @tap="showComingSoon('新增题目')">
+            <text class="question-action-icon">＋</text>
+            <text>新增题目</text>
+          </button>
+          <button class="question-action-btn outline" @tap="showComingSoon('批量导入')">
+            <text class="question-action-icon">⇧</text>
+            <text>批量导入</text>
+          </button>
+          <button class="question-action-btn filled" @tap="showComingSoon('审核队列')">
+            <text class="question-action-icon">☷</text>
+            <text>进入审核队列</text>
+          </button>
+        </view>
+
         <view v-if="questionsLoading" class="inline-state">正在加载题库...</view>
         <view v-else-if="questions.length === 0" class="inline-state">暂无题目</view>
-        <view v-else class="record-list">
-          <view v-for="item in questions" :key="item.id" class="record-card" @tap="openQuestion(item)">
-            <view class="record-title">{{ item.stem }}</view>
-            <view class="record-subtitle">
-              {{ item.exam_code }} / {{ item.subject }} / {{ item.module }} / {{ item.submodule }}
+        <view v-else class="question-card-list">
+          <view v-for="item in questions" :key="item.id" class="question-admin-card" @tap="openQuestion(item)">
+            <button
+              class="question-check"
+              :class="{ checked: isQuestionSelected(item.id) }"
+              @tap.stop="toggleQuestionSelection(item.id)"
+            >
+              {{ isQuestionSelected(item.id) ? '✓' : '' }}
+            </button>
+            <view class="question-card-main">
+              <view class="question-chip-row">
+                <text class="question-chip">{{ item.subject || item.exam_code || '未分类' }}</text>
+                <text class="question-chip">{{ item.submodule || item.module || '未分模块' }}</text>
+                <text class="question-chip">难度 {{ item.difficulty || '-' }}</text>
+              </view>
+              <view class="question-stem-preview">{{ previewQuestionStem(item.stem) }}</view>
+              <view class="question-status-row">
+                <text class="question-status-pill" :class="questionStatusTone(item.status)">
+                  {{ questionStatusText(item.status) }}
+                </text>
+                <text v-if="item.answer" class="question-answer">答案 {{ item.answer }}</text>
+              </view>
             </view>
-            <view class="badge-row">
-              <text class="badge">难度 {{ item.difficulty }}</text>
-              <text class="badge" :class="{ archived: item.status === 'archived' }">{{ questionStatusText(item.status) }}</text>
-              <text class="record-date">答案 {{ item.answer }}</text>
-            </view>
-            <button class="small-btn inline-action" @tap.stop="toggleQuestionStatus(item)">
-              {{ item.status === 'archived' ? '恢复' : '下架' }}
+            <button class="question-edit-btn" @tap.stop="openQuestion(item)">
+              <text class="question-edit-icon">✎</text>
+              <text>编辑</text>
             </button>
           </view>
+        </view>
+
+        <view class="question-bulk-bar">
+          <view class="question-selected-label">
+            已选 <text class="question-selected-count">{{ selectedQuestionIds.length }}</text> 题
+          </view>
+          <button class="question-bulk-btn" @tap="toggleSelectAllQuestions">
+            <text class="question-bulk-icon">☑</text>
+            <text>{{ allVisibleQuestionsSelected ? '取消' : '全选' }}</text>
+          </button>
+          <button class="question-bulk-btn archive" @tap="archiveSelectedQuestions">
+            <text class="question-bulk-icon">▣</text>
+            <text>归档</text>
+          </button>
+          <button class="question-bulk-btn publish" @tap="publishSelectedQuestions">
+            <text class="question-bulk-icon">⇩</text>
+            <text>发布</text>
+          </button>
         </view>
       </view>
 
@@ -235,6 +320,13 @@ const feedbackItems = ref([])
 const feedbackLoading = ref(false)
 const questions = ref([])
 const questionsLoading = ref(false)
+const questionListCount = ref(0)
+const selectedQuestionIds = ref([])
+const questionStats = reactive({
+  active: 0,
+  archived: 0,
+  pendingReview: 0
+})
 const officialMessageItems = ref([])
 const messagesLoading = ref(false)
 const authUser = ref(getAuthUser())
@@ -257,9 +349,42 @@ const questionFilters = reactive({
   exam_code: '',
   subject: '',
   module: '',
+  difficulty: '',
   status: '',
   search: ''
 })
+
+const questionSubjectOptions = [
+  { label: '科目', value: '' },
+  { label: '中华文化', value: '中华文化' },
+  { label: '英语运用', value: '英语运用' },
+  { label: '数学基础', value: '数学基础' },
+  { label: '逻辑推理', value: '逻辑推理' }
+]
+
+const questionModuleMap = {
+  中华文化: ['中国哲学常识', '文学常识', '历史文化', '艺术民俗', '宗教思想'],
+  英语运用: ['语言知识', '词汇', '语法', '语用'],
+  数学基础: ['一元函数微分学', '一元函数积分学', '多元函数微分学'],
+  逻辑推理: ['论证', '概念判断', '削弱加强', '推理规则']
+}
+
+const fallbackQuestionModules = ['中国哲学常识', '词汇', '论证', '一元函数微分学']
+
+const questionDifficultyOptions = [
+  { label: '难度', value: '' },
+  { label: '难度 1', value: '1' },
+  { label: '难度 2', value: '2' },
+  { label: '难度 3', value: '3' },
+  { label: '难度 4', value: '4' },
+  { label: '难度 5', value: '5' }
+]
+
+const questionStatusOptions = [
+  { label: '状态', value: '' },
+  { label: '已发布', value: 'active' },
+  { label: '已归档', value: 'archived' }
+]
 
 const tabs = [
   { key: 'users', label: '用户' },
@@ -270,7 +395,7 @@ const tabs = [
 const pageTitle = computed(() => (activeTab.value === 'questions' ? '题库管理' : '后台管理'))
 const pageSubtitle = computed(() => (
   activeTab.value === 'questions'
-    ? '题目检索、查看与上下架'
+    ? '编辑、审核与题库质量运营'
     : '用户、反馈与消息运营面板'
 ))
 
@@ -294,6 +419,65 @@ const secondaryOverviewCards = computed(() => [
   { label: '题库量', value: overview.value.total_questions || 0 },
   { label: '反馈数', value: overview.value.total_feedback || 0 }
 ])
+
+const questionStatCards = computed(() => [
+  {
+    label: '总题量',
+    value: overview.value.total_questions || questionListCount.value || 0,
+    icon: '▤',
+    tone: 'blue'
+  },
+  {
+    label: '待审核',
+    value: questionStats.pendingReview,
+    icon: '◷',
+    tone: 'orange'
+  },
+  {
+    label: '已归档',
+    value: questionStats.archived,
+    icon: '▣',
+    tone: 'green'
+  },
+  {
+    label: '已发布',
+    value: questionStats.active,
+    icon: '✓',
+    tone: 'blue'
+  }
+])
+
+const questionModuleOptions = computed(() => {
+  const modules = questionModuleMap[questionFilters.subject] || fallbackQuestionModules
+  const uniqueModules = new Set(modules)
+  if (questionFilters.module) {
+    uniqueModules.add(questionFilters.module)
+  }
+  return [
+    { label: '模块', value: '' },
+    ...Array.from(uniqueModules).map((item) => ({ label: item, value: item }))
+  ]
+})
+
+const questionSubjectLabels = computed(() => questionSubjectOptions.map((item) => item.label))
+const questionModuleLabels = computed(() => questionModuleOptions.value.map((item) => item.label))
+const questionDifficultyLabels = computed(() => questionDifficultyOptions.map((item) => item.label))
+const questionStatusLabels = computed(() => questionStatusOptions.map((item) => item.label))
+
+const selectedQuestionSubjectIndex = computed(() => getOptionIndex(questionSubjectOptions, questionFilters.subject))
+const selectedQuestionModuleIndex = computed(() => getOptionIndex(questionModuleOptions.value, questionFilters.module))
+const selectedQuestionDifficultyIndex = computed(() => getOptionIndex(questionDifficultyOptions, questionFilters.difficulty))
+const selectedQuestionStatusIndex = computed(() => getOptionIndex(questionStatusOptions, questionFilters.status))
+
+const selectedQuestionSubjectLabel = computed(() => questionSubjectOptions[selectedQuestionSubjectIndex.value]?.label || '科目')
+const selectedQuestionModuleLabel = computed(() => questionModuleOptions.value[selectedQuestionModuleIndex.value]?.label || '模块')
+const selectedQuestionDifficultyLabel = computed(() => questionDifficultyOptions[selectedQuestionDifficultyIndex.value]?.label || '难度')
+const selectedQuestionStatusLabel = computed(() => questionStatusOptions[selectedQuestionStatusIndex.value]?.label || '状态')
+
+const selectedQuestionIdSet = computed(() => new Set(selectedQuestionIds.value))
+const allVisibleQuestionsSelected = computed(() => (
+  questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id))
+))
 
 const visibleUsers = computed(() => {
   if (userFilter.value === 'member') {
@@ -333,7 +517,7 @@ async function bootstrap() {
     if (allowed.value) {
       const initialLoads = [loadOverview()]
       if (activeTab.value === 'questions') {
-        initialLoads.push(loadQuestions())
+        initialLoads.push(loadQuestionStats(), loadQuestions())
       } else {
         initialLoads.push(loadUsers())
       }
@@ -358,8 +542,12 @@ async function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'users' && users.value.length === 0) await loadUsers()
   if (tab === 'feedback' && feedbackItems.value.length === 0) await loadFeedback()
-  if (tab === 'questions' && questions.value.length === 0) await loadQuestions()
+  if (tab === 'questions' && questions.value.length === 0) await refreshQuestionManager()
   if (tab === 'messages' && officialMessageItems.value.length === 0) await loadMessages()
+}
+
+async function refreshQuestionManager() {
+  await Promise.all([loadOverview(), loadQuestionStats(), loadQuestions()])
 }
 
 async function loadUsers() {
@@ -414,12 +602,146 @@ async function loadQuestions() {
       limit: 50,
       offset: 0
     })
-    questions.value = response.items || []
+    const rawItems = response.items || []
+    const filteredItems = questionFilters.difficulty
+      ? rawItems.filter((item) => String(item.difficulty || '') === String(questionFilters.difficulty))
+      : rawItems
+    questions.value = filteredItems
+    questionListCount.value = Number(response.count || rawItems.length || 0)
+    const visibleIds = new Set(filteredItems.map((item) => item.id))
+    selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => visibleIds.has(id))
   } catch (error) {
     uni.showToast({ title: '题库加载失败', icon: 'none' })
   } finally {
     questionsLoading.value = false
   }
+}
+
+async function loadQuestionStats() {
+  try {
+    const [activeResponse, archivedResponse] = await Promise.all([
+      fetchAdminQuestions({ status: 'active', limit: 1, offset: 0 }),
+      fetchAdminQuestions({ status: 'archived', limit: 1, offset: 0 })
+    ])
+    questionStats.active = Number(activeResponse?.count || 0)
+    questionStats.archived = Number(archivedResponse?.count || 0)
+    questionStats.pendingReview = 0
+  } catch (error) {
+    questionStats.active = 0
+    questionStats.archived = 0
+    questionStats.pendingReview = 0
+  }
+}
+
+function getOptionIndex(options, value) {
+  const index = options.findIndex((item) => item.value === value)
+  return index >= 0 ? index : 0
+}
+
+function handleQuestionSubjectChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  questionFilters.subject = questionSubjectOptions[index]?.value || ''
+  questionFilters.module = ''
+  loadQuestions()
+}
+
+function handleQuestionModuleChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  questionFilters.module = questionModuleOptions.value[index]?.value || ''
+  loadQuestions()
+}
+
+function handleQuestionDifficultyChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  questionFilters.difficulty = questionDifficultyOptions[index]?.value || ''
+  loadQuestions()
+}
+
+function handleQuestionStatusChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  questionFilters.status = questionStatusOptions[index]?.value || ''
+  loadQuestions()
+}
+
+function showComingSoon(label) {
+  uni.showToast({ title: `${label}后续接入`, icon: 'none' })
+}
+
+function previewQuestionStem(stem) {
+  const text = String(stem || '未填写题干').replace(/\s+/g, ' ').trim()
+  if (text.length <= 58) return text
+  return `${text.slice(0, 58)}...`
+}
+
+function questionStatusTone(status) {
+  if (status === 'archived') return 'archived'
+  if (status === 'pending' || status === 'pending_review') return 'pending'
+  if (status === 'needs_review' || status === 'rejected') return 'warning'
+  return 'published'
+}
+
+function isQuestionSelected(id) {
+  return selectedQuestionIdSet.value.has(id)
+}
+
+function toggleQuestionSelection(id) {
+  if (!id) return
+  if (selectedQuestionIdSet.value.has(id)) {
+    selectedQuestionIds.value = selectedQuestionIds.value.filter((item) => item !== id)
+    return
+  }
+  selectedQuestionIds.value = [...selectedQuestionIds.value, id]
+}
+
+function toggleSelectAllQuestions() {
+  if (questions.value.length === 0) {
+    uni.showToast({ title: '当前没有可选题目', icon: 'none' })
+    return
+  }
+  if (allVisibleQuestionsSelected.value) {
+    const visibleIds = new Set(questions.value.map((item) => item.id))
+    selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => !visibleIds.has(id))
+    return
+  }
+  const mergedIds = new Set(selectedQuestionIds.value)
+  questions.value.forEach((item) => mergedIds.add(item.id))
+  selectedQuestionIds.value = Array.from(mergedIds)
+}
+
+function archiveSelectedQuestions() {
+  updateSelectedQuestionStatus('archived')
+}
+
+function publishSelectedQuestions() {
+  updateSelectedQuestionStatus('active')
+}
+
+function updateSelectedQuestionStatus(nextStatus) {
+  const ids = [...selectedQuestionIds.value]
+  if (ids.length === 0) {
+    uni.showToast({ title: '请先选择题目', icon: 'none' })
+    return
+  }
+  const isArchive = nextStatus === 'archived'
+  uni.showModal({
+    title: isArchive ? '确认归档所选题目？' : '确认发布所选题目？',
+    content: isArchive
+      ? `将归档 ${ids.length} 道题，归档后不会进入普通刷题抽题。`
+      : `将发布 ${ids.length} 道题，发布后会进入可刷题范围。`,
+    confirmText: isArchive ? '归档' : '发布',
+    confirmColor: isArchive ? '#16a34a' : '#2563eb',
+    success: async (result) => {
+      if (!result.confirm) return
+      try {
+        await Promise.all(ids.map((id) => updateAdminQuestionStatus(id, { status: nextStatus })))
+        selectedQuestionIds.value = []
+        uni.showToast({ title: isArchive ? '已归档' : '已发布', icon: 'success' })
+        await refreshQuestionManager()
+      } catch (error) {
+        uni.showToast({ title: '批量状态更新失败', icon: 'none' })
+      }
+    }
+  })
 }
 
 async function loadMessages() {
@@ -587,7 +909,15 @@ function feedbackStatusText(status) {
 }
 
 function questionStatusText(status) {
-  return status === 'archived' ? '已下架' : '可刷题'
+  const map = {
+    active: '已发布',
+    archived: '已归档',
+    pending: '待审核',
+    pending_review: '待审核',
+    needs_review: '需修改',
+    rejected: '需修改'
+  }
+  return map[status] || '待审核'
 }
 
 async function openFeedback(item) {
@@ -662,8 +992,8 @@ function toggleQuestionStatus(item) {
       if (!result.confirm) return
       try {
         await updateAdminQuestionStatus(item.id, { status: nextStatus })
-        uni.showToast({ title: nextStatus === 'archived' ? '题目已下架' : '题目已恢复', icon: 'success' })
-        await Promise.all([loadQuestions(), loadOverview()])
+        uni.showToast({ title: nextStatus === 'archived' ? '题目已归档' : '题目已发布', icon: 'success' })
+        await refreshQuestionManager()
       } catch (error) {
         uni.showToast({ title: '题目状态更新失败', icon: 'none' })
       }
@@ -693,6 +1023,14 @@ function goBack() {
   padding: 24rpx 24rpx 170rpx;
   background: linear-gradient(180deg, #eef5ff 0%, #f6f8fb 28%, #f6f8fb 100%);
   box-sizing: border-box;
+}
+
+.admin-page.question-mode {
+  padding-bottom: 220rpx;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(186, 226, 255, 0.72) 0, rgba(186, 226, 255, 0) 300rpx),
+    radial-gradient(circle at 92% 2%, rgba(205, 249, 216, 0.78) 0, rgba(205, 249, 216, 0) 320rpx),
+    linear-gradient(180deg, #f7fbff 0%, #ffffff 48%, #f7fbff 100%);
 }
 
 .admin-hero {
@@ -726,12 +1064,37 @@ function goBack() {
 }
 
 .back-btn::after,
+.hero-refresh-btn::after,
 .tab-btn::after,
 .ghost-btn::after,
 .search-btn::after,
 .small-btn::after,
-.status-chip::after {
+.status-chip::after,
+.question-action-btn::after,
+.question-check::after,
+.question-edit-btn::after,
+.question-bulk-btn::after {
   border: 0;
+}
+
+.hero-refresh-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 70rpx;
+  height: 70rpx;
+  margin: 0;
+  transform: translateY(-50%);
+  border: 0;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.68);
+  color: #101828;
+  font-size: 44rpx;
+  line-height: 1;
+  box-shadow: none;
 }
 
 .admin-heading {
@@ -1112,6 +1475,386 @@ function goBack() {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14rpx;
+}
+
+.question-manager {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.question-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.question-stat-card {
+  min-height: 150rpx;
+  padding: 22rpx 18rpx 20rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1rpx solid rgba(226, 232, 240, 0.9);
+  box-shadow: 0 18rpx 44rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.question-stat-head {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.question-stat-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34rpx;
+  height: 34rpx;
+  color: #2563eb;
+  font-size: 30rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-stat-card.orange .question-stat-icon,
+.question-stat-card.orange .question-stat-value {
+  color: #f97316;
+}
+
+.question-stat-card.green .question-stat-icon,
+.question-stat-card.green .question-stat-value {
+  color: #16a34a;
+}
+
+.question-stat-label {
+  min-width: 0;
+  color: #344054;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.2;
+  white-space: nowrap;
+}
+
+.question-stat-value {
+  margin-top: 28rpx;
+  color: #1d4ed8;
+  font-size: 46rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-search-box {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  height: 78rpx;
+  padding: 0 24rpx;
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.9);
+  border: 1rpx solid #d5deeb;
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.8);
+  box-sizing: border-box;
+}
+
+.question-search-icon {
+  flex: 0 0 auto;
+  color: #98a2b3;
+  font-size: 42rpx;
+  line-height: 1;
+}
+
+.question-search-input {
+  min-width: 0;
+  flex: 1;
+  height: 78rpx;
+  color: #101828;
+  font-size: 27rpx;
+  line-height: 78rpx;
+}
+
+.question-filter-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.question-filter-row picker {
+  min-width: 0;
+}
+
+.question-filter-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  height: 68rpx;
+  padding: 0 10rpx;
+  border-radius: 16rpx;
+  background: rgba(255, 255, 255, 0.84);
+  border: 1rpx solid #d5deeb;
+  color: #344054;
+  font-size: 25rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+  white-space: nowrap;
+}
+
+.question-filter-arrow {
+  color: #667085;
+  font-size: 22rpx;
+  transform: translateY(-2rpx);
+}
+
+.question-action-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1.35fr;
+  gap: 14rpx;
+}
+
+.question-action-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  min-width: 0;
+  height: 74rpx;
+  margin: 0;
+  padding: 0 10rpx;
+  border-radius: 12rpx;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.question-action-btn.outline {
+  color: #1769ff;
+  background: rgba(255, 255, 255, 0.92);
+  border: 1rpx solid #1769ff;
+}
+
+.question-action-btn.filled {
+  color: #ffffff;
+  background: linear-gradient(135deg, #0ea5b7 0%, #0891b2 100%);
+  border: 1rpx solid #0891b2;
+  box-shadow: 0 16rpx 30rpx rgba(8, 145, 178, 0.2);
+}
+
+.question-action-icon {
+  font-size: 32rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-card-list {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.question-admin-card {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  min-height: 152rpx;
+  padding: 26rpx 22rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1rpx solid #edf2f7;
+  box-shadow: 0 14rpx 38rpx rgba(15, 23, 42, 0.07);
+  box-sizing: border-box;
+}
+
+.question-check {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 34rpx;
+  height: 34rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 8rpx;
+  border: 1rpx solid #98a2b3;
+  background: #ffffff;
+  color: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-check.checked {
+  border-color: #1769ff;
+  background: #1769ff;
+}
+
+.question-card-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.question-chip-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.question-chip {
+  max-width: 210rpx;
+  padding: 7rpx 14rpx;
+  border-radius: 10rpx;
+  color: #1769ff;
+  background: #eff6ff;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 1.15;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.question-stem-preview {
+  margin-top: 18rpx;
+  color: #101828;
+  font-size: 27rpx;
+  font-weight: 800;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.question-status-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12rpx;
+  margin-top: 18rpx;
+}
+
+.question-status-pill {
+  padding: 8rpx 14rpx;
+  border-radius: 12rpx;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-status-pill.published {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.question-status-pill.archived {
+  color: #64748b;
+  background: #f1f5f9;
+}
+
+.question-status-pill.pending {
+  color: #f97316;
+  background: #fff7ed;
+}
+
+.question-status-pill.warning {
+  color: #ea580c;
+  background: #ffedd5;
+}
+
+.question-answer {
+  color: #98a2b3;
+  font-size: 22rpx;
+  font-weight: 700;
+}
+
+.question-edit-btn {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  width: 132rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 12rpx;
+  border: 1rpx solid #1769ff;
+  color: #1769ff;
+  background: #ffffff;
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.question-edit-icon {
+  font-size: 28rpx;
+  line-height: 1;
+}
+
+.question-bulk-bar {
+  position: sticky;
+  bottom: 24rpx;
+  z-index: 5;
+  display: grid;
+  grid-template-columns: 1.05fr 1fr 0.8fr 0.8fr;
+  align-items: center;
+  gap: 12rpx;
+  min-height: 86rpx;
+  padding: 14rpx 22rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 1rpx solid #edf2f7;
+  box-shadow: 0 12rpx 44rpx rgba(15, 23, 42, 0.12);
+  box-sizing: border-box;
+}
+
+.question-selected-label {
+  min-width: 0;
+  color: #475467;
+  font-size: 23rpx;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.question-selected-count {
+  color: #1769ff;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.question-bulk-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  min-width: 0;
+  height: 60rpx;
+  margin: 0;
+  padding: 0 12rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #1769ff;
+  color: #1769ff;
+  background: #ffffff;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.question-bulk-btn.archive {
+  color: #16a34a;
+  border-color: #16a34a;
+}
+
+.question-bulk-btn.publish {
+  color: #1769ff;
+  border-color: #1769ff;
+}
+
+.question-bulk-icon {
+  font-size: 28rpx;
+  line-height: 1;
 }
 
 .message-editor {
