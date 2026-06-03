@@ -58,5 +58,8 @@ jobs:
           chmod 600 ~/.ssh/tencent_cloud_key
           ssh-keyscan -p "${TENCENT_PORT}" -H "${TENCENT_HOST}" >> ~/.ssh/known_hosts
 
-          ssh -i ~/.ssh/tencent_cloud_key -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
+          ssh -i ~/.ssh/tencent_cloud_key \
+            -o ServerAliveInterval=30 \
+            -o ServerAliveCountMax=20 \
+            -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
             "cd /opt/gangyantong/app && BRANCH=main bash deploy/tencent-cloud/deploy.sh"
