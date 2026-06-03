@@ -1,10 +1,10 @@
 <template>
-  <view class="admin-page">
+  <view class="admin-page" :style="themeInlineStyle">
     <view class="admin-hero">
       <button class="back-btn" @tap="goBack">‹</button>
       <view class="admin-heading">
-        <view class="admin-title">后台管理</view>
-        <view class="admin-subtitle">用户、反馈与题库运营面板</view>
+        <view class="admin-title">{{ pageTitle }}</view>
+        <view class="admin-subtitle">{{ pageSubtitle }}</view>
       </view>
     </view>
 
@@ -28,7 +28,7 @@
         </view>
       </view>
 
-      <view class="tab-bar">
+      <view v-if="!questionEntryMode" class="tab-bar">
         <button
           v-for="tab in tabs"
           :key="tab.key"
@@ -218,12 +218,15 @@ import {
   updateAdminQuestionStatus
 } from '../../api/admin'
 import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const ADMIN_EMAIL = '2221073755@qq.com'
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
 const allowed = ref(false)
 const overview = ref({})
 const activeTab = ref('users')
+const questionEntryMode = ref(false)
 const users = ref([])
 const usersLoading = ref(false)
 const userSearch = ref('')
@@ -261,9 +264,15 @@ const questionFilters = reactive({
 const tabs = [
   { key: 'users', label: '用户' },
   { key: 'feedback', label: '反馈' },
-  { key: 'questions', label: '题库' },
   { key: 'messages', label: '消息' }
 ]
+
+const pageTitle = computed(() => (activeTab.value === 'questions' ? '题库管理' : '后台管理'))
+const pageSubtitle = computed(() => (
+  activeTab.value === 'questions'
+    ? '题目检索、查看与上下架'
+    : '用户、反馈与消息运营面板'
+))
 
 const userFilterOptions = [
   { key: 'all', label: '全部' },
@@ -299,7 +308,11 @@ const visibleUsers = computed(() => {
   return users.value
 })
 
-onLoad(async () => {
+onLoad(async (options = {}) => {
+  if (options.tab === 'questions') {
+    activeTab.value = 'questions'
+    questionEntryMode.value = true
+  }
   await bootstrap()
 })
 
@@ -318,7 +331,13 @@ async function bootstrap() {
       authUser.value = nextUser || me.profile
     }
     if (allowed.value) {
-      await Promise.all([loadOverview(), loadUsers()])
+      const initialLoads = [loadOverview()]
+      if (activeTab.value === 'questions') {
+        initialLoads.push(loadQuestions())
+      } else {
+        initialLoads.push(loadUsers())
+      }
+      await Promise.all(initialLoads)
     }
   } catch (error) {
     const email = String(authUser.value?.email || '').toLowerCase()
@@ -346,17 +365,29 @@ async function switchTab(tab) {
 async function loadUsers() {
   usersLoading.value = true
   try {
-    const response = await fetchAdminUsers({
-      search: userSearch.value || undefined,
+    const keyword = String(userSearch.value || '').trim()
+    const params = {
       limit: 30,
       offset: 0
-    })
-    users.value = response.items || []
+    }
+    if (keyword) {
+      params.search = keyword
+    }
+    const response = await fetchAdminUsers(params)
+    users.value = normalizeListResponse(response)
   } catch (error) {
     uni.showToast({ title: '用户数据加载失败', icon: 'none' })
   } finally {
     usersLoading.value = false
   }
+}
+
+function normalizeListResponse(response) {
+  if (Array.isArray(response)) return response
+  if (Array.isArray(response?.items)) return response.items
+  if (Array.isArray(response?.users)) return response.users
+  if (Array.isArray(response?.data)) return response.data
+  return []
 }
 
 async function loadFeedback() {
@@ -820,7 +851,7 @@ function goBack() {
 
 .tab-bar {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(3, 1fr);
   gap: 0;
   margin-bottom: 20rpx;
   padding: 8rpx;

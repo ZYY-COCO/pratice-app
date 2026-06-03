@@ -1,5 +1,5 @@
 <template>
-  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }">
+  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }" :style="themeInlineStyle">
     <template v-if="activeTab === 'home'">
       <view class="home-dashboard">
         <view class="home-header">
@@ -761,7 +761,7 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
-import { THEME_PRESETS, applyThemeByKey, getStoredThemeKey, getThemePreset } from '../../utils/theme'
+import { THEME_PRESETS, applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
@@ -1039,6 +1039,7 @@ const practiceTools = computed(() => {
 })
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
+const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const isAdminUser = computed(() => {
   const role = String(authUser.value?.role || '').toLowerCase()
   const email = String(authUser.value?.email || '').toLowerCase()
@@ -1051,13 +1052,22 @@ const serviceTools = computed(() => {
     { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
   ]
   if (isAdminUser.value) {
-    items.unshift({
-      label: '后台管理',
-      desc: '管理用户、反馈和题库数据',
-      icon: '管',
-      tone: 'purple',
-      action: 'admin'
-    })
+    items.unshift(
+      {
+        label: '后台管理',
+        desc: '管理用户、反馈和系统消息',
+        icon: '管',
+        tone: 'purple',
+        action: 'admin'
+      },
+      {
+        label: '题库管理',
+        desc: '查看、筛选和上下架题目',
+        icon: '题',
+        tone: 'blue',
+        action: 'question-admin'
+      }
+    )
   }
   return items
 })
@@ -1809,6 +1819,10 @@ function handleMenu(item) {
   }
   if (item.action === 'admin') {
     uni.navigateTo({ url: '/pages/admin/index' })
+    return
+  }
+  if (item.action === 'question-admin') {
+    uni.navigateTo({ url: '/pages/admin/index?tab=questions' })
     return
   }
   if (item.action === 'about') {
