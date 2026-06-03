@@ -76,6 +76,20 @@ export function getStoredThemeKey() {
   }
 }
 
+export function buildThemeStyle(key) {
+  const preset = getThemePreset(key)
+  return [
+    `--gyt-primary:${preset.primary}`,
+    `--gyt-primary-soft:${preset.primarySoft}`,
+    `--gyt-primary-tint:${preset.primaryTint}`,
+    `--gyt-primary-border:${preset.primaryBorder}`,
+    `--gyt-primary-gradient:${preset.primaryGradient}`,
+    `--gyt-primary-shadow:${preset.primaryShadow}`,
+    `--gyt-page-bg:${preset.pageBg}`,
+    `--gyt-panel-bg:${preset.panelBg}`
+  ].join(';')
+}
+
 export function applyThemeByKey(key) {
   const preset = getThemePreset(key)
   try {
