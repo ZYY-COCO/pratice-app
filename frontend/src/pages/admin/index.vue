@@ -223,7 +223,7 @@
           </button>
           <button class="question-bulk-btn archive" @tap="archiveSelectedQuestions">
             <text class="question-bulk-icon">▣</text>
-            <text>归档</text>
+            <text>下架</text>
           </button>
           <button class="question-bulk-btn publish" @tap="publishSelectedQuestions">
             <text class="question-bulk-icon">⇩</text>
@@ -535,7 +535,7 @@ const questionDifficultyOptions = [
 const questionStatusOptions = [
   { label: '状态', value: '' },
   { label: '已发布', value: 'active' },
-  { label: '已归档', value: 'archived' }
+  { label: '已下架', value: 'archived' }
 ]
 
 const reviewAnswerOptions = ['A', 'B', 'C', 'D']
@@ -606,7 +606,7 @@ const questionStatCards = computed(() => [
     tone: 'orange'
   },
   {
-    label: '已归档',
+    label: '已下架',
     value: questionStats.archived,
     icon: '▣',
     tone: 'green'
@@ -1065,7 +1065,7 @@ function markReviewNeedsChanges() {
   }
   uni.showModal({
     title: '标记为需修改？',
-    content: '该题会归档并移出待审核队列，后续可按备注修订后再发布。',
+    content: '该题会下架并移出待审核队列，后续可按备注修订后再发布。',
     confirmText: '需修改',
     confirmColor: '#f97316',
     success: async (result) => {
@@ -1213,11 +1213,11 @@ function updateSelectedQuestionStatus(nextStatus) {
   const isArchive = nextStatus === 'archived'
   const scopeText = allMatchingQuestionsSelected.value ? questionFilterScopeText() : '手动选择'
   uni.showModal({
-    title: isArchive ? '确认归档所选题目？' : '确认发布所选题目？',
+    title: isArchive ? '确认下架所选题目？' : '确认发布所选题目？',
     content: isArchive
-      ? `将归档${scopeText}的 ${totalSelected} 道题，归档后不会进入普通刷题抽题。`
+      ? `将下架${scopeText}的 ${totalSelected} 道题，下架后不会进入普通刷题抽题。`
       : `将发布${scopeText}的 ${totalSelected} 道题，发布后会进入可刷题范围。`,
-    confirmText: isArchive ? '归档' : '发布',
+    confirmText: isArchive ? '下架' : '发布',
     confirmColor: isArchive ? '#16a34a' : '#2563eb',
     success: async (result) => {
       if (!result.confirm) return
@@ -1228,7 +1228,7 @@ function updateSelectedQuestionStatus(nextStatus) {
         const response = await bulkUpdateAdminQuestionStatus(payload)
         clearQuestionSelection()
         uni.showToast({
-          title: `${isArchive ? '已归档' : '已发布'} ${response?.updated_count || totalSelected} 道`,
+          title: `${isArchive ? '已下架' : '已发布'} ${response?.updated_count || totalSelected} 道`,
           icon: 'success'
         })
         await refreshQuestionManager()
@@ -1425,7 +1425,7 @@ function feedbackStatusText(status) {
 function questionStatusText(status) {
   const map = {
     active: '已发布',
-    archived: '已归档',
+    archived: '已下架',
     pending: '待审核',
     pending_review: '待审核',
     needs_review: '需修改',
@@ -1516,7 +1516,7 @@ function toggleQuestionStatus(item) {
       if (!result.confirm) return
       try {
         await updateAdminQuestionStatus(item.id, { status: nextStatus })
-        uni.showToast({ title: nextStatus === 'archived' ? '题目已归档' : '题目已发布', icon: 'success' })
+        uni.showToast({ title: nextStatus === 'archived' ? '题目已下架' : '题目已发布', icon: 'success' })
         await refreshQuestionManager()
       } catch (error) {
         uni.showToast({ title: '题目状态更新失败', icon: 'none' })
