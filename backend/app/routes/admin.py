@@ -525,6 +525,14 @@ def admin_bulk_update_question_status(
         "archived_at": _to_iso(current) if payload.status == "archived" else None,
         "archived_by": admin_profile.get("id") if payload.status == "archived" else None,
     }
+    if payload.status == "active":
+        update_data.update({
+            "review_status": "approved",
+            "review_note": None,
+            "reviewed_at": _to_iso(current),
+            "reviewed_by": admin_profile.get("id"),
+            "review_updated_at": _to_iso(current),
+        })
     updated_count = 0
     for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
         batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
@@ -592,6 +600,14 @@ def admin_update_question_status(
         "archived_at": _to_iso(current) if payload.status == "archived" else None,
         "archived_by": admin_profile.get("id") if payload.status == "archived" else None,
     }
+    if payload.status == "active":
+        update_data.update({
+            "review_status": "approved",
+            "review_note": None,
+            "reviewed_at": _to_iso(current),
+            "reviewed_by": admin_profile.get("id"),
+            "review_updated_at": _to_iso(current),
+        })
     response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
     if not response.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question status update failed")

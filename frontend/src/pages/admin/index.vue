@@ -213,7 +213,7 @@
           </view>
         </view>
 
-        <view class="question-bulk-bar">
+        <view class="question-bulk-bar" :class="{ idle: selectedQuestionCount === 0 }">
           <view class="question-selected-label">
             已选 <text class="question-selected-count">{{ selectedQuestionCount }}</text> 题
           </view>
@@ -805,7 +805,7 @@ async function loadQuestionStats() {
   const [activeResult, archivedResult, pendingResult] = await Promise.allSettled([
     fetchAdminQuestions({ status: 'active', limit: 1, offset: 0 }),
     fetchAdminQuestions({ status: 'archived', limit: 1, offset: 0 }),
-    fetchAdminQuestions({ review_status: 'pending', limit: 1, offset: 0 })
+    fetchAdminQuestions({ status: 'archived', review_status: 'pending', limit: 1, offset: 0 })
   ])
   questionStats.active = activeResult.status === 'fulfilled' ? Number(activeResult.value?.count || 0) : 0
   questionStats.archived = archivedResult.status === 'fulfilled' ? Number(archivedResult.value?.count || 0) : 0
@@ -871,8 +871,9 @@ async function loadReviewQueue({ append = false } = {}) {
   reviewQueueLoading.value = !append
   try {
     const response = await fetchAdminQuestions({
-      ...buildQuestionListParams(),
+      ...buildReviewQueueParams(),
       review_status: 'pending',
+      status: 'archived',
       limit: 50,
       offset: append ? reviewQueueItems.value.length : 0
     })
@@ -893,6 +894,12 @@ async function loadReviewQueue({ append = false } = {}) {
   } finally {
     reviewQueueLoading.value = false
   }
+}
+
+function buildReviewQueueParams() {
+  const params = buildQuestionListParams()
+  delete params.status
+  return params
 }
 
 function closeReviewQueue() {
@@ -1543,7 +1550,7 @@ function goBack() {
 }
 
 .admin-page.question-mode {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 270rpx);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 310rpx);
   background:
     radial-gradient(circle at 12% 0%, rgba(186, 226, 255, 0.72) 0, rgba(186, 226, 255, 0) 300rpx),
     radial-gradient(circle at 92% 2%, rgba(205, 249, 216, 0.78) 0, rgba(205, 249, 216, 0) 320rpx),
@@ -2011,9 +2018,9 @@ function goBack() {
 }
 
 .question-stat-card {
-  min-height: 150rpx;
-  padding: 22rpx 18rpx 20rpx;
-  border-radius: 24rpx;
+  min-height: 138rpx;
+  padding: 20rpx 16rpx 18rpx;
+  border-radius: 22rpx;
   background: rgba(255, 255, 255, 0.92);
   border: 1rpx solid rgba(226, 232, 240, 0.9);
   box-shadow: 0 18rpx 44rpx rgba(15, 23, 42, 0.08);
@@ -2034,7 +2041,7 @@ function goBack() {
   width: 34rpx;
   height: 34rpx;
   color: #2563eb;
-  font-size: 30rpx;
+  font-size: 28rpx;
   font-weight: 900;
   line-height: 1;
 }
@@ -2052,16 +2059,16 @@ function goBack() {
 .question-stat-label {
   min-width: 0;
   color: #344054;
-  font-size: 23rpx;
+  font-size: 22rpx;
   font-weight: 700;
   line-height: 1.2;
   white-space: nowrap;
 }
 
 .question-stat-value {
-  margin-top: 28rpx;
+  margin-top: 24rpx;
   color: #1d4ed8;
-  font-size: 46rpx;
+  font-size: 40rpx;
   font-weight: 900;
   line-height: 1;
 }
@@ -2110,13 +2117,13 @@ function goBack() {
   align-items: center;
   justify-content: center;
   gap: 8rpx;
-  height: 68rpx;
+  height: 64rpx;
   padding: 0 10rpx;
   border-radius: 16rpx;
   background: rgba(255, 255, 255, 0.84);
   border: 1rpx solid #d5deeb;
   color: #344054;
-  font-size: 25rpx;
+  font-size: 24rpx;
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
@@ -2131,8 +2138,8 @@ function goBack() {
 
 .question-action-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1.35fr;
-  gap: 14rpx;
+  grid-template-columns: 1fr 1fr 1.28fr;
+  gap: 12rpx;
 }
 
 .question-action-btn {
@@ -2141,11 +2148,11 @@ function goBack() {
   justify-content: center;
   gap: 10rpx;
   min-width: 0;
-  height: 74rpx;
+  height: 70rpx;
   margin: 0;
   padding: 0 10rpx;
   border-radius: 12rpx;
-  font-size: 24rpx;
+  font-size: 23rpx;
   font-weight: 900;
   line-height: 1;
   box-sizing: border-box;
@@ -2165,7 +2172,7 @@ function goBack() {
 }
 
 .question-action-icon {
-  font-size: 32rpx;
+  font-size: 30rpx;
   font-weight: 900;
   line-height: 1;
 }
@@ -2174,14 +2181,16 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
+  padding-bottom: 170rpx;
 }
 
 .question-admin-card {
-  display: flex;
+  display: grid;
+  grid-template-columns: 42rpx minmax(0, 1fr) 122rpx;
   align-items: center;
-  gap: 18rpx;
-  min-height: 152rpx;
-  padding: 26rpx 22rpx;
+  column-gap: 16rpx;
+  min-height: 150rpx;
+  padding: 24rpx 22rpx;
   border-radius: 20rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 1rpx solid #edf2f7;
@@ -2190,6 +2199,8 @@ function goBack() {
 }
 
 .question-check {
+  grid-column: 1;
+  grid-row: 1;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
@@ -2213,6 +2224,8 @@ function goBack() {
 }
 
 .question-card-main {
+  grid-column: 2;
+  grid-row: 1;
   min-width: 0;
   flex: 1;
 }
@@ -2225,12 +2238,12 @@ function goBack() {
 }
 
 .question-chip {
-  max-width: 210rpx;
-  padding: 7rpx 14rpx;
+  max-width: 180rpx;
+  padding: 7rpx 13rpx;
   border-radius: 10rpx;
   color: #1769ff;
   background: #eff6ff;
-  font-size: 23rpx;
+  font-size: 22rpx;
   font-weight: 900;
   line-height: 1.15;
   white-space: nowrap;
@@ -2239,9 +2252,9 @@ function goBack() {
 }
 
 .question-stem-preview {
-  margin-top: 18rpx;
+  margin-top: 16rpx;
   color: #101828;
-  font-size: 27rpx;
+  font-size: 26rpx;
   font-weight: 800;
   line-height: 1.45;
   word-break: break-word;
@@ -2252,7 +2265,7 @@ function goBack() {
   align-items: center;
   flex-wrap: wrap;
   gap: 12rpx;
-  margin-top: 18rpx;
+  margin-top: 16rpx;
 }
 
 .question-status-pill {
@@ -2290,26 +2303,28 @@ function goBack() {
 }
 
 .question-edit-btn {
+  grid-column: 3;
+  grid-row: 1;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8rpx;
-  width: 132rpx;
-  height: 64rpx;
+  width: 122rpx;
+  height: 60rpx;
   margin: 0;
   padding: 0;
   border-radius: 12rpx;
   border: 1rpx solid #1769ff;
   color: #1769ff;
   background: #ffffff;
-  font-size: 25rpx;
+  font-size: 24rpx;
   font-weight: 900;
   line-height: 1;
 }
 
 .question-edit-icon {
-  font-size: 28rpx;
+  font-size: 26rpx;
   line-height: 1;
 }
 
@@ -2317,32 +2332,37 @@ function goBack() {
   position: fixed;
   left: 24rpx;
   right: 24rpx;
-  bottom: calc(env(safe-area-inset-bottom) + 24rpx);
+  bottom: calc(env(safe-area-inset-bottom) + 14rpx);
   z-index: 30;
   display: grid;
   grid-template-columns: 1.05fr 1fr 0.8fr 0.8fr;
   align-items: center;
-  gap: 12rpx;
-  min-height: 86rpx;
-  padding: 14rpx 22rpx;
-  border-radius: 20rpx;
+  gap: 10rpx;
+  min-height: 78rpx;
+  padding: 12rpx 18rpx;
+  border-radius: 18rpx;
   background: rgba(255, 255, 255, 0.96);
   border: 1rpx solid #edf2f7;
   box-shadow: 0 12rpx 44rpx rgba(15, 23, 42, 0.12);
   box-sizing: border-box;
 }
 
+.question-bulk-bar.idle {
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 10rpx 32rpx rgba(15, 23, 42, 0.08);
+}
+
 .question-selected-label {
   min-width: 0;
   color: #475467;
-  font-size: 23rpx;
+  font-size: 22rpx;
   font-weight: 700;
   white-space: nowrap;
 }
 
 .question-selected-count {
   color: #1769ff;
-  font-size: 34rpx;
+  font-size: 32rpx;
   font-weight: 900;
 }
 
@@ -2352,14 +2372,14 @@ function goBack() {
   justify-content: center;
   gap: 8rpx;
   min-width: 0;
-  height: 60rpx;
+  height: 56rpx;
   margin: 0;
-  padding: 0 12rpx;
+  padding: 0 10rpx;
   border-radius: 12rpx;
   border: 1rpx solid #1769ff;
   color: #1769ff;
   background: #ffffff;
-  font-size: 24rpx;
+  font-size: 23rpx;
   font-weight: 900;
   line-height: 1;
   box-sizing: border-box;
@@ -2376,7 +2396,7 @@ function goBack() {
 }
 
 .question-bulk-icon {
-  font-size: 28rpx;
+  font-size: 24rpx;
   line-height: 1;
 }
 

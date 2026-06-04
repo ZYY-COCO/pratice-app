@@ -69,6 +69,8 @@ KNOWLEDGE_TREE = {
 ALLOWED_EXAM_CODES = {"Z001", "Z002", "COMMON"}
 ALLOWED_ANSWERS = {"A", "B", "C", "D"}
 ALLOWED_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
+ALLOWED_STATUSES = {"active", "archived"}
+ALLOWED_REVIEW_STATUSES = {"pending", "needs_changes", "approved", "rejected"}
 REQUIRED_FIELDS = [
     "exam_code",
     "subject",
@@ -102,6 +104,8 @@ IMPORT_COLUMNS = [
     "source_type",
     "source_year",
     "passage_id",
+    "status",
+    "review_status",
 ]
 
 
@@ -217,6 +221,14 @@ def validate_question(question: dict, index: int) -> dict:
             f"Allowed: {', '.join(sorted(ALLOWED_SOURCE_TYPES))}"
         )
 
+    question_status = str(question.get("status") or "archived").strip()
+    if question_status not in ALLOWED_STATUSES:
+        raise ValueError(f"Question #{index} has invalid status: {question_status}")
+
+    review_status = str(question.get("review_status") or "pending").strip()
+    if review_status not in ALLOWED_REVIEW_STATUSES:
+        raise ValueError(f"Question #{index} has invalid review_status: {review_status}")
+
     validate_uuid(question.get("id"), "id")
     validate_uuid(question.get("passage_id"), "passage_id")
 
@@ -237,6 +249,8 @@ def validate_question(question: dict, index: int) -> dict:
     normalized["option_c"] = str(question["option_c"]).strip()
     normalized["option_d"] = str(question["option_d"]).strip()
     normalized["explanation"] = str(question["explanation"]).strip()
+    normalized["status"] = question_status
+    normalized["review_status"] = review_status
 
     return normalized
 
