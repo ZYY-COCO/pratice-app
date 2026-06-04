@@ -58,6 +58,7 @@ def _apply_admin_question_filters(
     module: str | None = None,
     question_status: str | None = None,
     review_status: str | None = None,
+    exclude_review_status: str | None = None,
     search: str | None = None,
     difficulty: int | None = None,
 ):
@@ -71,6 +72,8 @@ def _apply_admin_question_filters(
         query = query.eq("status", question_status)
     if review_status:
         query = query.eq("review_status", review_status)
+    if exclude_review_status:
+        query = query.neq("review_status", exclude_review_status)
     if difficulty is not None:
         query = query.eq("difficulty", difficulty)
     if search:
@@ -464,6 +467,7 @@ def admin_questions(
     module: str | None = Query(default=None, max_length=80),
     question_status: str | None = Query(default=None, alias="status", max_length=20),
     review_status: str | None = Query(default=None, max_length=20),
+    exclude_review_status: str | None = Query(default=None, max_length=20),
     search: str | None = Query(default=None, max_length=80),
     difficulty: str | None = Query(default=None, max_length=8),
     limit: int = Query(default=20, ge=1, le=100),
@@ -479,6 +483,7 @@ def admin_questions(
         module=module,
         question_status=question_status,
         review_status=review_status,
+        exclude_review_status=exclude_review_status,
         search=search,
         difficulty=_parse_question_difficulty(difficulty),
     )
@@ -507,6 +512,7 @@ def admin_bulk_update_question_status(
                 module=filters.module,
                 question_status=filters.status,
                 review_status=filters.review_status,
+                exclude_review_status=filters.exclude_review_status,
                 search=filters.search,
                 difficulty=filters.difficulty,
             )

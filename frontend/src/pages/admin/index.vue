@@ -166,7 +166,7 @@
           </picker>
         </view>
 
-        <view class="question-action-row">
+        <view class="question-action-row" :class="{ compact: !canShowReviewQueueEntry }">
           <button class="question-action-btn outline" @tap="showComingSoon('新增题目')">
             <text class="question-action-icon">＋</text>
             <text>新增题目</text>
@@ -175,7 +175,7 @@
             <text class="question-action-icon">⇧</text>
             <text>批量导入</text>
           </button>
-          <button class="question-action-btn filled" @tap="openReviewQueue">
+          <button v-if="canShowReviewQueueEntry" class="question-action-btn filled" @tap="openReviewQueue">
             <text class="question-action-icon">☷</text>
             <text>进入审核队列</text>
           </button>
@@ -200,8 +200,8 @@
               </view>
               <view class="question-stem-preview">{{ previewQuestionStem(item.stem) }}</view>
               <view class="question-status-row">
-                <text class="question-status-pill" :class="questionStatusTone(item.status)">
-                  {{ questionStatusText(item.status) }}
+                <text class="question-status-pill" :class="questionStatusTone(questionDisplayStatus(item))">
+                  {{ questionStatusText(questionDisplayStatus(item)) }}
                 </text>
                 <text v-if="item.answer" class="question-answer">答案 {{ item.answer }}</text>
               </view>
@@ -213,7 +213,7 @@
           </view>
         </view>
 
-        <view class="question-bulk-bar" :class="{ idle: selectedQuestionCount === 0 }">
+        <view class="question-bulk-bar" :class="[questionBulkBarMode, { idle: selectedQuestionCount === 0 }]">
           <view class="question-selected-label">
             已选 <text class="question-selected-count">{{ selectedQuestionCount }}</text> 题
           </view>
@@ -221,11 +221,11 @@
             <text class="question-bulk-icon">☑</text>
             <text>{{ allVisibleQuestionsSelected ? '取消' : '全选' }}</text>
           </button>
-          <button class="question-bulk-btn archive" @tap="archiveSelectedQuestions">
+          <button v-if="canBulkArchiveQuestions" class="question-bulk-btn archive" @tap="archiveSelectedQuestions">
             <text class="question-bulk-icon">▣</text>
             <text>下架</text>
           </button>
-          <button class="question-bulk-btn publish" @tap="publishSelectedQuestions">
+          <button v-if="canBulkPublishQuestions" class="question-bulk-btn publish" @tap="publishSelectedQuestions">
             <text class="question-bulk-icon">⇩</text>
             <text>发布</text>
           </button>
@@ -532,10 +532,15 @@ const questionDifficultyOptions = [
   { label: '难度 5', value: '5' }
 ]
 
+const QUESTION_STATUS_ACTIVE = 'active'
+const QUESTION_STATUS_ARCHIVED = 'archived'
+const QUESTION_STATUS_PENDING_REVIEW = 'pending_review'
+
 const questionStatusOptions = [
   { label: '状态', value: '' },
-  { label: '已发布', value: 'active' },
-  { label: '已下架', value: 'archived' }
+  { label: '待审核', value: QUESTION_STATUS_PENDING_REVIEW },
+  { label: '已下架', value: QUESTION_STATUS_ARCHIVED },
+  { label: '已发布', value: QUESTION_STATUS_ACTIVE }
 ]
 
 const reviewAnswerOptions = ['A', 'B', 'C', 'D']
@@ -653,6 +658,19 @@ const selectedQuestionCount = computed(() => (
 const allVisibleQuestionsSelected = computed(() => (
   allMatchingQuestionsSelected.value ||
   (questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id)))
+))
+const isPublishedQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_ACTIVE)
+const isArchivedQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_ARCHIVED)
+const isPendingReviewQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_PENDING_REVIEW)
+const canShowReviewQueueEntry = computed(() => (
+  isArchivedQuestionFilter.value || isPendingReviewQuestionFilter.value
+))
+const canBulkArchiveQuestions = computed(() => isPublishedQuestionFilter.value)
+const canBulkPublishQuestions = computed(() => (
+  isArchivedQuestionFilter.value || isPendingReviewQuestionFilter.value
+))
+const questionBulkBarMode = computed(() => (
+  canBulkArchiveQuestions.value || canBulkPublishQuestions.value ? 'with-status-action' : 'selection-only'
 ))
 const activeReviewQuestion = computed(() => reviewQueueItems.value[reviewQueueIndex.value] || null)
 const reviewQueuePosition = computed(() => (activeReviewQuestion.value ? reviewQueueIndex.value + 1 : 0))
@@ -796,16 +814,34 @@ function buildQuestionListParams() {
   if (questionFilters.subject) params.subject = questionFilters.subject
   if (questionFilters.module) params.module = questionFilters.module
   if (questionFilters.difficulty) params.difficulty = questionFilters.difficulty
-  if (questionFilters.status) params.status = questionFilters.status
+  if (questionFilters.status === QUESTION_STATUS_PENDING_REVIEW) {
+    params.status = QUESTION_STATUS_ARCHIVED
+    params.review_status = 'pending'
+  } else if (questionFilters.status === QUESTION_STATUS_ARCHIVED) {
+    params.status = QUESTION_STATUS_ARCHIVED
+    params.exclude_review_status = 'pending'
+  } else if (questionFilters.status) {
+    params.status = questionFilters.status
+  }
   if (questionFilters.search) params.search = questionFilters.search
   return params
 }
 
 async function loadQuestionStats() {
   const [activeResult, archivedResult, pendingResult] = await Promise.allSettled([
-    fetchAdminQuestions({ status: 'active', limit: 1, offset: 0 }),
-    fetchAdminQuestions({ status: 'archived', limit: 1, offset: 0 }),
-    fetchAdminQuestions({ status: 'archived', review_status: 'pending', limit: 1, offset: 0 })
+    fetchAdminQuestions({ status: QUESTION_STATUS_ACTIVE, limit: 1, offset: 0 }),
+    fetchAdminQuestions({
+      status: QUESTION_STATUS_ARCHIVED,
+      exclude_review_status: 'pending',
+      limit: 1,
+      offset: 0
+    }),
+    fetchAdminQuestions({
+      status: QUESTION_STATUS_ARCHIVED,
+      review_status: 'pending',
+      limit: 1,
+      offset: 0
+    })
   ])
   questionStats.active = activeResult.status === 'fulfilled' ? Number(activeResult.value?.count || 0) : 0
   questionStats.archived = archivedResult.status === 'fulfilled' ? Number(archivedResult.value?.count || 0) : 0
@@ -873,7 +909,7 @@ async function loadReviewQueue({ append = false } = {}) {
     const response = await fetchAdminQuestions({
       ...buildReviewQueueParams(),
       review_status: 'pending',
-      status: 'archived',
+      status: QUESTION_STATUS_ARCHIVED,
       limit: 50,
       offset: append ? reviewQueueItems.value.length : 0
     })
@@ -899,6 +935,8 @@ async function loadReviewQueue({ append = false } = {}) {
 function buildReviewQueueParams() {
   const params = buildQuestionListParams()
   delete params.status
+  delete params.review_status
+  delete params.exclude_review_status
   return params
 }
 
@@ -1155,6 +1193,11 @@ function questionStatusTone(status) {
   return 'published'
 }
 
+function questionDisplayStatus(question) {
+  if (question?.review_status === 'pending') return QUESTION_STATUS_PENDING_REVIEW
+  return question?.status
+}
+
 function reviewStatusTone(status) {
   if (status === 'approved') return 'published'
   if (status === 'needs_changes' || status === 'rejected') return 'warning'
@@ -1196,10 +1239,18 @@ function toggleSelectAllQuestions() {
 }
 
 function archiveSelectedQuestions() {
+  if (!canBulkArchiveQuestions.value) {
+    uni.showToast({ title: '只有已发布题目可以批量下架', icon: 'none' })
+    return
+  }
   updateSelectedQuestionStatus('archived')
 }
 
 function publishSelectedQuestions() {
+  if (!canBulkPublishQuestions.value) {
+    uni.showToast({ title: '请先筛选已下架或待审核题目', icon: 'none' })
+    return
+  }
   updateSelectedQuestionStatus('active')
 }
 
@@ -1211,13 +1262,16 @@ function updateSelectedQuestionStatus(nextStatus) {
     return
   }
   const isArchive = nextStatus === 'archived'
+  const isReviewPublish = nextStatus === 'active' && isPendingReviewQuestionFilter.value
   const scopeText = allMatchingQuestionsSelected.value ? questionFilterScopeText() : '手动选择'
   uni.showModal({
-    title: isArchive ? '确认下架所选题目？' : '确认发布所选题目？',
+    title: isArchive ? '确认下架所选题目？' : (isReviewPublish ? '确认审核通过并发布？' : '确认发布所选题目？'),
     content: isArchive
       ? `将下架${scopeText}的 ${totalSelected} 道题，下架后不会进入普通刷题抽题。`
-      : `将发布${scopeText}的 ${totalSelected} 道题，发布后会进入可刷题范围。`,
-    confirmText: isArchive ? '下架' : '发布',
+      : (isReviewPublish
+          ? `将${scopeText}的 ${totalSelected} 道题标为审核通过，并进入可刷题范围。`
+          : `将发布${scopeText}的 ${totalSelected} 道题，发布后会进入可刷题范围。`),
+    confirmText: isArchive ? '下架' : (isReviewPublish ? '审核发布' : '发布'),
     confirmColor: isArchive ? '#16a34a' : '#2563eb',
     success: async (result) => {
       if (!result.confirm) return
@@ -2142,6 +2196,10 @@ function goBack() {
   gap: 12rpx;
 }
 
+.question-action-row.compact {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .question-action-btn {
   display: flex;
   align-items: center;
@@ -2335,7 +2393,7 @@ function goBack() {
   bottom: calc(env(safe-area-inset-bottom) + 14rpx);
   z-index: 30;
   display: grid;
-  grid-template-columns: 1.05fr 1fr 0.8fr 0.8fr;
+  grid-template-columns: 0.85fr 1fr;
   align-items: center;
   gap: 10rpx;
   min-height: 78rpx;
@@ -2345,6 +2403,14 @@ function goBack() {
   border: 1rpx solid #edf2f7;
   box-shadow: 0 12rpx 44rpx rgba(15, 23, 42, 0.12);
   box-sizing: border-box;
+}
+
+.question-bulk-bar.with-status-action {
+  grid-template-columns: 0.85fr 1fr 0.9fr;
+}
+
+.question-bulk-bar.selection-only {
+  grid-template-columns: 0.85fr 1fr;
 }
 
 .question-bulk-bar.idle {

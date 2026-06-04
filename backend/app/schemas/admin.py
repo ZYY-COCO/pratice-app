@@ -93,6 +93,7 @@ class AdminQuestionBulkFilters(BaseModel):
     module: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=20)
     review_status: str | None = Field(default=None, max_length=20)
+    exclude_review_status: str | None = Field(default=None, max_length=20)
     search: str | None = Field(default=None, max_length=80)
     difficulty: int | None = Field(default=None, ge=1, le=5)
 
