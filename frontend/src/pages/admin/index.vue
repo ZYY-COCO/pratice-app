@@ -234,7 +234,7 @@
             <text>下架</text>
           </button>
           <button v-if="canBulkPublishQuestions" class="question-bulk-btn publish" @tap="publishSelectedQuestions">
-            <text class="question-bulk-icon">⇩</text>
+            <image class="question-bulk-image" src="/static/admin-icons/publish.svg" mode="aspectFit" />
             <text>发布</text>
           </button>
         </view>
@@ -628,7 +628,7 @@ const questionStatCards = computed(() => [
   {
     label: '发布',
     value: questionStats.active,
-    icon: '✓',
+    iconSrc: '/static/admin-icons/publish.svg',
     tone: 'blue'
   }
 ])
