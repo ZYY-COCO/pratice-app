@@ -175,7 +175,7 @@
             <text class="question-action-icon">⇧</text>
             <text>批量导入</text>
           </button>
-          <button class="question-action-btn filled" @tap="showComingSoon('审核队列')">
+          <button class="question-action-btn filled" @tap="openReviewQueue">
             <text class="question-action-icon">☷</text>
             <text>进入审核队列</text>
           </button>
@@ -281,6 +281,142 @@
         </view>
       </view>
     </template>
+
+    <view v-if="reviewQueueVisible" class="review-overlay" @tap="closeReviewQueue">
+      <view class="review-sheet" @tap.stop>
+        <view class="review-sheet-head">
+          <view class="review-head-copy">
+            <view class="review-title">审核队列</view>
+            <view class="review-subtitle">逐题检查题干、答案与解析</view>
+          </view>
+          <view class="review-progress">{{ reviewQueuePosition }} / {{ reviewQueueCount }}</view>
+          <text
+            v-if="activeReviewQuestion"
+            class="review-status-pill"
+            :class="reviewStatusTone(activeReviewQuestion.review_status)"
+          >
+            {{ reviewStatusText(activeReviewQuestion.review_status) }}
+          </text>
+          <button class="review-close-btn" @tap="closeReviewQueue">×</button>
+        </view>
+
+        <view v-if="reviewQueueLoading" class="inline-state">正在加载审核队列...</view>
+        <view v-else-if="!activeReviewQuestion" class="review-empty">
+          当前筛选下暂无待审核题目
+        </view>
+        <view v-else class="review-body">
+          <view class="review-section-head">
+            <view>
+              <view class="review-section-title">题目</view>
+              <view class="review-section-subtitle">检查题干、分类与难度</view>
+            </view>
+            <view class="review-edit-actions">
+              <button v-if="reviewEditing" class="review-mini-btn muted" @tap="cancelReviewEditing">取消</button>
+              <button class="review-mini-btn" @tap="reviewEditing ? saveReviewEdits() : startReviewEditing()">
+                {{ reviewEditing ? '保存' : '编辑' }}
+              </button>
+            </view>
+          </view>
+
+          <view v-if="reviewEditing" class="review-meta-grid">
+            <input v-model.trim="reviewForm.subject" class="review-input" placeholder="科目" />
+            <input v-model.trim="reviewForm.module" class="review-input" placeholder="模块" />
+            <input v-model.trim="reviewForm.submodule" class="review-input" placeholder="考点" />
+            <view class="review-difficulty-row">
+              <button
+                v-for="item in reviewDifficultyOptions"
+                :key="item"
+                class="review-difficulty-btn"
+                :class="{ active: Number(reviewForm.difficulty) === item }"
+                @tap="reviewForm.difficulty = item"
+              >
+                {{ item }}
+              </button>
+            </view>
+          </view>
+
+          <view class="review-question-box">
+            <textarea
+              v-if="reviewEditing"
+              v-model.trim="reviewForm.stem"
+              class="review-textarea stem"
+              placeholder="题干"
+            />
+            <view v-else class="review-stem">{{ activeReviewQuestion.stem || '未填写题干' }}</view>
+            <view class="question-chip-row review-chips">
+              <text class="question-chip">{{ reviewEditing ? reviewForm.subject : (activeReviewQuestion.subject || '未分类') }}</text>
+              <text class="question-chip">{{ reviewEditing ? reviewForm.submodule : (activeReviewQuestion.submodule || activeReviewQuestion.module || '未分模块') }}</text>
+              <text class="question-chip">难度 {{ reviewEditing ? reviewForm.difficulty : (activeReviewQuestion.difficulty || '-') }}</text>
+            </view>
+          </view>
+
+          <view class="review-section-head compact">
+            <view class="review-section-title">选项</view>
+            <view class="review-section-subtitle">勾选 1 个正确答案</view>
+          </view>
+          <view class="review-option-list">
+            <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'A' }" @tap="setReviewAnswer('A')">
+              <text class="review-radio">{{ reviewCurrentAnswer() === 'A' ? '●' : '○' }}</text>
+              <input v-if="reviewEditing" v-model.trim="reviewForm.option_a" class="review-option-input" placeholder="A 选项" />
+              <text v-else class="review-option-text">A. {{ activeReviewQuestion.option_a }}</text>
+            </view>
+            <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'B' }" @tap="setReviewAnswer('B')">
+              <text class="review-radio">{{ reviewCurrentAnswer() === 'B' ? '●' : '○' }}</text>
+              <input v-if="reviewEditing" v-model.trim="reviewForm.option_b" class="review-option-input" placeholder="B 选项" />
+              <text v-else class="review-option-text">B. {{ activeReviewQuestion.option_b }}</text>
+            </view>
+            <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'C' }" @tap="setReviewAnswer('C')">
+              <text class="review-radio">{{ reviewCurrentAnswer() === 'C' ? '●' : '○' }}</text>
+              <input v-if="reviewEditing" v-model.trim="reviewForm.option_c" class="review-option-input" placeholder="C 选项" />
+              <text v-else class="review-option-text">C. {{ activeReviewQuestion.option_c }}</text>
+            </view>
+            <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'D' }" @tap="setReviewAnswer('D')">
+              <text class="review-radio">{{ reviewCurrentAnswer() === 'D' ? '●' : '○' }}</text>
+              <input v-if="reviewEditing" v-model.trim="reviewForm.option_d" class="review-option-input" placeholder="D 选项" />
+              <text v-else class="review-option-text">D. {{ activeReviewQuestion.option_d }}</text>
+            </view>
+          </view>
+
+          <view class="review-section-head compact">
+            <view class="review-section-title">解析</view>
+          </view>
+          <textarea
+            v-if="reviewEditing"
+            v-model.trim="reviewForm.explanation"
+            class="review-textarea explanation"
+            placeholder="解析"
+          />
+          <view v-else class="review-explanation-box">
+            {{ activeReviewQuestion.explanation || '暂无解析' }}
+          </view>
+
+          <view class="review-section-head compact">
+            <view class="review-section-title">审核备注</view>
+            <view class="review-section-subtitle">标记需修改时必填</view>
+          </view>
+          <textarea
+            v-model.trim="reviewForm.review_note"
+            class="review-textarea note"
+            placeholder="例如：题干出处不足、答案有争议、解析需要补充依据"
+          />
+        </view>
+
+        <view class="review-footer">
+          <button class="review-footer-btn muted" :disabled="reviewSaving || !activeReviewQuestion" @tap="markReviewNeedsChanges">
+            需修改
+          </button>
+          <button class="review-footer-btn outline" :disabled="reviewSaving || reviewQueueIndex === 0" @tap="goReviewPrev">
+            上一题
+          </button>
+          <button class="review-footer-btn primary" :disabled="reviewSaving || !activeReviewQuestion" @tap="publishReviewQuestion">
+            发布
+          </button>
+          <button class="review-footer-btn blue" :disabled="reviewSaving || !activeReviewQuestion" @tap="goReviewNext">
+            下一题
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -300,8 +436,10 @@ import {
   fetchAdminUsers,
   grantAdminMembership,
   bulkUpdateAdminQuestionStatus,
+  updateAdminQuestion,
   updateAdminMessage,
   updateAdminFeedbackStatus,
+  updateAdminQuestionReview,
   updateAdminQuestionStatus
 } from '../../api/admin'
 import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
@@ -330,6 +468,13 @@ const questionStats = reactive({
   archived: 0,
   pendingReview: 0
 })
+const reviewQueueVisible = ref(false)
+const reviewQueueLoading = ref(false)
+const reviewQueueItems = ref([])
+const reviewQueueCount = ref(0)
+const reviewQueueIndex = ref(0)
+const reviewEditing = ref(false)
+const reviewSaving = ref(false)
 const officialMessageItems = ref([])
 const messagesLoading = ref(false)
 const authUser = ref(getAuthUser())
@@ -388,6 +533,26 @@ const questionStatusOptions = [
   { label: '已发布', value: 'active' },
   { label: '已归档', value: 'archived' }
 ]
+
+const reviewAnswerOptions = ['A', 'B', 'C', 'D']
+const reviewDifficultyOptions = [1, 2, 3, 4, 5]
+
+const reviewForm = reactive({
+  id: '',
+  exam_code: '',
+  subject: '',
+  module: '',
+  submodule: '',
+  stem: '',
+  option_a: '',
+  option_b: '',
+  option_c: '',
+  option_d: '',
+  answer: 'A',
+  explanation: '',
+  difficulty: 2,
+  review_note: ''
+})
 
 const tabs = [
   { key: 'users', label: '用户' },
@@ -485,6 +650,8 @@ const allVisibleQuestionsSelected = computed(() => (
   allMatchingQuestionsSelected.value ||
   (questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id)))
 ))
+const activeReviewQuestion = computed(() => reviewQueueItems.value[reviewQueueIndex.value] || null)
+const reviewQueuePosition = computed(() => (activeReviewQuestion.value ? reviewQueueIndex.value + 1 : 0))
 
 const visibleUsers = computed(() => {
   if (userFilter.value === 'member') {
@@ -631,19 +798,14 @@ function buildQuestionListParams() {
 }
 
 async function loadQuestionStats() {
-  try {
-    const [activeResponse, archivedResponse] = await Promise.all([
-      fetchAdminQuestions({ status: 'active', limit: 1, offset: 0 }),
-      fetchAdminQuestions({ status: 'archived', limit: 1, offset: 0 })
-    ])
-    questionStats.active = Number(activeResponse?.count || 0)
-    questionStats.archived = Number(archivedResponse?.count || 0)
-    questionStats.pendingReview = 0
-  } catch (error) {
-    questionStats.active = 0
-    questionStats.archived = 0
-    questionStats.pendingReview = 0
-  }
+  const [activeResult, archivedResult, pendingResult] = await Promise.allSettled([
+    fetchAdminQuestions({ status: 'active', limit: 1, offset: 0 }),
+    fetchAdminQuestions({ status: 'archived', limit: 1, offset: 0 }),
+    fetchAdminQuestions({ review_status: 'pending', limit: 1, offset: 0 })
+  ])
+  questionStats.active = activeResult.status === 'fulfilled' ? Number(activeResult.value?.count || 0) : 0
+  questionStats.archived = archivedResult.status === 'fulfilled' ? Number(archivedResult.value?.count || 0) : 0
+  questionStats.pendingReview = pendingResult.status === 'fulfilled' ? Number(pendingResult.value?.count || 0) : 0
 }
 
 function getOptionIndex(options, value) {
@@ -694,6 +856,281 @@ function showComingSoon(label) {
   uni.showToast({ title: `${label}后续接入`, icon: 'none' })
 }
 
+async function openReviewQueue() {
+  reviewQueueVisible.value = true
+  reviewQueueIndex.value = 0
+  reviewEditing.value = false
+  await loadReviewQueue({ append: false })
+}
+
+async function loadReviewQueue({ append = false } = {}) {
+  reviewQueueLoading.value = !append
+  try {
+    const response = await fetchAdminQuestions({
+      ...buildQuestionListParams(),
+      review_status: 'pending',
+      limit: 50,
+      offset: append ? reviewQueueItems.value.length : 0
+    })
+    const items = response.items || []
+    reviewQueueItems.value = append ? [...reviewQueueItems.value, ...items] : items
+    reviewQueueCount.value = Number(response.count || reviewQueueItems.value.length || 0)
+    if (!append) {
+      reviewQueueIndex.value = 0
+    }
+    syncReviewForm()
+    if (!reviewQueueItems.value.length) {
+      uni.showToast({ title: '当前筛选下暂无待审核题目', icon: 'none' })
+    }
+  } catch (error) {
+    reviewQueueItems.value = append ? reviewQueueItems.value : []
+    reviewQueueCount.value = append ? reviewQueueCount.value : 0
+    uni.showToast({ title: '审核队列加载失败，请先确认数据库迁移已执行', icon: 'none' })
+  } finally {
+    reviewQueueLoading.value = false
+  }
+}
+
+function closeReviewQueue() {
+  if (reviewEditing.value) {
+    uni.showModal({
+      title: '放弃未保存编辑？',
+      content: '关闭审核队列会丢弃当前题目的未保存修改。',
+      confirmText: '关闭',
+      confirmColor: '#ef4444',
+      success: (result) => {
+        if (!result.confirm) return
+        reviewQueueVisible.value = false
+        reviewEditing.value = false
+      }
+    })
+    return
+  }
+  reviewQueueVisible.value = false
+}
+
+function syncReviewForm() {
+  const question = activeReviewQuestion.value
+  if (!question) {
+    resetReviewForm()
+    return
+  }
+  reviewForm.id = question.id || ''
+  reviewForm.exam_code = question.exam_code || ''
+  reviewForm.subject = question.subject || ''
+  reviewForm.module = question.module || ''
+  reviewForm.submodule = question.submodule || ''
+  reviewForm.stem = question.stem || ''
+  reviewForm.option_a = question.option_a || ''
+  reviewForm.option_b = question.option_b || ''
+  reviewForm.option_c = question.option_c || ''
+  reviewForm.option_d = question.option_d || ''
+  reviewForm.answer = reviewAnswerOptions.includes(question.answer) ? question.answer : 'A'
+  reviewForm.explanation = question.explanation || ''
+  reviewForm.difficulty = Number(question.difficulty || 2)
+  reviewForm.review_note = question.review_note || ''
+}
+
+function resetReviewForm() {
+  reviewForm.id = ''
+  reviewForm.exam_code = ''
+  reviewForm.subject = ''
+  reviewForm.module = ''
+  reviewForm.submodule = ''
+  reviewForm.stem = ''
+  reviewForm.option_a = ''
+  reviewForm.option_b = ''
+  reviewForm.option_c = ''
+  reviewForm.option_d = ''
+  reviewForm.answer = 'A'
+  reviewForm.explanation = ''
+  reviewForm.difficulty = 2
+  reviewForm.review_note = ''
+}
+
+function startReviewEditing() {
+  syncReviewForm()
+  reviewEditing.value = true
+}
+
+function cancelReviewEditing() {
+  syncReviewForm()
+  reviewEditing.value = false
+}
+
+function reviewCurrentAnswer() {
+  if (reviewEditing.value) return reviewForm.answer || 'A'
+  return activeReviewQuestion.value?.answer || 'A'
+}
+
+function setReviewAnswer(answer) {
+  if (!reviewEditing.value || !reviewAnswerOptions.includes(answer)) return
+  reviewForm.answer = answer
+}
+
+function buildReviewEditPayload() {
+  const payload = {
+    exam_code: reviewForm.exam_code,
+    subject: reviewForm.subject,
+    module: reviewForm.module,
+    submodule: reviewForm.submodule,
+    stem: reviewForm.stem,
+    option_a: reviewForm.option_a,
+    option_b: reviewForm.option_b,
+    option_c: reviewForm.option_c,
+    option_d: reviewForm.option_d,
+    answer: reviewForm.answer,
+    explanation: reviewForm.explanation,
+    difficulty: Number(reviewForm.difficulty)
+  }
+  const requiredFields = ['exam_code', 'subject', 'module', 'submodule', 'stem', 'option_a', 'option_b', 'option_c', 'option_d', 'answer']
+  const missingField = requiredFields.find((field) => !String(payload[field] || '').trim())
+  if (missingField) {
+    uni.showToast({ title: '请补全题干、分类、选项和答案', icon: 'none' })
+    return null
+  }
+  if (!reviewAnswerOptions.includes(payload.answer)) {
+    uni.showToast({ title: '请选择正确答案', icon: 'none' })
+    return null
+  }
+  if (!Number.isInteger(payload.difficulty) || payload.difficulty < 1 || payload.difficulty > 5) {
+    uni.showToast({ title: '难度必须为 1-5', icon: 'none' })
+    return null
+  }
+  return payload
+}
+
+async function saveReviewEdits({ silent = false } = {}) {
+  if (!activeReviewQuestion.value?.id) return false
+  const payload = buildReviewEditPayload()
+  if (!payload) return false
+  const currentReviewNote = reviewForm.review_note
+  reviewSaving.value = true
+  try {
+    const response = await updateAdminQuestion(activeReviewQuestion.value.id, payload)
+    const nextQuestion = response.question || { ...activeReviewQuestion.value, ...payload }
+    updateReviewQuestionInMemory(nextQuestion)
+    reviewEditing.value = false
+    syncReviewForm()
+    reviewForm.review_note = currentReviewNote
+    if (!silent) {
+      uni.showToast({ title: '题目已保存', icon: 'success' })
+    }
+    return true
+  } catch (error) {
+    uni.showToast({ title: '题目保存失败', icon: 'none' })
+    return false
+  } finally {
+    reviewSaving.value = false
+  }
+}
+
+function updateReviewQuestionInMemory(question) {
+  if (!question?.id) return
+  reviewQueueItems.value = reviewQueueItems.value.map((item) => (
+    item.id === question.id ? { ...item, ...question } : item
+  ))
+  questions.value = questions.value.map((item) => (
+    item.id === question.id ? { ...item, ...question } : item
+  ))
+}
+
+async function publishReviewQuestion() {
+  const questionId = activeReviewQuestion.value?.id
+  if (!questionId || reviewSaving.value) return
+  if (reviewEditing.value) {
+    const saved = await saveReviewEdits({ silent: true })
+    if (!saved) return
+  }
+  await updateReviewQuestionStatus('approved', { publish: true, successTitle: '题目已发布' })
+}
+
+function markReviewNeedsChanges() {
+  if (!activeReviewQuestion.value?.id || reviewSaving.value) return
+  const note = String(reviewForm.review_note || '').trim()
+  if (!note) {
+    uni.showToast({ title: '请先填写审核备注', icon: 'none' })
+    return
+  }
+  uni.showModal({
+    title: '标记为需修改？',
+    content: '该题会归档并移出待审核队列，后续可按备注修订后再发布。',
+    confirmText: '需修改',
+    confirmColor: '#f97316',
+    success: async (result) => {
+      if (!result.confirm) return
+      if (reviewEditing.value) {
+        const saved = await saveReviewEdits({ silent: true })
+        if (!saved) return
+      }
+      await updateReviewQuestionStatus('needs_changes', { publish: false, successTitle: '已标记需修改' })
+    }
+  })
+}
+
+async function updateReviewQuestionStatus(reviewStatus, { publish = false, successTitle = '审核状态已更新' } = {}) {
+  const questionId = activeReviewQuestion.value?.id
+  if (!questionId) return
+  reviewSaving.value = true
+  try {
+    const response = await updateAdminQuestionReview(questionId, {
+      review_status: reviewStatus,
+      review_note: String(reviewForm.review_note || '').trim() || null,
+      publish
+    })
+    const nextQuestion = response.question || activeReviewQuestion.value
+    updateReviewQuestionInMemory(nextQuestion)
+    removeReviewedQuestion(questionId)
+    uni.showToast({ title: successTitle, icon: 'success' })
+    await Promise.all([loadQuestionStats(), loadQuestions()])
+  } catch (error) {
+    uni.showToast({ title: '审核状态更新失败', icon: 'none' })
+  } finally {
+    reviewSaving.value = false
+  }
+}
+
+function removeReviewedQuestion(questionId) {
+  reviewQueueItems.value = reviewQueueItems.value.filter((item) => item.id !== questionId)
+  reviewQueueCount.value = Math.max(0, reviewQueueCount.value - 1)
+  if (reviewQueueIndex.value >= reviewQueueItems.value.length) {
+    reviewQueueIndex.value = Math.max(0, reviewQueueItems.value.length - 1)
+  }
+  reviewEditing.value = false
+  syncReviewForm()
+}
+
+function goReviewPrev() {
+  if (reviewEditing.value) {
+    uni.showToast({ title: '请先保存或取消编辑', icon: 'none' })
+    return
+  }
+  if (reviewQueueIndex.value <= 0) return
+  reviewQueueIndex.value -= 1
+  syncReviewForm()
+}
+
+async function goReviewNext() {
+  if (reviewEditing.value) {
+    uni.showToast({ title: '请先保存或取消编辑', icon: 'none' })
+    return
+  }
+  if (reviewQueueIndex.value < reviewQueueItems.value.length - 1) {
+    reviewQueueIndex.value += 1
+    syncReviewForm()
+    return
+  }
+  if (reviewQueueItems.value.length < reviewQueueCount.value) {
+    await loadReviewQueue({ append: true })
+    if (reviewQueueIndex.value < reviewQueueItems.value.length - 1) {
+      reviewQueueIndex.value += 1
+      syncReviewForm()
+    }
+    return
+  }
+  uni.showToast({ title: '已经是最后一题', icon: 'none' })
+}
+
 function previewQuestionStem(stem) {
   const text = String(stem || '未填写题干').replace(/\s+/g, ' ').trim()
   if (text.length <= 58) return text
@@ -705,6 +1142,12 @@ function questionStatusTone(status) {
   if (status === 'pending' || status === 'pending_review') return 'pending'
   if (status === 'needs_review' || status === 'rejected') return 'warning'
   return 'published'
+}
+
+function reviewStatusTone(status) {
+  if (status === 'approved') return 'published'
+  if (status === 'needs_changes' || status === 'rejected') return 'warning'
+  return 'pending'
 }
 
 function isQuestionSelected(id) {
@@ -980,6 +1423,16 @@ function questionStatusText(status) {
   return map[status] || '待审核'
 }
 
+function reviewStatusText(status) {
+  const map = {
+    pending: '待审核',
+    needs_changes: '需修改',
+    approved: '已审核',
+    rejected: '已拒绝'
+  }
+  return map[status] || '待审核'
+}
+
 async function openFeedback(item) {
   let latest = item
   try {
@@ -1133,7 +1586,11 @@ function goBack() {
 .question-action-btn::after,
 .question-check::after,
 .question-edit-btn::after,
-.question-bulk-btn::after {
+.question-bulk-btn::after,
+.review-close-btn::after,
+.review-mini-btn::after,
+.review-difficulty-btn::after,
+.review-footer-btn::after {
   border: 0;
 }
 
@@ -1917,6 +2374,386 @@ function goBack() {
 .question-bulk-icon {
   font-size: 28rpx;
   line-height: 1;
+}
+
+.review-overlay {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 90;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.16);
+  backdrop-filter: blur(10rpx);
+}
+
+.review-sheet {
+  display: flex;
+  flex-direction: column;
+  width: 100%;
+  max-height: calc(100vh - 128rpx);
+  border-radius: 28rpx 28rpx 0 0;
+  background: rgba(255, 255, 255, 0.98);
+  border: 1rpx solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 -16rpx 54rpx rgba(15, 23, 42, 0.16);
+  overflow: hidden;
+  box-sizing: border-box;
+}
+
+.review-sheet-head {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto auto;
+  align-items: center;
+  gap: 14rpx;
+  padding: 28rpx 28rpx 20rpx;
+  box-sizing: border-box;
+}
+
+.review-head-copy {
+  min-width: 0;
+}
+
+.review-title {
+  color: #101828;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.15;
+}
+
+.review-subtitle {
+  margin-top: 8rpx;
+  color: #475467;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.review-progress {
+  padding: 12rpx 20rpx;
+  border-radius: 14rpx;
+  color: #1769ff;
+  background: #eff6ff;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.review-status-pill {
+  padding: 12rpx 18rpx;
+  border-radius: 14rpx;
+  color: #f97316;
+  background: #fff7ed;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.review-status-pill.published {
+  color: #1769ff;
+  background: #eff6ff;
+}
+
+.review-status-pill.warning {
+  color: #ea580c;
+  background: #ffedd5;
+}
+
+.review-close-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 18rpx;
+  border: 0;
+  color: #344054;
+  background: #f8fafc;
+  font-size: 48rpx;
+  line-height: 1;
+}
+
+.review-empty {
+  padding: 80rpx 28rpx 100rpx;
+  color: #667085;
+  text-align: center;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.review-body {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+  min-height: 0;
+  padding: 8rpx 28rpx 24rpx;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.review-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.review-section-head.compact {
+  align-items: baseline;
+  justify-content: flex-start;
+  margin-top: 4rpx;
+}
+
+.review-section-title {
+  color: #101828;
+  font-size: 29rpx;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.review-section-subtitle {
+  color: #667085;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1.2;
+}
+
+.review-edit-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 0 0 auto;
+}
+
+.review-mini-btn {
+  min-width: 112rpx;
+  height: 54rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #1769ff;
+  color: #1769ff;
+  background: #ffffff;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.review-mini-btn.muted {
+  color: #667085;
+  border-color: #d0d5dd;
+}
+
+.review-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.review-input,
+.review-option-input {
+  min-width: 0;
+  height: 64rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #d5deeb;
+  background: #ffffff;
+  color: #101828;
+  font-size: 25rpx;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.review-difficulty-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 8rpx;
+}
+
+.review-difficulty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 14rpx;
+  border: 1rpx solid #d5deeb;
+  color: #475467;
+  background: #ffffff;
+  font-size: 23rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.review-difficulty-btn.active {
+  color: #1769ff;
+  border-color: #1769ff;
+  background: #eff6ff;
+}
+
+.review-question-box,
+.review-explanation-box {
+  padding: 22rpx;
+  border-radius: 18rpx;
+  border: 1rpx solid #dbe6f5;
+  background: #f8fbff;
+  box-sizing: border-box;
+}
+
+.review-stem {
+  color: #101828;
+  font-size: 29rpx;
+  font-weight: 800;
+  line-height: 1.55;
+  word-break: break-word;
+}
+
+.review-chips {
+  margin-top: 22rpx;
+}
+
+.review-textarea {
+  width: 100%;
+  min-height: 150rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
+  border: 1rpx solid #d5deeb;
+  background: #ffffff;
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.55;
+  box-sizing: border-box;
+}
+
+.review-textarea.stem {
+  min-height: 170rpx;
+}
+
+.review-textarea.explanation {
+  min-height: 190rpx;
+}
+
+.review-textarea.note {
+  min-height: 120rpx;
+  background: #fffaf5;
+  border-color: #fed7aa;
+}
+
+.review-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.review-option-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  min-height: 70rpx;
+  padding: 0 18rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #dbe6f5;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.review-option-row.selected {
+  border-color: #1769ff;
+  background: #f8fbff;
+  box-shadow: inset 0 0 0 1rpx rgba(23, 105, 255, 0.18);
+}
+
+.review-radio {
+  flex: 0 0 auto;
+  width: 32rpx;
+  color: #1769ff;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.review-option-text {
+  min-width: 0;
+  color: #101828;
+  font-size: 27rpx;
+  font-weight: 700;
+  line-height: 1.45;
+  word-break: break-word;
+}
+
+.review-option-input {
+  flex: 1;
+  border: 0;
+  background: transparent;
+}
+
+.review-explanation-box {
+  color: #101828;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1.65;
+  word-break: break-word;
+}
+
+.review-footer {
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-columns: 0.9fr 0.9fr 1fr 1fr;
+  gap: 12rpx;
+  padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 20rpx);
+  border-top: 1rpx solid #edf2f7;
+  background: rgba(255, 255, 255, 0.98);
+  box-sizing: border-box;
+}
+
+.review-footer-btn {
+  min-width: 0;
+  height: 68rpx;
+  margin: 0;
+  padding: 0 10rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #d0d5dd;
+  color: #667085;
+  background: #ffffff;
+  font-size: 25rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.review-footer-btn.outline {
+  color: #1769ff;
+  border-color: #1769ff;
+}
+
+.review-footer-btn.primary {
+  color: #ffffff;
+  border-color: #0891b2;
+  background: linear-gradient(135deg, #0ea5b7 0%, #0891b2 100%);
+}
+
+.review-footer-btn.blue {
+  color: #ffffff;
+  border-color: #1769ff;
+  background: #1769ff;
+}
+
+.review-footer-btn.muted {
+  color: #94a3b8;
+  border-color: #dbe6f5;
+  background: #ffffff;
+}
+
+.review-footer-btn[disabled] {
+  opacity: 0.45;
 }
 
 .message-editor {

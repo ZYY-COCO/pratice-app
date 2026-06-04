@@ -66,11 +66,33 @@ class AdminQuestionStatusRequest(BaseModel):
     status: str = Field(pattern="^(active|archived)$")
 
 
+class AdminQuestionUpdateRequest(BaseModel):
+    exam_code: str | None = Field(default=None, pattern="^(Z001|Z002|COMMON)$")
+    subject: str | None = Field(default=None, min_length=1, max_length=40)
+    module: str | None = Field(default=None, min_length=1, max_length=80)
+    submodule: str | None = Field(default=None, min_length=1, max_length=80)
+    stem: str | None = Field(default=None, min_length=1, max_length=5000)
+    option_a: str | None = Field(default=None, min_length=1, max_length=1000)
+    option_b: str | None = Field(default=None, min_length=1, max_length=1000)
+    option_c: str | None = Field(default=None, min_length=1, max_length=1000)
+    option_d: str | None = Field(default=None, min_length=1, max_length=1000)
+    answer: str | None = Field(default=None, pattern="^[ABCD]$")
+    explanation: str | None = Field(default=None, max_length=8000)
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+
+
+class AdminQuestionReviewRequest(BaseModel):
+    review_status: str = Field(pattern="^(pending|needs_changes|approved|rejected)$")
+    review_note: str | None = Field(default=None, max_length=1000)
+    publish: bool = False
+
+
 class AdminQuestionBulkFilters(BaseModel):
     exam_code: str | None = Field(default=None, max_length=20)
     subject: str | None = Field(default=None, max_length=40)
     module: str | None = Field(default=None, max_length=80)
     status: str | None = Field(default=None, max_length=20)
+    review_status: str | None = Field(default=None, max_length=20)
     search: str | None = Field(default=None, max_length=80)
     difficulty: int | None = Field(default=None, ge=1, le=5)
 

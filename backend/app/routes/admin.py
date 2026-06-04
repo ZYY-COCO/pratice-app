@@ -15,7 +15,9 @@ from app.schemas.admin import (
     AdminQuestionBulkStatusResponse,
     AdminQuestionDetailResponse,
     AdminQuestionListResponse,
+    AdminQuestionReviewRequest,
     AdminQuestionStatusRequest,
+    AdminQuestionUpdateRequest,
     AdminUserDetailResponse,
     AdminUserItem,
     AdminUserListResponse,
@@ -55,6 +57,7 @@ def _apply_admin_question_filters(
     subject: str | None = None,
     module: str | None = None,
     question_status: str | None = None,
+    review_status: str | None = None,
     search: str | None = None,
     difficulty: int | None = None,
 ):
@@ -66,6 +69,8 @@ def _apply_admin_question_filters(
         query = query.eq("module", module)
     if question_status:
         query = query.eq("status", question_status)
+    if review_status:
+        query = query.eq("review_status", review_status)
     if difficulty is not None:
         query = query.eq("difficulty", difficulty)
     if search:
@@ -150,6 +155,31 @@ def _get_question_or_404(supabase, question_id: str) -> dict:
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
     return response.data[0]
+
+
+def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
+    data = payload.model_dump(exclude_unset=True)
+    text_fields = {
+        "exam_code",
+        "subject",
+        "module",
+        "submodule",
+        "stem",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "answer",
+        "explanation",
+    }
+    required_text_fields = text_fields - {"explanation"}
+    for field in text_fields:
+        if field in data and isinstance(data[field], str):
+            data[field] = data[field].strip()
+    for field in required_text_fields:
+        if field in data and not data[field]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} cannot be empty")
+    return data
 
 
 def _log_admin_action(supabase, admin_profile: dict, action: str, target_type: str, target_id: str | None, details: dict | None = None) -> None:
@@ -433,6 +463,7 @@ def admin_questions(
     subject: str | None = Query(default=None, max_length=40),
     module: str | None = Query(default=None, max_length=80),
     question_status: str | None = Query(default=None, alias="status", max_length=20),
+    review_status: str | None = Query(default=None, max_length=20),
     search: str | None = Query(default=None, max_length=80),
     difficulty: str | None = Query(default=None, max_length=8),
     limit: int = Query(default=20, ge=1, le=100),
@@ -447,6 +478,7 @@ def admin_questions(
         subject=subject,
         module=module,
         question_status=question_status,
+        review_status=review_status,
         search=search,
         difficulty=_parse_question_difficulty(difficulty),
     )
@@ -474,6 +506,7 @@ def admin_bulk_update_question_status(
                 subject=filters.subject,
                 module=filters.module,
                 question_status=filters.status,
+                review_status=filters.review_status,
                 search=filters.search,
                 difficulty=filters.difficulty,
             )
@@ -520,6 +553,31 @@ def admin_question_detail(question_id: str, _: dict = Depends(require_admin_user
     return AdminQuestionDetailResponse(question=_get_question_or_404(supabase, question_id))
 
 
+@router.patch("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
+def admin_update_question(
+    question_id: str,
+    payload: AdminQuestionUpdateRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionDetailResponse:
+    supabase = get_supabase_admin()
+    _get_question_or_404(supabase, question_id)
+    update_data = _build_question_update_data(payload)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No question fields to update")
+    response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question update failed")
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="update_question",
+        target_type="question",
+        target_id=question_id,
+        details={"fields": sorted(update_data.keys())},
+    )
+    return AdminQuestionDetailResponse(question=response.data[0])
+
+
 @router.patch("/questions/{question_id}/status", response_model=AdminQuestionDetailResponse)
 def admin_update_question_status(
     question_id: str,
@@ -544,5 +602,54 @@ def admin_update_question_status(
         target_type="question",
         target_id=question_id,
         details={"status": payload.status},
+    )
+    return AdminQuestionDetailResponse(question=response.data[0])
+
+
+@router.patch("/questions/{question_id}/review", response_model=AdminQuestionDetailResponse)
+def admin_update_question_review(
+    question_id: str,
+    payload: AdminQuestionReviewRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionDetailResponse:
+    supabase = get_supabase_admin()
+    _get_question_or_404(supabase, question_id)
+    current = _now()
+    review_status = payload.review_status
+    if payload.publish and review_status != "approved":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Only approved questions can be published")
+    review_note = payload.review_note.strip() if payload.review_note else None
+    update_data = {
+        "review_status": review_status,
+        "review_note": review_note,
+        "review_updated_at": _to_iso(current),
+    }
+    if review_status == "pending":
+        update_data.update({"reviewed_at": None, "reviewed_by": None})
+    else:
+        update_data.update({"reviewed_at": _to_iso(current), "reviewed_by": admin_profile.get("id")})
+    if review_status == "approved":
+        update_data.update({"status": "active", "archived_at": None, "archived_by": None})
+    elif review_status in {"needs_changes", "rejected"}:
+        update_data.update({
+            "status": "archived",
+            "archived_at": _to_iso(current),
+            "archived_by": admin_profile.get("id"),
+        })
+
+    response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question review update failed")
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="update_question_review",
+        target_type="question",
+        target_id=question_id,
+        details={
+            "review_status": review_status,
+            "publish": payload.publish,
+            "has_review_note": bool(review_note),
+        },
     )
     return AdminQuestionDetailResponse(question=response.data[0])
