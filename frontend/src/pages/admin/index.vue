@@ -335,7 +335,7 @@
             </view>
           </view>
 
-          <view class="review-question-box">
+          <view class="review-question-box" :class="{ editing: reviewEditing }">
             <textarea
               v-if="reviewEditing"
               v-model.trim="reviewForm.stem"
@@ -357,21 +357,25 @@
           <view class="review-option-list">
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'A' }" @tap="setReviewAnswer('A')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'A' ? '●' : '○' }}</text>
+              <text v-if="reviewEditing" class="review-option-label">A.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_a" class="review-option-input" placeholder="A 选项" />
               <text v-else class="review-option-text">A. {{ activeReviewQuestion.option_a }}</text>
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'B' }" @tap="setReviewAnswer('B')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'B' ? '●' : '○' }}</text>
+              <text v-if="reviewEditing" class="review-option-label">B.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_b" class="review-option-input" placeholder="B 选项" />
               <text v-else class="review-option-text">B. {{ activeReviewQuestion.option_b }}</text>
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'C' }" @tap="setReviewAnswer('C')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'C' ? '●' : '○' }}</text>
+              <text v-if="reviewEditing" class="review-option-label">C.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_c" class="review-option-input" placeholder="C 选项" />
               <text v-else class="review-option-text">C. {{ activeReviewQuestion.option_c }}</text>
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'D' }" @tap="setReviewAnswer('D')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'D' ? '●' : '○' }}</text>
+              <text v-if="reviewEditing" class="review-option-label">D.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_d" class="review-option-input" placeholder="D 选项" />
               <text v-else class="review-option-text">D. {{ activeReviewQuestion.option_d }}</text>
             </view>
@@ -2432,6 +2436,10 @@ function goBack() {
 }
 
 .review-progress {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54rpx;
   padding: 12rpx 20rpx;
   border-radius: 14rpx;
   color: #1769ff;
@@ -2443,6 +2451,10 @@ function goBack() {
 }
 
 .review-status-pill {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 54rpx;
   padding: 12rpx 18rpx;
   border-radius: 14rpx;
   color: #f97316;
@@ -2533,6 +2545,9 @@ function goBack() {
 }
 
 .review-mini-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 112rpx;
   height: 54rpx;
   margin: 0;
@@ -2544,6 +2559,8 @@ function goBack() {
   font-size: 23rpx;
   font-weight: 900;
   line-height: 1;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .review-mini-btn.muted {
@@ -2568,6 +2585,7 @@ function goBack() {
   color: #101828;
   font-size: 25rpx;
   font-weight: 700;
+  line-height: 64rpx;
   box-sizing: border-box;
 }
 
@@ -2608,6 +2626,10 @@ function goBack() {
   box-sizing: border-box;
 }
 
+.review-question-box.editing {
+  padding: 16rpx;
+}
+
 .review-stem {
   color: #101828;
   font-size: 29rpx;
@@ -2630,11 +2652,18 @@ function goBack() {
   color: #101828;
   font-size: 25rpx;
   line-height: 1.55;
+  letter-spacing: 0;
   box-sizing: border-box;
 }
 
 .review-textarea.stem {
-  min-height: 170rpx;
+  min-height: 220rpx;
+  padding: 22rpx 22rpx;
+  font-size: 24rpx;
+  line-height: 1.62;
+  word-break: normal;
+  overflow-wrap: break-word;
+  white-space: pre-wrap;
 }
 
 .review-textarea.explanation {
@@ -2681,6 +2710,15 @@ function goBack() {
   text-align: center;
 }
 
+.review-option-label {
+  flex: 0 0 auto;
+  width: 42rpx;
+  color: #101828;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
 .review-option-text {
   min-width: 0;
   color: #101828;
@@ -2692,8 +2730,11 @@ function goBack() {
 
 .review-option-input {
   flex: 1;
+  height: 68rpx;
+  padding: 0;
   border: 0;
   background: transparent;
+  line-height: 68rpx;
 }
 
 .review-explanation-box {
@@ -2716,6 +2757,9 @@ function goBack() {
 }
 
 .review-footer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   min-width: 0;
   height: 68rpx;
   margin: 0;
@@ -2727,6 +2771,8 @@ function goBack() {
   font-size: 25rpx;
   font-weight: 900;
   line-height: 1;
+  text-align: center;
+  box-sizing: border-box;
 }
 
 .review-footer-btn.outline {
