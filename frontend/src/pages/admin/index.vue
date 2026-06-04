@@ -467,6 +467,7 @@ const questionsLoading = ref(false)
 const questionListCount = ref(0)
 const selectedQuestionIds = ref([])
 const allMatchingQuestionsSelected = ref(false)
+const bulkSelectionStatus = ref('')
 const questionStats = reactive({
   active: 0,
   archived: 0,
@@ -659,15 +660,36 @@ const allVisibleQuestionsSelected = computed(() => (
   allMatchingQuestionsSelected.value ||
   (questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id)))
 ))
-const isPublishedQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_ACTIVE)
+const selectedQuestionItems = computed(() => (
+  allMatchingQuestionsSelected.value
+    ? []
+    : questions.value.filter((item) => selectedQuestionIdSet.value.has(item.id))
+))
+const selectedQuestionBulkStatuses = computed(() => (
+  selectedQuestionItems.value
+    .map((item) => getQuestionBulkSelectionStatus(questionDisplayStatus(item)))
+    .filter(Boolean)
+))
+const selectedBulkSelectionStatus = computed(() => {
+  const statuses = selectedQuestionBulkStatuses.value
+  if (statuses.length === 0) return ''
+  const firstStatus = statuses[0]
+  return statuses.every((status) => status === firstStatus) ? firstStatus : ''
+})
 const isArchivedQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_ARCHIVED)
 const isPendingReviewQuestionFilter = computed(() => questionFilters.status === QUESTION_STATUS_PENDING_REVIEW)
 const canShowReviewQueueEntry = computed(() => (
   isArchivedQuestionFilter.value || isPendingReviewQuestionFilter.value
 ))
-const canBulkArchiveQuestions = computed(() => isPublishedQuestionFilter.value)
+const currentBulkSelectionStatus = computed(() => (
+  allMatchingQuestionsSelected.value
+    ? bulkSelectionStatus.value || getQuestionBulkSelectionStatus(questionFilters.status)
+    : selectedBulkSelectionStatus.value
+))
+const canBulkArchiveQuestions = computed(() => currentBulkSelectionStatus.value === QUESTION_STATUS_ACTIVE)
 const canBulkPublishQuestions = computed(() => (
-  isArchivedQuestionFilter.value || isPendingReviewQuestionFilter.value
+  currentBulkSelectionStatus.value === QUESTION_STATUS_ARCHIVED ||
+  currentBulkSelectionStatus.value === QUESTION_STATUS_PENDING_REVIEW
 ))
 const questionBulkBarMode = computed(() => (
   canBulkArchiveQuestions.value || canBulkPublishQuestions.value ? 'with-status-action' : 'selection-only'
@@ -814,17 +836,28 @@ function buildQuestionListParams() {
   if (questionFilters.subject) params.subject = questionFilters.subject
   if (questionFilters.module) params.module = questionFilters.module
   if (questionFilters.difficulty) params.difficulty = questionFilters.difficulty
-  if (questionFilters.status === QUESTION_STATUS_PENDING_REVIEW) {
-    params.status = QUESTION_STATUS_ARCHIVED
-    params.review_status = 'pending'
-  } else if (questionFilters.status === QUESTION_STATUS_ARCHIVED) {
-    params.status = QUESTION_STATUS_ARCHIVED
-    params.exclude_review_status = 'pending'
-  } else if (questionFilters.status) {
-    params.status = questionFilters.status
-  }
+  applyQuestionStatusParams(params, questionFilters.status)
   if (questionFilters.search) params.search = questionFilters.search
   return params
+}
+
+function applyQuestionStatusParams(params, status) {
+  delete params.status
+  delete params.review_status
+  delete params.exclude_review_status
+  if (status === QUESTION_STATUS_PENDING_REVIEW) {
+    params.status = QUESTION_STATUS_ARCHIVED
+    params.review_status = 'pending'
+    return
+  }
+  if (status === QUESTION_STATUS_ARCHIVED) {
+    params.status = QUESTION_STATUS_ARCHIVED
+    params.exclude_review_status = 'pending'
+    return
+  }
+  if (status === QUESTION_STATUS_ACTIVE) {
+    params.status = QUESTION_STATUS_ACTIVE
+  }
 }
 
 async function loadQuestionStats() {
@@ -890,6 +923,7 @@ function applyQuestionFilters() {
 function clearQuestionSelection() {
   allMatchingQuestionsSelected.value = false
   selectedQuestionIds.value = []
+  bulkSelectionStatus.value = ''
 }
 
 function showComingSoon(label) {
@@ -1198,6 +1232,17 @@ function questionDisplayStatus(question) {
   return question?.status
 }
 
+function getQuestionBulkSelectionStatus(status) {
+  if (
+    status === QUESTION_STATUS_ACTIVE ||
+    status === QUESTION_STATUS_ARCHIVED ||
+    status === QUESTION_STATUS_PENDING_REVIEW
+  ) {
+    return status
+  }
+  return ''
+}
+
 function reviewStatusTone(status) {
   if (status === 'approved') return 'published'
   if (status === 'needs_changes' || status === 'rejected') return 'warning'
@@ -1212,6 +1257,7 @@ function toggleQuestionSelection(id) {
   if (!id) return
   if (allMatchingQuestionsSelected.value) {
     allMatchingQuestionsSelected.value = false
+    bulkSelectionStatus.value = ''
     selectedQuestionIds.value = questions.value
       .map((item) => item.id)
       .filter((itemId) => itemId && itemId !== id)
@@ -1233,9 +1279,23 @@ function toggleSelectAllQuestions() {
     uni.showToast({ title: '当前没有可选题目', icon: 'none' })
     return
   }
+  const nextBulkSelectionStatus = currentBulkSelectionStatus.value ||
+    getQuestionBulkSelectionStatus(questionFilters.status)
+  if (!nextBulkSelectionStatus) {
+    uni.showToast({ title: '请先筛选状态或勾选同一状态题目', icon: 'none' })
+    return
+  }
+  const shouldApplyDerivedStatusFilter = !questionFilters.status && nextBulkSelectionStatus
+  if (shouldApplyDerivedStatusFilter) {
+    questionFilters.status = nextBulkSelectionStatus
+  }
+  bulkSelectionStatus.value = nextBulkSelectionStatus
   allMatchingQuestionsSelected.value = true
   selectedQuestionIds.value = []
-  uni.showToast({ title: `已全选 ${questionListCount.value} 道题`, icon: 'none' })
+  uni.showToast({ title: '已全选当前状态题目', icon: 'none' })
+  if (shouldApplyDerivedStatusFilter) {
+    loadQuestions()
+  }
 }
 
 function archiveSelectedQuestions() {
@@ -1262,7 +1322,8 @@ function updateSelectedQuestionStatus(nextStatus) {
     return
   }
   const isArchive = nextStatus === 'archived'
-  const isReviewPublish = nextStatus === 'active' && isPendingReviewQuestionFilter.value
+  const isReviewPublish = nextStatus === 'active' &&
+    currentBulkSelectionStatus.value === QUESTION_STATUS_PENDING_REVIEW
   const scopeText = allMatchingQuestionsSelected.value ? questionFilterScopeText() : '手动选择'
   uni.showModal({
     title: isArchive ? '确认下架所选题目？' : (isReviewPublish ? '确认审核通过并发布？' : '确认发布所选题目？'),
@@ -1295,6 +1356,12 @@ function updateSelectedQuestionStatus(nextStatus) {
 
 function buildQuestionFilterPayload() {
   const params = buildQuestionListParams()
+  if (allMatchingQuestionsSelected.value) {
+    applyQuestionStatusParams(
+      params,
+      bulkSelectionStatus.value || getQuestionBulkSelectionStatus(questionFilters.status)
+    )
+  }
   if (params.difficulty) {
     params.difficulty = Number(params.difficulty)
   }
@@ -1306,7 +1373,8 @@ function questionFilterScopeText() {
   if (questionFilters.subject) labels.push(questionFilters.subject)
   if (questionFilters.module) labels.push(questionFilters.module)
   if (questionFilters.difficulty) labels.push(`难度 ${questionFilters.difficulty}`)
-  if (questionFilters.status) labels.push(questionStatusText(questionFilters.status))
+  const statusScope = bulkSelectionStatus.value || questionFilters.status
+  if (statusScope) labels.push(questionStatusText(statusScope))
   if (questionFilters.search) labels.push(`包含“${questionFilters.search}”`)
   if (labels.length === 0) return '全部题库'
   return `当前筛选（${labels.join(' / ')}）`
