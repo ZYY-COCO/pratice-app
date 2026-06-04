@@ -10,6 +10,9 @@ from app.schemas.admin import (
     AdminGrantMembershipRequest,
     AdminMeResponse,
     AdminOverviewResponse,
+    AdminQuestionBulkFilters,
+    AdminQuestionBulkStatusRequest,
+    AdminQuestionBulkStatusResponse,
     AdminQuestionDetailResponse,
     AdminQuestionListResponse,
     AdminQuestionStatusRequest,
@@ -19,6 +22,9 @@ from app.schemas.admin import (
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+
+QUESTION_BULK_SELECT_PAGE_SIZE = 500
+QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
 
 
 def _now() -> datetime:
@@ -40,6 +46,33 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _apply_admin_question_filters(
+    query,
+    *,
+    exam_code: str | None = None,
+    subject: str | None = None,
+    module: str | None = None,
+    question_status: str | None = None,
+    search: str | None = None,
+    difficulty: int | None = None,
+):
+    if exam_code:
+        query = query.eq("exam_code", exam_code)
+    if subject:
+        query = query.eq("subject", subject)
+    if module:
+        query = query.eq("module", module)
+    if question_status:
+        query = query.eq("status", question_status)
+    if difficulty is not None:
+        query = query.eq("difficulty", difficulty)
+    if search:
+        term = search.strip()
+        if term:
+            query = query.ilike("stem", f"%{term}%")
+    return query
 
 
 def _count_query(query) -> int:
@@ -389,26 +422,84 @@ def admin_questions(
     module: str | None = Query(default=None, max_length=80),
     question_status: str | None = Query(default=None, alias="status", max_length=20),
     search: str | None = Query(default=None, max_length=80),
+    difficulty: int | None = Query(default=None, ge=1, le=5),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_admin_user),
 ) -> AdminQuestionListResponse:
     supabase = get_supabase_admin()
     query = supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
-    if exam_code:
-        query = query.eq("exam_code", exam_code)
-    if subject:
-        query = query.eq("subject", subject)
-    if module:
-        query = query.eq("module", module)
-    if question_status:
-        query = query.eq("status", question_status)
-    if search:
-        term = search.strip()
-        if term:
-            query = query.ilike("stem", f"%{term}%")
+    query = _apply_admin_question_filters(
+        query,
+        exam_code=exam_code,
+        subject=subject,
+        module=module,
+        question_status=question_status,
+        search=search,
+        difficulty=difficulty,
+    )
     response = query.range(offset, offset + limit - 1).execute()
     return AdminQuestionListResponse(items=response.data or [], count=int(response.count or 0))
+
+
+@router.patch("/questions/bulk-status", response_model=AdminQuestionBulkStatusResponse)
+def admin_bulk_update_question_status(
+    payload: AdminQuestionBulkStatusRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionBulkStatusResponse:
+    supabase = get_supabase_admin()
+    current = _now()
+    filters = payload.filters or AdminQuestionBulkFilters()
+    question_ids = list(dict.fromkeys([question_id for question_id in payload.ids if question_id]))
+
+    if not question_ids:
+        offset = 0
+        while True:
+            query = supabase.table("questions").select("id").order("created_at", desc=True)
+            query = _apply_admin_question_filters(
+                query,
+                exam_code=filters.exam_code,
+                subject=filters.subject,
+                module=filters.module,
+                question_status=filters.status,
+                search=filters.search,
+                difficulty=filters.difficulty,
+            )
+            response = query.range(offset, offset + QUESTION_BULK_SELECT_PAGE_SIZE - 1).execute()
+            rows = response.data or []
+            question_ids.extend(str(row.get("id")) for row in rows if row.get("id"))
+            if len(rows) < QUESTION_BULK_SELECT_PAGE_SIZE:
+                break
+            offset += QUESTION_BULK_SELECT_PAGE_SIZE
+
+    if not question_ids:
+        return AdminQuestionBulkStatusResponse(updated_count=0)
+
+    update_data = {
+        "status": payload.status,
+        "archived_at": _to_iso(current) if payload.status == "archived" else None,
+        "archived_by": admin_profile.get("id") if payload.status == "archived" else None,
+    }
+    updated_count = 0
+    for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
+        batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
+        response = supabase.table("questions").update(update_data).in_("id", batch_ids).execute()
+        updated_count += len(response.data or batch_ids)
+
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="bulk_update_question_status",
+        target_type="question",
+        target_id="bulk",
+        details={
+            "status": payload.status,
+            "updated_count": updated_count,
+            "selected_count": len(question_ids),
+            "filters": filters.model_dump(exclude_none=True),
+        },
+    )
+    return AdminQuestionBulkStatusResponse(updated_count=updated_count)
 
 
 @router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)

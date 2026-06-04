@@ -134,7 +134,8 @@
             class="question-search-input"
             placeholder="搜索题干 / ID"
             confirm-type="search"
-            @confirm="loadQuestions"
+            @input="handleQuestionSearchInput"
+            @confirm="applyQuestionFilters"
           />
         </view>
 
@@ -214,7 +215,7 @@
 
         <view class="question-bulk-bar">
           <view class="question-selected-label">
-            已选 <text class="question-selected-count">{{ selectedQuestionIds.length }}</text> 题
+            已选 <text class="question-selected-count">{{ selectedQuestionCount }}</text> 题
           </view>
           <button class="question-bulk-btn" @tap="toggleSelectAllQuestions">
             <text class="question-bulk-icon">☑</text>
@@ -298,6 +299,7 @@ import {
   fetchAdminUserDetail,
   fetchAdminUsers,
   grantAdminMembership,
+  bulkUpdateAdminQuestionStatus,
   updateAdminMessage,
   updateAdminFeedbackStatus,
   updateAdminQuestionStatus
@@ -322,6 +324,7 @@ const questions = ref([])
 const questionsLoading = ref(false)
 const questionListCount = ref(0)
 const selectedQuestionIds = ref([])
+const allMatchingQuestionsSelected = ref(false)
 const questionStats = reactive({
   active: 0,
   archived: 0,
@@ -475,8 +478,12 @@ const selectedQuestionDifficultyLabel = computed(() => questionDifficultyOptions
 const selectedQuestionStatusLabel = computed(() => questionStatusOptions[selectedQuestionStatusIndex.value]?.label || '状态')
 
 const selectedQuestionIdSet = computed(() => new Set(selectedQuestionIds.value))
+const selectedQuestionCount = computed(() => (
+  allMatchingQuestionsSelected.value ? questionListCount.value : selectedQuestionIds.value.length
+))
 const allVisibleQuestionsSelected = computed(() => (
-  questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id))
+  allMatchingQuestionsSelected.value ||
+  (questions.value.length > 0 && questions.value.every((item) => selectedQuestionIdSet.value.has(item.id)))
 ))
 
 const visibleUsers = computed(() => {
@@ -597,19 +604,19 @@ async function loadQuestions() {
       exam_code: questionFilters.exam_code || undefined,
       subject: questionFilters.subject || undefined,
       module: questionFilters.module || undefined,
+      difficulty: questionFilters.difficulty || undefined,
       status: questionFilters.status || undefined,
       search: questionFilters.search || undefined,
       limit: 50,
       offset: 0
     })
     const rawItems = response.items || []
-    const filteredItems = questionFilters.difficulty
-      ? rawItems.filter((item) => String(item.difficulty || '') === String(questionFilters.difficulty))
-      : rawItems
-    questions.value = filteredItems
+    questions.value = rawItems
     questionListCount.value = Number(response.count || rawItems.length || 0)
-    const visibleIds = new Set(filteredItems.map((item) => item.id))
-    selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => visibleIds.has(id))
+    if (!allMatchingQuestionsSelected.value) {
+      const visibleIds = new Set(rawItems.map((item) => item.id))
+      selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => visibleIds.has(id))
+    }
   } catch (error) {
     uni.showToast({ title: '题库加载失败', icon: 'none' })
   } finally {
@@ -642,25 +649,39 @@ function handleQuestionSubjectChange(event) {
   const index = Number(event?.detail?.value || 0)
   questionFilters.subject = questionSubjectOptions[index]?.value || ''
   questionFilters.module = ''
-  loadQuestions()
+  applyQuestionFilters()
 }
 
 function handleQuestionModuleChange(event) {
   const index = Number(event?.detail?.value || 0)
   questionFilters.module = questionModuleOptions.value[index]?.value || ''
-  loadQuestions()
+  applyQuestionFilters()
 }
 
 function handleQuestionDifficultyChange(event) {
   const index = Number(event?.detail?.value || 0)
   questionFilters.difficulty = questionDifficultyOptions[index]?.value || ''
-  loadQuestions()
+  applyQuestionFilters()
 }
 
 function handleQuestionStatusChange(event) {
   const index = Number(event?.detail?.value || 0)
   questionFilters.status = questionStatusOptions[index]?.value || ''
+  applyQuestionFilters()
+}
+
+function handleQuestionSearchInput() {
+  clearQuestionSelection()
+}
+
+function applyQuestionFilters() {
+  clearQuestionSelection()
   loadQuestions()
+}
+
+function clearQuestionSelection() {
+  allMatchingQuestionsSelected.value = false
+  selectedQuestionIds.value = []
 }
 
 function showComingSoon(label) {
@@ -681,11 +702,18 @@ function questionStatusTone(status) {
 }
 
 function isQuestionSelected(id) {
-  return selectedQuestionIdSet.value.has(id)
+  return allMatchingQuestionsSelected.value || selectedQuestionIdSet.value.has(id)
 }
 
 function toggleQuestionSelection(id) {
   if (!id) return
+  if (allMatchingQuestionsSelected.value) {
+    allMatchingQuestionsSelected.value = false
+    selectedQuestionIds.value = questions.value
+      .map((item) => item.id)
+      .filter((itemId) => itemId && itemId !== id)
+    return
+  }
   if (selectedQuestionIdSet.value.has(id)) {
     selectedQuestionIds.value = selectedQuestionIds.value.filter((item) => item !== id)
     return
@@ -694,18 +722,17 @@ function toggleQuestionSelection(id) {
 }
 
 function toggleSelectAllQuestions() {
-  if (questions.value.length === 0) {
+  if (allMatchingQuestionsSelected.value || allVisibleQuestionsSelected.value) {
+    clearQuestionSelection()
+    return
+  }
+  if (questionListCount.value === 0) {
     uni.showToast({ title: '当前没有可选题目', icon: 'none' })
     return
   }
-  if (allVisibleQuestionsSelected.value) {
-    const visibleIds = new Set(questions.value.map((item) => item.id))
-    selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => !visibleIds.has(id))
-    return
-  }
-  const mergedIds = new Set(selectedQuestionIds.value)
-  questions.value.forEach((item) => mergedIds.add(item.id))
-  selectedQuestionIds.value = Array.from(mergedIds)
+  allMatchingQuestionsSelected.value = true
+  selectedQuestionIds.value = []
+  uni.showToast({ title: `已全选 ${questionListCount.value} 道题`, icon: 'none' })
 }
 
 function archiveSelectedQuestions() {
@@ -718,30 +745,60 @@ function publishSelectedQuestions() {
 
 function updateSelectedQuestionStatus(nextStatus) {
   const ids = [...selectedQuestionIds.value]
-  if (ids.length === 0) {
+  const totalSelected = selectedQuestionCount.value
+  if (totalSelected === 0) {
     uni.showToast({ title: '请先选择题目', icon: 'none' })
     return
   }
   const isArchive = nextStatus === 'archived'
+  const scopeText = allMatchingQuestionsSelected.value ? questionFilterScopeText() : '手动选择'
   uni.showModal({
     title: isArchive ? '确认归档所选题目？' : '确认发布所选题目？',
     content: isArchive
-      ? `将归档 ${ids.length} 道题，归档后不会进入普通刷题抽题。`
-      : `将发布 ${ids.length} 道题，发布后会进入可刷题范围。`,
+      ? `将归档${scopeText}的 ${totalSelected} 道题，归档后不会进入普通刷题抽题。`
+      : `将发布${scopeText}的 ${totalSelected} 道题，发布后会进入可刷题范围。`,
     confirmText: isArchive ? '归档' : '发布',
     confirmColor: isArchive ? '#16a34a' : '#2563eb',
     success: async (result) => {
       if (!result.confirm) return
       try {
-        await Promise.all(ids.map((id) => updateAdminQuestionStatus(id, { status: nextStatus })))
-        selectedQuestionIds.value = []
-        uni.showToast({ title: isArchive ? '已归档' : '已发布', icon: 'success' })
+        const payload = allMatchingQuestionsSelected.value
+          ? { status: nextStatus, filters: buildQuestionFilterPayload() }
+          : { status: nextStatus, ids }
+        const response = await bulkUpdateAdminQuestionStatus(payload)
+        clearQuestionSelection()
+        uni.showToast({
+          title: `${isArchive ? '已归档' : '已发布'} ${response?.updated_count || totalSelected} 道`,
+          icon: 'success'
+        })
         await refreshQuestionManager()
       } catch (error) {
         uni.showToast({ title: '批量状态更新失败', icon: 'none' })
       }
     }
   })
+}
+
+function buildQuestionFilterPayload() {
+  return {
+    exam_code: questionFilters.exam_code || undefined,
+    subject: questionFilters.subject || undefined,
+    module: questionFilters.module || undefined,
+    difficulty: questionFilters.difficulty ? Number(questionFilters.difficulty) : undefined,
+    status: questionFilters.status || undefined,
+    search: questionFilters.search || undefined
+  }
+}
+
+function questionFilterScopeText() {
+  const labels = []
+  if (questionFilters.subject) labels.push(questionFilters.subject)
+  if (questionFilters.module) labels.push(questionFilters.module)
+  if (questionFilters.difficulty) labels.push(`难度 ${questionFilters.difficulty}`)
+  if (questionFilters.status) labels.push(questionStatusText(questionFilters.status))
+  if (questionFilters.search) labels.push(`包含“${questionFilters.search}”`)
+  if (labels.length === 0) return '全部题库'
+  return `当前筛选（${labels.join(' / ')}）`
 }
 
 async function loadMessages() {

@@ -66,6 +66,25 @@ class AdminQuestionStatusRequest(BaseModel):
     status: str = Field(pattern="^(active|archived)$")
 
 
+class AdminQuestionBulkFilters(BaseModel):
+    exam_code: str | None = Field(default=None, max_length=20)
+    subject: str | None = Field(default=None, max_length=40)
+    module: str | None = Field(default=None, max_length=80)
+    status: str | None = Field(default=None, max_length=20)
+    search: str | None = Field(default=None, max_length=80)
+    difficulty: int | None = Field(default=None, ge=1, le=5)
+
+
+class AdminQuestionBulkStatusRequest(BaseModel):
+    status: str = Field(pattern="^(active|archived)$")
+    ids: list[str] = Field(default_factory=list, max_length=20000)
+    filters: AdminQuestionBulkFilters | None = None
+
+
+class AdminQuestionBulkStatusResponse(BaseModel):
+    updated_count: int
+
+
 class AdminQuestionDetailResponse(BaseModel):
     question: dict
 

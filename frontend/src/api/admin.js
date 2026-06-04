@@ -83,6 +83,14 @@ export function updateAdminQuestionStatus(questionId, payload) {
   })
 }
 
+export function bulkUpdateAdminQuestionStatus(payload) {
+  return request({
+    url: '/admin/questions/bulk-status',
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchAdminMessages(params = {}) {
   return request({
     url: '/admin/messages',
