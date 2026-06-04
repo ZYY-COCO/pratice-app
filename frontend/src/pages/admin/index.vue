@@ -601,12 +601,7 @@ async function loadQuestions() {
   questionsLoading.value = true
   try {
     const response = await fetchAdminQuestions({
-      exam_code: questionFilters.exam_code || undefined,
-      subject: questionFilters.subject || undefined,
-      module: questionFilters.module || undefined,
-      difficulty: questionFilters.difficulty || undefined,
-      status: questionFilters.status || undefined,
-      search: questionFilters.search || undefined,
+      ...buildQuestionListParams(),
       limit: 50,
       offset: 0
     })
@@ -622,6 +617,17 @@ async function loadQuestions() {
   } finally {
     questionsLoading.value = false
   }
+}
+
+function buildQuestionListParams() {
+  const params = {}
+  if (questionFilters.exam_code) params.exam_code = questionFilters.exam_code
+  if (questionFilters.subject) params.subject = questionFilters.subject
+  if (questionFilters.module) params.module = questionFilters.module
+  if (questionFilters.difficulty) params.difficulty = questionFilters.difficulty
+  if (questionFilters.status) params.status = questionFilters.status
+  if (questionFilters.search) params.search = questionFilters.search
+  return params
 }
 
 async function loadQuestionStats() {
@@ -780,14 +786,11 @@ function updateSelectedQuestionStatus(nextStatus) {
 }
 
 function buildQuestionFilterPayload() {
-  return {
-    exam_code: questionFilters.exam_code || undefined,
-    subject: questionFilters.subject || undefined,
-    module: questionFilters.module || undefined,
-    difficulty: questionFilters.difficulty ? Number(questionFilters.difficulty) : undefined,
-    status: questionFilters.status || undefined,
-    search: questionFilters.search || undefined
+  const params = buildQuestionListParams()
+  if (params.difficulty) {
+    params.difficulty = Number(params.difficulty)
   }
+  return params
 }
 
 function questionFilterScopeText() {

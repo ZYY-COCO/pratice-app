@@ -75,6 +75,18 @@ def _apply_admin_question_filters(
     return query
 
 
+def _parse_question_difficulty(value: str | int | None) -> int | None:
+    if value in (None, ""):
+        return None
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid difficulty")
+    if parsed < 1 or parsed > 5:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Invalid difficulty")
+    return parsed
+
+
 def _count_query(query) -> int:
     response = query.limit(1).execute()
     return int(response.count or 0)
@@ -422,7 +434,7 @@ def admin_questions(
     module: str | None = Query(default=None, max_length=80),
     question_status: str | None = Query(default=None, alias="status", max_length=20),
     search: str | None = Query(default=None, max_length=80),
-    difficulty: int | None = Query(default=None, ge=1, le=5),
+    difficulty: str | None = Query(default=None, max_length=8),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_admin_user),
@@ -436,7 +448,7 @@ def admin_questions(
         module=module,
         question_status=question_status,
         search=search,
-        difficulty=difficulty,
+        difficulty=_parse_question_difficulty(difficulty),
     )
     response = query.range(offset, offset + limit - 1).execute()
     return AdminQuestionListResponse(items=response.data or [], count=int(response.count or 0))
