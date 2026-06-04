@@ -120,7 +120,15 @@
             :class="item.tone"
           >
             <view class="question-stat-head">
-              <view class="question-stat-icon">{{ item.icon }}</view>
+              <view class="question-stat-icon">
+                <image
+                  v-if="item.iconSrc"
+                  class="question-stat-image"
+                  :src="item.iconSrc"
+                  mode="aspectFit"
+                />
+                <text v-else>{{ item.icon }}</text>
+              </view>
               <view class="question-stat-label">{{ item.label }}</view>
             </view>
             <view class="question-stat-value">{{ item.value }}</view>
@@ -218,11 +226,11 @@
             已选 <text class="question-selected-count">{{ selectedQuestionCount }}</text> 题
           </view>
           <button class="question-bulk-btn" @tap="toggleSelectAllQuestions">
-            <text class="question-bulk-icon">☑</text>
+            <image class="question-bulk-image" src="/static/admin-icons/select-all.svg" mode="aspectFit" />
             <text>{{ allVisibleQuestionsSelected ? '取消' : '全选' }}</text>
           </button>
           <button v-if="canBulkArchiveQuestions" class="question-bulk-btn archive" @tap="archiveSelectedQuestions">
-            <text class="question-bulk-icon">▣</text>
+            <image class="question-bulk-image" src="/static/admin-icons/unpublish.svg" mode="aspectFit" />
             <text>下架</text>
           </button>
           <button v-if="canBulkPublishQuestions" class="question-bulk-btn publish" @tap="publishSelectedQuestions">
@@ -600,25 +608,25 @@ const secondaryOverviewCards = computed(() => [
 
 const questionStatCards = computed(() => [
   {
-    label: '总题量',
+    label: '题量',
     value: overview.value.total_questions || questionListCount.value || 0,
-    icon: '▤',
+    iconSrc: '/static/admin-icons/question-count.svg',
     tone: 'blue'
   },
   {
     label: '待审核',
     value: questionStats.pendingReview,
-    icon: '◷',
+    iconSrc: '/static/admin-icons/pending-review.svg',
     tone: 'orange'
   },
   {
-    label: '已下架',
+    label: '下架',
     value: questionStats.archived,
-    icon: '▣',
+    iconSrc: '/static/admin-icons/unpublish.svg',
     tone: 'green'
   },
   {
-    label: '已发布',
+    label: '发布',
     value: questionStats.active,
     icon: '✓',
     tone: 'blue'
@@ -2160,12 +2168,18 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: center;
-  width: 34rpx;
-  height: 34rpx;
+  width: 36rpx;
+  height: 36rpx;
   color: #2563eb;
   font-size: 28rpx;
   font-weight: 900;
   line-height: 1;
+}
+
+.question-stat-image {
+  width: 36rpx;
+  height: 36rpx;
+  display: block;
 }
 
 .question-stat-card.orange .question-stat-icon,
@@ -2532,6 +2546,13 @@ function goBack() {
 .question-bulk-icon {
   font-size: 24rpx;
   line-height: 1;
+}
+
+.question-bulk-image {
+  width: 26rpx;
+  height: 26rpx;
+  display: block;
+  flex: 0 0 26rpx;
 }
 
 .review-overlay {
