@@ -44,3 +44,8 @@ dist/build/h5
 ```
 
 如果部署平台的项目根目录设置为 `frontend`，发布目录填写 `dist/build/h5`。
+
+## App 打包
+
+- Android 内测 APK：见 [APK_PACKAGING.md](APK_PACKAGING.md)
+- iOS 比赛演示包：见 [IOS_PACKAGING.md](IOS_PACKAGING.md)

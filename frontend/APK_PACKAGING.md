@@ -4,16 +4,16 @@
 
 ## 当前后端地址
 
-本次 APK 暂时使用 Render HTTPS 后端：
+本次 App 包使用腾讯云 HTTPS 后端：
 
 ```text
-https://pratice-app.onrender.com
+https://www.gangyantong.com/api
 ```
 
 代码里有两层保障：
 
-- `frontend/.env.production` 配置 `VITE_API_BASE_URL=https://pratice-app.onrender.com`
-- `frontend/src/api/config.js` 在没有读到环境变量时，也会兜底到 Render HTTPS
+- H5 生产环境可以继续使用 `VITE_API_BASE_URL=/api`，由 Nginx 反代到后端。
+- App 原生端会在 `frontend/src/api/config.js` 中强制使用 `https://www.gangyantong.com/api`，避免 `/api` 代理在原生包中失效。
 
 ## 打包前确认
 
