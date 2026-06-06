@@ -1,5 +1,5 @@
 <template>
-  <view class="page favorites-page">
+  <view class="page favorites-page" :style="themeInlineStyle">
     <view class="topbar">
       <view class="back-btn" @tap="goBack">‹</view>
       <view>
@@ -111,7 +111,9 @@ import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const keyword = ref('')
 const activeSubject = ref('全部')
 const selectedItem = ref(null)

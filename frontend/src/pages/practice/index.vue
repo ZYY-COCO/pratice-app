@@ -1,5 +1,5 @@
 <template>
-  <view class="page practice-page">
+  <view class="page practice-page" :style="themeInlineStyle">
     <view class="top-nav">
       <button class="back-btn" @tap="goBack">‹</button>
       <view class="top-copy">
@@ -224,28 +224,43 @@
               {{ currentFavorited ? '★' : '☆' }}
             </button>
           </view>
-          <MathText class="question-title" :value="currentQuestion.stem" />
-          <view class="helper-box">{{ questionHelperText }}</view>
+          <QuestionStem class="question-title" :question="normalizedCurrentQuestion" />
+          <SourceTag
+            :question="normalizedCurrentQuestion"
+            :practice-mode="practiceMode"
+            :review-mode="reviewMode"
+            :mock-exam-mode="mockExamMode"
+          />
         </view>
       </view>
 
-      <view class="options">
-        <QuestionOption
-          v-for="option in currentQuestion.options"
+      <view v-if="!currentQuestionHasBlockingIssue" class="options">
+        <OptionCard
+          v-for="option in normalizedCurrentQuestion.options"
           :key="option.key"
-          :option="option"
-          :selected-key="selectedOption"
+          :label="option.key"
+          :content="option.text"
+          :is-math="normalizedCurrentQuestion.isMath"
+          :selected="selectedOption === option.key"
           :submitted="optionSubmitted"
-          :correct-key="correctAnswer"
+          :correct="option.key === correctAnswer"
+          :wrong="option.key === selectedOption && selectedOption !== correctAnswer"
           @select="selectOption"
         />
       </view>
+      <view v-else class="state-box warning">{{ currentQuestionIssueText }}</view>
 
-      <view v-if="!reviewMode && !submitted" class="primary-action-row">
+      <view v-if="currentQuestionHasBlockingIssue" class="primary-action-row">
+        <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
+        <button class="submit-btn" @tap="handleInvalidQuestionNext">
+          {{ hasNextQuestion ? '跳过异常题' : '结束本轮' }}
+        </button>
+      </view>
+      <view v-else-if="!reviewMode && !submitted" class="primary-action-row">
         <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
         <button
           class="submit-btn"
-          :disabled="!selectedOption || submitting || markingUnfamiliar"
+          :disabled="!selectedOption || submitting || markingUnfamiliar || currentQuestionHasBlockingIssue"
           @tap="handlePrimaryAction"
         >
           {{ primaryButtonText }}
@@ -359,7 +374,7 @@
 
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
-import { getStoredThemeKey, getThemePreset } from '../../utils/theme'
+import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
@@ -369,15 +384,18 @@ import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questi
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
-import MathText from '../../components/MathText.vue'
-import QuestionOption from '../../components/QuestionOption.vue'
+import OptionCard from '../../components/OptionCard.vue'
+import QuestionStem from '../../components/QuestionStem.vue'
+import SourceTag from '../../components/SourceTag.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { getSubjectTree } from '../../utils/knowledgeTree'
+import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality'
 
 const MOCK_EXAM_TOTAL_SCORE = 105
 const MOCK_EXAM_TOTAL_COUNT = 55
 const CULTURE_SUBJECT = '中华文化'
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const DEFAULT_CULTURE_PROGRESS = {
   total_questions: 0,
   mastered_questions: 0,
@@ -465,6 +483,13 @@ const isAiTrainingMode = computed(() => Boolean(aiSessionId.value))
 const isCultureSubject = computed(() => subject.value === CULTURE_SUBJECT)
 const showCultureProgress = computed(() => mode.value === 'tags' && isCultureSubject.value)
 const currentQuestion = computed(() => questionPool.value[currentQuestionIndex.value] || (isAiTrainingMode.value ? buildEmptyAiQuestion() : buildMockQuestion(subject.value, examCode.value)))
+const normalizedCurrentQuestion = computed(() => normalizeQuestion(currentQuestion.value, { subject: subject.value, examCode: examCode.value }))
+const currentQuestionQuality = computed(() => validateQuestion(normalizedCurrentQuestion.value))
+const currentQuestionHasBlockingIssue = computed(() => !currentQuestionQuality.value.valid)
+const currentQuestionIssueText = computed(() => {
+  const reasons = currentQuestionQuality.value.reasons || []
+  return reasons.length ? `题目数据异常，请检查题库：${reasons.join('；')}` : '题目数据异常，请检查题库'
+})
 const currentQuestionKey = computed(() => currentQuestion.value.questionId || currentQuestion.value.id)
 const assistantQuestionId = computed(() => {
   const id = questionMeta.value.questionId || currentQuestion.value.questionId || currentQuestion.value.id || ''
@@ -793,10 +818,13 @@ function buildApiQuestion(apiQuestion, meta) {
     explanation: '',
     autoTag: '',
     questionId: apiQuestion.id,
+    exam_code: apiQuestion.exam_code,
     subject: apiQuestion.subject,
     module: apiQuestion.module,
     submodule: apiQuestion.submodule,
     difficulty: apiQuestion.difficulty,
+    source_type: apiQuestion.source_type,
+    source_year: apiQuestion.source_year,
     mockSection: meta.mockSection || '',
     mockSectionKey: meta.mockSectionKey || '',
     pointValue: meta.pointValue || 1
@@ -1754,7 +1782,7 @@ async function startQuiz() {
 }
 
 function selectOption(key) {
-  if (submitted.value || submitting.value || reviewMode.value) {
+  if (submitted.value || submitting.value || reviewMode.value || currentQuestionHasBlockingIssue.value) {
     return
   }
   selectedOption.value = key
@@ -1789,11 +1817,26 @@ function jumpToQuestion(index) {
 }
 
 async function handlePrimaryAction() {
+  if (currentQuestionHasBlockingIssue.value) {
+    handleInvalidQuestionNext()
+    return
+  }
   if (practiceMode.value === 'comprehensive') {
     await handleComprehensiveAction()
     return
   }
   await submitAnswer()
+}
+
+function handleInvalidQuestionNext() {
+  const id = normalizedCurrentQuestion.value.id || normalizedCurrentQuestion.value.questionId || '(no-id)'
+  // eslint-disable-next-line no-console
+  console.warn('[question-quality-skip]', id, currentQuestionQuality.value.reasons)
+  if (hasNextQuestion.value) {
+    goNextQuestion()
+    return
+  }
+  finishQuiz()
 }
 
 async function markCurrentUnfamiliarAndNext() {

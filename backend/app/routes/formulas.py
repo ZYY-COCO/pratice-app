@@ -319,6 +319,15 @@ def _tokenize(value: str) -> list[Token]:
                 cursor = index
                 continue
 
+        if raw.startswith("lim_", index):
+            lower, _upper, end = _parse_scripts(raw, index + 3)
+            if lower:
+                push_text(index)
+                tokens.append(Token(kind="limit", condition=_clean_group_text(lower)))
+                index = end
+                cursor = index
+                continue
+
         if raw.startswith("lim(", index):
             close_index = raw.find(")", index + 4)
             if close_index > index:
@@ -330,6 +339,14 @@ def _tokenize(value: str) -> list[Token]:
 
         if raw.startswith(r"\int", index):
             lower, upper, end = _parse_scripts(raw, index + 4)
+            push_text(index)
+            tokens.append(Token(kind="integral", lower=_clean_group_text(lower), upper=_clean_group_text(upper)))
+            index = end
+            cursor = index
+            continue
+
+        if raw.startswith("\u222b", index):
+            lower, upper, end = _parse_scripts(raw, index + 1)
             push_text(index)
             tokens.append(Token(kind="integral", lower=_clean_group_text(lower), upper=_clean_group_text(upper)))
             index = end

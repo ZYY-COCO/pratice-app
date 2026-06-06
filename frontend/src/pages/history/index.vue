@@ -1,5 +1,5 @@
 <template>
-  <view class="page history-page">
+  <view class="page history-page" :style="themeInlineStyle">
     <view class="history-topbar">
       <view class="back-btn" @tap="goBack">‹</view>
       <view class="top-title">练习历史</view>
@@ -189,7 +189,9 @@ import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const filters = [
   { key: 'all', label: '全部' },
   { key: 'correct', label: '答对' },

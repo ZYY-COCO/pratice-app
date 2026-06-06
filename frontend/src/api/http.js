@@ -3,13 +3,14 @@ import { clearAuthSession, getAccessToken } from '../utils/auth'
 
 export function request(options) {
   const token = getAccessToken()
+  const data = cleanRequestData(options.data)
 
   return new Promise((resolve, reject) => {
     uni.request({
       url: `${API_BASE_URL}${options.url}`,
       method: options.method || 'GET',
       timeout: options.timeout || 12000,
-      data: options.data || {},
+      data,
       header: {
         'Content-Type': 'application/json',
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
@@ -45,6 +46,19 @@ export function request(options) {
       }
     })
   })
+}
+
+function cleanRequestData(data) {
+  if (!data || typeof data !== 'object' || Array.isArray(data)) {
+    return data || {}
+  }
+
+  return Object.keys(data).reduce((result, key) => {
+    if (data[key] !== undefined) {
+      result[key] = data[key]
+    }
+    return result
+  }, {})
 }
 
 function getCurrentPagePath() {

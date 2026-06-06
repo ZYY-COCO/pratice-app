@@ -13,6 +13,7 @@ async def call_deepseek_chat(
     *,
     temperature: float = 0.35,
     max_tokens: int = 900,
+    timeout_seconds: int | None = None,
 ) -> dict:
     settings = get_settings()
     if not settings.deepseek_api_key:
@@ -22,7 +23,7 @@ async def call_deepseek_chat(
         )
 
     url = f"{settings.deepseek_base_url.rstrip('/')}/chat/completions"
-    timeout = aiohttp.ClientTimeout(total=settings.deepseek_timeout_seconds)
+    timeout = aiohttp.ClientTimeout(total=timeout_seconds or settings.deepseek_timeout_seconds)
     body = {
         "model": settings.deepseek_model,
         "messages": messages,

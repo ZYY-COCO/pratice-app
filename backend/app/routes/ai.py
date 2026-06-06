@@ -283,6 +283,30 @@ def _build_question_chat_messages(question: dict, payload: QuestionChatRequest) 
     ]
 
 
+def _build_question_chat_fallback_reply(question: dict, payload: QuestionChatRequest) -> str:
+    knowledge_point = f"{question.get('subject') or '当前科目'} / {question.get('module') or '当前模块'} / {question.get('submodule') or '当前考点'}"
+    user_message = _compact_text(payload.user_message, 80)
+
+    if not payload.submitted:
+        return (
+            f"我先给你思路，不直接透露答案。\n"
+            f"1. 先判断考点：这题属于 {knowledge_point}。\n"
+            f"2. 根据题干关键词和选项类型，先回忆对应定义、公式或典型判断方法。\n"
+            f"3. 如果是计算题，先写出核心公式，再代入化简；如果是常识或逻辑题，先排除与题干对象、时代、概念不匹配的选项。\n"
+            f"4. 你的问题是“{user_message}”，建议先从题干中的限定词和选项差异入手。"
+        )
+
+    explanation = _compact_text(question.get("explanation"), 900) or "本题暂未提供详细解析。"
+    selected = _compact_text(payload.user_answer, 8) or "未提供"
+    return (
+        f"这题可以这样看：\n"
+        f"1. 考点：{knowledge_point}。\n"
+        f"2. 你的选择：{selected}；正确答案：{question.get('answer') or '未标明'}。\n"
+        f"3. 核心依据：{explanation}\n"
+        f"4. 复盘建议：先把题干限定条件圈出来，再逐项核对选项与考点是否匹配；同类题不要只凭印象选，要看搭配、公式、时代或概念边界。"
+    )
+
+
 def _candidate_key(row: dict) -> tuple[str, str, str]:
     return (
         str(row.get("subject") or FALLBACK_TARGET["subject"]),
@@ -726,7 +750,17 @@ async def question_chat(
 ) -> QuestionChatResponse:
     supabase = get_supabase_admin()
     question = get_question_or_404(supabase, payload.question_id)
-    result = await call_deepseek_chat(_build_question_chat_messages(question, payload))
+    try:
+        result = await call_deepseek_chat(
+            _build_question_chat_messages(question, payload),
+            max_tokens=650,
+            timeout_seconds=18,
+        )
+    except HTTPException:
+        result = {
+            "reply": _build_question_chat_fallback_reply(question, payload),
+            "model": "local_fallback",
+        }
 
     return QuestionChatResponse(
         reply=result["reply"],

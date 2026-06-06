@@ -589,6 +589,11 @@ function normalizeMathSource(value) {
 
 function normalizeKatexLatex(value) {
   return String(value ?? '')
+    .replace(/\u222b/g, '\\int')
+    .replace(/\u03c0/g, '\\pi')
+    .replace(/\u2264/g, '\\le')
+    .replace(/\u2265/g, '\\ge')
+    .replace(/\u2260/g, '\\ne')
     .replace(/\u221a\s*\(([^()]*)\)/g, '\\sqrt{$1}')
     .replace(/\u221e/g, '\\infty')
     .replace(/\u2192/g, '\\to')
@@ -665,6 +670,20 @@ function findNextCommandStart(text, start) {
   return match ? match.index : -1
 }
 
+function isPlainMathStartChar(char) {
+  return /[A-Za-z0-9([]/.test(char) || /[\u222b\u221a]/.test(char)
+}
+
+function findNextPlainMathStart(text, start) {
+  for (let index = start; index < text.length; index += 1) {
+    const char = text[index]
+    const previous = index > 0 ? text[index - 1] : ''
+    if (/[A-Za-z0-9]/.test(previous)) continue
+    if (isPlainMathStartChar(char)) return index
+  }
+  return -1
+}
+
 function readCommandMathRun(text, start) {
   let cursor = start
   let braceDepth = 0
@@ -701,11 +720,24 @@ function hasUsefulPlainMathSignal(value) {
   const text = value.trim()
   if (!text) return false
   if (WHOLE_NUMBER_FRACTION_PATTERN.test(text)) return true
-  if (!/[A-Za-z0-9]/.test(text)) return false
+  if (!/[A-Za-z0-9\u222b\u221a\u221e\u2192\u03c0]/.test(text)) return false
   const words = text.match(/[A-Za-z]{3,}/g) || []
-  const allowedMathWords = new Set(['sin', 'cos', 'tan', 'log', 'lim', 'max', 'min'])
+  const allowedMathWords = new Set([
+    'sin',
+    'cos',
+    'tan',
+    'log',
+    'lim',
+    'max',
+    'min',
+    'frac',
+    'sqrt',
+    'to',
+    'infty',
+    'pi'
+  ])
   if (words.some((word) => !allowedMathWords.has(word))) return false
-  if (/[=^_]/.test(text)) return true
+  if (/[=^_\u222b\u221a\u221e\u2192\u03c0]/.test(text)) return true
   return /^[([-]?\d+(?:\.\d+)?\s*\/\s*[-+]?\d+(?:\.\d+)?[\])]?$/.test(text)
 }
 
@@ -741,16 +773,7 @@ function pushTextWithImplicitMath(parts, value) {
   let searchCursor = 0
 
   while (searchCursor < text.length) {
-    let start = -1
-    for (let index = searchCursor; index < text.length; index += 1) {
-      const char = text[index]
-      const previous = index > 0 ? text[index - 1] : ''
-      if (/[A-Za-z0-9]/.test(previous)) continue
-      if (/[A-Za-z0-9([]/.test(char)) {
-        start = index
-        break
-      }
-    }
+    const start = findNextPlainMathStart(text, searchCursor)
 
     if (start < 0) {
       pushKatexPart(parts, false, text.slice(plainCursor))
@@ -779,6 +802,20 @@ function splitImplicitCommandMath(text) {
 
   while (cursor < text.length) {
     const start = findNextCommandStart(text, cursor)
+    const plainStart = findNextPlainMathStart(text, cursor)
+
+    if (plainStart >= 0 && (start < 0 || plainStart < start)) {
+      const end = readPlainMathRun(text, plainStart)
+      const candidate = text.slice(plainStart, end).trim()
+
+      if (hasUsefulPlainMathSignal(candidate) && !CJK_PATTERN.test(candidate)) {
+        pushKatexPart(parts, false, text.slice(cursor, plainStart))
+        pushKatexPart(parts, true, candidate)
+        cursor = end
+        continue
+      }
+    }
+
     if (start < 0) break
 
     pushTextWithImplicitMath(parts, text.slice(cursor, start))
@@ -822,7 +859,9 @@ const FORMULA_IMAGE_SIGNAL_PATTERN =
 export function shouldUseMathImage(value) {
   const text = normalizeMathSource(value)
   if (!text) return false
-  return FORMULA_IMAGE_SIGNAL_PATTERN.test(text)
+  const safeSignalPattern =
+    /\\(?:begin\{cases\}|end\{cases\}|frac|dfrac|tfrac|sqrt|lim|int|partial|left|right|to|infty|pi|sin|cos|tan|ln|log)|\^|_|[\u222b\u221a\u221e\u2192\u03c0\u2202]|lim\s*[\(_{]|[A-Za-z0-9)\]\u00b9\u00b2\u00b3]\s*\/\s*[A-Za-z0-9([]/
+  return safeSignalPattern.test(text) || FORMULA_IMAGE_SIGNAL_PATTERN.test(text)
 }
 
 export function estimateMathImageDisplayRpx(value) {
@@ -852,6 +891,15 @@ export function estimateMathImageDisplayRpx(value) {
   }
   if (/\\int|∫|\\lim|lim\s*[\(_]|\\begin\{cases\}/.test(raw)) {
     width += 72
+  }
+  if (/\\frac|\/|\u221a|\\sqrt/.test(raw)) {
+    width += 18
+  }
+  if (/\\int|\u222b|\\lim|lim\s*[\(_{]|\\begin\{cases\}/.test(raw)) {
+    width += 24
+  }
+  if (/\\to|\\infty|\u2192|\u221e|\\pi|\u03c0/.test(raw)) {
+    width += 28
   }
   return Math.max(92, Math.min(680, Math.round(width)))
 }

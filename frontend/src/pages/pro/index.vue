@@ -1,5 +1,5 @@
 <template>
-  <view class="page pro-page">
+  <view class="page pro-page" :style="themeInlineStyle">
     <template v-if="isProMember">
       <view class="member-hero">
         <view class="member-hero-top">
@@ -105,8 +105,10 @@ import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getUserDisplayName } from '../../utils/userDisplay'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const authUser = ref(getAuthUser())
 const creatingOrderCode = ref('')
 

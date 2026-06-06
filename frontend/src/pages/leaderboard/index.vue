@@ -1,5 +1,5 @@
 <template>
-  <view class="page leaderboard-page">
+  <view class="page leaderboard-page" :style="themeInlineStyle">
     <view class="leaderboard-head">
       <button class="back-btn" @tap="goBack">‹</button>
       <view class="head-copy">
@@ -88,7 +88,9 @@ import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import { fetchLeaderboard } from '../../api/reports'
 import { getAuthUser, isLoggedIn } from '../../utils/auth'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const leaderboard = ref([])
 const totalUsers = ref(0)
 const loading = ref(false)

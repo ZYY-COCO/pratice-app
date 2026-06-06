@@ -1,5 +1,5 @@
 <template>
-  <view class="page version-page">
+  <view class="page version-page" :style="themeInlineStyle">
     <PageHeader eyebrow="版本选择" title="选择考试版本" subtitle="切换后，首页看板、科目入口和专项练习第三模块会同步变化。" />
 
     <view class="segment-wrap">
@@ -35,7 +35,9 @@ import ExamSegment from '../../components/ExamSegment.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const examOptions = EXAM_OPTIONS
 const selectedCode = ref(uni.getStorageSync('examCode') || 'Z001')
 

@@ -147,7 +147,7 @@
                 :disabled="!retestAnswer || retestSubmitting"
                 @tap="submitRetestAnswer"
               >
-                {{ retestSubmitting ? '提交中...' : retestAnswer ? '提交本题' : '请选择答案' }}
+                {{ retestSubmitting ? '提交中...' : retestAnswer ? '提交答案' : '请选择一个答案' }}
               </button>
               <button v-else class="modal-submit-btn done" @tap="nextRetestQuestion">
                 {{ retestIndex + 1 >= retestItems.length ? '查看重测结果' : '下一题' }}
@@ -210,7 +210,7 @@
         <view class="wrong-modal-panel" @tap.stop>
           <view class="wrong-modal-head">
             <view>
-              <view class="wrong-modal-title">重做错题</view>
+              <view class="wrong-modal-title">错题重练</view>
               <view class="wrong-modal-sub">
                 {{ selectedWrongDetail.question.subject }} / {{ selectedWrongDetail.question.module }}
               </view>
@@ -219,7 +219,9 @@
           </view>
           <scroll-view scroll-y class="wrong-modal-scroll">
             <view class="wrong-detail">
+              <view class="wrong-section-label">题目</view>
               <MathText class="wrong-stem" :value="selectedWrongDetail.question.stem" />
+              <view class="wrong-section-label">选项</view>
               <view class="wrong-options">
                 <button
                   v-for="option in wrongDetailOptions"
@@ -233,7 +235,8 @@
                 </button>
               </view>
               <view v-if="!reviewResultText" class="review-hint">
-                最近一次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}。提交后会显示正确答案和解析。
+                <text class="review-hint-main">上次选择：{{ selectedWrongDetail.latest_selected_answer || '暂无记录' }}</text>
+                <text class="review-hint-sub">提交后查看正确答案与解析</text>
               </view>
               <view v-if="reviewResultText" class="state-box" :class="{ mastered: reviewMastered }">{{ reviewResultText }}</view>
               <view v-if="reviewResultText" class="answer-line">正确答案：{{ selectedWrongDetail.question.answer }}</view>
@@ -245,7 +248,7 @@
                   :disabled="!reviewAnswer || reviewingWrong"
                   @tap="submitWrongReview"
                 >
-                  {{ reviewingWrong ? '提交中...' : reviewAnswer ? '提交并查看解析' : '请选择答案' }}
+                  {{ reviewingWrong ? '提交中...' : reviewAnswer ? '提交答案' : '请选择一个答案' }}
                 </button>
                 <button v-else class="modal-submit-btn done" @tap="closeWrongDetail">我知道了</button>
               </view>
@@ -4501,31 +4504,31 @@ function getMembershipExpiresAt(user) {
   z-index: 50;
   display: flex;
   align-items: flex-end;
-  padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 30rpx);
-  background: rgba(17, 24, 39, 0.42);
+  padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
+  background: rgba(17, 24, 39, 0.38);
 }
 
 .wrong-modal-panel {
   width: 100%;
-  max-height: 86vh;
-  border-radius: 38rpx;
+  max-height: 84vh;
+  border-radius: 32rpx;
   background: #ffffff;
-  box-shadow: 0 -18rpx 46rpx rgba(15, 23, 42, 0.18);
+  box-shadow: 0 -16rpx 42rpx rgba(15, 23, 42, 0.16);
   overflow: hidden;
 }
 
 .wrong-modal-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 32rpx 34rpx 20rpx;
+  padding: 30rpx 34rpx 22rpx;
   border-bottom: 2rpx solid #eef2f8;
 }
 
 .wrong-modal-title {
   color: #101828;
-  font-size: 38rpx;
+  font-size: 34rpx;
   line-height: 1.3;
   font-weight: 950;
 }
@@ -4539,57 +4542,67 @@ function getMembershipExpiresAt(user) {
 }
 
 .wrong-modal-close {
-  width: 70rpx;
-  height: 70rpx;
-  flex: 0 0 70rpx;
+  width: 58rpx;
+  height: 58rpx;
+  flex: 0 0 58rpx;
   border: 0;
-  border-radius: 24rpx;
+  border-radius: 18rpx;
   background: #f3f6fb;
   color: #667085;
-  font-size: 44rpx;
-  line-height: 66rpx;
+  font-size: 34rpx;
+  line-height: 54rpx;
   font-weight: 900;
 }
 
 .wrong-modal-scroll {
-  max-height: 68vh;
-  padding: 28rpx 34rpx 36rpx;
+  max-height: 70vh;
+  padding: 24rpx 34rpx 30rpx;
   box-sizing: border-box;
 }
 
 .wrong-modal-panel .wrong-detail {
-  gap: 24rpx;
+  gap: 20rpx;
+}
+
+.wrong-section-label {
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  margin-bottom: -8rpx;
 }
 
 .wrong-modal-panel .wrong-stem {
-  padding: 24rpx 24rpx 4rpx;
-  border-radius: 26rpx;
-  background: #fbfcff;
-  font-size: 32rpx;
-  line-height: 1.65;
+  padding: 4rpx 2rpx 6rpx;
+  border-radius: 0;
+  background: transparent;
+  font-size: 31rpx;
+  line-height: 1.62;
+  text-align: left;
 }
 
 .wrong-modal-panel .wrong-options {
-  gap: 18rpx;
+  gap: 16rpx;
   width: 100%;
 }
 
 .wrong-modal-panel .wrong-option {
   width: 100%;
-  min-height: 96rpx;
+  min-height: 86rpx;
   margin: 0;
-  padding: 22rpx 24rpx;
-  border-radius: 26rpx;
+  padding: 18rpx 22rpx;
+  border-radius: 22rpx;
+  align-items: center;
   box-sizing: border-box;
-  box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.04);
+  box-shadow: none;
 }
 
 .wrong-modal-panel .option-key {
-  width: 52rpx;
-  height: 52rpx;
-  flex: 0 0 52rpx;
-  border-radius: 18rpx;
-  font-size: 26rpx;
+  width: 46rpx;
+  height: 46rpx;
+  flex: 0 0 46rpx;
+  border-radius: 15rpx;
+  font-size: 24rpx;
 }
 
 .retest-detail {
@@ -4639,24 +4652,49 @@ function getMembershipExpiresAt(user) {
   font-weight: 700;
 }
 
+.wrong-modal-panel .option-text {
+  font-size: 27rpx;
+  line-height: 1.48;
+}
+
 .review-hint {
-  padding: 18rpx 22rpx;
+  padding: 16rpx 20rpx;
   border-radius: 22rpx;
   background: #f8fafc;
   color: #667085;
-  font-size: 24rpx;
+  font-size: 23rpx;
   line-height: 1.6;
+}
+
+.wrong-modal-panel .review-hint {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 8rpx 16rpx;
+}
+
+.review-hint-main {
+  color: #475467;
+  font-weight: 800;
+}
+
+.review-hint-sub {
+  color: #98a2b3;
+  text-align: right;
+  font-weight: 700;
 }
 
 .modal-submit-btn {
   width: 100%;
-  min-height: 92rpx;
+  min-height: 86rpx;
   margin: 0;
   border: 0;
-  border-radius: 28rpx;
+  border-radius: 24rpx;
   background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
-  font-size: 28rpx;
+  font-size: 27rpx;
+  line-height: 86rpx;
   font-weight: 900;
   box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow);
 }

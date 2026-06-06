@@ -1,5 +1,5 @@
 <template>
-  <view class="page profile-edit-page">
+  <view class="page profile-edit-page" :style="themeInlineStyle">
     <view class="profile-edit-head">
       <view class="head-mark">资料</view>
       <view class="head-copy">
@@ -92,9 +92,11 @@ import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import { changeEmailWithCode, sendChangeEmailCode, updateProfile } from '../../api/auth'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI', 'Pro']
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const genderOptions = [
   { label: '男', value: 'male' },
   { label: '女', value: 'female' }

@@ -1,9 +1,9 @@
 <template>
-  <!-- #ifdef H5 -->
+  <!-- #ifdef H5 || APP-PLUS -->
   <view class="math-text katex-math-text" v-html="renderedHtml"></view>
   <!-- #endif -->
 
-  <!-- #ifndef H5 -->
+  <!-- #ifdef MP-WEIXIN -->
   <view class="math-text math-text-plain">
     <block v-for="part in miniProgramParts" :key="part.key">
       <image
@@ -22,11 +22,13 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 import katex from 'katex'
 import 'katex/dist/katex.min.css'
 // #endif
+// #ifdef MP-WEIXIN
 import { API_BASE_URL } from '../api/config'
+// #endif
 import {
   escapeMathTextHtml,
   estimateMathImageDisplayRpx,
@@ -42,7 +44,7 @@ const props = defineProps({
   }
 })
 
-// #ifdef H5
+// #ifdef H5 || APP-PLUS
 function renderKatex(latex) {
   try {
     return katex.renderToString(latex, {
@@ -64,7 +66,7 @@ const renderedHtml = computed(() =>
 )
 // #endif
 
-// #ifndef H5
+// #ifdef MP-WEIXIN
 const plainText = computed(() => formatMathText(props.value))
 const imageFailed = ref(false)
 
@@ -77,8 +79,29 @@ function getWindowWidthPx() {
 }
 
 const windowWidthPx = getWindowWidthPx()
+
+function mergeTrailingFormulaPunctuation(parts) {
+  const merged = []
+  parts.forEach((part) => {
+    const content = String(part.content ?? '')
+    const previous = merged[merged.length - 1]
+    const match = !part.math ? content.match(/^([,.;:?!，。；：？！、）)\]]+)([\s\S]*)$/) : null
+
+    if (match && previous?.math) {
+      previous.content = `${previous.content}${match[1]}`
+      if (match[2]) {
+        merged.push({ ...part, content: match[2] })
+      }
+      return
+    }
+
+    merged.push({ ...part })
+  })
+  return merged
+}
+
 const miniProgramParts = computed(() => {
-  const parts = splitMathTextForKatex(props.value)
+  const parts = mergeTrailingFormulaPunctuation(splitMathTextForKatex(props.value))
   if (!parts.length) {
     return [{ key: 'plain-0', type: 'text', text: plainText.value }]
   }
@@ -100,7 +123,7 @@ const miniProgramParts = computed(() => {
       type: 'image',
       text: formatMathText(part.content),
       displayRpx,
-      src: `${API_BASE_URL}/formula/svg?text=${text}&width=${renderWidthPx}&size=24&v=3`
+      src: `${API_BASE_URL}/formula/svg?text=${text}&width=${renderWidthPx}&size=24&v=4`
     }
   })
 })
@@ -114,6 +137,8 @@ watch(
 
 function handleImageError() {
   imageFailed.value = true
+  // eslint-disable-next-line no-console
+  console.warn('[math-render-failed]', props.value)
 }
 // #endif
 </script>
@@ -134,25 +159,27 @@ function handleImageError() {
 }
 
 .math-text-plain {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
+  display: inline;
   white-space: normal;
+  text-align: left;
 }
 
 .math-text-inner {
+  display: inline;
   color: inherit;
   font-size: inherit;
   font-weight: inherit;
   line-height: inherit;
-  white-space: pre-wrap;
+  white-space: normal;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .math-formula-image {
   display: inline-block;
   max-width: 100%;
-  margin: 0 4rpx;
-  vertical-align: middle;
+  margin: 0 6rpx;
+  vertical-align: -0.2em;
 }
 
 /* #ifdef H5 */

@@ -1,5 +1,5 @@
 <template>
-  <view class="page subjects-page">
+  <view class="page subjects-page" :style="themeInlineStyle">
     <PageHeader eyebrow="科目入口" title="选择学习模块" :subtitle="`${exam.title}：请选择今天要练习的科目。`" />
 
     <view class="subject-list">
@@ -28,7 +28,9 @@ import { computed } from 'vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { getExamOption } from '../../utils/exam'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const examCode = uni.getStorageSync('examCode') || 'Z001'
 const exam = computed(() => getExamOption(examCode))
 

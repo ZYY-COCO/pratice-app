@@ -1,5 +1,5 @@
 <template>
-  <view class="page login-page">
+  <view class="page login-page" :style="themeInlineStyle">
     <view class="auth-hero">
       <view class="hero-badge">账户中心</view>
       <view class="hero-title">{{ heroTitle }}</view>
@@ -356,8 +356,10 @@ import {
 import { saveAuthSession } from '../../utils/auth'
 import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const mode = ref('login')
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const PHONE_AUTH_ENABLED = false
 const WECHAT_AUTH_ENABLED = false
 const authMethod = ref('email')
