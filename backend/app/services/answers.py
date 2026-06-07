@@ -4,6 +4,7 @@ from fastapi import HTTPException, status
 from supabase import Client
 
 from app.db import get_supabase_admin
+from app.services.question_sources import is_ai_generated_question
 
 VERSION_EXAM_CODES = {"Z001", "Z002"}
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
@@ -148,7 +149,7 @@ def persist_answer_submission(
             }
         ).execute()
 
-        if not is_correct:
+        if not is_correct and not is_ai_generated_question(question):
             record_wrong_question(supabase, user_id, question_id)
 
         update_ability_stats(supabase, user_id, question, is_correct)
@@ -176,11 +177,12 @@ def submit_answer(
         "subject": question["subject"],
         "module": question["module"],
         "submodule": question["submodule"],
+        "source_type": question.get("source_type"),
         "selected_answer": selected_answer,
         "correct_answer": question["answer"],
         "is_correct": is_correct,
         "explanation": question["explanation"],
-        "added_to_wrong_questions": not is_correct,
+        "added_to_wrong_questions": not is_correct and not is_ai_generated_question(question),
         "ability_accuracy": calculate_next_accuracy(current_ability, is_correct),
     }
 
@@ -203,11 +205,12 @@ def mark_unfamiliar_answer(
         "subject": question["subject"],
         "module": question["module"],
         "submodule": question["submodule"],
+        "source_type": question.get("source_type"),
         "selected_answer": selected_answer,
         "correct_answer": question["answer"],
         "is_correct": False,
         "explanation": question["explanation"],
-        "added_to_wrong_questions": True,
+        "added_to_wrong_questions": not is_ai_generated_question(question),
         "ability_accuracy": calculate_next_accuracy(current_ability, False),
     }
 

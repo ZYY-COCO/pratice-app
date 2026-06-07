@@ -11,6 +11,7 @@ from app.schemas.wrong_questions import (
     WrongQuestionListResponse,
 )
 from app.services.answers import persist_answer_submission, submit_answer
+from app.services.question_sources import is_ai_generated_question
 
 router = APIRouter(prefix="/wrong-questions", tags=["错题本"])
 
@@ -35,6 +36,8 @@ def list_wrong_questions(
     items: list[WrongQuestionItem] = []
     for row in response.data:
         question = row.get("questions")
+        if is_ai_generated_question(question):
+            continue
         if subject and question and question.get("subject") != subject:
             continue
         if module and question and question.get("module") != module:
@@ -71,6 +74,8 @@ def get_wrong_question_detail(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wrong question not found")
 
     row = wrong_response.data[0]
+    if is_ai_generated_question(row.get("questions")):
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Wrong question not found")
     answer_response = (
         supabase.table("user_answers")
         .select("selected_answer")
@@ -116,6 +121,7 @@ def review_wrong_question(
             "subject": result.get("subject"),
             "module": result.get("module"),
             "submodule": result.get("submodule"),
+            "source_type": result.get("source_type"),
         },
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,

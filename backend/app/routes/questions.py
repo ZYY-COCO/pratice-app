@@ -8,6 +8,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.questions import Passage, Question, QuestionListResponse, QuestionProgressResponse
+from app.services.question_sources import exclude_ai_generated_questions
 
 router = APIRouter(tags=["题目"])
 
@@ -131,7 +132,7 @@ def apply_exam_code_filter(query, column: str, exam_codes: list[str]):
 
 
 def apply_active_question_filter(query, column: str = "status"):
-    return query.eq(column, "active")
+    return exclude_ai_generated_questions(query.eq(column, "active"))
 
 
 def fetch_subject_question_count_for_codes(supabase, exam_codes: list[str], subject: str) -> int:
@@ -195,6 +196,7 @@ def fetch_user_answer_rows_for_subject_codes(
             .order("created_at", desc=False)
             .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
         )
+        query = exclude_ai_generated_questions(query, reference_table="questions")
         query = apply_exam_code_filter(query, "questions.exam_code", exam_codes)
         response = query.execute()
         chunk = response.data or []

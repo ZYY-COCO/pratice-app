@@ -75,6 +75,14 @@ export function fetchAdminQuestionDetail(questionId) {
   })
 }
 
+export function createAdminQuestion(payload) {
+  return request({
+    url: '/admin/questions',
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function updateAdminQuestionStatus(questionId, payload) {
   return request({
     url: `/admin/questions/${questionId}/status`,

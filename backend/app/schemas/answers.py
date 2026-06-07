@@ -53,6 +53,8 @@ class AnswerHistoryQuestion(BaseModel):
     option_d: str
     answer: str
     explanation: str
+    source_type: str | None = None
+    source_year: int | None = None
 
 
 class AnswerHistoryItem(BaseModel):

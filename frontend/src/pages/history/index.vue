@@ -61,6 +61,9 @@
             {{ item.is_correct ? '✓ 答对' : '× 答错' }}
           </view>
         </view>
+        <view v-if="getQuestionSourceLabel(item.question)" class="source-meta-row">
+          <text class="source-origin-tag">{{ getQuestionSourceLabel(item.question) }}</text>
+        </view>
         <MathText class="stem" :value="item.question?.stem || '题目内容暂不可用'" />
         <view class="answer-row">
           <text>{{ formatTime(item.created_at) }}</text>
@@ -157,6 +160,9 @@
           <view>
             <view class="detail-title">答题详情</view>
             <view class="detail-sub">{{ getTitle(selectedItem) }}</view>
+            <view v-if="getQuestionSourceLabel(selectedItem.question)" class="detail-source-tag">
+              {{ getQuestionSourceLabel(selectedItem.question) }}
+            </view>
           </view>
           <view class="close-btn" @tap="closeDetail">×</view>
         </view>
@@ -191,6 +197,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { getQuestionSourceLabel } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -726,6 +733,23 @@ function goBack() {
   color: #ef4444;
 }
 
+.source-meta-row {
+  margin-top: 12rpx;
+  display: flex;
+}
+
+.source-origin-tag,
+.detail-source-tag {
+  display: inline-flex;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  color: #0f766e;
+  background: #e6fffb;
+  border: 1rpx solid rgba(20, 184, 166, 0.18);
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
 .stem {
   margin-top: 16rpx;
   color: #475467;
@@ -918,6 +942,10 @@ function goBack() {
   margin-top: 8rpx;
   color: #8a95a8;
   font-size: 22rpx;
+}
+
+.detail-source-tag {
+  margin-top: 12rpx;
 }
 
 .detail-stem {

@@ -807,7 +807,7 @@ function buildApiQuestion(apiQuestion, meta) {
     { key: 'C', text: apiQuestion.option_c },
     { key: 'D', text: apiQuestion.option_d }
   ]
-  const sourceLabel = apiQuestion.source_type === 'ai_deepseek' ? 'AI 生成训练' : '真实题库'
+  const sourceLabel = apiQuestion.source_type === 'ai_deepseek' ? 'AI专项出题' : '真实题库'
 
   return {
     id: apiQuestion.id,

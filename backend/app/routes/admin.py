@@ -13,6 +13,7 @@ from app.schemas.admin import (
     AdminQuestionBulkFilters,
     AdminQuestionBulkStatusRequest,
     AdminQuestionBulkStatusResponse,
+    AdminQuestionCreateRequest,
     AdminQuestionDetailResponse,
     AdminQuestionListResponse,
     AdminQuestionReviewRequest,
@@ -21,6 +22,11 @@ from app.schemas.admin import (
     AdminUserDetailResponse,
     AdminUserItem,
     AdminUserListResponse,
+)
+from app.services.question_sources import (
+    AI_QUESTION_SOURCE_TYPE,
+    exclude_ai_generated_questions,
+    is_ai_generated_question,
 )
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -83,6 +89,14 @@ def _apply_admin_question_filters(
     return query
 
 
+def _assert_manageable_question(question: dict) -> None:
+    if is_ai_generated_question(question):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="AI generated training questions are not managed in the official question bank",
+        )
+
+
 def _parse_question_difficulty(value: str | int | None) -> int | None:
     if value in (None, ""):
         return None
@@ -105,6 +119,21 @@ def _count_table(supabase, table_name: str) -> int:
         return _count_query(supabase.table(table_name).select("id", count="exact"))
     except Exception:
         return 0
+
+
+def _count_admin_questions(supabase) -> int:
+    try:
+        query = exclude_ai_generated_questions(supabase.table("questions").select("id", count="exact"))
+        return _count_query(query)
+    except Exception:
+        try:
+            return _count_query(
+                supabase.table("questions")
+                .select("id", count="exact")
+                .neq("source_type", AI_QUESTION_SOURCE_TYPE)
+            )
+        except Exception:
+            return 0
 
 
 def _distinct_active_users(supabase, since: datetime) -> int:
@@ -160,6 +189,30 @@ def _get_question_or_404(supabase, question_id: str) -> dict:
     return response.data[0]
 
 
+def _get_manageable_question_or_404(supabase, question_id: str) -> dict:
+    question = _get_question_or_404(supabase, question_id)
+    _assert_manageable_question(question)
+    return question
+
+
+def _assert_bulk_question_ids_manageable(supabase, question_ids: list[str]) -> None:
+    for index in range(0, len(question_ids), QUESTION_BULK_SELECT_PAGE_SIZE):
+        batch_ids = question_ids[index : index + QUESTION_BULK_SELECT_PAGE_SIZE]
+        if not batch_ids:
+            continue
+        response = (
+            supabase.table("questions")
+            .select("id, source_type")
+            .in_("id", batch_ids)
+            .execute()
+        )
+        if any(is_ai_generated_question(row) for row in (response.data or [])):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="AI generated training questions are not managed in the official question bank",
+            )
+
+
 def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
     data = payload.model_dump(exclude_unset=True)
     text_fields = {
@@ -182,6 +235,80 @@ def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
     for field in required_text_fields:
         if field in data and not data[field]:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} cannot be empty")
+    return data
+
+
+def _build_question_create_data(payload: AdminQuestionCreateRequest, admin_profile: dict) -> dict:
+    data = payload.model_dump()
+    text_fields = {
+        "exam_code",
+        "subject",
+        "module",
+        "submodule",
+        "question_type",
+        "stem",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "answer",
+        "explanation",
+        "source_type",
+        "review_note",
+    }
+    required_text_fields = {
+        "exam_code",
+        "subject",
+        "module",
+        "submodule",
+        "question_type",
+        "stem",
+        "option_a",
+        "option_b",
+        "option_c",
+        "option_d",
+        "answer",
+    }
+    for field in text_fields:
+        if isinstance(data.get(field), str):
+            data[field] = data[field].strip()
+    for field in required_text_fields:
+        if not data.get(field):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} cannot be empty")
+    data["answer"] = str(data["answer"]).upper()
+    if is_ai_generated_question(data):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Admin-created question source_type cannot be AI generated",
+        )
+    if data["status"] == "active" and data["review_status"] != "approved":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Published questions must be approved",
+        )
+    if data["review_status"] == "pending" and data["status"] != "archived":
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Pending review questions must be archived",
+        )
+
+    current = _now()
+    data["explanation"] = data.get("explanation") or ""
+    data["source_type"] = data.get("source_type") or "manual"
+    data["passage_id"] = None
+    data["review_updated_at"] = _to_iso(current)
+    if data["review_status"] == "pending":
+        data["reviewed_at"] = None
+        data["reviewed_by"] = None
+    else:
+        data["reviewed_at"] = _to_iso(current)
+        data["reviewed_by"] = admin_profile.get("id")
+    if data["status"] == "archived":
+        data["archived_at"] = _to_iso(current)
+        data["archived_by"] = admin_profile.get("id")
+    else:
+        data["archived_at"] = None
+        data["archived_by"] = None
     return data
 
 
@@ -216,7 +343,7 @@ def admin_overview(_: dict = Depends(require_admin_user)) -> AdminOverviewRespon
         active_week=_distinct_active_users(supabase, current - timedelta(days=7)),
         active_month=_distinct_active_users(supabase, current - timedelta(days=30)),
         active_year=_distinct_active_users(supabase, current - timedelta(days=365)),
-        total_questions=_count_table(supabase, "questions"),
+        total_questions=_count_admin_questions(supabase),
         total_feedback=total_feedback,
         pending_feedback=_count_query(
             supabase.table("beta_feedback").select("id", count="exact").eq("status", "open")
@@ -475,7 +602,9 @@ def admin_questions(
     _: dict = Depends(require_admin_user),
 ) -> AdminQuestionListResponse:
     supabase = get_supabase_admin()
-    query = supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
+    query = exclude_ai_generated_questions(
+        supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
+    )
     query = _apply_admin_question_filters(
         query,
         exam_code=exam_code,
@@ -491,6 +620,32 @@ def admin_questions(
     return AdminQuestionListResponse(items=response.data or [], count=int(response.count or 0))
 
 
+@router.post("/questions", response_model=AdminQuestionDetailResponse)
+def admin_create_question(
+    payload: AdminQuestionCreateRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionDetailResponse:
+    supabase = get_supabase_admin()
+    insert_data = _build_question_create_data(payload, admin_profile)
+    response = supabase.table("questions").insert(insert_data).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question create failed")
+    question = response.data[0]
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="create_question",
+        target_type="question",
+        target_id=str(question.get("id")) if question.get("id") else None,
+        details={
+            "status": question.get("status"),
+            "review_status": question.get("review_status"),
+            "source_type": question.get("source_type"),
+        },
+    )
+    return AdminQuestionDetailResponse(question=question)
+
+
 @router.patch("/questions/bulk-status", response_model=AdminQuestionBulkStatusResponse)
 def admin_bulk_update_question_status(
     payload: AdminQuestionBulkStatusRequest,
@@ -504,7 +659,9 @@ def admin_bulk_update_question_status(
     if not question_ids:
         offset = 0
         while True:
-            query = supabase.table("questions").select("id").order("created_at", desc=True)
+            query = exclude_ai_generated_questions(
+                supabase.table("questions").select("id").order("created_at", desc=True)
+            )
             query = _apply_admin_question_filters(
                 query,
                 exam_code=filters.exam_code,
@@ -522,6 +679,8 @@ def admin_bulk_update_question_status(
             if len(rows) < QUESTION_BULK_SELECT_PAGE_SIZE:
                 break
             offset += QUESTION_BULK_SELECT_PAGE_SIZE
+    else:
+        _assert_bulk_question_ids_manageable(supabase, question_ids)
 
     if not question_ids:
         return AdminQuestionBulkStatusResponse(updated_count=0)
@@ -564,7 +723,7 @@ def admin_bulk_update_question_status(
 @router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
 def admin_question_detail(question_id: str, _: dict = Depends(require_admin_user)) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    return AdminQuestionDetailResponse(question=_get_question_or_404(supabase, question_id))
+    return AdminQuestionDetailResponse(question=_get_manageable_question_or_404(supabase, question_id))
 
 
 @router.patch("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
@@ -574,7 +733,7 @@ def admin_update_question(
     admin_profile: dict = Depends(require_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    _get_question_or_404(supabase, question_id)
+    _get_manageable_question_or_404(supabase, question_id)
     update_data = _build_question_update_data(payload)
     if not update_data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No question fields to update")
@@ -599,7 +758,7 @@ def admin_update_question_status(
     admin_profile: dict = Depends(require_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    _get_question_or_404(supabase, question_id)
+    _get_manageable_question_or_404(supabase, question_id)
     current = _now()
     update_data = {
         "status": payload.status,
@@ -635,7 +794,7 @@ def admin_update_question_review(
     admin_profile: dict = Depends(require_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    _get_question_or_404(supabase, question_id)
+    _get_manageable_question_or_404(supabase, question_id)
     current = _now()
     review_status = payload.review_status
     if payload.publish and review_status != "approved":

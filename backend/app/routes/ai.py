@@ -25,6 +25,7 @@ from app.schemas.ai import (
 )
 from app.services.answers import get_question_or_404
 from app.services.ai_client import call_deepseek_chat
+from app.services.question_sources import exclude_ai_generated_questions
 from app.services.reports import build_ability_item
 
 router = APIRouter(prefix="/ai", tags=["AI"])
@@ -800,8 +801,7 @@ def generate_similar_question(
     supabase = get_supabase_admin()
     question = get_question_or_404(supabase, payload.question_id)
     response = (
-        supabase.table("questions")
-        .select("*")
+        exclude_ai_generated_questions(supabase.table("questions").select("*"))
         .eq("exam_code", question["exam_code"])
         .eq("subject", question["subject"])
         .eq("module", question["module"])

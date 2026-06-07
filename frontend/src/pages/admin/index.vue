@@ -8,7 +8,9 @@
         <view class="admin-title">{{ pageTitle }}</view>
         <view class="admin-subtitle">{{ pageSubtitle }}</view>
       </view>
-      <button v-if="activeTab === 'questions'" class="hero-refresh-btn" @tap="refreshQuestionManager">↻</button>
+      <button v-if="activeTab === 'questions'" class="hero-refresh-btn" @tap="questionCreateMode ? openCreateQuestionActions() : refreshQuestionManager">
+        {{ questionCreateMode ? '⋮' : '↻' }}
+      </button>
     </view>
 
     <view v-if="loading" class="state-card">正在读取后台数据...</view>
@@ -113,7 +115,123 @@
         </view>
       </view>
 
-      <view v-if="activeTab === 'questions'" class="question-manager">
+      <view v-if="activeTab === 'questions' && questionCreateMode" class="question-create-page">
+        <view class="question-create-card">
+          <view class="create-meta-grid">
+            <view class="create-field">
+              <view class="create-label">科目</view>
+              <picker :range="createQuestionSubjectLabels" :value="selectedCreateSubjectIndex" @change="handleCreateSubjectChange">
+                <view class="create-picker">
+                  <text>{{ selectedCreateSubjectLabel }}</text>
+                  <text class="create-picker-arrow">⌄</text>
+                </view>
+              </picker>
+            </view>
+            <view class="create-field">
+              <view class="create-label">模块</view>
+              <picker :range="createQuestionModuleLabels" :value="selectedCreateModuleIndex" @change="handleCreateModuleChange">
+                <view class="create-picker">
+                  <text>{{ selectedCreateModuleLabel }}</text>
+                  <text class="create-picker-arrow">⌄</text>
+                </view>
+              </picker>
+            </view>
+          </view>
+
+          <view class="create-field full">
+            <view class="create-label">考点</view>
+            <picker :range="createQuestionSubmoduleLabels" :value="selectedCreateSubmoduleIndex" @change="handleCreateSubmoduleChange">
+              <view class="create-picker">
+                <text>{{ selectedCreateSubmoduleLabel }}</text>
+                <text class="create-picker-arrow">⌄</text>
+              </view>
+            </picker>
+          </view>
+
+          <view class="create-section-title">难度选择</view>
+          <view class="create-difficulty-row">
+            <button
+              v-for="item in createDifficultyOptions"
+              :key="item"
+              class="create-difficulty-btn"
+              :class="{ active: Number(createQuestionForm.difficulty) === item }"
+              @tap="createQuestionForm.difficulty = item"
+            >
+              {{ item }}
+            </button>
+          </view>
+
+          <view class="create-divider"></view>
+
+          <view class="create-section-head">
+            <view class="create-section-title">题干</view>
+            <text class="create-required-tag">必填</text>
+          </view>
+          <textarea
+            v-model.trim="createQuestionForm.stem"
+            class="create-textarea stem"
+            placeholder="请输入题干，英语填空建议包含 ____，数学公式建议使用 LaTeX"
+          />
+
+          <view class="create-section-head options">
+            <view class="create-section-title">选项</view>
+            <text class="create-section-hint">设置 A-D 四个选项，并选择正确答案</text>
+          </view>
+          <view class="create-option-list">
+            <view class="create-option-row" :class="{ selected: createQuestionForm.answer === 'A' }" @tap="setCreateAnswer('A')">
+              <text class="create-radio">{{ createQuestionForm.answer === 'A' ? '●' : '○' }}</text>
+              <text class="create-option-label">A.</text>
+              <input v-model.trim="createQuestionForm.option_a" class="create-option-input" placeholder="A 选项" />
+            </view>
+            <view class="create-option-row" :class="{ selected: createQuestionForm.answer === 'B' }" @tap="setCreateAnswer('B')">
+              <text class="create-radio">{{ createQuestionForm.answer === 'B' ? '●' : '○' }}</text>
+              <text class="create-option-label">B.</text>
+              <input v-model.trim="createQuestionForm.option_b" class="create-option-input" placeholder="B 选项" />
+            </view>
+            <view class="create-option-row" :class="{ selected: createQuestionForm.answer === 'C' }" @tap="setCreateAnswer('C')">
+              <text class="create-radio">{{ createQuestionForm.answer === 'C' ? '●' : '○' }}</text>
+              <text class="create-option-label">C.</text>
+              <input v-model.trim="createQuestionForm.option_c" class="create-option-input" placeholder="C 选项" />
+            </view>
+            <view class="create-option-row" :class="{ selected: createQuestionForm.answer === 'D' }" @tap="setCreateAnswer('D')">
+              <text class="create-radio">{{ createQuestionForm.answer === 'D' ? '●' : '○' }}</text>
+              <text class="create-option-label">D.</text>
+              <input v-model.trim="createQuestionForm.option_d" class="create-option-input" placeholder="D 选项" />
+            </view>
+          </view>
+
+          <view class="create-section-head">
+            <view class="create-section-title">解析</view>
+            <text class="create-suggest-tag">建议填写</text>
+          </view>
+          <textarea
+            v-model.trim="createQuestionForm.explanation"
+            class="create-textarea explanation"
+            placeholder="写清楚答案理由、易错点或推导过程"
+          />
+        </view>
+
+        <view class="question-create-footer">
+          <button
+            class="create-footer-btn outline"
+            :disabled="questionCreateSaving"
+            @tap="submitCreatedQuestion('pending')"
+          >
+            <text class="create-footer-icon">◷</text>
+            <text>进入待审核</text>
+          </button>
+          <button
+            class="create-footer-btn primary"
+            :disabled="questionCreateSaving"
+            @tap="submitCreatedQuestion('publish')"
+          >
+            <text class="create-footer-icon">↥</text>
+            <text>直接发布</text>
+          </button>
+        </view>
+      </view>
+
+      <view v-if="activeTab === 'questions' && !questionCreateMode" class="question-manager">
         <view class="question-stats-grid">
           <view
             v-for="item in questionStatCards"
@@ -177,7 +295,7 @@
         </view>
 
         <view class="question-action-row" :class="{ compact: !canShowReviewQueueEntry }">
-          <button class="question-action-btn outline" @tap="showComingSoon('新增题目')">
+          <button class="question-action-btn outline" @tap="openCreateQuestion">
             <text class="question-action-icon">＋</text>
             <text>新增题目</text>
           </button>
@@ -439,6 +557,7 @@ import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   cancelAdminMembership,
+  createAdminQuestion,
   createAdminMessage,
   fetchAdminFeedback,
   fetchAdminMe,
@@ -457,6 +576,7 @@ import {
   updateAdminQuestionStatus
 } from '../../api/admin'
 import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
+import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const ADMIN_EMAIL = '2221073755@qq.com'
@@ -466,6 +586,8 @@ const allowed = ref(false)
 const overview = ref({})
 const activeTab = ref('users')
 const questionEntryMode = ref(false)
+const questionCreateMode = ref(false)
+const questionCreateSaving = ref(false)
 const users = ref([])
 const usersLoading = ref(false)
 const userSearch = ref('')
@@ -534,6 +656,42 @@ const questionModuleMap = {
 
 const fallbackQuestionModules = ['中国哲学常识', '词汇', '论证', '一元函数微分学']
 
+const createQuestionCatalog = {
+  中华文化: {
+    exam_code: 'COMMON',
+    modules: {
+      中国哲学常识: ['儒家', '道家', '墨家', '法家', '名家', '纵横家', '后代学派流变', '古代宗教流变'],
+      中国历史学常识: ['古代职官与科举', '古代礼俗与称谓', '古代衣食住行', '古代军事战争', '古代经济发展', '古代图书文物', '近现代史学常识'],
+      中国文学常识: ['文体流变', '代表作家及作品', '创作群体及文学流派', '文学总集', '民族史诗'],
+      中国艺术常识: ['书法', '绘画', '雕塑', '建筑', '音乐', '戏剧', '民俗', '陶瓷'],
+      中国古代科技常识: ['天文历法与算学', '地理舆图', '农业水利', '医学', '科技发明']
+    }
+  },
+  英语运用: {
+    exam_code: 'COMMON',
+    modules: {
+      语言知识: ['词汇', '语法', '语用']
+    }
+  },
+  数学基础: {
+    exam_code: 'Z002',
+    modules: {
+      一元函数微分学: ['极限', '连续', '导数', '微分', '高阶导数', '洛必达法则', '单调性', '极值与最值', '凹凸性', '拐点', '渐近线'],
+      一元函数积分学: ['原函数', '定积分', '变限积分', '牛顿-莱布尼茨公式', '换元积分', '分部积分', '几何应用', '物理应用'],
+      多元函数微分学: ['偏导数', '全微分', '二阶偏导', '链导法则', '隐函数求导', '二元函数极值']
+    }
+  },
+  逻辑推理: {
+    exam_code: 'Z001',
+    modules: {
+      概念判断: ['概念种类', '概念关系', '定义', '划分'],
+      论证: ['加强', '削弱', '解释', '谬误识别'],
+      削弱加强: ['加强', '削弱'],
+      推理规则: ['演绎推理', '归纳推理', '类比推理', '综合推理']
+    }
+  }
+}
+
 const questionDifficultyOptions = [
   { label: '难度', value: '' },
   { label: '难度 1', value: '1' },
@@ -574,15 +732,37 @@ const reviewForm = reactive({
   review_note: ''
 })
 
+const createDifficultyOptions = [1, 2, 3, 4, 5]
+
+const createQuestionForm = reactive({
+  exam_code: 'COMMON',
+  subject: '英语运用',
+  module: '语言知识',
+  submodule: '语法',
+  stem: '',
+  option_a: '',
+  option_b: '',
+  option_c: '',
+  option_d: '',
+  answer: 'A',
+  explanation: '',
+  difficulty: 2
+})
+
 const tabs = [
   { key: 'users', label: '用户' },
   { key: 'feedback', label: '反馈' },
   { key: 'messages', label: '消息' }
 ]
 
-const pageTitle = computed(() => (activeTab.value === 'questions' ? '题库管理' : '后台管理'))
+const pageTitle = computed(() => {
+  if (activeTab.value === 'questions' && questionCreateMode.value) return '新增题目'
+  return activeTab.value === 'questions' ? '题库管理' : '后台管理'
+})
 const pageSubtitle = computed(() => (
-  activeTab.value === 'questions'
+  activeTab.value === 'questions' && questionCreateMode.value
+    ? '编辑题干、选项、分类与发布状态'
+    : activeTab.value === 'questions'
     ? '编辑、审核与题库质量运营'
     : '用户、反馈与消息运营面板'
 ))
@@ -661,6 +841,29 @@ const selectedQuestionSubjectLabel = computed(() => questionSubjectOptions[selec
 const selectedQuestionModuleLabel = computed(() => questionModuleOptions.value[selectedQuestionModuleIndex.value]?.label || '模块')
 const selectedQuestionDifficultyLabel = computed(() => questionDifficultyOptions[selectedQuestionDifficultyIndex.value]?.label || '难度')
 const selectedQuestionStatusLabel = computed(() => questionStatusOptions[selectedQuestionStatusIndex.value]?.label || '状态')
+
+const createQuestionSubjectOptions = computed(() => (
+  Object.keys(createQuestionCatalog).map((subject) => ({ label: subject, value: subject }))
+))
+const createQuestionModuleOptions = computed(() => {
+  const catalog = createQuestionCatalog[createQuestionForm.subject]
+  const modules = catalog ? Object.keys(catalog.modules) : []
+  return modules.map((module) => ({ label: module, value: module }))
+})
+const createQuestionSubmoduleOptions = computed(() => {
+  const catalog = createQuestionCatalog[createQuestionForm.subject]
+  const submodules = catalog?.modules?.[createQuestionForm.module] || []
+  return submodules.map((submodule) => ({ label: submodule, value: submodule }))
+})
+const createQuestionSubjectLabels = computed(() => createQuestionSubjectOptions.value.map((item) => item.label))
+const createQuestionModuleLabels = computed(() => createQuestionModuleOptions.value.map((item) => item.label))
+const createQuestionSubmoduleLabels = computed(() => createQuestionSubmoduleOptions.value.map((item) => item.label))
+const selectedCreateSubjectIndex = computed(() => getOptionIndex(createQuestionSubjectOptions.value, createQuestionForm.subject))
+const selectedCreateModuleIndex = computed(() => getOptionIndex(createQuestionModuleOptions.value, createQuestionForm.module))
+const selectedCreateSubmoduleIndex = computed(() => getOptionIndex(createQuestionSubmoduleOptions.value, createQuestionForm.submodule))
+const selectedCreateSubjectLabel = computed(() => createQuestionSubjectOptions.value[selectedCreateSubjectIndex.value]?.label || '请选择科目')
+const selectedCreateModuleLabel = computed(() => createQuestionModuleOptions.value[selectedCreateModuleIndex.value]?.label || '请选择模块')
+const selectedCreateSubmoduleLabel = computed(() => createQuestionSubmoduleOptions.value[selectedCreateSubmoduleIndex.value]?.label || '请选择考点')
 
 const selectedQuestionIdSet = computed(() => new Set(selectedQuestionIds.value))
 const selectedQuestionCount = computed(() => (
@@ -826,7 +1029,7 @@ async function loadQuestions() {
       limit: 50,
       offset: 0
     })
-    const rawItems = response.items || []
+    const rawItems = (response.items || []).filter((item) => !isAiGeneratedQuestion(item))
     questions.value = rawItems
     questionListCount.value = Number(response.count || rawItems.length || 0)
     if (!allMatchingQuestionsSelected.value) {
@@ -896,6 +1099,197 @@ function getOptionIndex(options, value) {
   return index >= 0 ? index : 0
 }
 
+function syncCreateQuestionClassification() {
+  const catalog = createQuestionCatalog[createQuestionForm.subject] || createQuestionCatalog['英语运用']
+  createQuestionForm.subject = createQuestionCatalog[createQuestionForm.subject] ? createQuestionForm.subject : '英语运用'
+  createQuestionForm.exam_code = catalog.exam_code
+  const modules = Object.keys(catalog.modules)
+  if (!modules.includes(createQuestionForm.module)) {
+    createQuestionForm.module = modules[0] || ''
+  }
+  const submodules = catalog.modules[createQuestionForm.module] || []
+  if (!submodules.includes(createQuestionForm.submodule)) {
+    createQuestionForm.submodule = submodules[0] || ''
+  }
+}
+
+function resetCreateQuestionForm(seed = {}) {
+  createQuestionForm.subject = createQuestionCatalog[seed.subject] ? seed.subject : '英语运用'
+  createQuestionForm.module = seed.module || ''
+  createQuestionForm.submodule = seed.submodule || (
+    createQuestionForm.subject === '英语运用' ? '语法' : ''
+  )
+  syncCreateQuestionClassification()
+  createQuestionForm.stem = ''
+  createQuestionForm.option_a = ''
+  createQuestionForm.option_b = ''
+  createQuestionForm.option_c = ''
+  createQuestionForm.option_d = ''
+  createQuestionForm.answer = 'A'
+  createQuestionForm.explanation = ''
+  createQuestionForm.difficulty = Number(seed.difficulty || 2)
+}
+
+function openCreateQuestion() {
+  clearQuestionSelection()
+  resetCreateQuestionForm({
+    subject: questionFilters.subject,
+    module: questionFilters.module,
+    difficulty: questionFilters.difficulty || 2
+  })
+  questionCreateMode.value = true
+}
+
+function openCreateQuestionActions() {
+  uni.showActionSheet({
+    itemList: ['清空当前内容', '返回题库管理'],
+    success: ({ tapIndex }) => {
+      if (tapIndex === 0) {
+        resetCreateQuestionForm({
+          subject: createQuestionForm.subject,
+          module: createQuestionForm.module,
+          submodule: createQuestionForm.submodule,
+          difficulty: createQuestionForm.difficulty
+        })
+        return
+      }
+      closeCreateQuestion()
+    }
+  })
+}
+
+function isCreateQuestionDirty() {
+  return [
+    createQuestionForm.stem,
+    createQuestionForm.option_a,
+    createQuestionForm.option_b,
+    createQuestionForm.option_c,
+    createQuestionForm.option_d,
+    createQuestionForm.explanation
+  ].some((value) => String(value || '').trim())
+}
+
+function closeCreateQuestion() {
+  if (!questionCreateMode.value) return false
+  if (isCreateQuestionDirty()) {
+    uni.showModal({
+      title: '放弃新增题目？',
+      content: '返回后当前未提交的题干、选项和解析不会保存。',
+      confirmText: '放弃',
+      confirmColor: '#ef4444',
+      success: (result) => {
+        if (!result.confirm) return
+        questionCreateMode.value = false
+      }
+    })
+    return true
+  }
+  questionCreateMode.value = false
+  return true
+}
+
+function handleCreateSubjectChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  createQuestionForm.subject = createQuestionSubjectOptions.value[index]?.value || '英语运用'
+  createQuestionForm.module = ''
+  createQuestionForm.submodule = ''
+  syncCreateQuestionClassification()
+}
+
+function handleCreateModuleChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  createQuestionForm.module = createQuestionModuleOptions.value[index]?.value || ''
+  createQuestionForm.submodule = ''
+  syncCreateQuestionClassification()
+}
+
+function handleCreateSubmoduleChange(event) {
+  const index = Number(event?.detail?.value || 0)
+  createQuestionForm.submodule = createQuestionSubmoduleOptions.value[index]?.value || ''
+  syncCreateQuestionClassification()
+}
+
+function setCreateAnswer(answer) {
+  if (!reviewAnswerOptions.includes(answer)) return
+  createQuestionForm.answer = answer
+}
+
+function buildCreateQuestionPayload(target) {
+  syncCreateQuestionClassification()
+  const payload = {
+    exam_code: createQuestionForm.exam_code,
+    subject: createQuestionForm.subject,
+    module: createQuestionForm.module,
+    submodule: createQuestionForm.submodule,
+    question_type: 'single_choice',
+    stem: createQuestionForm.stem,
+    option_a: createQuestionForm.option_a,
+    option_b: createQuestionForm.option_b,
+    option_c: createQuestionForm.option_c,
+    option_d: createQuestionForm.option_d,
+    answer: createQuestionForm.answer,
+    explanation: createQuestionForm.explanation,
+    difficulty: Number(createQuestionForm.difficulty),
+    source_type: 'manual',
+    source_year: null,
+    status: target === 'publish' ? QUESTION_STATUS_ACTIVE : QUESTION_STATUS_ARCHIVED,
+    review_status: target === 'publish' ? 'approved' : 'pending'
+  }
+  const requiredFields = ['subject', 'module', 'submodule', 'stem', 'option_a', 'option_b', 'option_c', 'option_d', 'answer']
+  const missingField = requiredFields.find((field) => !String(payload[field] || '').trim())
+  if (missingField) {
+    uni.showToast({ title: '请补全分类、题干、四个选项和答案', icon: 'none' })
+    return null
+  }
+  if (!reviewAnswerOptions.includes(payload.answer)) {
+    uni.showToast({ title: '请选择正确答案', icon: 'none' })
+    return null
+  }
+  if (!Number.isInteger(payload.difficulty) || payload.difficulty < 1 || payload.difficulty > 5) {
+    uni.showToast({ title: '难度必须为 1-5', icon: 'none' })
+    return null
+  }
+  return payload
+}
+
+async function submitCreatedQuestion(target) {
+  if (questionCreateSaving.value) return
+  const payload = buildCreateQuestionPayload(target)
+  if (!payload) return
+  const isPublish = target === 'publish'
+  if (isPublish) {
+    const confirmed = await new Promise((resolve) => {
+      uni.showModal({
+        title: '确认直接发布？',
+        content: '发布后这道题会进入用户可刷题范围。请确认题干、答案和解析已经检查无误。',
+        confirmText: '发布',
+        confirmColor: '#1769ff',
+        success: (result) => resolve(Boolean(result.confirm)),
+        fail: () => resolve(false)
+      })
+    })
+    if (!confirmed) return
+  }
+
+  questionCreateSaving.value = true
+  try {
+    await createAdminQuestion(payload)
+    questionCreateMode.value = false
+    questionFilters.subject = payload.subject
+    questionFilters.module = payload.module
+    questionFilters.difficulty = ''
+    questionFilters.status = isPublish ? QUESTION_STATUS_ACTIVE : QUESTION_STATUS_PENDING_REVIEW
+    questionFilters.search = ''
+    resetCreateQuestionForm({ subject: payload.subject, module: payload.module, submodule: payload.submodule })
+    uni.showToast({ title: isPublish ? '题目已发布' : '已进入待审核', icon: 'success' })
+    await refreshQuestionManager()
+  } catch (error) {
+    uni.showToast({ title: '题目创建失败，请检查分类和必填内容', icon: 'none' })
+  } finally {
+    questionCreateSaving.value = false
+  }
+}
+
 function handleQuestionSubjectChange(event) {
   const index = Number(event?.detail?.value || 0)
   questionFilters.subject = questionSubjectOptions[index]?.value || ''
@@ -957,7 +1351,7 @@ async function loadReviewQueue({ append = false } = {}) {
       limit: 50,
       offset: append ? reviewQueueItems.value.length : 0
     })
-    const items = response.items || []
+    const items = (response.items || []).filter((item) => !isAiGeneratedQuestion(item))
     reviewQueueItems.value = append ? [...reviewQueueItems.value, ...items] : items
     reviewQueueCount.value = Number(response.count || reviewQueueItems.value.length || 0)
     if (!append) {
@@ -1665,6 +2059,10 @@ function formatDate(value) {
 }
 
 function goBack() {
+  if (questionCreateMode.value) {
+    closeCreateQuestion()
+    return
+  }
   uni.navigateBack({
     fail() {
       uni.redirectTo({ url: '/pages/home/index?tab=profile' })
@@ -1734,6 +2132,8 @@ function goBack() {
 .question-check::after,
 .question-edit-btn::after,
 .question-bulk-btn::after,
+.create-difficulty-btn::after,
+.create-footer-btn::after,
 .review-close-btn::after,
 .review-mini-btn::after,
 .review-difficulty-btn::after,
@@ -2559,6 +2959,282 @@ function goBack() {
   height: 26rpx;
   display: block;
   flex: 0 0 26rpx;
+}
+
+.question-create-page {
+  padding-bottom: 130rpx;
+}
+
+.question-create-card {
+  padding: 28rpx 24rpx 30rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1rpx solid rgba(226, 232, 240, 0.92);
+  box-shadow: 0 18rpx 48rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.create-meta-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.create-field {
+  min-width: 0;
+}
+
+.create-field.full {
+  margin-top: 22rpx;
+}
+
+.create-label,
+.create-section-title {
+  color: #101828;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.create-picker {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12rpx;
+  height: 68rpx;
+  margin-top: 14rpx;
+  padding: 0 20rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #cfd8e3;
+  background: rgba(255, 255, 255, 0.92);
+  color: #101828;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.create-picker text:first-child {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.create-picker-arrow {
+  flex: 0 0 auto;
+  color: #667085;
+  font-size: 28rpx;
+  line-height: 1;
+  transform: translateY(-2rpx);
+}
+
+.create-difficulty-row {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  margin-top: 14rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #cfd8e3;
+  overflow: hidden;
+}
+
+.create-difficulty-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 62rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-right: 1rpx solid #cfd8e3;
+  border-radius: 0;
+  color: #101828;
+  background: #ffffff;
+  font-size: 27rpx;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.create-difficulty-btn:last-child {
+  border-right: 0;
+}
+
+.create-difficulty-btn.active {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1769ff 0%, #0f5fe8 100%);
+  box-shadow: 0 10rpx 22rpx rgba(23, 105, 255, 0.22);
+}
+
+.create-divider {
+  height: 1rpx;
+  margin: 28rpx 0;
+  background: #e4eaf2;
+}
+
+.create-section-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  margin-top: 26rpx;
+}
+
+.create-section-head:first-of-type {
+  margin-top: 0;
+}
+
+.create-section-head.options {
+  justify-content: flex-start;
+  flex-wrap: wrap;
+}
+
+.create-required-tag,
+.create-suggest-tag {
+  flex: 0 0 auto;
+  padding: 7rpx 12rpx;
+  border-radius: 8rpx;
+  color: #f97316;
+  background: #fff7ed;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.create-section-hint {
+  color: #667085;
+  font-size: 22rpx;
+  font-weight: 700;
+  line-height: 1.3;
+}
+
+.create-textarea {
+  width: 100%;
+  margin-top: 14rpx;
+  padding: 20rpx 22rpx;
+  border-radius: 14rpx;
+  border: 1rpx solid #cfd8e3;
+  background: rgba(255, 255, 255, 0.94);
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.55;
+  letter-spacing: 0;
+  box-sizing: border-box;
+}
+
+.create-textarea.stem {
+  min-height: 176rpx;
+}
+
+.create-textarea.explanation {
+  min-height: 154rpx;
+}
+
+.create-option-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 14rpx;
+}
+
+.create-option-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  min-height: 68rpx;
+  padding: 0 18rpx;
+  border-radius: 12rpx;
+  border: 1rpx solid #d5deeb;
+  background: rgba(255, 255, 255, 0.94);
+  box-sizing: border-box;
+}
+
+.create-option-row.selected {
+  border-color: #1769ff;
+  background: #f8fbff;
+  box-shadow: inset 0 0 0 1rpx rgba(23, 105, 255, 0.18);
+}
+
+.create-radio {
+  flex: 0 0 30rpx;
+  width: 30rpx;
+  color: #1769ff;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+}
+
+.create-option-label {
+  flex: 0 0 38rpx;
+  color: #101828;
+  font-size: 26rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.create-option-input {
+  min-width: 0;
+  flex: 1;
+  height: 66rpx;
+  color: #101828;
+  font-size: 26rpx;
+  font-weight: 700;
+  line-height: 66rpx;
+}
+
+.question-create-footer {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 40;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 18rpx;
+  padding: 18rpx 28rpx calc(env(safe-area-inset-bottom) + 18rpx);
+  background: rgba(255, 255, 255, 0.96);
+  border-top: 1rpx solid #edf2f7;
+  box-shadow: 0 -12rpx 36rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.create-footer-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  height: 72rpx;
+  margin: 0;
+  padding: 0 14rpx;
+  border-radius: 14rpx;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.create-footer-btn.outline {
+  color: #1769ff;
+  background: #ffffff;
+  border: 1rpx solid #1769ff;
+}
+
+.create-footer-btn.primary {
+  color: #ffffff;
+  background: linear-gradient(135deg, #1769ff 0%, #0f5fe8 100%);
+  border: 1rpx solid #1769ff;
+  box-shadow: 0 14rpx 28rpx rgba(23, 105, 255, 0.22);
+}
+
+.create-footer-btn[disabled] {
+  opacity: 0.58;
+}
+
+.create-footer-icon {
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .review-overlay {

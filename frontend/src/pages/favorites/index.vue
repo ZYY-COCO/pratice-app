@@ -60,6 +60,7 @@
         <view class="tag-row">
           <text class="subject-tag">{{ item.subject }}</text>
           <text class="module-tag">{{ item.module }}</text>
+          <text v-if="item.sourceLabel" class="source-origin-tag">{{ item.sourceLabel }}</text>
         </view>
         <MathText class="stem" :value="item.stem" />
         <view class="card-footer">
@@ -75,6 +76,7 @@
           <view class="detail-copy">
             <view class="detail-title">收藏题目</view>
             <view class="detail-sub">{{ selectedItem.subject }} / {{ selectedItem.module }}</view>
+            <view v-if="selectedItem.sourceLabel" class="detail-source-tag">{{ selectedItem.sourceLabel }}</view>
           </view>
           <view class="detail-actions">
             <button class="star-btn active" :disabled="toggling" @tap="toggleSelectedFavorite">★</button>
@@ -113,6 +115,7 @@ import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { getQuestionSourceLabel } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -143,7 +146,9 @@ const favoriteCards = computed(() =>
         option_c: question.option_c,
         option_d: question.option_d,
         answer: question.answer || '',
-        explanation: question.explanation || ''
+        explanation: question.explanation || '',
+        source_type: question.source_type || '',
+        sourceLabel: getQuestionSourceLabel(question)
       }
     })
     .filter((item) => item.question_id)
@@ -442,7 +447,9 @@ function goBack() {
 }
 
 .subject-tag,
-.module-tag {
+.module-tag,
+.source-origin-tag,
+.detail-source-tag {
   padding: 8rpx 14rpx;
   border-radius: 999rpx;
   font-size: 21rpx;
@@ -457,6 +464,13 @@ function goBack() {
 .module-tag {
   color: #667085;
   background: #f3f6fb;
+}
+
+.source-origin-tag,
+.detail-source-tag {
+  color: #0f766e;
+  background: #e6fffb;
+  border: 1rpx solid rgba(20, 184, 166, 0.18);
 }
 
 .stem {
@@ -537,6 +551,11 @@ function goBack() {
   color: #667085;
   font-size: 24rpx;
   font-weight: 700;
+}
+
+.detail-source-tag {
+  display: inline-flex;
+  margin-top: 12rpx;
 }
 
 .close-btn,

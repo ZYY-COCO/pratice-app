@@ -41,7 +41,7 @@ const label = computed(() => {
   const sourceType = String(question.source_type || '')
   const submodule = question.submodule || question.module || question.subject || '题库练习'
   if (/ai/i.test(sourceType)) {
-    return `来源：AI训练 · ${submodule}`
+    return `来源：AI专项出题 · ${submodule}`
   }
   if (question.source_year) {
     return `来源：${question.source_year}年真题 · ${question.subject || '题库'} · ${submodule}`

@@ -17,6 +17,7 @@ from app.schemas.reports import (
     StudyAdviceResponse,
     StudySubjectAdvice,
 )
+from app.services.question_sources import is_ai_generated_question
 from app.services.reports import build_ability_item
 
 router = APIRouter(prefix="/report", tags=["能力报告"])
@@ -149,7 +150,7 @@ def fetch_study_ability_rows(supabase, user_id: str, exam_code: str) -> list[dic
 def fetch_study_wrong_rows(supabase, user_id: str, exam_code: str, limit: int = 40) -> list[dict]:
     rows = (
         supabase.table("wrong_questions")
-        .select("wrong_count, last_wrong_at, questions(exam_code, subject, module, submodule, stem)")
+        .select("wrong_count, last_wrong_at, questions(exam_code, subject, module, submodule, stem, source_type)")
         .eq("user_id", user_id)
         .order("last_wrong_at", desc=True)
         .limit(limit)
@@ -163,6 +164,7 @@ def fetch_study_wrong_rows(supabase, user_id: str, exam_code: str, limit: int = 
         for row in rows
         if belongs_to_exam(row.get("questions"), exam_code)
         and (row.get("questions") or {}).get("subject") in allowed
+        and not is_ai_generated_question(row.get("questions"))
     ]
 
 
@@ -503,7 +505,7 @@ def learning_summary(
 
     wrong_response = (
         supabase.table("wrong_questions")
-        .select("id, questions(exam_code, subject)")
+        .select("id, questions(exam_code, subject, source_type)")
         .eq("user_id", user_id)
         .limit(1000)
         .execute()
@@ -511,6 +513,7 @@ def learning_summary(
     wrong_rows = wrong_response.data
     if exam_code:
         wrong_rows = [row for row in wrong_rows if belongs_to_exam(row.get("questions"), exam_code)]
+    wrong_rows = [row for row in wrong_rows if not is_ai_generated_question(row.get("questions"))]
 
     return LearningSummaryResponse(
         exam_code=exam_code,
