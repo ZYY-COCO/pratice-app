@@ -77,7 +77,9 @@
 
     <template v-else-if="activeTab === 'mistakes'">
       <view class="mistake-page-head">
-        <button class="icon-back-btn" @tap="handleMistakeBack">‹</button>
+        <button class="icon-back-btn" @tap="handleMistakeBack">
+          <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+        </button>
         <view class="mistake-head-copy">
           <view class="head-title">{{ retestMode ? '错题重测' : '错题本' }}</view>
           <view class="head-subtitle">{{ retestMode ? retestScopeText : mistakeSubtitle }}</view>
@@ -90,7 +92,6 @@
         >
           {{ retestButtonText }}
         </button>
-        <button v-else class="retest-entry-btn ghost" @tap="confirmExitRetest">退出</button>
       </view>
 
       <template v-if="retestMode">
@@ -262,7 +263,9 @@
     <template v-else-if="activeTab === 'report'">
       <view class="report-dashboard">
         <view class="report-topbar">
-          <button class="icon-back-btn" @tap="activeTab = 'profile'">‹</button>
+          <button class="icon-back-btn" @tap="activeTab = 'profile'">
+            <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+          </button>
           <view class="report-top-title">学习报告</view>
           <view class="report-top-spacer"></view>
         </view>
@@ -399,7 +402,8 @@
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
               <view class="benefit-icon" :class="item.iconClass">
-                <text v-if="!item.iconClass">{{ item.icon }}</text>
+                <image v-if="item.iconSrc" class="benefit-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
               </view>
               <view class="benefit-label">{{ item.label }}</view>
             </view>
@@ -417,7 +421,8 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <text v-if="!item.iconClass">{{ item.icon }}</text>
+                <image v-if="item.iconSrc" class="menu-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
               </view>
               <view class="menu-copy">
                 <view class="menu-title-row">
@@ -909,8 +914,8 @@ const proBenefits = [
 ]
 const profileBenefits = [
   { label: '无限存储', icon: '∞' },
-  { label: '错题本', icon: '', iconClass: 'book-icon' },
-  { label: '学习报告', icon: '', iconClass: 'report-icon' },
+  { label: '错题本', icon: '', iconSrc: '/static/ui-icons/wrong-book.svg' },
+  { label: '学习报告', icon: '', iconSrc: '/static/ui-icons/report.svg' },
   { label: 'AI生题及解析', icon: 'AI' }
 ]
 
@@ -1008,13 +1013,13 @@ const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.item
 const practiceTools = computed(() => {
   const proLocked = !isProMember.value
   return [
-    { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '☆', tone: 'blue', action: 'favorites' },
-    { label: '练习历史', desc: '回顾我的练习记录', icon: '◷', tone: 'green', action: 'history' },
+    { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '', iconSrc: '/static/ui-icons/favorite.svg', tone: 'blue', action: 'favorites' },
+    { label: '练习历史', desc: '回顾我的练习记录', icon: '', iconSrc: '/static/ui-icons/history.svg', tone: 'green', action: 'history' },
     {
       label: '错题本',
       desc: proLocked ? 'Pro 开放：查看与重刷你的错题' : `查看与重刷 ${wrongSummaryCount.value} 道错题`,
       icon: '',
-      iconClass: 'book-icon',
+      iconSrc: '/static/ui-icons/wrong-book.svg',
       tone: proLocked ? 'locked' : 'blue',
       action: 'mistakes',
       proOnly: true,
@@ -1024,7 +1029,7 @@ const practiceTools = computed(() => {
       label: '学习报告',
       desc: proLocked ? 'Pro 开放：查看能力分析与提升建议' : (reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告'),
       icon: '',
-      iconClass: 'report-icon',
+      iconSrc: '/static/ui-icons/report.svg',
       tone: proLocked ? 'locked' : 'purple',
       action: 'report',
       proOnly: true,
@@ -4382,16 +4387,27 @@ function getMembershipExpiresAt(user) {
 }
 
 .icon-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
   width: 72rpx;
   height: 72rpx;
   flex: 0 0 72rpx;
+  padding: 0;
   border: 0;
   border-radius: 24rpx;
   background: #ffffff;
-  color: #172033;
-  font-size: 42rpx;
-  line-height: 72rpx;
   box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
+}
+
+.icon-back-btn::after {
+  border: 0;
+}
+
+.back-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
 }
 
 .mistake-head-copy {
@@ -5224,6 +5240,12 @@ function getMembershipExpiresAt(user) {
   box-shadow: 0 8rpx 20rpx rgba(25, 48, 89, 0.08);
 }
 
+.benefit-icon-img {
+  width: 32rpx;
+  height: 32rpx;
+  display: block;
+}
+
 .benefit-icon.book-icon,
 .benefit-icon.report-icon,
 .menu-icon.book-icon,
@@ -5337,6 +5359,12 @@ function getMembershipExpiresAt(user) {
   flex-shrink: 0;
   font-size: 28rpx;
   font-weight: 900;
+}
+
+.menu-icon-img {
+  width: 34rpx;
+  height: 34rpx;
+  display: block;
 }
 
 .menu-icon.green {

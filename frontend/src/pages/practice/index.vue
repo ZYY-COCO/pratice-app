@@ -1,7 +1,9 @@
 <template>
   <view class="page practice-page" :style="themeInlineStyle">
     <view class="top-nav">
-      <button class="back-btn" @tap="goBack">‹</button>
+      <button class="back-btn" @tap="goBack">
+        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </button>
       <view class="top-copy">
         <view class="top-title">{{ pageTitle }}</view>
         <view class="top-sub">{{ topSubtitle }}</view>
@@ -2484,6 +2486,16 @@ function scrollToResultSection() {
   align-items: center;
   justify-content: center;
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
+}
+
+.back-btn::after {
+  border: 0;
+}
+
+.back-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
 }
 
 .top-copy {

@@ -1,7 +1,9 @@
 <template>
   <view class="page leaderboard-page" :style="themeInlineStyle">
     <view class="leaderboard-head">
-      <button class="back-btn" @tap="goBack">‹</button>
+      <button class="back-btn" @tap="goBack">
+        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </button>
       <view class="head-copy">
         <view class="head-eyebrow">港研通</view>
         <view class="head-title">学习排行榜</view>
@@ -193,6 +195,16 @@ function formatAccuracy(value) {
   font-size: 44rpx;
   font-weight: 900;
   box-shadow: 0 10rpx 26rpx rgba(30, 52, 91, 0.08);
+}
+
+.back-btn::after {
+  border: 0;
+}
+
+.back-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
 }
 
 .refresh-btn {

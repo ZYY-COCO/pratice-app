@@ -1,7 +1,9 @@
 <template>
   <view class="page favorites-page" :style="themeInlineStyle">
     <view class="topbar">
-      <view class="back-btn" @tap="goBack">‹</view>
+      <view class="back-btn" @tap="goBack">
+        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </view>
       <view>
         <view class="app-name">港研通</view>
         <view class="page-title">收藏夹</view>
@@ -262,10 +264,13 @@ function goBack() {
 
 .back-btn {
   background: #ffffff;
-  color: #101828;
-  font-size: 44rpx;
-  font-weight: 800;
   box-shadow: 0 10rpx 26rpx rgba(25, 48, 89, 0.06);
+}
+
+.back-icon {
+  width: 28rpx;
+  height: 28rpx;
+  display: block;
 }
 
 .app-name {

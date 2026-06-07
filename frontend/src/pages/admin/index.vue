@@ -1,7 +1,9 @@
 <template>
   <view class="admin-page" :class="{ 'question-mode': activeTab === 'questions' }" :style="themeInlineStyle">
     <view class="admin-hero">
-      <button class="back-btn" @tap="goBack">‹</button>
+      <button class="back-btn" @tap="goBack">
+        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </button>
       <view class="admin-heading">
         <view class="admin-title">{{ pageTitle }}</view>
         <view class="admin-subtitle">{{ pageSubtitle }}</view>
@@ -1707,14 +1709,18 @@ function goBack() {
   justify-content: center;
   width: 70rpx;
   height: 70rpx;
+  padding: 0;
   transform: translateY(-50%);
   border-radius: 22rpx;
   border: 0;
   background: #ffffff;
-  color: #101828;
-  font-size: 42rpx;
-  line-height: 1;
   box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.08);
+}
+
+.back-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
 }
 
 .back-btn::after,

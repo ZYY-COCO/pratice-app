@@ -1,7 +1,9 @@
 <template>
   <view class="page history-page" :style="themeInlineStyle">
     <view class="history-topbar">
-      <view class="back-btn" @tap="goBack">‹</view>
+      <view class="back-btn" @tap="goBack">
+        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </view>
       <view class="top-title">练习历史</view>
       <view class="top-actions">
         <view class="top-action-btn" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">
@@ -467,6 +469,12 @@ function goBack() {
 
 .back-btn {
   justify-self: start;
+}
+
+.back-icon {
+  width: 28rpx;
+  height: 28rpx;
+  display: block;
 }
 
 .top-title {
