@@ -440,7 +440,10 @@
           <view class="profile-section-title">其他服务</view>
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
-              <view class="menu-icon" :class="item.tone">{{ item.icon }}</view>
+              <view class="menu-icon" :class="item.tone">
+                <image v-if="item.iconSrc" class="menu-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <text v-else>{{ item.icon }}</text>
+              </view>
               <view class="menu-copy">
                 <view class="menu-title">{{ item.label }}</view>
                 <view class="menu-subtitle">{{ item.desc }}</view>
@@ -1065,14 +1068,16 @@ const serviceTools = computed(() => {
       {
         label: '后台管理',
         desc: '管理用户、反馈和系统消息',
-        icon: '管',
+        icon: '',
+        iconSrc: '/static/ui-icons/admin.svg',
         tone: 'purple',
         action: 'admin'
       },
       {
         label: '题库管理',
         desc: '查看、筛选和上下架题目',
-        icon: '题',
+        icon: '',
+        iconSrc: '/static/ui-icons/question-admin.svg',
         tone: 'blue',
         action: 'question-admin'
       }
