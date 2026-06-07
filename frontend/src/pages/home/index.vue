@@ -208,6 +208,7 @@
 
       <view v-if="selectedWrongDetail" class="wrong-modal-mask" @tap="closeWrongDetail">
         <view class="wrong-modal-panel" @tap.stop>
+          <view class="wrong-modal-grabber"></view>
           <view class="wrong-modal-head">
             <view>
               <view class="wrong-modal-title">错题重练</view>
@@ -4504,17 +4505,25 @@ function getMembershipExpiresAt(user) {
   z-index: 50;
   display: flex;
   align-items: flex-end;
-  padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 24rpx);
-  background: rgba(17, 24, 39, 0.38);
+  padding: 22rpx 24rpx calc(env(safe-area-inset-bottom) + 22rpx);
+  background: rgba(15, 23, 42, 0.46);
 }
 
 .wrong-modal-panel {
   width: 100%;
-  max-height: 84vh;
-  border-radius: 32rpx;
+  max-height: 82vh;
+  border-radius: 34rpx;
   background: #ffffff;
-  box-shadow: 0 -16rpx 42rpx rgba(15, 23, 42, 0.16);
+  box-shadow: 0 -20rpx 54rpx rgba(15, 23, 42, 0.22);
   overflow: hidden;
+}
+
+.wrong-modal-grabber {
+  width: 72rpx;
+  height: 8rpx;
+  margin: 18rpx auto 0;
+  border-radius: 999rpx;
+  background: #d8dee9;
 }
 
 .wrong-modal-head {
@@ -4522,87 +4531,93 @@ function getMembershipExpiresAt(user) {
   align-items: center;
   justify-content: space-between;
   gap: 20rpx;
-  padding: 30rpx 34rpx 22rpx;
+  padding: 20rpx 34rpx 22rpx;
   border-bottom: 2rpx solid #eef2f8;
 }
 
 .wrong-modal-title {
   color: #101828;
-  font-size: 34rpx;
+  font-size: 32rpx;
   line-height: 1.3;
   font-weight: 950;
 }
 
 .wrong-modal-sub {
-  margin-top: 8rpx;
+  display: inline-flex;
+  margin-top: 10rpx;
+  padding: 7rpx 14rpx;
+  border-radius: 999rpx;
+  background: #f4f7fb;
   color: #667085;
-  font-size: 25rpx;
-  line-height: 1.5;
-  font-weight: 700;
+  font-size: 23rpx;
+  line-height: 1.35;
+  font-weight: 800;
 }
 
 .wrong-modal-close {
-  width: 58rpx;
-  height: 58rpx;
-  flex: 0 0 58rpx;
+  width: 54rpx;
+  height: 54rpx;
+  flex: 0 0 54rpx;
   border: 0;
   border-radius: 18rpx;
   background: #f3f6fb;
   color: #667085;
-  font-size: 34rpx;
-  line-height: 54rpx;
+  font-size: 32rpx;
+  line-height: 50rpx;
   font-weight: 900;
 }
 
 .wrong-modal-scroll {
-  max-height: 70vh;
-  padding: 24rpx 34rpx 30rpx;
+  max-height: 66vh;
+  padding: 24rpx 34rpx 26rpx;
   box-sizing: border-box;
 }
 
 .wrong-modal-panel .wrong-detail {
-  gap: 20rpx;
+  gap: 18rpx;
 }
 
 .wrong-section-label {
   color: #667085;
-  font-size: 22rpx;
+  font-size: 21rpx;
   line-height: 1.2;
   font-weight: 900;
-  margin-bottom: -8rpx;
+  margin-bottom: -6rpx;
 }
 
 .wrong-modal-panel .wrong-stem {
-  padding: 4rpx 2rpx 6rpx;
-  border-radius: 0;
-  background: transparent;
-  font-size: 31rpx;
-  line-height: 1.62;
+  padding: 22rpx 24rpx;
+  border: 2rpx solid #edf1f7;
+  border-radius: 24rpx;
+  background: #f8fafd;
+  font-size: 29rpx;
+  line-height: 1.56;
   text-align: left;
+  box-shadow: inset 0 0 0 1rpx rgba(255, 255, 255, 0.65);
 }
 
 .wrong-modal-panel .wrong-options {
-  gap: 16rpx;
+  gap: 14rpx;
   width: 100%;
 }
 
 .wrong-modal-panel .wrong-option {
   width: 100%;
-  min-height: 86rpx;
+  min-height: 78rpx;
   margin: 0;
-  padding: 18rpx 22rpx;
-  border-radius: 22rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 20rpx;
   align-items: center;
   box-sizing: border-box;
   box-shadow: none;
 }
 
 .wrong-modal-panel .option-key {
-  width: 46rpx;
-  height: 46rpx;
-  flex: 0 0 46rpx;
-  border-radius: 15rpx;
-  font-size: 24rpx;
+  width: 42rpx;
+  height: 42rpx;
+  flex: 0 0 42rpx;
+  border-radius: 14rpx;
+  font-size: 23rpx;
 }
 
 .retest-detail {
@@ -4653,16 +4668,16 @@ function getMembershipExpiresAt(user) {
 }
 
 .wrong-modal-panel .option-text {
-  font-size: 27rpx;
-  line-height: 1.48;
+  font-size: 26rpx;
+  line-height: 1.45;
 }
 
 .review-hint {
-  padding: 16rpx 20rpx;
-  border-radius: 22rpx;
+  padding: 14rpx 18rpx;
+  border-radius: 20rpx;
   background: #f8fafc;
   color: #667085;
-  font-size: 23rpx;
+  font-size: 22rpx;
   line-height: 1.6;
 }
 
@@ -4687,22 +4702,24 @@ function getMembershipExpiresAt(user) {
 
 .modal-submit-btn {
   width: 100%;
-  min-height: 86rpx;
+  min-height: 82rpx;
   margin: 0;
   border: 0;
-  border-radius: 24rpx;
+  border-radius: 22rpx;
   background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
-  font-size: 27rpx;
-  line-height: 86rpx;
+  font-size: 26rpx;
+  line-height: 82rpx;
   font-weight: 900;
   box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow);
 }
 
-.modal-submit-btn:disabled {
+.modal-submit-btn:disabled,
+.modal-submit-btn[disabled] {
   background: #e8edf7;
   color: #98a2b3;
   box-shadow: none;
+  opacity: 1;
 }
 
 .modal-submit-btn.done {
