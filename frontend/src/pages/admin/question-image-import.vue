@@ -53,7 +53,7 @@
         <view class="panel-head">
           <view>
             <view class="panel-title">图片与识别文本</view>
-            <view class="panel-subtitle">选择图片后，把 OCR 或人工整理的文本粘贴到对应图片下方。</view>
+            <view class="panel-subtitle">选择图片后，把 OCR 或人工整理的文本粘贴到对应图片下方；一张图可以解析多道题。</view>
           </view>
           <button class="primary-mini-btn" @tap="chooseImages">选择图片</button>
         </view>
@@ -78,7 +78,7 @@
               <textarea
                 v-model="item.rawText"
                 class="ocr-textarea"
-                placeholder="粘贴识别文本，例如：题干...&#10;A. ...&#10;B. ...&#10;C. ...&#10;D. ...&#10;答案：B&#10;解析：..."
+                placeholder="粘贴识别文本。单题格式：题干...&#10;A. ...&#10;B. ...&#10;C. ...&#10;D. ...&#10;答案：B&#10;解析：...&#10;&#10;多题可用 1. / 题目1 / --- 分隔。"
                 @input="markDryRunDirty"
               />
               <view class="image-actions">
@@ -384,15 +384,9 @@ function parseSingleImage(item) {
     uni.showToast({ title: '请先粘贴识别文本', icon: 'none' })
     return
   }
-  const draft = createDraftFromText(rawText, item)
-  const existingIndex = drafts.value.findIndex((entry) => entry.image_id === item.id)
-  if (existingIndex >= 0) {
-    drafts.value.splice(existingIndex, 1, draft)
-  } else {
-    drafts.value = [...drafts.value, draft]
-  }
-  item.status = '已解析'
+  const count = parseImageItem(item)
   markDryRunDirty()
+  uni.showToast({ title: `已解析 ${count} 题`, icon: 'success' })
 }
 
 function parseAllImages() {
@@ -401,8 +395,9 @@ function parseAllImages() {
     uni.showToast({ title: '请先粘贴至少一张图片的识别文本', icon: 'none' })
     return
   }
-  targets.forEach(parseSingleImage)
-  uni.showToast({ title: `已解析 ${targets.length} 张图片`, icon: 'success' })
+  const total = targets.reduce((sum, item) => sum + parseImageItem(item), 0)
+  markDryRunDirty()
+  uni.showToast({ title: `已解析 ${total} 题`, icon: 'success' })
 }
 
 function addBlankDraft() {
@@ -410,14 +405,33 @@ function addBlankDraft() {
   markDryRunDirty()
 }
 
-function createDraftFromText(rawText, image) {
+function parseImageItem(item) {
+  const nextDrafts = createDraftsFromText(item.rawText, item)
+  drafts.value = [
+    ...drafts.value.filter((entry) => entry.image_id !== item.id),
+    ...nextDrafts
+  ]
+  item.status = `已解析 ${nextDrafts.length} 题`
+  return nextDrafts.length
+}
+
+function createDraftsFromText(rawText, image) {
+  const blocks = splitQuestionBlocks(rawText)
+  return blocks.map((block, index) => createDraftFromText(block, image, index, blocks.length))
+}
+
+function createDraftFromText(rawText, image, blockIndex = 0, blockCount = 1) {
   syncDefaults()
   const parsed = parseQuestionText(rawText)
+  const imageIndex = image ? imageItems.value.findIndex((item) => item.id === image.id) : null
+  const imageName = image?.name
+    ? (blockCount > 1 ? `${image.name} #${blockIndex + 1}` : image.name)
+    : ''
   return {
     id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
     image_id: image?.id || '',
-    image_name: image?.name || '',
-    image_index: image ? imageItems.value.findIndex((item) => item.id === image.id) : null,
+    image_name: imageName,
+    image_index: imageIndex,
     exam_code: importCatalog[importDefaults.subject]?.exam_code || 'COMMON',
     subject: importDefaults.subject,
     module: importDefaults.module,
@@ -432,6 +446,49 @@ function createDraftFromText(rawText, image) {
     explanation: parsed.explanation,
     check: null
   }
+}
+
+function splitQuestionBlocks(rawText) {
+  const text = String(rawText || '').replace(/\r\n/g, '\n').trim()
+  if (!text) return ['']
+
+  const separatorBlocks = text
+    .split(/\n\s*(?:-{3,}|={3,}|#{3,}|题目分隔)\s*\n/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+  if (separatorBlocks.length > 1 && separatorBlocks.filter(hasQuestionShape).length >= 2) {
+    return separatorBlocks
+  }
+
+  const markerRegex = /(?:^|\n)\s*(?:(?:第\s*)?\d+\s*[题、.．:：)]|题目\s*\d+|Q\s*\d+[\).、:：]?)/gi
+  const matches = Array.from(text.matchAll(markerRegex))
+  if (matches.length > 1) {
+    const blocks = matches
+      .map((match, index) => {
+        const start = match.index + (match[0].startsWith('\n') ? 1 : 0)
+        const end = matches[index + 1]?.index ?? text.length
+        return text.slice(start, end).trim()
+      })
+      .filter(Boolean)
+    if (blocks.filter(hasQuestionShape).length >= 2) {
+      return blocks
+    }
+  }
+
+  const stemBlocks = text
+    .split(/\n(?=\s*(?:题干|问题|题目)\s*[:：])/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+  if (stemBlocks.length > 1 && stemBlocks.filter(hasQuestionShape).length >= 2) {
+    return stemBlocks
+  }
+
+  return [text]
+}
+
+function hasQuestionShape(text) {
+  const optionCount = (String(text || '').match(/(?:^|\n)\s*[A-D][\.\、:：]/gi) || []).length
+  return optionCount >= 3
 }
 
 function parseQuestionText(rawText) {
@@ -484,6 +541,9 @@ function emptyParsedQuestion() {
 
 function cleanStem(value) {
   return String(value || '')
+    .replace(/^(?:第\s*)?\d+\s*[题、.．:：)]\s*/, '')
+    .replace(/^题目\s*\d+\s*[:：]?\s*/, '')
+    .replace(/^Q\s*\d+[\).、:：]?\s*/i, '')
     .replace(/^(题干|问题|题目)\s*[:：]/, '')
     .replace(/\n{2,}/g, '\n')
     .trim()
