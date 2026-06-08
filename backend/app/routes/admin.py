@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from pydantic import ValidationError
 
 from app.db import get_supabase_admin
 from app.dependencies import is_admin_profile, require_admin_user
@@ -15,6 +16,10 @@ from app.schemas.admin import (
     AdminQuestionBulkStatusResponse,
     AdminQuestionCreateRequest,
     AdminQuestionDetailResponse,
+    AdminQuestionImageImportCommitResponse,
+    AdminQuestionImageImportDryRunResponse,
+    AdminQuestionImageImportRequest,
+    AdminQuestionImageImportResultItem,
     AdminQuestionListResponse,
     AdminQuestionReviewRequest,
     AdminQuestionStatusRequest,
@@ -33,6 +38,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 QUESTION_BULK_SELECT_PAGE_SIZE = 500
 QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
+IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
 
 
 def _now() -> datetime:
@@ -211,6 +217,138 @@ def _assert_bulk_question_ids_manageable(supabase, question_ids: list[str]) -> N
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="AI generated training questions are not managed in the official question bank",
             )
+
+
+def _validation_error_messages(exc: ValidationError) -> list[str]:
+    messages: list[str] = []
+    for error in exc.errors():
+        field = ".".join(str(part) for part in error.get("loc", []) if part != "body")
+        reason = str(error.get("msg") or "格式不正确")
+        messages.append(f"{field}: {reason}" if field else reason)
+    return messages or ["题目字段格式不正确"]
+
+
+def _build_image_import_create_payload(item) -> AdminQuestionCreateRequest:
+    raw = item.model_dump()
+    source_type = str(raw.get("source_type") or "source_extracted").strip()
+    if source_type not in IMAGE_IMPORT_SOURCE_TYPES:
+        raise ValueError(f"source_type 只能是 {', '.join(sorted(IMAGE_IMPORT_SOURCE_TYPES))}")
+
+    difficulty_value = raw.get("difficulty")
+    if difficulty_value in (None, ""):
+        difficulty = 2
+    else:
+        try:
+            difficulty = int(difficulty_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError("difficulty 必须是 1-5 的整数") from exc
+
+    image_name = str(raw.get("image_name") or "").strip()
+    review_note = f"图片导入：{image_name}" if image_name else "图片导入"
+
+    return AdminQuestionCreateRequest(
+        exam_code=str(raw.get("exam_code") or "").strip(),
+        subject=str(raw.get("subject") or "").strip(),
+        module=str(raw.get("module") or "").strip(),
+        submodule=str(raw.get("submodule") or "").strip(),
+        question_type="single_choice",
+        stem=str(raw.get("stem") or "").strip(),
+        option_a=str(raw.get("option_a") or "").strip(),
+        option_b=str(raw.get("option_b") or "").strip(),
+        option_c=str(raw.get("option_c") or "").strip(),
+        option_d=str(raw.get("option_d") or "").strip(),
+        answer=str(raw.get("answer") or "").strip().upper(),
+        explanation=str(raw.get("explanation") or "").strip(),
+        difficulty=difficulty,
+        source_type=source_type,
+        source_year=raw.get("source_year"),
+        status="archived",
+        review_status="pending",
+        review_note=review_note,
+    )
+
+
+def _question_duplicate_key(question: dict) -> tuple[str, str, str, str]:
+    return (
+        str(question.get("stem") or "").strip(),
+        str(question.get("subject") or "").strip(),
+        str(question.get("module") or "").strip(),
+        str(question.get("submodule") or "").strip(),
+    )
+
+
+def _find_existing_question_duplicate_id(supabase, question: dict) -> str | None:
+    query = exclude_ai_generated_questions(
+        supabase.table("questions")
+        .select("id")
+        .eq("stem", question["stem"])
+        .eq("subject", question["subject"])
+        .eq("module", question["module"])
+        .eq("submodule", question["submodule"])
+    )
+    response = query.limit(1).execute()
+    if response.data:
+        return str(response.data[0].get("id") or "")
+    return None
+
+
+def _dry_run_image_import_questions(
+    supabase,
+    payload: AdminQuestionImageImportRequest,
+    admin_profile: dict,
+) -> AdminQuestionImageImportDryRunResponse:
+    results: list[AdminQuestionImageImportResultItem] = []
+    seen_keys: dict[tuple[str, str, str, str], int] = {}
+
+    for index, item in enumerate(payload.questions):
+        errors: list[str] = []
+        duplicate_id: str | None = None
+        question: dict | None = None
+        has_duplicate = False
+
+        try:
+            create_payload = _build_image_import_create_payload(item)
+            question = _build_question_create_data(create_payload, admin_profile)
+            duplicate_key = _question_duplicate_key(question)
+            first_index = seen_keys.get(duplicate_key)
+            if first_index is not None:
+                errors.append(f"与本次导入第 {first_index + 1} 题重复")
+                has_duplicate = True
+            else:
+                seen_keys[duplicate_key] = index
+
+            duplicate_id = _find_existing_question_duplicate_id(supabase, question)
+            if duplicate_id:
+                errors.append("题库中已存在相同题干、科目、模块和考点")
+                has_duplicate = True
+        except ValidationError as exc:
+            errors.extend(_validation_error_messages(exc))
+        except ValueError as exc:
+            errors.append(str(exc))
+        except HTTPException as exc:
+            errors.append(str(exc.detail or "题目校验失败"))
+
+        results.append(
+            AdminQuestionImageImportResultItem(
+                index=index,
+                image_name=item.image_name,
+                valid=not errors,
+                errors=errors,
+                duplicate_id=duplicate_id or ("batch" if has_duplicate else None),
+                question=question,
+            )
+        )
+
+    invalid_count = sum(1 for item in results if not item.valid)
+    duplicate_count = sum(1 for item in results if item.duplicate_id)
+    valid_count = len(results) - invalid_count
+    return AdminQuestionImageImportDryRunResponse(
+        total=len(results),
+        valid_count=valid_count,
+        invalid_count=invalid_count,
+        duplicate_count=duplicate_count,
+        items=results,
+    )
 
 
 def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
@@ -644,6 +782,55 @@ def admin_create_question(
         },
     )
     return AdminQuestionDetailResponse(question=question)
+
+
+@router.post("/questions/image-import/dry-run", response_model=AdminQuestionImageImportDryRunResponse)
+def admin_question_image_import_dry_run(
+    payload: AdminQuestionImageImportRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionImageImportDryRunResponse:
+    supabase = get_supabase_admin()
+    return _dry_run_image_import_questions(supabase, payload, admin_profile)
+
+
+@router.post("/questions/image-import/commit", response_model=AdminQuestionImageImportCommitResponse)
+def admin_question_image_import_commit(
+    payload: AdminQuestionImageImportRequest,
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionImageImportCommitResponse:
+    supabase = get_supabase_admin()
+    dry_run = _dry_run_image_import_questions(supabase, payload, admin_profile)
+    if dry_run.invalid_count or dry_run.duplicate_count:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail={
+                "message": "导入前必须先修复无效题目和重复题目",
+                "dry_run": dry_run.model_dump(),
+            },
+        )
+
+    rows = [item.question for item in dry_run.items if item.valid and item.question]
+    if not rows:
+        return AdminQuestionImageImportCommitResponse(inserted_count=0, questions=[])
+
+    response = supabase.table("questions").insert(rows).execute()
+    inserted = response.data or []
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="image_import_questions",
+        target_type="question",
+        target_id="bulk",
+        details={
+            "inserted_count": len(inserted),
+            "image_names": [
+                item.image_name
+                for item in dry_run.items
+                if item.image_name
+            ][:50],
+        },
+    )
+    return AdminQuestionImageImportCommitResponse(inserted_count=len(inserted), questions=inserted)
 
 
 @router.patch("/questions/bulk-status", response_model=AdminQuestionBulkStatusResponse)

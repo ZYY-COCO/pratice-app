@@ -52,6 +52,13 @@
       }
     },
     {
+      "path": "pages/admin/question-image-import",
+      "style": {
+        "navigationBarTitleText": "批量导入图片",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/leaderboard/index",
       "style": {
         "navigationBarTitleText": "排行榜",

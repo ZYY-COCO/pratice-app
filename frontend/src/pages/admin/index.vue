@@ -299,7 +299,7 @@
             <text class="question-action-icon">＋</text>
             <text>新增题目</text>
           </button>
-          <button class="question-action-btn outline" @tap="showComingSoon('批量导入')">
+          <button class="question-action-btn outline" @tap="openQuestionImageImport">
             <text class="question-action-icon">⇧</text>
             <text>批量导入</text>
           </button>
@@ -1138,6 +1138,11 @@ function openCreateQuestion() {
     difficulty: questionFilters.difficulty || 2
   })
   questionCreateMode.value = true
+}
+
+function openQuestionImageImport() {
+  clearQuestionSelection()
+  uni.navigateTo({ url: '/pages/admin/question-image-import' })
 }
 
 function openCreateQuestionActions() {

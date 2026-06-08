@@ -129,6 +129,52 @@ class AdminQuestionBulkStatusResponse(BaseModel):
     updated_count: int
 
 
+class AdminQuestionImageImportItem(BaseModel):
+    exam_code: str | None = Field(default=None, max_length=20)
+    subject: str | None = Field(default=None, max_length=40)
+    module: str | None = Field(default=None, max_length=80)
+    submodule: str | None = Field(default=None, max_length=80)
+    question_type: str | None = Field(default="single_choice", max_length=40)
+    stem: str | None = Field(default=None, max_length=5000)
+    option_a: str | None = Field(default=None, max_length=1000)
+    option_b: str | None = Field(default=None, max_length=1000)
+    option_c: str | None = Field(default=None, max_length=1000)
+    option_d: str | None = Field(default=None, max_length=1000)
+    answer: str | None = Field(default=None, max_length=4)
+    explanation: str | None = Field(default="", max_length=8000)
+    difficulty: int | str | None = Field(default=2)
+    source_type: str | None = Field(default="source_extracted", max_length=40)
+    source_year: int | None = Field(default=None, ge=1900, le=2100)
+    image_name: str | None = Field(default=None, max_length=200)
+    image_index: int | None = Field(default=None, ge=0, le=9999)
+
+
+class AdminQuestionImageImportRequest(BaseModel):
+    questions: list[AdminQuestionImageImportItem] = Field(min_length=1, max_length=100)
+
+
+class AdminQuestionImageImportResultItem(BaseModel):
+    index: int
+    image_name: str | None = None
+    valid: bool
+    errors: list[str] = Field(default_factory=list)
+    duplicate_id: str | None = None
+    question: dict | None = None
+
+
+class AdminQuestionImageImportDryRunResponse(BaseModel):
+    total: int
+    valid_count: int
+    invalid_count: int
+    duplicate_count: int
+    items: list[AdminQuestionImageImportResultItem]
+
+
+class AdminQuestionImageImportCommitResponse(BaseModel):
+    inserted_count: int
+    questions: list[dict]
+
+
 class AdminQuestionDetailResponse(BaseModel):
     question: dict
 

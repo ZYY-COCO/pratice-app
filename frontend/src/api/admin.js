@@ -115,6 +115,24 @@ export function bulkUpdateAdminQuestionStatus(payload) {
   })
 }
 
+export function dryRunAdminQuestionImageImport(payload) {
+  return request({
+    url: '/admin/questions/image-import/dry-run',
+    method: 'POST',
+    data: payload,
+    timeout: 30000
+  })
+}
+
+export function commitAdminQuestionImageImport(payload) {
+  return request({
+    url: '/admin/questions/image-import/commit',
+    method: 'POST',
+    data: payload,
+    timeout: 45000
+  })
+}
+
 export function fetchAdminMessages(params = {}) {
   return request({
     url: '/admin/messages',
