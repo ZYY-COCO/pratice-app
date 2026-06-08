@@ -30,7 +30,7 @@
             <view class="panel-title">默认分类</view>
             <view class="panel-subtitle">解析出的题目会先套用这里的分类，之后可逐题修改。</view>
           </view>
-          <button class="mini-btn" @tap="applyDefaultsToDrafts">应用到全部</button>
+          <button class="mini-btn" @tap="applyDefaultsToDrafts">应用全部</button>
         </view>
 
         <view class="picker-grid">
@@ -165,12 +165,14 @@
         <text>有效 {{ dryRunResult?.valid_count || 0 }}</text>
         <text>问题 {{ (dryRunResult?.invalid_count || 0) + (dryRunResult?.duplicate_count || 0) }}</text>
       </view>
-      <button class="bottom-btn outline" :disabled="dryRunLoading || importSaving || drafts.length === 0" @tap="runDryCheck">
-        {{ dryRunLoading ? '校验中' : 'Dry-run 校验' }}
-      </button>
-      <button class="bottom-btn primary" :disabled="!canCommit || importSaving" @tap="commitImport">
-        {{ importSaving ? '导入中' : '导入待审核' }}
-      </button>
+      <view class="bottom-actions">
+        <button class="bottom-btn outline" :disabled="dryRunLoading || importSaving || drafts.length === 0" @tap="runDryCheck">
+          {{ dryRunLoading ? '校验中' : 'Dry-run 校验' }}
+        </button>
+        <button class="bottom-btn primary" :disabled="!canCommit || importSaving" @tap="commitImport">
+          {{ importSaving ? '导入中' : '导入待审核' }}
+        </button>
+      </view>
     </view>
   </view>
 </template>
@@ -797,7 +799,7 @@ function goBack() {
 <style scoped>
 .image-import-page {
   min-height: 100vh;
-  padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 190rpx);
+  padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 260rpx);
   box-sizing: border-box;
   background:
     radial-gradient(circle at 12% 0%, rgba(186, 226, 255, 0.68) 0, rgba(186, 226, 255, 0) 300rpx),
@@ -855,7 +857,7 @@ function goBack() {
 }
 
 .hero-title {
-  font-size: 48rpx;
+  font-size: 44rpx;
   line-height: 1.15;
   font-weight: 800;
   color: #0f172a;
@@ -883,15 +885,17 @@ function goBack() {
 .step-strip {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 14rpx;
+  gap: 12rpx;
 }
 
 .step-item {
-  min-height: 108rpx;
-  padding: 16rpx;
+  min-height: 118rpx;
+  padding: 16rpx 10rpx;
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 12rpx;
+  justify-content: center;
+  gap: 8rpx;
   border: 1rpx solid rgba(148, 163, 184, 0.22);
   border-radius: 18rpx;
   background: rgba(255, 255, 255, 0.76);
@@ -919,16 +923,18 @@ function goBack() {
 }
 
 .step-title {
-  font-size: 22rpx;
+  font-size: 23rpx;
   font-weight: 800;
   color: #0f172a;
+  text-align: center;
   white-space: nowrap;
 }
 
 .step-desc {
   margin-top: 4rpx;
-  font-size: 18rpx;
+  font-size: 20rpx;
   color: #8b95a7;
+  text-align: center;
   white-space: nowrap;
 }
 
@@ -948,6 +954,11 @@ function goBack() {
   margin-bottom: 22rpx;
 }
 
+.panel-head > view:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
 .panel-title {
   font-size: 30rpx;
   font-weight: 800;
@@ -964,16 +975,24 @@ function goBack() {
 .mini-btn,
 .primary-mini-btn,
 .remove-btn {
-  min-width: 130rpx;
+  flex: 0 0 auto;
+  min-width: 144rpx;
   height: 64rpx;
-  padding: 0 20rpx;
+  margin: 0;
+  padding: 0 22rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 18rpx;
-  font-size: 24rpx;
+  font-size: 23rpx;
   font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
   box-sizing: border-box;
+}
+
+.primary-mini-btn {
+  min-width: 154rpx;
 }
 
 .mini-btn,
@@ -1345,30 +1364,39 @@ function goBack() {
   right: 24rpx;
   bottom: calc(env(safe-area-inset-bottom) + 20rpx);
   z-index: 20;
-  min-height: 112rpx;
+  min-height: 150rpx;
   padding: 16rpx;
-  display: grid;
-  grid-template-columns: 1fr 1.1fr 1.1fr;
-  align-items: center;
-  gap: 14rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
   border: 1rpx solid rgba(226, 232, 240, 0.92);
   border-radius: 26rpx;
-  background: rgba(255, 255, 255, 0.94);
+  background: #ffffff;
   box-shadow: 0 20rpx 60rpx rgba(15, 23, 42, 0.14);
   box-sizing: border-box;
 }
 
 .bottom-summary {
   display: flex;
-  flex-direction: column;
-  gap: 4rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
   color: #475569;
-  font-size: 21rpx;
-  font-weight: 700;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.bottom-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
 }
 
 .bottom-btn {
-  height: 78rpx;
+  height: 76rpx;
+  min-width: 0;
+  margin: 0;
   padding: 0 18rpx;
   display: flex;
   align-items: center;
@@ -1376,6 +1404,8 @@ function goBack() {
   border-radius: 20rpx;
   font-size: 25rpx;
   font-weight: 800;
+  line-height: 1;
+  white-space: nowrap;
   box-sizing: border-box;
 }
 
