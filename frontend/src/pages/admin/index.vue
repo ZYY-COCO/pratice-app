@@ -301,7 +301,7 @@
           </button>
           <button class="question-action-btn outline" @tap="openQuestionImageImport">
             <text class="question-action-icon">⇧</text>
-            <text>批量导入</text>
+            <text>批量导入图片</text>
           </button>
           <button v-if="canShowReviewQueueEntry" class="question-action-btn filled" @tap="openReviewQueue">
             <text class="question-action-icon">☷</text>
@@ -310,7 +310,16 @@
         </view>
 
         <view v-if="questionsLoading" class="inline-state">正在加载题库...</view>
-        <view v-else-if="questions.length === 0" class="inline-state">暂无题目</view>
+        <view v-else-if="questionLoadError" class="question-empty-state">
+          <view class="question-empty-title">题库加载失败</view>
+          <view class="question-empty-copy">请检查管理员登录状态和网络连接，或稍后重新加载。</view>
+          <button class="question-empty-btn" @tap="refreshQuestionManager">重新加载</button>
+        </view>
+        <view v-else-if="questions.length === 0" class="question-empty-state">
+          <view class="question-empty-title">{{ questionEmptyTitle }}</view>
+          <view class="question-empty-copy">{{ questionEmptyCopy }}</view>
+          <button v-if="hasQuestionFilters" class="question-empty-btn" @tap="clearQuestionFilters">清空筛选</button>
+        </view>
         <view v-else class="question-card-list">
           <view v-for="item in questions" :key="item.id" class="question-admin-card" @tap="openQuestion(item)">
             <button
@@ -596,6 +605,7 @@ const feedbackItems = ref([])
 const feedbackLoading = ref(false)
 const questions = ref([])
 const questionsLoading = ref(false)
+const questionLoadError = ref(false)
 const questionListCount = ref(0)
 const selectedQuestionIds = ref([])
 const allMatchingQuestionsSelected = ref(false)
@@ -841,6 +851,23 @@ const selectedQuestionSubjectLabel = computed(() => questionSubjectOptions[selec
 const selectedQuestionModuleLabel = computed(() => questionModuleOptions.value[selectedQuestionModuleIndex.value]?.label || '模块')
 const selectedQuestionDifficultyLabel = computed(() => questionDifficultyOptions[selectedQuestionDifficultyIndex.value]?.label || '难度')
 const selectedQuestionStatusLabel = computed(() => questionStatusOptions[selectedQuestionStatusIndex.value]?.label || '状态')
+const hasQuestionFilters = computed(() => Boolean(
+  questionFilters.exam_code ||
+  questionFilters.subject ||
+  questionFilters.module ||
+  questionFilters.difficulty ||
+  questionFilters.status ||
+  questionFilters.search
+))
+const questionEmptyTitle = computed(() => (
+  hasQuestionFilters.value ? '当前筛选下暂无正式题目' : '暂无正式题库题目'
+))
+const questionEmptyCopy = computed(() => {
+  if (hasQuestionFilters.value) {
+    return '可以清空科目、模块、难度、状态或关键词后再查看。AI 专项出题不会进入题库管理。'
+  }
+  return '这里仅管理正式题库；AI 专项出题只会出现在用户收藏和练习历史中。'
+})
 
 const createQuestionSubjectOptions = computed(() => (
   Object.keys(createQuestionCatalog).map((subject) => ({ label: subject, value: subject }))
@@ -1023,6 +1050,7 @@ async function loadFeedback() {
 
 async function loadQuestions() {
   questionsLoading.value = true
+  questionLoadError.value = false
   try {
     const response = await fetchAdminQuestions({
       ...buildQuestionListParams(),
@@ -1037,10 +1065,24 @@ async function loadQuestions() {
       selectedQuestionIds.value = selectedQuestionIds.value.filter((id) => visibleIds.has(id))
     }
   } catch (error) {
+    questions.value = []
+    questionListCount.value = 0
+    questionLoadError.value = true
     uni.showToast({ title: '题库加载失败', icon: 'none' })
   } finally {
     questionsLoading.value = false
   }
+}
+
+function clearQuestionFilters() {
+  questionFilters.exam_code = ''
+  questionFilters.subject = ''
+  questionFilters.module = ''
+  questionFilters.difficulty = ''
+  questionFilters.status = ''
+  questionFilters.search = ''
+  clearQuestionSelection()
+  loadQuestions()
 }
 
 function buildQuestionListParams() {
@@ -2440,6 +2482,46 @@ function goBack() {
   color: #667085;
   text-align: center;
   font-size: 26rpx;
+}
+
+.question-empty-state {
+  padding: 38rpx 28rpx;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.88);
+  border: 1rpx solid rgba(211, 220, 232, 0.9);
+  text-align: center;
+  box-shadow: 0 14rpx 36rpx rgba(15, 23, 42, 0.05);
+}
+
+.question-empty-title {
+  color: #101828;
+  font-size: 28rpx;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.question-empty-copy {
+  margin-top: 12rpx;
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.6;
+}
+
+.question-empty-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 220rpx;
+  height: 64rpx;
+  margin: 24rpx auto 0;
+  padding: 0;
+  border-radius: 14rpx;
+  color: #1769ff;
+  background: #ffffff;
+  border: 1rpx solid #1769ff;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1;
 }
 
 .record-list {
