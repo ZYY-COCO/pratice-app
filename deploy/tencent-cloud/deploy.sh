@@ -33,6 +33,7 @@ backend/.venv/bin/python -m pip install --upgrade pip
 backend/.venv/bin/pip install -r backend/requirements.txt
 
 echo "==> Building frontend from clean source archive"
+echo "==> Frontend source ref: origin/${BRANCH}"
 FRONTEND_BUILD_ROOT="$(mktemp -d)"
 git archive "origin/${BRANCH}" | tar -x -C "${FRONTEND_BUILD_ROOT}"
 cd "${FRONTEND_BUILD_ROOT}/frontend"
