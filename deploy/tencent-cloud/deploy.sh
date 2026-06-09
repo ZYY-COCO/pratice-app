@@ -22,7 +22,9 @@ backend/.venv/bin/pip install -r backend/requirements.txt
 echo "==> Building frontend"
 cd frontend
 npm ci
+rm -rf dist/build/h5 node_modules/.vite
 VITE_API_BASE_URL="${VITE_API_BASE_URL}" npm run build:h5
+test -f dist/build/h5/index.html
 cd "${APP_DIR}"
 
 echo "==> Publishing frontend"
