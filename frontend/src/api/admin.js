@@ -1,4 +1,4 @@
-import { request } from './http'
+import { request, uploadFileRequest } from './http'
 
 export function fetchAdminMe() {
   return request({
@@ -130,6 +130,17 @@ export function commitAdminQuestionImageImport(payload) {
     method: 'POST',
     data: payload,
     timeout: 45000
+  })
+}
+
+export function recognizeAdminQuestionImportFile(payload) {
+  return uploadFileRequest({
+    url: '/admin/questions/image-import/recognize',
+    file: payload.file,
+    filePath: payload.filePath,
+    fileName: payload.fileName,
+    name: 'file',
+    timeout: 90000
   })
 }
 

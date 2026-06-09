@@ -33,6 +33,11 @@ class Settings(BaseSettings):
     tencent_sms_template_params: str = "code"
     tencent_sms_region: str = "ap-guangzhou"
     tencent_sms_endpoint: str = "sms.tencentcloudapi.com"
+    tencent_ocr_secret_id: str | None = None
+    tencent_ocr_secret_key: str | None = None
+    tencent_ocr_region: str = "ap-guangzhou"
+    tencent_ocr_endpoint: str = "ocr.tencentcloudapi.com"
+    tencent_ocr_timeout_seconds: int = 30
     wechat_oauth_app_id: str | None = None
     wechat_oauth_app_secret: str | None = None
     wechat_oauth_scope: str = "snsapi_userinfo"

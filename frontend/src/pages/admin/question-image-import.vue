@@ -218,11 +218,11 @@
     </view>
 
     <view v-if="allowed && !editorVisible" class="recognize-bottom-bar">
-      <button class="recognize-btn" :disabled="imageItems.length === 0" @tap="startRecognition">
+      <button class="recognize-btn" :disabled="imageItems.length === 0 || recognizingCount > 0" @tap="startRecognition">
         <text class="recognize-icon">⌁</text>
-        <text>开始识别</text>
+        <text>{{ recognizingCount > 0 ? `自动识别中 ${recognizingCount}` : '开始识别' }}</text>
       </button>
-      <view class="recognize-hint">{{ imageItems.length ? `已选择 ${imageItems.length} 个文件，可开始识别` : '请选择文件后开始识别' }}</view>
+      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在提取文件内容，请稍候' : (imageItems.length ? `已完成文件处理，可预览 ${drafts.length} 道草稿` : '请选择文件后自动识别') }}</view>
     </view>
 
     <view v-if="allowed && editorVisible" class="import-bottom-bar">
@@ -249,7 +249,8 @@ import { onLoad } from '@dcloudio/uni-app'
 import {
   commitAdminQuestionImageImport,
   dryRunAdminQuestionImageImport,
-  fetchAdminMe
+  fetchAdminMe,
+  recognizeAdminQuestionImportFile
 } from '../../api/admin'
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
@@ -336,6 +337,7 @@ const selectedSubjectIndex = computed(() => optionIndex(subjectOptions.value, im
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, importDefaults.module))
 const selectedSubmoduleIndex = computed(() => optionIndex(submoduleOptions.value, importDefaults.submodule))
 const selectedDifficultyIndex = computed(() => difficultyIndex(importDefaults.difficulty))
+const recognizingCount = computed(() => imageItems.value.filter((item) => item.recognizing).length)
 const canCommit = computed(() => (
   Boolean(dryRunResult.value) &&
   Number(dryRunResult.value.valid_count || 0) > 0 &&
@@ -455,11 +457,14 @@ function appendSelectedFiles(response) {
       extension,
       size: file.size || 0,
       rawText: '',
+      recognizing: false,
+      recognitionError: '',
+      recognitionProvider: '',
       status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
     }
   })
   imageItems.value = [...imageItems.value, ...nextItems]
-  nextItems.forEach(hydrateReadableFile)
+  nextItems.forEach(recognizeImportItem)
   markDryRunDirty()
 }
 
@@ -481,11 +486,14 @@ function appendNativeFiles(files) {
       extension,
       size: file.size || 0,
       rawText: '',
+      recognizing: false,
+      recognitionError: '',
+      recognitionProvider: '',
       status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
     }
   })
   imageItems.value = [...imageItems.value, ...nextItems]
-  nextItems.forEach(hydrateReadableFile)
+  nextItems.forEach(recognizeImportItem)
   markDryRunDirty()
 }
 
@@ -516,9 +524,61 @@ function fileTypeTone(item) {
 }
 
 function fileReadyText(item) {
+  if (item?.recognizing) return '识别中...'
+  if (item?.recognitionError) return `识别失败：${item.recognitionError}`
   if (String(item?.rawText || '').trim()) return '内容已读取'
   if (isReadableTextExtension(item?.extension)) return item?.status || '等待读取'
   return '文件已就绪'
+}
+
+async function recognizeImportItem(item) {
+  if (!item?.file && !item?.path) {
+    item.status = '缺少文件'
+    item.recognitionError = '无法读取上传文件'
+    return
+  }
+
+  item.recognizing = true
+  item.recognitionError = ''
+  item.status = '识别中'
+  markDryRunDirty()
+
+  try {
+    const result = await recognizeAdminQuestionImportFile({
+      file: item.file || null,
+      filePath: item.path || '',
+      fileName: item.name || 'upload'
+    })
+    if (!imageItems.value.some((current) => current.id === item.id)) return
+    item.rawText = result?.text || ''
+    item.recognitionProvider = result?.provider || ''
+    const parsedCount = item.rawText.trim() ? parseImageItem(item) : 0
+    item.status = parsedCount ? `已识别 ${parsedCount} 题` : '未识别到文本'
+    if (result?.warnings?.length) {
+      item.recognitionError = result.warnings[0]
+    }
+  } catch (error) {
+    if (!imageItems.value.some((current) => current.id === item.id)) return
+    item.status = '识别失败'
+    item.recognitionError = errorDetail(error)
+    if (isReadableTextExtension(item.extension)) {
+      hydrateReadableFile(item)
+    }
+  } finally {
+    item.recognizing = false
+    markDryRunDirty()
+  }
+}
+
+function errorDetail(error) {
+  const detail = error?.detail || error?.message || error
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg || item).join('；')
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.message || JSON.stringify(detail)
+  }
+  return String(detail || '识别失败')
 }
 
 function hydrateReadableFile(item) {
@@ -587,12 +647,17 @@ function startRecognition() {
     uni.showToast({ title: '请先选择文件', icon: 'none' })
     return
   }
+  const recognizingCount = imageItems.value.filter((item) => item.recognizing).length
+  if (recognizingCount) {
+    uni.showToast({ title: `还有 ${recognizingCount} 个文件正在识别`, icon: 'none' })
+    return
+  }
   const readableItems = imageItems.value.filter((item) => String(item.rawText || '').trim())
   if (readableItems.length) {
     const total = readableItems.reduce((sum, item) => sum + parseImageItem(item), 0)
     uni.showToast({ title: `已识别 ${total} 题，请预览确认`, icon: 'success' })
   } else {
-    uni.showToast({ title: '请在下一步粘贴 OCR 或导出的文本', icon: 'none' })
+    uni.showToast({ title: '未识别到题目，可进入下一步手动粘贴文本', icon: 'none' })
   }
   editorVisible.value = true
   markDryRunDirty()

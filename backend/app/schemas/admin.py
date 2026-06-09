@@ -175,6 +175,14 @@ class AdminQuestionImageImportCommitResponse(BaseModel):
     questions: list[dict]
 
 
+class AdminQuestionFileRecognizeResponse(BaseModel):
+    filename: str
+    extension: str
+    provider: str
+    text: str
+    warnings: list[str] = Field(default_factory=list)
+
+
 class AdminQuestionDetailResponse(BaseModel):
     question: dict
 

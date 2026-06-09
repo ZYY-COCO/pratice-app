@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import ValidationError
 
 from app.db import get_supabase_admin
@@ -16,6 +16,7 @@ from app.schemas.admin import (
     AdminQuestionBulkStatusResponse,
     AdminQuestionCreateRequest,
     AdminQuestionDetailResponse,
+    AdminQuestionFileRecognizeResponse,
     AdminQuestionImageImportCommitResponse,
     AdminQuestionImageImportDryRunResponse,
     AdminQuestionImageImportRequest,
@@ -33,6 +34,7 @@ from app.services.question_sources import (
     exclude_ai_generated_questions,
     is_ai_generated_question,
 )
+from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
@@ -791,6 +793,20 @@ def admin_question_image_import_dry_run(
 ) -> AdminQuestionImageImportDryRunResponse:
     supabase = get_supabase_admin()
     return _dry_run_image_import_questions(supabase, payload, admin_profile)
+
+
+@router.post("/questions/image-import/recognize", response_model=AdminQuestionFileRecognizeResponse)
+async def admin_question_image_import_recognize(
+    file: UploadFile = File(...),
+    admin_profile: dict = Depends(require_admin_user),
+) -> AdminQuestionFileRecognizeResponse:
+    _ = admin_profile
+    content = await file.read()
+    try:
+        result = recognize_question_file(file.filename or "upload", content)
+    except FileRecognitionError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+    return AdminQuestionFileRecognizeResponse(**result)
 
 
 @router.post("/questions/image-import/commit", response_model=AdminQuestionImageImportCommitResponse)

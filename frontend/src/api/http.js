@@ -48,6 +48,66 @@ export function request(options) {
   })
 }
 
+export function uploadFileRequest(options) {
+  const token = getAccessToken()
+  const url = `${API_BASE_URL}${options.url}`
+
+  if (options.file && typeof FormData !== 'undefined' && typeof fetch !== 'undefined') {
+    const formData = new FormData()
+    formData.append(options.name || 'file', options.file, options.fileName || options.file.name || 'upload')
+    Object.entries(options.formData || {}).forEach(([key, value]) => {
+      if (value !== undefined && value !== null) {
+        formData.append(key, value)
+      }
+    })
+
+    return fetch(url, {
+      method: 'POST',
+      headers: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.header || {})
+      },
+      body: formData
+    }).then(async (response) => {
+      const data = await response.json().catch(() => ({}))
+      if (response.ok) {
+        return data
+      }
+      return Promise.reject(data || { detail: '上传失败' })
+    })
+  }
+
+  return new Promise((resolve, reject) => {
+    uni.uploadFile({
+      url,
+      filePath: options.filePath,
+      name: options.name || 'file',
+      formData: options.formData || {},
+      timeout: options.timeout || 60000,
+      header: {
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        ...(options.header || {})
+      },
+      success(response) {
+        let data = response.data
+        try {
+          data = typeof response.data === 'string' ? JSON.parse(response.data) : response.data
+        } catch (error) {
+          data = { detail: response.data || '上传失败' }
+        }
+        if (response.statusCode >= 200 && response.statusCode < 300) {
+          resolve(data)
+          return
+        }
+        reject(data || { detail: '上传失败' })
+      },
+      fail(error) {
+        reject({ detail: error?.errMsg || '上传失败' })
+      }
+    })
+  })
+}
+
 function cleanRequestData(data) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     return data || {}
