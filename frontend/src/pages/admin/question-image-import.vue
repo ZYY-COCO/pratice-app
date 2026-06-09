@@ -110,7 +110,7 @@
         <view class="panel-head">
           <view>
             <view class="panel-title">文件与识别文本</view>
-            <view class="panel-subtitle">检查识别文本；图片、PDF、DOCX 或 XLSX 暂需粘贴 OCR / 导出文本。</view>
+            <view class="panel-subtitle">自动提取文件内容；识别失败时可手动粘贴 OCR / 导出文本。</view>
           </view>
           <button class="primary-mini-btn" @tap="chooseImportFiles">添加文件</button>
         </view>
