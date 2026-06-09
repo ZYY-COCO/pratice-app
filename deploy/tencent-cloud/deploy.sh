@@ -7,6 +7,14 @@ APP_DIR="${APP_ROOT}/app"
 WEB_DIR="/var/www/${APP_NAME}"
 BRANCH="${BRANCH:-main}"
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-/api}"
+FRONTEND_BUILD_ROOT=""
+
+cleanup() {
+  if [ -n "${FRONTEND_BUILD_ROOT}" ] && [ -d "${FRONTEND_BUILD_ROOT}" ]; then
+    rm -rf "${FRONTEND_BUILD_ROOT}"
+  fi
+}
+trap cleanup EXIT
 
 cd "${APP_DIR}"
 
@@ -24,8 +32,10 @@ python3 -m venv backend/.venv
 backend/.venv/bin/python -m pip install --upgrade pip
 backend/.venv/bin/pip install -r backend/requirements.txt
 
-echo "==> Building frontend"
-cd frontend
+echo "==> Building frontend from clean source archive"
+FRONTEND_BUILD_ROOT="$(mktemp -d)"
+git archive "origin/${BRANCH}" | tar -x -C "${FRONTEND_BUILD_ROOT}"
+cd "${FRONTEND_BUILD_ROOT}/frontend"
 npm ci
 rm -rf dist/build/h5 dist/cache unpackage/dist/build/h5 node_modules/.vite
 VITE_API_BASE_URL="${VITE_API_BASE_URL}" npm run build:h5
@@ -34,7 +44,7 @@ cd "${APP_DIR}"
 
 echo "==> Publishing frontend"
 sudo mkdir -p "${WEB_DIR}"
-sudo rsync -a --delete frontend/dist/build/h5/ "${WEB_DIR}/"
+sudo rsync -a --delete "${FRONTEND_BUILD_ROOT}/frontend/dist/build/h5/" "${WEB_DIR}/"
 
 echo "==> Updating Nginx site"
 sudo cp deploy/tencent-cloud/nginx.conf /etc/nginx/sites-available/gangyantong
