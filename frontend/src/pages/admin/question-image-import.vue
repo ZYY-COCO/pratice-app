@@ -62,7 +62,9 @@
         <view class="flow-row">
           <view v-for="(step, index) in landingSteps" :key="step.title" class="flow-step">
             <view class="flow-number">{{ index + 1 }}</view>
-            <view class="flow-icon">{{ step.icon }}</view>
+            <view class="flow-icon">
+              <image class="flow-icon-image" :src="step.iconSrc || ''" mode="aspectFit" />
+            </view>
             <view class="flow-title">{{ step.title }}</view>
             <view v-if="index < landingSteps.length - 1" class="flow-arrow">→</view>
           </view>
@@ -269,6 +271,16 @@ const landingSteps = [
   { icon: '▤', title: '预览确认' },
   { icon: '✓', title: '进入待审核' }
 ]
+
+const landingStepIconPaths = [
+  '/static/admin-icons/import-select-file.svg',
+  '/static/admin-icons/import-scan.svg',
+  '/static/admin-icons/import-preview.svg',
+  '/static/admin-icons/import-safe.svg'
+]
+landingSteps.forEach((step, index) => {
+  step.iconSrc = landingStepIconPaths[index]
+})
 
 const importCatalog = {
   中华文化: {
@@ -1551,6 +1563,11 @@ function goBack() {
   background: #f1f5fb;
   font-size: 31rpx;
   font-weight: 900;
+}
+
+.flow-icon-image {
+  width: 42rpx;
+  height: 42rpx;
 }
 
 .flow-title {
