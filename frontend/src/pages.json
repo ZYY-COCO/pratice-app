@@ -54,7 +54,7 @@
     {
       "path": "pages/admin/question-image-import",
       "style": {
-        "navigationBarTitleText": "批量导入图片",
+        "navigationBarTitleText": "批量导入",
         "navigationStyle": "custom"
       }
     },

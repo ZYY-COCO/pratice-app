@@ -5,22 +5,78 @@
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </button>
       <view class="hero-copy">
-        <view class="hero-title">批量导入图片</view>
-        <view class="hero-subtitle">上传截图、校对题目，统一进入待审核</view>
+        <view class="hero-title">批量导入</view>
+        <view class="hero-subtitle">上传文件，识别并校对题目内容</view>
       </view>
+      <button class="history-btn" @tap="showImportHistory">
+        <text class="history-icon">◷</text>
+        <text>导入记录</text>
+      </button>
     </view>
 
     <view v-if="loading" class="screen-state">正在验证后台权限...</view>
     <view v-else-if="!allowed" class="screen-state">当前账号无后台权限</view>
 
-    <view v-else class="import-content">
-      <view class="step-strip">
-        <view v-for="step in steps" :key="step.title" class="step-item" :class="{ active: step.active }">
-          <view class="step-index">{{ step.index }}</view>
-          <view>
-            <view class="step-title">{{ step.title }}</view>
-            <view class="step-desc">{{ step.desc }}</view>
+    <view v-else-if="!editorVisible" class="landing-content">
+      <view class="file-drop-zone" @tap="chooseImportFiles" @dragover.prevent @drop.prevent="handleDropFiles">
+        <view class="file-upload-illustration">
+          <view class="file-shape">
+            <view class="file-fold"></view>
+            <text class="file-arrow">↑</text>
           </view>
+          <view class="file-plus">＋</view>
+        </view>
+        <view class="drop-title">拖拽文件到这里</view>
+        <view class="drop-action">或点击选择文件</view>
+        <view class="drop-formats">支持图片、JSON、CSV、TXT、XLSX、DOCX、PDF</view>
+        <view class="drop-limit">单个文件不超过 20MB</view>
+      </view>
+
+      <view v-if="imageItems.length" class="selected-file-list">
+        <view v-for="item in imageItems" :key="item.id" class="selected-file-card">
+          <view class="file-type-icon" :class="fileTypeTone(item)">
+            <text>{{ fileTypeLabel(item) }}</text>
+          </view>
+          <view class="selected-file-main">
+            <view class="selected-file-name">{{ item.name }}</view>
+            <view class="selected-file-meta">
+              <text>{{ formatSize(item.size) }}</text>
+              <text class="ready-status">● {{ fileReadyText(item) }}</text>
+            </view>
+          </view>
+          <button class="file-delete-btn" @tap.stop="removeImage(item.id)">⌫</button>
+        </view>
+      </view>
+
+      <view class="recognition-card">
+        <view class="landing-section-title">识别内容</view>
+        <view class="recognition-tags">
+          <view class="recognition-tag blue">题干与选项</view>
+          <view class="recognition-tag green">正确答案</view>
+          <view class="recognition-tag purple">解析与分类</view>
+        </view>
+        <view class="recognition-copy">识别完成后，题目将进入预览确认页面，不会直接发布。</view>
+      </view>
+
+      <view class="flow-card">
+        <view class="flow-row">
+          <view v-for="(step, index) in landingSteps" :key="step.title" class="flow-step">
+            <view class="flow-number">{{ index + 1 }}</view>
+            <view class="flow-icon">{{ step.icon }}</view>
+            <view class="flow-title">{{ step.title }}</view>
+            <view v-if="index < landingSteps.length - 1" class="flow-arrow">→</view>
+          </view>
+        </view>
+        <view class="flow-note">ⓘ 不会直接发布或进入数据库，请先预览确认后再提交审核。</view>
+      </view>
+    </view>
+
+    <view v-else class="import-content">
+      <view class="editor-toolbar">
+        <button class="editor-back-btn" @tap="returnToFileSelection">重新选择文件</button>
+        <view class="editor-progress">
+          <text>{{ imageItems.length }} 个文件</text>
+          <text>{{ drafts.length }} 道草稿</text>
         </view>
       </view>
 
@@ -28,11 +84,10 @@
         <view class="panel-head">
           <view>
             <view class="panel-title">默认分类</view>
-            <view class="panel-subtitle">解析出的题目会先套用这里的分类，之后可逐题修改。</view>
+            <view class="panel-subtitle">识别出的题目会先套用这里的分类，之后可逐题修改。</view>
           </view>
           <button class="mini-btn" @tap="applyDefaultsToDrafts">应用全部</button>
         </view>
-
         <view class="picker-grid">
           <picker :range="subjectLabels" :value="selectedSubjectIndex" @change="handleSubjectChange">
             <view class="picker-pill">{{ importDefaults.subject }}<text>⌄</text></view>
@@ -52,21 +107,22 @@
       <view class="import-panel">
         <view class="panel-head">
           <view>
-            <view class="panel-title">图片与识别文本</view>
-            <view class="panel-subtitle">选择图片后，把 OCR 或人工整理的文本粘贴到对应图片下方；一张图可以解析多道题。</view>
+            <view class="panel-title">文件与识别文本</view>
+            <view class="panel-subtitle">检查识别文本；图片、PDF、DOCX 或 XLSX 暂需粘贴 OCR / 导出文本。</view>
           </view>
-          <button class="primary-mini-btn" @tap="chooseImages">选择图片</button>
+          <button class="primary-mini-btn" @tap="chooseImportFiles">添加文件</button>
         </view>
 
-        <view v-if="imageItems.length === 0" class="upload-empty" @tap="chooseImages">
+        <view v-if="imageItems.length === 0" class="upload-empty" @tap="chooseImportFiles">
           <view class="upload-icon">＋</view>
-          <view class="upload-title">添加题目图片</view>
-          <view class="upload-desc">支持一次选择多张截图，图片用于整理来源，导入数据库前仍需校对文本。</view>
+          <view class="upload-title">添加题目文件</view>
+          <view class="upload-desc">支持多选，识别完成后仍需校对题目内容。</view>
         </view>
 
         <view v-else class="image-list">
           <view v-for="(item, index) in imageItems" :key="item.id" class="image-row">
-            <image class="thumb" :src="item.path" mode="aspectFill" @tap="previewImage(item)" />
+            <image v-if="isImageItem(item)" class="thumb" :src="item.path" mode="aspectFill" @tap="previewImage(item)" />
+            <view v-else class="thumb file-thumb" :class="fileTypeTone(item)">{{ fileTypeLabel(item) }}</view>
             <view class="image-main">
               <view class="image-title-row">
                 <view>
@@ -159,7 +215,15 @@
       </view>
     </view>
 
-    <view v-if="allowed" class="import-bottom-bar">
+    <view v-if="allowed && !editorVisible" class="recognize-bottom-bar">
+      <button class="recognize-btn" :disabled="imageItems.length === 0" @tap="startRecognition">
+        <text class="recognize-icon">⌁</text>
+        <text>开始识别</text>
+      </button>
+      <view class="recognize-hint">{{ imageItems.length ? `已选择 ${imageItems.length} 个文件，可开始识别` : '请选择文件后开始识别' }}</view>
+    </view>
+
+    <view v-if="allowed && editorVisible" class="import-bottom-bar">
       <view class="bottom-summary">
         <text>草稿 {{ drafts.length }}</text>
         <text>有效 {{ dryRunResult?.valid_count || 0 }}</text>
@@ -191,12 +255,20 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
 const allowed = ref(false)
+const editorVisible = ref(false)
 const imageItems = ref([])
 const drafts = ref([])
 const dryRunResult = ref(null)
 const dryRunLoading = ref(false)
 const importSaving = ref(false)
 const answerOptions = ['A', 'B', 'C', 'D']
+const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
+const landingSteps = [
+  { icon: '▱', title: '选择文件' },
+  { icon: '⌗', title: '开始识别' },
+  { icon: '▤', title: '预览确认' },
+  { icon: '✓', title: '进入待审核' }
+]
 
 const importCatalog = {
   中华文化: {
@@ -240,13 +312,6 @@ const importDefaults = reactive({
   submodule: '语法',
   difficulty: 2
 })
-
-const steps = computed(() => [
-  { index: '1', title: '上传图片', desc: `${imageItems.value.length} 张`, active: imageItems.value.length > 0 },
-  { index: '2', title: '校对文本', desc: '粘贴 OCR', active: imageItems.value.some((item) => String(item.rawText || '').trim()) },
-  { index: '3', title: '预览校验', desc: `${drafts.value.length} 题`, active: drafts.value.length > 0 },
-  { index: '4', title: '进入审核', desc: '待发布', active: canCommit.value }
-])
 
 const subjectOptions = computed(() => Object.keys(importCatalog))
 const subjectLabels = computed(() => subjectOptions.value)
@@ -333,26 +398,151 @@ function handleDifficultyChange(event) {
   markDryRunDirty()
 }
 
+function chooseImportFiles() {
+  if (typeof uni.chooseFile === 'function') {
+    uni.chooseFile({
+      count: 9,
+      extension: ['png', 'jpg', 'jpeg', 'webp', 'json', 'csv', 'txt', 'xlsx', 'docx', 'pdf'],
+      success: appendSelectedFiles
+    })
+    return
+  }
+  if (typeof uni.chooseMessageFile === 'function') {
+    uni.chooseMessageFile({
+      count: 9,
+      type: 'file',
+      extension: ['png', 'jpg', 'jpeg', 'webp', 'json', 'csv', 'txt', 'xlsx', 'docx', 'pdf'],
+      success: appendSelectedFiles
+    })
+    return
+  }
+  chooseImages()
+}
+
 function chooseImages() {
   uni.chooseImage({
     count: 9,
     sizeType: ['compressed', 'original'],
     sourceType: ['album', 'camera'],
-    success: (response) => {
-      const paths = response.tempFilePaths || []
-      const files = response.tempFiles || []
-      const nextItems = paths.map((path, index) => ({
-        id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
-        path,
-        name: files[index]?.name || imageNameFromPath(path, imageItems.value.length + index + 1),
-        size: files[index]?.size || 0,
-        rawText: '',
-        status: '待粘贴文本'
-      }))
-      imageItems.value = [...imageItems.value, ...nextItems]
-      markDryRunDirty()
+    success: appendSelectedFiles
+  })
+}
+
+function appendSelectedFiles(response) {
+  const paths = response.tempFilePaths || []
+  const files = response.tempFiles || response.tempFilePaths?.map((path) => ({ path })) || []
+  const nextItems = files.map((file, index) => {
+    const path = file.path || paths[index] || ''
+    const name = file.name || imageNameFromPath(path, imageItems.value.length + index + 1)
+    const extension = fileExtension(name)
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      path,
+      file: file.file || null,
+      name,
+      extension,
+      size: file.size || 0,
+      rawText: '',
+      status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
     }
   })
+  imageItems.value = [...imageItems.value, ...nextItems]
+  nextItems.forEach(hydrateReadableFile)
+  markDryRunDirty()
+}
+
+function handleDropFiles(event) {
+  const files = Array.from(event?.dataTransfer?.files || [])
+  if (!files.length) return
+  appendNativeFiles(files.slice(0, 9))
+}
+
+function appendNativeFiles(files) {
+  const nextItems = files.map((file, index) => {
+    const name = file.name || `导入文件 ${imageItems.value.length + index + 1}`
+    const extension = fileExtension(name)
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      path: '',
+      file,
+      name,
+      extension,
+      size: file.size || 0,
+      rawText: '',
+      status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
+    }
+  })
+  imageItems.value = [...imageItems.value, ...nextItems]
+  nextItems.forEach(hydrateReadableFile)
+  markDryRunDirty()
+}
+
+function fileExtension(name) {
+  return String(name || '').split('.').pop()?.toLowerCase() || ''
+}
+
+function isReadableTextExtension(extension) {
+  return ['json', 'csv', 'txt'].includes(String(extension || '').toLowerCase())
+}
+
+function isImageItem(item) {
+  return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(item?.extension || fileExtension(item?.name))
+}
+
+function fileTypeLabel(item) {
+  const extension = String(item?.extension || fileExtension(item?.name) || 'FILE').toUpperCase()
+  if (['JPG', 'JPEG', 'PNG', 'WEBP'].includes(extension)) return 'IMG'
+  return extension.slice(0, 4)
+}
+
+function fileTypeTone(item) {
+  const extension = String(item?.extension || fileExtension(item?.name)).toLowerCase()
+  if (['xlsx', 'csv'].includes(extension)) return 'sheet'
+  if (['json', 'txt'].includes(extension)) return 'data'
+  if (['pdf', 'docx'].includes(extension)) return 'document'
+  return 'image'
+}
+
+function fileReadyText(item) {
+  if (String(item?.rawText || '').trim()) return '内容已读取'
+  if (isReadableTextExtension(item?.extension)) return item?.status || '等待读取'
+  return '文件已就绪'
+}
+
+function hydrateReadableFile(item) {
+  if (!isReadableTextExtension(item.extension)) return
+  if (item.file && typeof FileReader !== 'undefined') {
+    const reader = new FileReader()
+    reader.onload = () => {
+      item.rawText = String(reader.result || '')
+      item.status = '内容已读取'
+    }
+    reader.onerror = () => {
+      item.status = '读取失败'
+    }
+    reader.readAsText(item.file, 'utf-8')
+    return
+  }
+  try {
+    const fileSystem = uni.getFileSystemManager?.()
+    if (!fileSystem || !item.path) {
+      item.status = '需粘贴文本'
+      return
+    }
+    fileSystem.readFile({
+      filePath: item.path,
+      encoding: 'utf8',
+      success: (result) => {
+        item.rawText = String(result.data || '')
+        item.status = '内容已读取'
+      },
+      fail: () => {
+        item.status = '需粘贴文本'
+      }
+    })
+  } catch (error) {
+    item.status = '需粘贴文本'
+  }
 }
 
 function imageNameFromPath(path, index) {
@@ -378,6 +568,39 @@ function removeImage(id) {
   imageItems.value = imageItems.value.filter((item) => item.id !== id)
   drafts.value = drafts.value.filter((draft) => draft.image_id !== id)
   markDryRunDirty()
+}
+
+function startRecognition() {
+  if (!imageItems.value.length) {
+    uni.showToast({ title: '请先选择文件', icon: 'none' })
+    return
+  }
+  const readableItems = imageItems.value.filter((item) => String(item.rawText || '').trim())
+  if (readableItems.length) {
+    const total = readableItems.reduce((sum, item) => sum + parseImageItem(item), 0)
+    uni.showToast({ title: `已识别 ${total} 题，请预览确认`, icon: 'success' })
+  } else {
+    uni.showToast({ title: '请在下一步粘贴 OCR 或导出的文本', icon: 'none' })
+  }
+  editorVisible.value = true
+  markDryRunDirty()
+}
+
+function returnToFileSelection() {
+  editorVisible.value = false
+}
+
+function showImportHistory() {
+  const history = uni.getStorageSync(IMPORT_HISTORY_KEY) || []
+  const content = Array.isArray(history) && history.length
+    ? history.slice(0, 8).map((item) => `${item.created_at} · ${item.count} 题`).join('\n')
+    : '暂无导入记录'
+  uni.showModal({
+    title: '导入记录',
+    content,
+    showCancel: false,
+    confirmText: '关闭'
+  })
 }
 
 function parseSingleImage(item) {
@@ -418,8 +641,112 @@ function parseImageItem(item) {
 }
 
 function createDraftsFromText(rawText, image) {
+  const structuredQuestions = parseStructuredQuestions(rawText, image?.extension)
+  if (structuredQuestions.length) {
+    return structuredQuestions.map((question, index) => (
+      createDraftFromQuestionObject(question, image, index, structuredQuestions.length)
+    ))
+  }
   const blocks = splitQuestionBlocks(rawText)
   return blocks.map((block, index) => createDraftFromText(block, image, index, blocks.length))
+}
+
+function parseStructuredQuestions(rawText, extension) {
+  const text = String(rawText || '').trim()
+  if (!text) return []
+  if (extension === 'json' || text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text)
+      const questions = Array.isArray(parsed) ? parsed : parsed?.questions
+      if (Array.isArray(questions)) return questions.filter((item) => item && typeof item === 'object')
+    } catch (error) {
+      return []
+    }
+  }
+  if (extension === 'csv') {
+    return parseCsvQuestions(text)
+  }
+  return []
+}
+
+function parseCsvQuestions(text) {
+  const rows = String(text || '').split(/\r?\n/).filter((row) => row.trim())
+  if (rows.length < 2) return []
+  const headers = splitCsvRow(rows[0]).map((header) => header.trim().toLowerCase())
+  const knownFields = ['stem', 'question', '题干', 'option_a', 'a', '选项a', 'answer', '答案']
+  if (!headers.some((header) => knownFields.includes(header))) return []
+  return rows.slice(1).map((row) => {
+    const values = splitCsvRow(row)
+    return headers.reduce((result, header, index) => {
+      result[header] = values[index] || ''
+      return result
+    }, {})
+  })
+}
+
+function splitCsvRow(row) {
+  const values = []
+  let current = ''
+  let quoted = false
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index]
+    if (char === '"') {
+      if (quoted && row[index + 1] === '"') {
+        current += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+    } else if (char === ',' && !quoted) {
+      values.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  values.push(current.trim())
+  return values
+}
+
+function structuredValue(question, fields, fallback = '') {
+  for (const field of fields) {
+    if (question?.[field] !== undefined && question?.[field] !== null) {
+      return question[field]
+    }
+  }
+  return fallback
+}
+
+function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCount = 1) {
+  syncDefaults()
+  const options = question?.options || {}
+  const imageIndex = image ? imageItems.value.findIndex((item) => item.id === image.id) : null
+  const imageName = image?.name
+    ? (blockCount > 1 ? `${image.name} #${blockIndex + 1}` : image.name)
+    : ''
+  const subject = String(structuredValue(question, ['subject', '科目'], importDefaults.subject))
+  const catalog = importCatalog[subject] || importCatalog[importDefaults.subject]
+  const module = String(structuredValue(question, ['module', '模块'], importDefaults.module))
+  const submodule = String(structuredValue(question, ['submodule', '考点', '分类'], importDefaults.submodule))
+  return {
+    id: `${Date.now()}-${blockIndex}-${Math.random().toString(16).slice(2)}`,
+    image_id: image?.id || '',
+    image_name: imageName,
+    image_index: imageIndex,
+    exam_code: String(structuredValue(question, ['exam_code', '考试代码'], catalog?.exam_code || 'COMMON')),
+    subject,
+    module,
+    submodule,
+    difficulty: Number(structuredValue(question, ['difficulty', '难度'], importDefaults.difficulty)) || 2,
+    stem: String(structuredValue(question, ['stem', 'question', '题干'], '')),
+    option_a: String(structuredValue(question, ['option_a', 'a', 'A', '选项a', '选项A'], options.A || options.a || '')),
+    option_b: String(structuredValue(question, ['option_b', 'b', 'B', '选项b', '选项B'], options.B || options.b || '')),
+    option_c: String(structuredValue(question, ['option_c', 'c', 'C', '选项c', '选项C'], options.C || options.c || '')),
+    option_d: String(structuredValue(question, ['option_d', 'd', 'D', '选项d', '选项D'], options.D || options.d || '')),
+    answer: String(structuredValue(question, ['answer', 'correct_answer', '答案'], 'A')).toUpperCase(),
+    explanation: String(structuredValue(question, ['explanation', 'analysis', '解析'], '')),
+    check: null
+  }
 }
 
 function createDraftFromText(rawText, image, blockIndex = 0, blockCount = 1) {
@@ -772,6 +1099,14 @@ async function commitImport() {
   importSaving.value = true
   try {
     const response = await commitAdminQuestionImageImport(buildImportPayload())
+    const history = uni.getStorageSync(IMPORT_HISTORY_KEY) || []
+    uni.setStorageSync(IMPORT_HISTORY_KEY, [
+      {
+        created_at: new Date().toLocaleString(),
+        count: Number(response.inserted_count || 0)
+      },
+      ...(Array.isArray(history) ? history : [])
+    ].slice(0, 20))
     uni.showToast({ title: `已导入 ${response.inserted_count || 0} 题`, icon: 'success' })
     setTimeout(() => {
       uni.redirectTo({ url: '/pages/admin/index?tab=questions' })
@@ -809,11 +1144,11 @@ function goBack() {
 
 .import-hero {
   position: relative;
-  min-height: 112rpx;
+  min-height: 128rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 96rpx 18rpx;
+  padding: 0 210rpx 18rpx 96rpx;
   box-sizing: border-box;
 }
 
@@ -835,6 +1170,10 @@ function goBack() {
 }
 
 .back-btn::after,
+.history-btn::after,
+.file-delete-btn::after,
+.editor-back-btn::after,
+.recognize-btn::after,
 .mini-btn::after,
 .primary-mini-btn::after,
 .remove-btn::after,
@@ -857,7 +1196,7 @@ function goBack() {
 }
 
 .hero-title {
-  font-size: 44rpx;
+  font-size: 40rpx;
   line-height: 1.15;
   font-weight: 800;
   color: #0f172a;
@@ -865,8 +1204,36 @@ function goBack() {
 
 .hero-subtitle {
   margin-top: 10rpx;
-  font-size: 24rpx;
+  font-size: 23rpx;
   color: #6b7280;
+}
+
+.history-btn {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  transform: translateY(-50%);
+  width: 190rpx;
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid #93a7ca;
+  color: #0f326f;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.history-icon {
+  font-size: 31rpx;
+  line-height: 1;
 }
 
 .screen-state {
@@ -880,6 +1247,369 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 24rpx;
+}
+
+.landing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.file-drop-zone {
+  min-height: 420rpx;
+  padding: 48rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx dashed #1769ff;
+  border-radius: 28rpx;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(220, 235, 255, 0.9) 0, rgba(238, 246, 255, 0.72) 42%, rgba(248, 251, 255, 0.96) 100%);
+  box-sizing: border-box;
+}
+
+.file-upload-illustration {
+  position: relative;
+  width: 170rpx;
+  height: 170rpx;
+}
+
+.file-shape {
+  position: absolute;
+  left: 16rpx;
+  top: 4rpx;
+  width: 122rpx;
+  height: 150rpx;
+  border: 7rpx solid #1769ff;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.35);
+  box-sizing: border-box;
+}
+
+.file-fold {
+  position: absolute;
+  right: -7rpx;
+  top: -7rpx;
+  width: 50rpx;
+  height: 50rpx;
+  border-left: 7rpx solid #1769ff;
+  border-bottom: 7rpx solid #1769ff;
+  border-radius: 0 12rpx 0 12rpx;
+  background: #e9f2ff;
+}
+
+.file-arrow {
+  position: absolute;
+  inset: 50rpx 0 auto;
+  color: #1769ff;
+  text-align: center;
+  font-size: 78rpx;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.file-plus {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 7rpx solid #1769ff;
+  border-radius: 50%;
+  color: #1769ff;
+  background: #eef5ff;
+  font-size: 50rpx;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.drop-title {
+  margin-top: 22rpx;
+  color: #0b2454;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.drop-action {
+  margin-top: 12rpx;
+  color: #1769ff;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.drop-formats,
+.drop-limit {
+  margin-top: 18rpx;
+  color: #657695;
+  font-size: 21rpx;
+  text-align: center;
+}
+
+.drop-limit {
+  margin-top: 8rpx;
+}
+
+.selected-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.selected-file-card {
+  min-height: 118rpx;
+  padding: 18rpx 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 22rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.05);
+  box-sizing: border-box;
+}
+
+.file-type-icon {
+  flex: 0 0 76rpx;
+  width: 76rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #1769ff;
+  border-radius: 14rpx;
+  color: #1769ff;
+  background: #f3f7ff;
+  font-size: 19rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.file-type-icon.sheet,
+.file-thumb.sheet {
+  border-color: #16a34a;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.file-type-icon.document,
+.file-thumb.document {
+  border-color: #7c3aed;
+  color: #6d28d9;
+  background: #f5f3ff;
+}
+
+.file-type-icon.data,
+.file-thumb.data {
+  border-color: #0891b2;
+  color: #0e7490;
+  background: #ecfeff;
+}
+
+.selected-file-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.selected-file-name {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file-meta {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  color: #657695;
+  font-size: 22rpx;
+}
+
+.ready-status {
+  color: #16a34a;
+  font-weight: 800;
+}
+
+.file-delete-btn {
+  flex: 0 0 64rpx;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #d5deeb;
+  border-radius: 50%;
+  color: #253a62;
+  background: #ffffff;
+  font-size: 29rpx;
+  line-height: 1;
+}
+
+.recognition-card,
+.flow-card {
+  padding: 26rpx 28rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 22rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.04);
+}
+
+.landing-section-title {
+  color: #0b2454;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.recognition-tags {
+  margin-top: 18rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.recognition-tag {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.recognition-tag.blue {
+  color: #1769ff;
+  background: #eaf2ff;
+}
+
+.recognition-tag.green {
+  color: #15803d;
+  background: #e5f9ed;
+}
+
+.recognition-tag.purple {
+  color: #6d28d9;
+  background: #f1eefe;
+}
+
+.recognition-copy {
+  margin-top: 18rpx;
+  color: #53647f;
+  font-size: 22rpx;
+  line-height: 1.55;
+}
+
+.flow-card {
+  padding: 24rpx 18rpx 18rpx;
+}
+
+.flow-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4rpx;
+}
+
+.flow-step {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.flow-number {
+  position: absolute;
+  top: -8rpx;
+  left: calc(50% - 46rpx);
+  z-index: 2;
+  width: 30rpx;
+  height: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #1769ff;
+  font-size: 17rpx;
+  font-weight: 900;
+}
+
+.flow-icon {
+  width: 68rpx;
+  height: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #0f326f;
+  background: #f1f5fb;
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.flow-title {
+  margin-top: 12rpx;
+  color: #263449;
+  font-size: 20rpx;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.flow-arrow {
+  position: absolute;
+  top: 18rpx;
+  right: -14rpx;
+  color: #8ca0bf;
+  font-size: 32rpx;
+}
+
+.flow-note {
+  margin: 20rpx -18rpx -18rpx;
+  padding: 14rpx 20rpx;
+  border-top: 1rpx solid #e4eaf2;
+  color: #61728e;
+  background: #fbfcfe;
+  font-size: 20rpx;
+  line-height: 1.45;
+}
+
+.editor-toolbar {
+  padding: 14rpx 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.editor-back-btn {
+  height: 58rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 1rpx solid #1769ff;
+  border-radius: 16rpx;
+  color: #1769ff;
+  background: #ffffff;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.editor-progress {
+  display: flex;
+  gap: 18rpx;
+  color: #657695;
+  font-size: 21rpx;
+  font-weight: 800;
 }
 
 .step-strip {
@@ -1095,6 +1825,16 @@ function goBack() {
   height: 180rpx;
   border-radius: 16rpx;
   background: #eef2f7;
+}
+
+.file-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #1769ff;
+  color: #1769ff;
+  font-size: 24rpx;
+  font-weight: 900;
 }
 
 .image-main {
@@ -1374,6 +2114,55 @@ function goBack() {
   background: #ffffff;
   box-shadow: 0 20rpx 60rpx rgba(15, 23, 42, 0.14);
   box-sizing: border-box;
+}
+
+.recognize-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 28rpx 40rpx calc(env(safe-area-inset-bottom) + 26rpx);
+  border-radius: 34rpx 34rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 50rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.recognize-btn {
+  width: 100%;
+  height: 86rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  border: 0;
+  border-radius: 22rpx;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1769ff 0%, #0062ff 100%);
+  font-size: 31rpx;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 14rpx 28rpx rgba(23, 105, 255, 0.22);
+}
+
+.recognize-btn[disabled] {
+  opacity: 0.52;
+  box-shadow: none;
+}
+
+.recognize-icon {
+  font-size: 38rpx;
+  line-height: 1;
+}
+
+.recognize-hint {
+  margin-top: 18rpx;
+  color: #657695;
+  font-size: 22rpx;
+  text-align: center;
 }
 
 .bottom-summary {

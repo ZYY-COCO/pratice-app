@@ -301,7 +301,7 @@
           </button>
           <button class="question-action-btn outline" @tap="openQuestionImageImport">
             <text class="question-action-icon">⇧</text>
-            <text>批量导入图片</text>
+            <text>批量导入</text>
           </button>
           <button v-if="canShowReviewQueueEntry" class="question-action-btn filled" @tap="openReviewQueue">
             <text class="question-action-icon">☷</text>
