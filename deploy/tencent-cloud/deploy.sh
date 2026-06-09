@@ -12,6 +12,9 @@ cd "${APP_DIR}"
 
 echo "==> Updating source"
 git fetch origin "${BRANCH}"
+git ls-files -v | awk '$1 ~ /^[a-zS]/ {print substr($0, 3)}' | while IFS= read -r tracked_file; do
+  git update-index --no-assume-unchanged --no-skip-worktree -- "${tracked_file}"
+done
 git reset --hard "origin/${BRANCH}"
 
 echo "==> Installing backend dependencies"
