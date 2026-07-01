@@ -638,6 +638,35 @@ def update_profile(
     return AuthUser(**profile)
 
 
+@router.delete("/account", response_model=MessageResponse)
+def delete_account(user_id: str = Depends(get_current_user_id)) -> MessageResponse:
+    supabase_admin = get_supabase_admin()
+    profile_response = supabase_admin.table("users").select("id").eq("id", user_id).limit(1).execute()
+    if not profile_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+    delete_user = getattr(supabase_admin.auth.admin, "delete_user", None)
+    if not callable(delete_user):
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="Account deletion is not available")
+
+    try:
+        delete_user(user_id)
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Delete auth account failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Delete account failed: {error_summary}",
+        ) from exc
+
+    try:
+        supabase_admin.table("users").delete().eq("id", user_id).execute()
+    except Exception as exc:
+        logger.warning("Delete public user cleanup skipped for user_id=%s: %s", user_id, _safe_error_summary(exc))
+
+    return MessageResponse(detail="Account deleted")
+
+
 @router.post("/change-email", response_model=AuthUser)
 def change_email(
     payload: ChangeEmailRequest,

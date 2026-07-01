@@ -13,28 +13,8 @@
         v-model.trim="form.content"
         class="textarea"
         maxlength="1000"
-        placeholder="请描述你遇到的问题、建议，或你对 Pro 功能/价格的想法"
+        placeholder="请描述你遇到的问题、建议，或希望改进的学习功能"
       />
-    </view>
-
-    <view class="field">
-      <view class="label">是否愿意为 Pro 付费</view>
-      <view class="pay-row">
-        <button
-          v-for="item in payOptions"
-          :key="item.label"
-          class="choice-btn"
-          :class="{ active: form.willingToPay === item.value }"
-          @tap="form.willingToPay = item.value"
-        >
-          {{ item.label }}
-        </button>
-      </view>
-    </view>
-
-    <view class="field">
-      <view class="label">可接受价格</view>
-      <input v-model.trim="form.acceptablePrice" class="input" type="text" placeholder="例如：19元/月、49元/季" />
     </view>
 
     <view class="field">
@@ -59,18 +39,11 @@ const props = defineProps({
   }
 })
 
-const typeOptions = ['题目质量', '刷题体验', '错题本', '能力报告', 'Pro付费意愿', 'Bug']
-const payOptions = [
-  { label: '愿意', value: true },
-  { label: '暂不确定', value: null },
-  { label: '不愿意', value: false }
-]
+const typeOptions = ['题目质量', '刷题体验', '错题本', '能力报告', '功能建议', 'Bug']
 const submitting = ref(false)
 const form = reactive({
   feedbackType: typeOptions[0],
   content: '',
-  willingToPay: null,
-  acceptablePrice: '',
   contact: ''
 })
 
@@ -91,16 +64,14 @@ async function submit() {
     const response = await submitBetaFeedback({
       feedback_type: form.feedbackType,
       content: form.content,
-      willing_to_pay: form.willingToPay,
-      acceptable_price: form.acceptablePrice || null,
+      willing_to_pay: null,
+      acceptable_price: null,
       contact: form.contact || null,
       source_page: props.sourcePage
     })
     uni.showToast({ title: response.detail || '反馈已提交', icon: 'none' })
     form.content = ''
-    form.acceptablePrice = ''
     form.contact = ''
-    form.willingToPay = null
   } catch (error) {
     uni.showToast({ title: error?.detail || '反馈提交失败，请稍后重试', icon: 'none' })
   } finally {
@@ -149,27 +120,4 @@ async function submit() {
   line-height: 1.6;
 }
 
-.pay-row {
-  display: flex;
-  gap: 14rpx;
-  margin-top: 14rpx;
-}
-
-.choice-btn {
-  flex: 1;
-  min-height: 84rpx;
-  border: 2rpx solid var(--gyt-primary-border);
-  border-radius: 26rpx;
-  background: var(--gyt-primary-tint);
-  color: #476089;
-  font-size: 23rpx;
-  font-weight: 800;
-}
-
-.choice-btn.active {
-  border-color: var(--gyt-primary);
-  background: var(--gyt-primary-soft);
-  color: var(--gyt-primary);
-  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
-}
 </style>

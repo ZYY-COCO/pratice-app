@@ -4,8 +4,8 @@
       <view class="member-hero">
         <view class="member-hero-top">
           <view class="member-hero-copy">
-            <view class="hero-tag active">Pro 会员 · 已开通</view>
-            <view class="member-hero-title">{{ memberName }}的会员中心</view>
+            <view class="hero-tag active">学习权益 · 已开通</view>
+            <view class="member-hero-title">{{ memberName }}的学习权益</view>
             <view class="member-hero-subtitle">{{ memberUntilText }}</view>
           </view>
           <view class="member-badge">PRO</view>
@@ -32,19 +32,19 @@
         </view>
       </SectionCard>
 
-      <SectionCard title="会员服务" subtitle="支付接入后，这里会显示订单、续费和发票等服务入口。">
+      <SectionCard title="会员服务" subtitle="当前 App Store 版本暂不开放续费、订单或发票服务。">
         <view class="service-list">
-          <view class="service-row" @tap="showComingSoon('开通记录将在支付接入后开放')">
+          <view class="service-row" @tap="showComingSoon('服务记录暂未开放')">
             <view>
-              <view class="service-title">开通记录</view>
-              <view class="service-desc">查看会员订单与有效期变化</view>
+              <view class="service-title">服务记录</view>
+              <view class="service-desc">后续版本会展示权益变化与服务说明</view>
             </view>
             <view class="service-arrow">›</view>
           </view>
-          <view class="service-row" @tap="showComingSoon('续费管理将在支付接入后开放')">
+          <view class="service-row" @tap="showComingSoon('续期管理暂未开放')">
             <view>
-              <view class="service-title">续费管理</view>
-              <view class="service-desc">管理会员续费、升级与到期提醒</view>
+              <view class="service-title">权益说明</view>
+              <view class="service-desc">查看当前版本已开放的学习能力</view>
             </view>
             <view class="service-arrow">›</view>
           </view>
@@ -53,40 +53,27 @@
     </template>
 
     <template v-else>
-      <SectionCard title="免费版 / Pro 版差异" subtitle="当前不限制功能，只用于验证用户是否认可会员价值。">
+      <SectionCard title="学习功能预览" subtitle="当前 App Store 版本专注刷题与学习记录体验。">
         <view class="compare-grid">
           <view class="compare-card free">
-            <view class="plan-title">免费版</view>
+            <view class="plan-title">当前开放</view>
             <view v-for="item in freeFeatures" :key="item" class="feature-line">{{ item }}</view>
           </view>
           <view class="compare-card pro">
-            <view class="plan-title">Pro 会员</view>
+            <view class="plan-title">后续增强</view>
             <view v-for="item in proFeatures" :key="item" class="feature-line strong">{{ item }}</view>
           </view>
         </view>
       </SectionCard>
 
-      <SectionCard title="会员套餐" subtitle="真实支付暂未开放，现在只记录内测开通意向。">
-        <view class="price-list">
-          <view v-for="item in pricePlans" :key="item.name" class="price-card" :class="{ hot: item.hot }">
-            <view class="price-content">
-              <view class="price-name-row">
-                <view class="price-name">{{ item.name }}</view>
-                <view v-if="item.hot" class="price-badge">推荐</view>
-              </view>
-              <view class="price-desc">{{ item.desc }}</view>
-              <view class="price-note">{{ item.note }}</view>
+      <SectionCard title="版本说明" subtitle="第一版先聚焦刷题、错题和学习记录体验。">
+        <view class="service-list">
+          <view v-for="item in releaseNotes" :key="item.title" class="service-row">
+            <view>
+              <view class="service-title">{{ item.title }}</view>
+              <view class="service-desc">{{ item.desc }}</view>
             </view>
-            <view class="price-side">
-              <view class="price-value">{{ item.price }}</view>
-              <button
-                class="price-action-btn"
-                :disabled="creatingOrderCode === item.code"
-                @tap.stop="handleCreateOrder(item)"
-              >
-                {{ creatingOrderCode === item.code ? '记录中' : '内测登记' }}
-              </button>
-            </view>
+            <view class="service-arrow">✓</view>
           </view>
         </view>
       </SectionCard>
@@ -103,14 +90,13 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import { createMembershipOrder, fetchMembershipPlans, fetchMembershipStatus } from '../../api/membership'
+import { fetchMembershipStatus } from '../../api/membership'
 import { getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getUserDisplayName } from '../../utils/userDisplay'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const authUser = ref(getAuthUser())
-const creatingOrderCode = ref('')
 
 const freeFeatures = [
   '注册登录与基础刷题',
@@ -126,11 +112,6 @@ const proFeatures = [
   '每周提分报告'
 ]
 
-const pricePlans = ref([
-  { code: 'pro_monthly', name: '月卡', price: '9.9元/月', desc: '适合短期试用 Pro 功能', note: '先体验学习报告和推荐训练', hot: false },
-  { code: 'pro_quarterly', name: '季卡', price: '24.9元/季', desc: '适合一轮系统复习', note: '覆盖阶段复习和持续错题复盘', hot: true }
-])
-
 const unlockedBenefits = [
   '收藏、错题和练习记录长期保存',
   '根据薄弱点智能生成题目与解析',
@@ -138,37 +119,25 @@ const unlockedBenefits = [
   '自动推荐更适合你的训练内容'
 ]
 
+const releaseNotes = [
+  { title: '无收费入口', desc: '当前版本不展示套餐或收费信息。' },
+  { title: '学习数据同步', desc: '登录后可同步刷题记录、收藏和错题本。' },
+  { title: '后续功能预览', desc: '增强学习报告和训练建议会在后续版本逐步开放。' }
+]
+
 const isProMember = computed(() => getMembershipStatus(authUser.value) === 'active')
 const memberName = computed(() => getUserDisplayName(authUser.value, '你'))
 const membershipExpiresAt = computed(() => getMembershipExpiresAt(authUser.value))
 const memberUntilText = computed(() =>
   membershipExpiresAt.value
-    ? `会员权益已开通，有效期至 ${membershipExpiresAt.value}。`
-    : '会员权益已开通，可以使用 Pro 专属学习功能。'
+    ? `学习权益已开通，有效期至 ${membershipExpiresAt.value}。`
+    : '学习权益已开通，可以使用当前版本的增强学习功能。'
 )
 
 onShow(() => {
   authUser.value = getAuthUser()
-  loadMembershipPlans()
   refreshMembershipStatus()
 })
-
-async function loadMembershipPlans() {
-  try {
-    const plans = await fetchMembershipPlans()
-    if (!Array.isArray(plans) || !plans.length) return
-    pricePlans.value = plans.map((item) => ({
-      code: item.code,
-      name: item.name,
-      price: item.price_label,
-      desc: item.description,
-      note: item.code === 'pro_quarterly' ? '覆盖阶段复习和持续错题复盘' : '先体验学习报告和推荐训练',
-      hot: item.code === 'pro_quarterly'
-    }))
-  } catch (error) {
-    // Keep local fallback plan display when the backend is unavailable.
-  }
-}
 
 async function refreshMembershipStatus() {
   if (!uni.getStorageSync('accessToken')) return
@@ -185,29 +154,6 @@ async function refreshMembershipStatus() {
 
 function showComingSoon(title) {
   uni.showToast({ title, icon: 'none' })
-}
-
-async function handleCreateOrder(plan) {
-  if (!uni.getStorageSync('accessToken')) {
-    uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/pro/index')}` })
-    return
-  }
-  if (!plan?.code || creatingOrderCode.value) return
-
-  creatingOrderCode.value = plan.code
-  try {
-    const order = await createMembershipOrder({ plan_code: plan.code })
-    uni.showModal({
-      title: '内测登记已记录',
-      content: `套餐：${plan.name}\n价格：${plan.price}\n登记号：${order.provider_order_id}\n\n当前不会跳转真实支付，后续接入支付渠道后再开放开通。`,
-      confirmText: '知道了',
-      showCancel: false
-    })
-  } catch (error) {
-    uni.showToast({ title: error?.detail || '创建订单失败，请稍后重试', icon: 'none' })
-  } finally {
-    creatingOrderCode.value = ''
-  }
 }
 
 function getMembershipStatus(user) {

@@ -391,11 +391,11 @@
 
         <view class="member-card" :class="{ active: isProMember }">
           <view class="member-copy">
-            <view class="member-kicker">{{ isProMember ? 'Pro 会员 · 已开通' : 'Pro 功能预览' }}</view>
-            <view class="member-title">Pro 会员中心</view>
+            <view class="member-kicker">{{ isProMember ? '学习权益 · 已开通' : '学习功能预览' }}</view>
+            <view class="member-title">高级学习能力</view>
             <view class="member-subtitle">{{ memberCardSubtitle }}</view>
-            <button v-if="isAuthed" class="member-login-btn" @tap="handleProEntry">
-              {{ isProMember ? '会员中心' : '查看权益' }}
+            <button v-if="isAuthed && isProMember" class="member-login-btn" @tap="handleProEntry">
+              查看权益
             </button>
           </view>
           <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
@@ -643,9 +643,9 @@
         <view class="pro-modal-handle"></view>
         <button class="pro-modal-close" @tap="handleCloseProModal">×</button>
         <view class="pro-modal-head">
-          <view class="pro-modal-title">Pro 会员权益</view>
-          <view class="pro-modal-subtitle">解锁更多学习功能，提升刷题效率</view>
-          <view class="pro-status-pill">当前状态：未开通</view>
+          <view class="pro-modal-title">学习功能预览</view>
+          <view class="pro-modal-subtitle">后续版本会逐步增强学习报告和训练建议</view>
+          <view class="pro-status-pill">当前版本专注学习功能体验</view>
         </view>
 
         <view class="pro-benefit-list">
@@ -663,8 +663,7 @@
         </view>
 
         <view class="pro-modal-actions">
-          <button class="pro-later-btn" @tap="handleCloseProModal">稍后再说</button>
-          <button class="pro-open-btn" @tap="handleViewProPlans">查看开通方式</button>
+          <button class="pro-later-btn" @tap="handleCloseProModal">知道了</button>
         </view>
       </view>
     </view>
@@ -675,7 +674,7 @@
         <button class="feedback-modal-close" @tap="handleCloseFeedbackModal">×</button>
         <view class="feedback-modal-head">
           <view class="feedback-modal-title">帮助与反馈</view>
-          <view class="feedback-modal-subtitle">提交题目质量、刷题体验或 Pro 功能/价格建议</view>
+          <view class="feedback-modal-subtitle">提交题目质量、刷题体验或功能建议</view>
         </view>
         <scroll-view scroll-y class="feedback-modal-scroll">
           <BetaFeedbackForm source-page="profile" />
@@ -932,9 +931,9 @@ const memberCardSubtitle = computed(() => {
   if (isProMember.value) {
     return membershipExpiresAt.value
       ? `会员权益使用中，有效期至 ${membershipExpiresAt.value}。`
-      : '会员权益使用中，可进入会员中心查看专属功能。'
+      : '学习权益使用中，可查看已开放的增强能力。'
   }
-  return '未来将开放无限存储、AI 生题解析与更完整的学习报告。'
+  return '当前版本先开放基础学习体验，后续增强能力会随版本逐步开放。'
 })
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const profileAvatarText = computed(() => {
@@ -1014,13 +1013,13 @@ const wrongSummaryCount = computed(() => {
 })
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const practiceTools = computed(() => {
-  const proLocked = !isProMember.value
+  const proLocked = false
   return [
     { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '', iconSrc: '/static/ui-icons/favorite.svg', tone: 'blue', action: 'favorites' },
     { label: '练习历史', desc: '回顾我的练习记录', icon: '', iconSrc: '/static/ui-icons/history.svg', tone: 'green', action: 'history' },
     {
       label: '错题本',
-      desc: proLocked ? 'Pro 开放：查看与重刷你的错题' : `查看与重刷 ${wrongSummaryCount.value} 道错题`,
+      desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`,
       icon: '',
       iconSrc: '/static/ui-icons/wrong-book.svg',
       tone: proLocked ? 'locked' : 'blue',
@@ -1030,7 +1029,7 @@ const practiceTools = computed(() => {
     },
     {
       label: '学习报告',
-      desc: proLocked ? 'Pro 开放：查看能力分析与提升建议' : (reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告'),
+      desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告',
       icon: '',
       iconSrc: '/static/ui-icons/report.svg',
       tone: proLocked ? 'locked' : 'purple',
@@ -1040,7 +1039,7 @@ const practiceTools = computed(() => {
     },
     {
       label: 'AI 专项出题',
-      desc: proLocked ? 'Pro 开放：按知识点生成专项练习' : '按知识点生成专项练习',
+      desc: '按知识点生成专项练习',
       icon: 'AI',
       tone: proLocked ? 'locked' : 'green',
       action: 'ai-generator',

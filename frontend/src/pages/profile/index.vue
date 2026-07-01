@@ -79,6 +79,15 @@
       </button>
     </SectionCard>
 
+    <SectionCard title="账号安全" subtitle="删除账号后将无法恢复当前学习数据。">
+      <view class="danger-copy">
+        删除账号会清除登录身份，并删除与该账号关联的刷题记录、错题、收藏和学习统计。
+      </view>
+      <button class="danger-button" :disabled="deletingAccount" @tap="confirmDeleteAccount">
+        {{ deletingAccount ? '删除中...' : '删除账号' }}
+      </button>
+    </SectionCard>
+
     <!-- #ifdef H5 -->
     <IcpFooter />
     <!-- #endif -->
@@ -90,8 +99,8 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import { changeEmailWithCode, sendChangeEmailCode, updateProfile } from '../../api/auth'
-import { getAuthUser, updateAuthUser } from '../../utils/auth'
+import { changeEmailWithCode, deleteAccount, sendChangeEmailCode, updateProfile } from '../../api/auth'
+import { clearAuthSession, getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
@@ -106,6 +115,7 @@ const user = ref(getAuthUser() || {})
 const savingProfile = ref(false)
 const sendingCode = ref(false)
 const bindingEmail = ref(false)
+const deletingAccount = ref(false)
 const form = reactive({
   nickname: '',
   avatar_url: '',
@@ -238,6 +248,43 @@ async function bindEmail() {
     uni.showToast({ title: error?.detail || '换绑失败，请检查验证码', icon: 'none' })
   } finally {
     bindingEmail.value = false
+  }
+}
+
+function confirmDeleteAccount() {
+  if (deletingAccount.value) return
+  uni.showModal({
+    title: '确认删除账号？',
+    content: '删除后将无法登录该账号，也无法恢复刷题记录、错题、收藏和学习统计。',
+    confirmText: '删除账号',
+    cancelText: '取消',
+    confirmColor: '#ef4444',
+    success(result) {
+      if (result.confirm) {
+        deleteCurrentAccount()
+      }
+    }
+  })
+}
+
+async function deleteCurrentAccount() {
+  deletingAccount.value = true
+  try {
+    await deleteAccount()
+    clearAuthSession()
+    user.value = {}
+    uni.reLaunch({
+      url: '/pages/home/index',
+      success() {
+        setTimeout(() => {
+          uni.showToast({ title: '账号已删除', icon: 'none' })
+        }, 180)
+      }
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '删除失败，请稍后重试', icon: 'none' })
+  } finally {
+    deletingAccount.value = false
   }
 }
 </script>
@@ -423,6 +470,30 @@ async function bindEmail() {
   background: #d9e2f1;
   color: #8a95a8;
   box-shadow: none;
+}
+
+.danger-copy {
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.65;
+  font-weight: 650;
+}
+
+.danger-button {
+  margin-top: 22rpx;
+  width: 100%;
+  min-height: 92rpx;
+  border: 2rpx solid #fecaca;
+  border-radius: 28rpx;
+  background: #fff1f2;
+  color: #b42318;
+  font-size: 28rpx;
+  line-height: 92rpx;
+  font-weight: 900;
+}
+
+.danger-button[disabled] {
+  opacity: 0.6;
 }
 
 .code-row {

@@ -24,7 +24,7 @@
           <text class="soon-badge">即将开放</text>
         </button>
       </view>
-      <view class="login-mode-note">目前仅支持邮箱注册登录，新用户注册后自动赠送 1 个月会员。</view>
+      <view class="login-mode-note">目前仅支持邮箱注册登录，登录后可同步错题、收藏和学习记录。</view>
 
       <template v-if="mode === 'login'">
         <template v-if="authMethod === 'phone'">
@@ -530,7 +530,7 @@ function switchAuthMethod(nextMethod) {
 function showAuthMethodUnavailable() {
   authMethod.value = 'email'
   tipType.value = 'warning'
-  tipText.value = '目前仅支持邮箱注册和邮箱登录。手机号、微信登录正在适配中，新用户用邮箱注册后会自动赠送 1 个月会员。'
+  tipText.value = '目前仅支持邮箱注册和邮箱登录。手机号、微信登录正在适配中，登录后可同步错题、收藏和学习记录。'
   uni.showToast({ title: '请先使用邮箱登录', icon: 'none' })
 }
 

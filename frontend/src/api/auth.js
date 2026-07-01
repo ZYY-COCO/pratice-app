@@ -99,3 +99,11 @@ export function updateProfile(payload) {
     data: payload
   })
 }
+
+export function deleteAccount() {
+  return request({
+    url: '/auth/account',
+    method: 'DELETE',
+    timeout: 25000
+  })
+}
