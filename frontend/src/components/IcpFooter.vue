@@ -19,6 +19,9 @@
         <image class="police-icon" src="/static/beian-gongan.png" mode="aspectFit" />
         <text>粤公网安备44011402001320号</text>
       </a>
+      <a class="icp-link" href="/privacy">
+        隐私政策
+      </a>
     </view>
   </view>
   <!-- #endif -->
