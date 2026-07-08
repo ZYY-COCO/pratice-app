@@ -1060,7 +1060,7 @@ const serviceTools = computed(() => {
   const items = [
     { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
     { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
-    { label: '关于我们', desc: '了解项目定位与内测说明', icon: 'i', tone: 'blue', action: 'about' }
+    { label: '关于我们', desc: '隐私政策、支持信息与联系方式', icon: 'i', tone: 'blue', action: 'about' }
   ]
   if (isAdminUser.value) {
     items.unshift(
@@ -1839,7 +1839,7 @@ function handleMenu(item) {
     return
   }
   if (item.action === 'about') {
-    uni.showToast({ title: '当前版本：内测版，专注刷题闭环验证', icon: 'none' })
+    uni.navigateTo({ url: '/pages/about/index' })
     return
   }
   showMockToast()
