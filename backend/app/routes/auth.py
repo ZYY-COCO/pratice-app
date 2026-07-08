@@ -1,5 +1,5 @@
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
@@ -56,8 +56,8 @@ MEMBERSHIP_FIELDS = (
     "membership_updated_at",
 )
 PROFILE_ADMIN_FIELDS = ("role", "disabled_at")
-NEW_USER_TRIAL_DAYS = 31
-NEW_USER_TRIAL_PLAN = "pro_monthly"
+FREE_MEMBERSHIP_EXPIRES_AT = datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
+FREE_MEMBERSHIP_PLAN = "free_until_2099"
 
 
 def _safe_error_summary(exc: Exception) -> str:
@@ -139,12 +139,11 @@ def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
 
 def _new_user_trial_membership_fields() -> dict:
     current = datetime.now(timezone.utc)
-    expires_at = current + timedelta(days=NEW_USER_TRIAL_DAYS)
     return {
         "membership_status": "active",
-        "membership_plan": NEW_USER_TRIAL_PLAN,
+        "membership_plan": FREE_MEMBERSHIP_PLAN,
         "membership_started_at": current.isoformat(),
-        "membership_expires_at": expires_at.isoformat(),
+        "membership_expires_at": FREE_MEMBERSHIP_EXPIRES_AT.isoformat(),
         "membership_updated_at": current.isoformat(),
     }
 
