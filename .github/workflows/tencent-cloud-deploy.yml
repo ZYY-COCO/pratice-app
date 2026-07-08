@@ -12,7 +12,26 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - name: Deploy over SSH
+      - name: Check out source
+        uses: actions/checkout@v4
+
+      - name: Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Build H5 frontend
+        run: |
+          set -euo pipefail
+          cd frontend
+          npm ci
+          VITE_API_BASE_URL=/api npm run build:h5
+          test -f dist/build/h5/index.html
+          test -f dist/build/h5/static/support.html
+
+      - name: Deploy frontend over SSH
         env:
           TENCENT_HOST: ${{ secrets.TENCENT_HOST }}
           TENCENT_USER: ${{ secrets.TENCENT_USER }}
@@ -58,8 +77,28 @@ jobs:
           chmod 600 ~/.ssh/tencent_cloud_key
           ssh-keyscan -p "${TENCENT_PORT}" -H "${TENCENT_HOST}" >> ~/.ssh/known_hosts
 
+          tar -C frontend/dist/build/h5 -czf /tmp/gangyantong-h5.tgz .
+          cp deploy/tencent-cloud/nginx.conf /tmp/gangyantong-nginx.conf
+
+          scp -i ~/.ssh/tencent_cloud_key \
+            -P "${TENCENT_PORT}" \
+            /tmp/gangyantong-h5.tgz \
+            /tmp/gangyantong-nginx.conf \
+            "${TENCENT_USER}@${TENCENT_HOST}:/tmp/"
+
           ssh -i ~/.ssh/tencent_cloud_key \
             -o ServerAliveInterval=30 \
             -o ServerAliveCountMax=20 \
             -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
-            "cd /opt/gangyantong/app && BRANCH=main bash deploy/tencent-cloud/deploy.sh"
+            'set -euo pipefail
+            tmp_dir="$(mktemp -d)"
+            tar -xzf /tmp/gangyantong-h5.tgz -C "${tmp_dir}"
+            sudo mkdir -p /var/www/gangyantong
+            sudo rsync -a --delete "${tmp_dir}/" /var/www/gangyantong/
+            sudo cp /tmp/gangyantong-nginx.conf /etc/nginx/sites-available/gangyantong
+            sudo ln -sfn /etc/nginx/sites-available/gangyantong /etc/nginx/sites-enabled/gangyantong
+            sudo rm -f /etc/nginx/sites-enabled/default
+            sudo nginx -t
+            sudo systemctl reload nginx
+            rm -rf "${tmp_dir}" /tmp/gangyantong-h5.tgz /tmp/gangyantong-nginx.conf
+            curl -fsS http://127.0.0.1/static/support.html >/dev/null'
