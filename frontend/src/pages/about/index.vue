@@ -5,26 +5,66 @@
       <view class="hero-copy">
         <view class="hero-eyebrow">关于我们</view>
         <view class="hero-title">港研通</view>
-        <view class="hero-subtitle">面向港澳台考研用户的刷题与学习记录工具</view>
+        <view class="hero-subtitle">面向港澳台考研用户的刷题、复盘与学习记录工具</view>
       </view>
     </view>
 
-    <view class="notice-card">
-      <view class="notice-title">当前 App Store 版本说明</view>
-      <view class="notice-text">
-        当前版本不提供付费数字内容、订阅、App 内购买或外部付费购买入口。若未来上线付费数字内容，将按 Apple 规则接入 App 内购买。
+    <view class="status-card">
+      <view class="status-main">
+        <view class="status-kicker">当前版本</view>
+        <view class="status-title">免费开放学习权益</view>
+        <view class="status-desc">
+          当前 App Store 版本不提供付费数字内容、订阅、App 内购买或外部付费购买入口。现阶段所有用户均可免费使用学习权益。
+        </view>
+      </view>
+      <view class="status-pill">免费</view>
+    </view>
+
+    <view class="section-card">
+      <view class="section-head">
+        <view>
+          <view class="section-title">我们提供什么</view>
+          <view class="section-desc">围绕备考流程，把练习、记录和复盘集中在一个移动端学习闭环中。</view>
+        </view>
+      </view>
+      <view class="feature-grid">
+        <view v-for="item in features" :key="item.title" class="feature-item">
+          <view class="feature-icon" :class="item.tone">{{ item.icon }}</view>
+          <view class="feature-copy">
+            <view class="feature-title">{{ item.title }}</view>
+            <view class="feature-desc">{{ item.desc }}</view>
+          </view>
+        </view>
       </view>
     </view>
 
     <view class="section-card">
-      <view class="section-title">帮助与支持</view>
-      <view class="section-desc">遇到登录、刷题记录、错题本、收藏夹或学习报告问题时，可以通过支持页面或邮箱联系我们。</view>
+      <view class="section-title">帮助与反馈</view>
+      <view class="section-desc">
+        你可以在这里提交题目质量、刷题体验、账号登录或功能建议。反馈会进入后台处理列表，便于我们持续改进。
+      </view>
+      <view class="feedback-form-area">
+        <BetaFeedbackForm source-page="about" />
+      </view>
+    </view>
+
+    <view class="section-card">
+      <view class="section-title">支持与隐私</view>
+      <view class="section-desc">审核、用户支持和隐私说明集中放在这里，方便用户和 App Review 快速找到。</view>
       <view class="action-list">
         <button class="link-row" @tap="openSupportPage">
           <view class="link-icon support">?</view>
           <view class="link-copy">
-            <view class="link-title">帮助与支持</view>
-            <view class="link-subtitle">打开线上支持页面</view>
+            <view class="link-title">帮助与支持页面</view>
+            <view class="link-subtitle">常见问题、支持邮箱和账号数据说明</view>
+          </view>
+          <view class="link-arrow">›</view>
+        </button>
+        <button class="link-row" @tap="openPrivacyPage">
+          <view class="link-icon privacy">锁</view>
+          <view class="link-copy">
+            <view class="link-title">隐私政策</view>
+            <view class="link-subtitle">了解账号信息、学习记录和反馈数据的使用方式</view>
           </view>
           <view class="link-arrow">›</view>
         </button>
@@ -34,22 +74,7 @@
             <view class="link-title">联系邮箱</view>
             <view class="link-subtitle">{{ supportEmail }}</view>
           </view>
-          <view class="link-arrow">复制</view>
-        </button>
-      </view>
-    </view>
-
-    <view class="section-card">
-      <view class="section-title">隐私与数据</view>
-      <view class="section-desc">你可以查看隐私政策，了解账号信息、学习记录和反馈数据的使用方式。</view>
-      <view class="action-list">
-        <button class="link-row" @tap="openPrivacyPage">
-          <view class="link-icon privacy">锁</view>
-          <view class="link-copy">
-            <view class="link-title">隐私政策</view>
-            <view class="link-subtitle">查看线上隐私政策</view>
-          </view>
-          <view class="link-arrow">›</view>
+          <view class="link-arrow copy">复制</view>
         </button>
       </view>
     </view>
@@ -67,17 +92,43 @@
         <text class="info-label">支持网址</text>
         <text class="info-value">gangyantong.com/support.html</text>
       </view>
+      <view class="info-row">
+        <text class="info-label">隐私政策</text>
+        <text class="info-value">gangyantong.com/privacy.html</text>
+      </view>
     </view>
   </view>
 </template>
 
 <script setup>
+import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const supportEmail = '2982326925@qq.com'
 const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
+
+const features = [
+  {
+    title: '专项刷题',
+    desc: '按科目和模块进行练习，帮助用户稳定推进备考。',
+    icon: '题',
+    tone: 'blue'
+  },
+  {
+    title: '错题复盘',
+    desc: '沉淀错题、收藏和练习历史，方便回看薄弱点。',
+    icon: '复',
+    tone: 'green'
+  },
+  {
+    title: '学习报告',
+    desc: '根据练习记录展示能力概览和后续训练方向。',
+    icon: '报',
+    tone: 'purple'
+  }
+]
 
 function openExternalUrl(url) {
   // #ifdef APP-PLUS
@@ -180,22 +231,67 @@ function copyEmail() {
   font-weight: 650;
 }
 
-.notice-card,
+.status-card,
 .section-card {
   margin-top: 22rpx;
-  padding: 28rpx;
-  border-radius: 26rpx;
   border: 2rpx solid #e7edf7;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
 }
 
-.notice-card {
+.status-card {
+  display: flex;
+  gap: 22rpx;
+  align-items: flex-start;
+  padding: 30rpx;
+  border-radius: 30rpx;
   border-color: #d7e5ff;
-  background: #f4f8ff;
+  background: linear-gradient(135deg, #f4f8ff 0%, #ffffff 100%);
 }
 
-.notice-title,
+.status-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.status-kicker {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.status-title {
+  margin-top: 8rpx;
+  color: #101828;
+  font-size: 32rpx;
+  line-height: 1.3;
+  font-weight: 950;
+}
+
+.status-desc {
+  margin-top: 10rpx;
+  color: #5f6b7d;
+  font-size: 24rpx;
+  line-height: 1.65;
+  font-weight: 650;
+}
+
+.status-pill {
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: #eafbf1;
+  color: #16a34a;
+  font-size: 23rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.section-card {
+  padding: 28rpx;
+  border-radius: 26rpx;
+}
+
 .section-title {
   color: #101828;
   font-size: 30rpx;
@@ -203,13 +299,82 @@ function copyEmail() {
   font-weight: 950;
 }
 
-.notice-text,
 .section-desc {
   margin-top: 12rpx;
   color: #5f6b7d;
   font-size: 25rpx;
   line-height: 1.7;
   font-weight: 650;
+}
+
+.feature-grid {
+  margin-top: 22rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.feature-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  min-width: 0;
+  padding: 20rpx;
+  border-radius: 22rpx;
+  background: #f8fbff;
+  border: 2rpx solid #edf2fb;
+}
+
+.feature-icon {
+  width: 54rpx;
+  height: 54rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 54rpx;
+  font-size: 24rpx;
+  line-height: 1;
+  font-weight: 950;
+}
+
+.feature-icon.blue {
+  background: #edf4ff;
+  color: #3478f6;
+}
+
+.feature-icon.green {
+  background: #eafbf1;
+  color: #16a34a;
+}
+
+.feature-icon.purple {
+  background: #f0edff;
+  color: #6d5dfc;
+}
+
+.feature-copy {
+  flex: 1;
+  min-width: 0;
+}
+
+.feature-title {
+  color: #101828;
+  font-size: 24rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.feature-desc {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 21rpx;
+  line-height: 1.5;
+  font-weight: 650;
+}
+
+.feedback-form-area {
+  margin-top: 22rpx;
 }
 
 .action-list {
@@ -295,6 +460,10 @@ function copyEmail() {
   font-size: 25rpx;
   line-height: 1;
   font-weight: 900;
+}
+
+.link-arrow.copy {
+  font-size: 22rpx;
 }
 
 .section-card.compact {

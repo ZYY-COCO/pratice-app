@@ -668,20 +668,6 @@
       </view>
     </view>
 
-    <view v-if="showFeedbackModal" class="feedback-modal-mask" @tap="handleCloseFeedbackModal">
-      <view class="feedback-modal-sheet" @tap.stop>
-        <view class="feedback-modal-handle"></view>
-        <button class="feedback-modal-close" @tap="handleCloseFeedbackModal">×</button>
-        <view class="feedback-modal-head">
-          <view class="feedback-modal-title">帮助与反馈</view>
-          <view class="feedback-modal-subtitle">提交题目质量、刷题体验或功能建议</view>
-        </view>
-        <scroll-view scroll-y class="feedback-modal-scroll">
-          <BetaFeedbackForm source-page="profile" />
-        </scroll-view>
-      </view>
-    </view>
-
     <view v-if="showThemeModal" class="theme-modal-mask" @tap="handleCloseThemeModal">
       <view class="theme-modal-sheet" @tap.stop>
         <view class="theme-modal-handle"></view>
@@ -755,7 +741,6 @@ import IcpFooter from '../../components/IcpFooter.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
@@ -817,7 +802,6 @@ const retestLoading = ref(false)
 const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
 const showProModal = ref(false)
-const showFeedbackModal = ref(false)
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
 const showOfficialMessageModal = ref(false)
@@ -1059,8 +1043,7 @@ const isAdminUser = computed(() => {
 const serviceTools = computed(() => {
   const items = [
     { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
-    { label: '帮助与反馈', desc: '常见问题与意见反馈', icon: '?', tone: 'orange', action: 'feedback' },
-    { label: '关于我们', desc: '隐私政策、支持信息与联系方式', icon: 'i', tone: 'blue', action: 'about' }
+    { label: '关于我们', desc: '帮助反馈、隐私政策与支持信息', icon: 'i', tone: 'blue', action: 'about' }
   ]
   if (isAdminUser.value) {
     items.unshift(
@@ -1822,10 +1805,6 @@ function handleMenu(item) {
     openRecommendedTrainingSheet()
     return
   }
-  if (item.action === 'feedback') {
-    handleOpenFeedbackModal()
-    return
-  }
   if (item.action === 'theme') {
     handleOpenThemeModal()
     return
@@ -1847,14 +1826,6 @@ function handleMenu(item) {
 
 function showMockToast() {
   uni.showToast({ title: '完整 AI 诊断后续再接入', icon: 'none' })
-}
-
-function handleOpenFeedbackModal() {
-  showFeedbackModal.value = true
-}
-
-function handleCloseFeedbackModal() {
-  showFeedbackModal.value = false
 }
 
 function handleOpenThemeModal() {
@@ -4008,80 +3979,6 @@ function getMembershipExpiresAt(user) {
   background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #4f86ff));
   color: #ffffff;
   box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.22));
-}
-
-.feedback-modal-mask {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 84;
-  display: flex;
-  align-items: flex-end;
-  background: rgba(15, 23, 42, 0.36);
-}
-
-.feedback-modal-sheet {
-  position: relative;
-  width: 100%;
-  max-height: 88vh;
-  padding: 16rpx 36rpx calc(env(safe-area-inset-bottom) + 30rpx);
-  border-radius: 48rpx 48rpx 0 0;
-  background: #ffffff;
-  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
-  box-sizing: border-box;
-}
-
-.feedback-modal-handle {
-  width: 74rpx;
-  height: 8rpx;
-  margin: 0 auto 18rpx;
-  border-radius: 999rpx;
-  background: #d8deea;
-}
-
-.feedback-modal-close {
-  position: absolute;
-  top: 20rpx;
-  right: 28rpx;
-  width: 58rpx;
-  height: 58rpx;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 50%;
-  background: #f5f7fb;
-  color: #8a95a8;
-  font-size: 36rpx;
-  line-height: 56rpx;
-  font-weight: 800;
-}
-
-.feedback-modal-head {
-  padding: 0 58rpx 18rpx;
-  text-align: center;
-}
-
-.feedback-modal-title {
-  color: #101828;
-  font-size: 36rpx;
-  line-height: 1.25;
-  font-weight: 950;
-}
-
-.feedback-modal-subtitle {
-  margin-top: 10rpx;
-  color: #8a95a8;
-  font-size: 23rpx;
-  line-height: 1.45;
-  font-weight: 650;
-}
-
-.feedback-modal-scroll {
-  max-height: 70vh;
-  padding-bottom: 4rpx;
-  box-sizing: border-box;
 }
 
 .theme-modal-mask {
