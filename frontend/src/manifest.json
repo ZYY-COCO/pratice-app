@@ -2,8 +2,8 @@
     "name" : "港研通",
     "appid" : "__UNI__FEDCA88",
     "description" : "面向港澳台考研初试用户的刷题与学习分析工具",
-    "versionName" : "0.1.0",
-    "versionCode" : "1",
+    "versionName" : "1.0",
+    "versionCode" : "5",
     "transformPx" : false,
     "h5" : {
         "title" : "港研通"
@@ -46,17 +46,6 @@
                 },
                 "ios" : {
                     "appstore" : "unpackage/res/icons/1024x1024.png",
-                    "ipad" : {
-                        "app" : "unpackage/res/icons/76x76.png",
-                        "app@2x" : "unpackage/res/icons/152x152.png",
-                        "notification" : "unpackage/res/icons/20x20.png",
-                        "notification@2x" : "unpackage/res/icons/40x40.png",
-                        "proapp@2x" : "unpackage/res/icons/167x167.png",
-                        "settings" : "unpackage/res/icons/29x29.png",
-                        "settings@2x" : "unpackage/res/icons/58x58.png",
-                        "spotlight" : "unpackage/res/icons/40x40.png",
-                        "spotlight@2x" : "unpackage/res/icons/80x80.png"
-                    },
                     "iphone" : {
                         "app@2x" : "unpackage/res/icons/120x120.png",
                         "app@3x" : "unpackage/res/icons/180x180.png",
@@ -71,6 +60,7 @@
             },
             "ios" : {
                 "appid" : "com.gangyantong.app",
+                "idfa" : false,
                 "dSYMs" : false
             }
         }
