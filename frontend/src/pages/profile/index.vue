@@ -104,7 +104,7 @@ import { clearAuthSession, getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
-const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI', 'Pro']
+const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI', '港']
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const genderOptions = [
   { label: '男', value: 'male' },

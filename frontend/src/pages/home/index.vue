@@ -389,16 +389,13 @@
           <view class="account-arrow">›</view>
         </view>
 
-        <view class="member-card" :class="{ active: isProMember }">
+        <view class="member-card active">
           <view class="member-copy">
-            <view class="member-kicker">{{ isProMember ? '学习权益 · 已开通' : '学习功能预览' }}</view>
-            <view class="member-title">高级学习能力</view>
+            <view class="member-kicker">免费学习功能 · 已开放</view>
+            <view class="member-title">学习工具免费使用</view>
             <view class="member-subtitle">{{ memberCardSubtitle }}</view>
-            <button v-if="isAuthed && isProMember" class="member-login-btn" @tap="handleProEntry">
-              查看权益
-            </button>
           </view>
-          <view class="shield-art" :class="{ active: isProMember }">{{ isProMember ? 'PRO' : '✓' }}</view>
+          <view class="shield-art active">FREE</view>
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
               <view class="benefit-icon" :class="item.iconClass">
@@ -427,7 +424,7 @@
               <view class="menu-copy">
                 <view class="menu-title-row">
                   <text class="menu-title">{{ item.label }}</text>
-                  <text v-if="item.locked" class="pro-lock-badge">Pro</text>
+                  <text v-if="item.locked" class="pro-lock-badge">登录</text>
                 </view>
                 <view class="menu-subtitle">{{ item.desc }}</view>
               </view>
@@ -638,36 +635,6 @@
       </view>
     </view>
 
-    <view v-if="showProModal" class="pro-modal-mask" @tap="handleCloseProModal">
-      <view class="pro-modal-sheet" @tap.stop>
-        <view class="pro-modal-handle"></view>
-        <button class="pro-modal-close" @tap="handleCloseProModal">×</button>
-        <view class="pro-modal-head">
-          <view class="pro-modal-title">学习功能预览</view>
-          <view class="pro-modal-subtitle">后续版本会逐步增强学习报告和训练建议</view>
-          <view class="pro-status-pill">当前版本专注学习功能体验</view>
-        </view>
-
-        <view class="pro-benefit-list">
-          <view
-            v-for="item in proBenefits"
-            :key="item.title"
-            class="pro-benefit-item"
-          >
-            <view class="pro-benefit-icon" :class="item.tone">{{ item.icon }}</view>
-            <view class="pro-benefit-copy">
-              <view class="pro-benefit-title">{{ item.title }}</view>
-              <view class="pro-benefit-desc">{{ item.desc }}</view>
-            </view>
-          </view>
-        </view>
-
-        <view class="pro-modal-actions">
-          <button class="pro-later-btn" @tap="handleCloseProModal">知道了</button>
-        </view>
-      </view>
-    </view>
-
     <view v-if="showThemeModal" class="theme-modal-mask" @tap="handleCloseThemeModal">
       <view class="theme-modal-sheet" @tap.stop>
         <view class="theme-modal-handle"></view>
@@ -744,7 +711,6 @@ import SectionCard from '../../components/SectionCard.vue'
 import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
-import { fetchMembershipStatus } from '../../api/membership'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
 import { fetchAbilityReport, fetchLearningSummary, fetchStudyAdvice } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
@@ -801,7 +767,6 @@ const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
 const showTrainingSheet = ref(false)
-const showProModal = ref(false)
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
 const showOfficialMessageModal = ref(false)
@@ -866,38 +831,6 @@ const subjectFallbackTargets = {
     basis: '优先巩固数学基础题型。'
   }
 }
-const proPreviewItems = [
-  'AI 薄弱诊断：把低正确率知识点转成更清晰的错因总结',
-  '错题同类加练：围绕错题自动推荐同 submodule 题目',
-  '每日训练计划：每天 10-20 题，优先补最低正确率模块',
-  '每周提分报告：总结正确率变化、刷题量和下周重点'
-]
-const proBenefits = [
-  {
-    icon: '∞',
-    title: '无限存储',
-    desc: '收藏、错题和练习记录长期保存',
-    tone: 'blue'
-  },
-  {
-    icon: 'AI',
-    title: 'AI 生题及解析',
-    desc: '根据薄弱点智能生成题目与解析',
-    tone: 'green'
-  },
-  {
-    icon: '▥',
-    title: '完整学习报告',
-    desc: '查看更详细的正确率与能力分析',
-    tone: 'purple'
-  },
-  {
-    icon: '☆',
-    title: '专属训练建议',
-    desc: '自动推荐更适合你的训练内容',
-    tone: 'orange'
-  }
-]
 const profileBenefits = [
   { label: '无限存储', icon: '∞' },
   { label: '错题本', icon: '', iconSrc: '/static/ui-icons/wrong-book.svg' },
@@ -906,18 +839,11 @@ const profileBenefits = [
 ]
 
 const isAuthed = computed(() => authed.value)
-const isProMember = computed(() => getMembershipStatus(authUser.value) === 'active')
-const membershipExpiresAt = computed(() => getMembershipExpiresAt(authUser.value))
 const memberCardSubtitle = computed(() => {
   if (!isAuthed.value) {
-    return '登录后可查看会员权益与开通状态。'
+    return '登录后即可免费使用刷题记录、错题本、学习报告和 AI 生题功能。'
   }
-  if (isProMember.value) {
-    return membershipExpiresAt.value
-      ? `会员权益使用中，有效期至 ${membershipExpiresAt.value}。`
-      : '学习权益使用中，可查看已开放的增强能力。'
-  }
-  return '当前版本先开放基础学习体验，后续增强能力会随版本逐步开放。'
+  return '当前版本所有学习功能均免费开放，不提供付费购买、订阅或外部支付入口。'
 })
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const profileAvatarText = computed(() => {
@@ -1008,7 +934,6 @@ const practiceTools = computed(() => {
       iconSrc: '/static/ui-icons/wrong-book.svg',
       tone: proLocked ? 'locked' : 'blue',
       action: 'mistakes',
-      proOnly: true,
       locked: proLocked
     },
     {
@@ -1018,7 +943,6 @@ const practiceTools = computed(() => {
       iconSrc: '/static/ui-icons/report.svg',
       tone: proLocked ? 'locked' : 'purple',
       action: 'report',
-      proOnly: true,
       locked: proLocked
     },
     {
@@ -1027,7 +951,6 @@ const practiceTools = computed(() => {
       icon: 'AI',
       tone: proLocked ? 'locked' : 'green',
       action: 'ai-generator',
-      proOnly: true,
       locked: proLocked
     }
   ]
@@ -1036,9 +959,11 @@ const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const isAdminUser = computed(() => {
+  // #ifdef APP-PLUS
+  return false
+  // #endif
   const role = String(authUser.value?.role || '').toLowerCase()
-  const email = String(authUser.value?.email || '').toLowerCase()
-  return role === 'admin' || email === '2221073755@qq.com'
+  return role === 'admin'
 })
 const serviceTools = computed(() => {
   const items = [
@@ -1337,7 +1262,6 @@ onLoad((options) => {
 onShow(() => {
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
-  refreshMembershipStatus()
   refreshLearningData()
   loadOfficialMessages(true)
 })
@@ -1371,19 +1295,6 @@ async function changeExam(code) {
       authUser.value = revertedUser
     }
     uni.showToast({ title: '目标版本同步失败，请稍后重试', icon: 'none' })
-  }
-}
-
-async function refreshMembershipStatus() {
-  if (!isLoggedIn()) return
-  try {
-    const membership = await fetchMembershipStatus()
-    const nextUser = updateAuthUser(membership)
-    if (nextUser) {
-      authUser.value = nextUser
-    }
-  } catch (error) {
-    // Membership tables may not be migrated yet; keep the current cached user state.
   }
 }
 
@@ -1515,7 +1426,7 @@ function normalizeTrainingRecommendation(response) {
 }
 
 async function refreshTrainingRecommendation() {
-  if (!isAuthed.value || !isProMember.value || recommendationLoading.value) {
+  if (!isAuthed.value || recommendationLoading.value) {
     return
   }
 
@@ -1619,10 +1530,6 @@ async function handleGenerateTraining() {
     goLogin()
     return
   }
-  if (!isProMember.value) {
-    handleOpenProModal()
-    return
-  }
   if (generatingTraining.value) return
 
   const payload = buildAiTrainingPayload()
@@ -1680,10 +1587,6 @@ function goLeaderboard() {
   uni.navigateTo({ url: '/pages/leaderboard/index' })
 }
 
-function goPro() {
-  uni.navigateTo({ url: '/pages/pro/index' })
-}
-
 async function loadOfficialMessages(autoPopup = false) {
   if (!isAuthed.value) {
     officialMessages.value = []
@@ -1725,31 +1628,6 @@ async function closeOfficialMessages() {
   await Promise.allSettled(unreadItems.map((item) => markOfficialMessageRead(item.id)))
 }
 
-function handleProEntry() {
-  if (!isAuthed.value) {
-    goLogin()
-    return
-  }
-  if (isProMember.value) {
-    goPro()
-    return
-  }
-  handleOpenProModal()
-}
-
-function handleOpenProModal() {
-  showProModal.value = true
-}
-
-function handleCloseProModal() {
-  showProModal.value = false
-}
-
-function handleViewProPlans() {
-  handleCloseProModal()
-  goPro()
-}
-
 function logout() {
   uni.showModal({
     title: '确认退出登录？',
@@ -1777,20 +1655,12 @@ function openReport() {
 
 function handleMenu(item) {
   if (!item) return
-  if (item.proOnly && !isProMember.value) {
-    handleProEntry()
-    return
-  }
   if (item.action === 'mistakes') {
     openMistakes()
     return
   }
   if (item.action === 'report') {
     openReport()
-    return
-  }
-  if (item.action === 'pro') {
-    handleProEntry()
     return
   }
   if (item.action === 'history') {
@@ -2323,30 +2193,6 @@ function formatDateTime(value) {
   return `${date.getMonth() + 1}/${date.getDate()} ${String(date.getHours()).padStart(2, '0')}:${String(date.getMinutes()).padStart(2, '0')}`
 }
 
-function getMembershipStatus(user) {
-  const status = String(
-    user?.membership_status ||
-    user?.pro_status ||
-    user?.subscription_status ||
-    user?.vip_status ||
-    uni.getStorageSync('proMembershipStatus') ||
-    ''
-  ).toLowerCase()
-  if (user?.membership_active || user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
-    return 'active'
-  }
-  return 'inactive'
-}
-
-function getMembershipExpiresAt(user) {
-  const rawValue = user?.membership_expires_at || user?.pro_expires_at || user?.vip_expires_at || ''
-  if (!rawValue) return ''
-  const date = new Date(rawValue)
-  if (Number.isNaN(date.getTime())) {
-    return String(rawValue).slice(0, 10)
-  }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
-}
 </script>
 
 <style scoped>

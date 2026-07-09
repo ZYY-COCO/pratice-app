@@ -3,10 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>港研通帮助与支持</title>
+    <title>GangYanTong Support | 港研通帮助与支持</title>
     <meta
       name="description"
-      content="港研通帮助与支持页面，提供常见问题、联系方式、账号与数据处理说明。"
+      content="GangYanTong support page. Users can contact support, ask questions, report issues, and request account or data assistance."
     />
     <style>
       :root {
@@ -17,6 +17,9 @@
         --muted: #667085;
         --line: #e6ebf2;
         --primary: #1677ff;
+        --primary-soft: #edf4ff;
+        --success: #16a34a;
+        --success-soft: #eafbf1;
       }
 
       * {
@@ -34,7 +37,7 @@
       }
 
       main {
-        max-width: 880px;
+        max-width: 920px;
         margin: 0 auto;
         padding: 40px 20px 56px;
       }
@@ -42,7 +45,7 @@
       .document {
         background: var(--panel);
         border: 1px solid var(--line);
-        border-radius: 8px;
+        border-radius: 10px;
         padding: 34px;
         box-shadow: 0 12px 34px rgba(20, 31, 66, 0.06);
       }
@@ -76,6 +79,7 @@
 
       a {
         color: var(--primary);
+        font-weight: 700;
       }
 
       .meta,
@@ -84,13 +88,39 @@
         font-size: 14px;
       }
 
+      .contact-card {
+        margin: 20px 0 0;
+        padding: 18px 20px;
+        border: 1px solid #d7e5ff;
+        border-radius: 10px;
+        background: var(--primary-soft);
+      }
+
+      .contact-label {
+        color: #24406f;
+        font-size: 14px;
+        font-weight: 800;
+        text-transform: uppercase;
+      }
+
+      .contact-email {
+        display: inline-block;
+        margin-top: 6px;
+        font-size: 22px;
+      }
+
       .notice {
         margin: 18px 0 0;
         padding: 14px 16px;
-        border: 1px solid #d7e5ff;
+        border: 1px solid #bbf7d0;
         border-radius: 8px;
-        background: #f4f8ff;
-        color: #24406f;
+        background: var(--success-soft);
+        color: #166534;
+        font-weight: 700;
+      }
+
+      .bilingual {
+        color: var(--muted);
       }
 
       .footer {
@@ -109,48 +139,75 @@
         h1 {
           font-size: 26px;
         }
+
+        .contact-email {
+          font-size: 19px;
+        }
       }
     </style>
   </head>
   <body>
     <main>
       <article class="document">
-        <h1>港研通帮助与支持</h1>
-        <p class="meta">更新日期：2026年7月8日</p>
+        <h1>GangYanTong Help & Support</h1>
+        <p class="meta">港研通帮助与支持 | Last updated: July 9, 2026</p>
 
         <p>
-          港研通是一款面向港澳台考研备考用户的刷题与学习记录工具。如你在注册、登录、刷题、错题本、学习报告或账号数据方面遇到问题，可以通过本页面获取帮助。
+          GangYanTong is a study and practice app for users preparing for postgraduate entrance exams related to Hong Kong, Macau, and Taiwan programs.
+          If you have questions, need help, or want to report a problem, please contact us through the support email below.
+        </p>
+        <p class="bilingual">
+          港研通是一款面向港澳台考研备考用户的刷题与学习记录工具。如你在注册、登录、刷题、错题本、学习报告或账号数据方面遇到问题，可通过本页面联系支持。
         </p>
 
-        <div class="notice">
-          当前 App Store 版本不提供 App 内购买、订阅或外部付费购买入口。
+        <div class="contact-card">
+          <div class="contact-label">Contact Support / 联系支持</div>
+          <a class="contact-email" href="mailto:2982326925@qq.com">2982326925@qq.com</a>
+          <p>
+            Users can use this email to ask questions, request help, report bugs, or request account and data assistance.
+          </p>
+          <p class="bilingual">
+            用户可通过该邮箱咨询问题、请求帮助、反馈异常，或申请账号与数据相关支持。
+          </p>
         </div>
 
-        <h2>常见问题</h2>
+        <div class="notice">
+          Current App Store version is free to use and does not provide paid digital content, subscriptions, In-App Purchase, or external payment links.
+          当前 App Store 版本免费使用，不提供付费数字内容、订阅、App 内购买或外部支付入口。
+        </div>
+
+        <h2>What We Can Help With / 支持范围</h2>
         <ul>
-          <li>无法登录：请确认邮箱、密码和验证码是否正确，并检查网络连接。</li>
-          <li>无法收到验证码：请检查垃圾邮件箱，或稍后重新发送验证码。</li>
-          <li>刷题记录不同步：请确认你已登录同一个账号，并重新进入 App 同步数据。</li>
-          <li>错题、收藏或学习报告异常：请提供账号邮箱、问题发生时间和页面截图，便于排查。</li>
-          <li>账号删除：可在 App 的个人资料或账号安全相关页面发起删除，无法操作时可通过邮箱联系我们。</li>
+          <li>Account registration, login, verification code, password reset, and profile issues.</li>
+          <li>Practice records, favorites, mistake review, learning reports, and data sync issues.</li>
+          <li>Question quality feedback, app bugs, display issues, and usability suggestions.</li>
+          <li>Account deletion, data access, correction, or other privacy-related requests.</li>
         </ul>
 
-        <h2>联系我们</h2>
+        <h2>Information to Include / 反馈时请提供</h2>
+        <ul>
+          <li>Your account email or phone number used in the app.</li>
+          <li>Device model, iOS/iPadOS version, and app version.</li>
+          <li>The page or feature where the issue happened.</li>
+          <li>Time of occurrence, screenshots, and steps to reproduce the issue if available.</li>
+        </ul>
+
+        <h2>Response Time / 响应时间</h2>
         <p>
-          支持邮箱：<a href="mailto:2982326925@qq.com">2982326925@qq.com</a>
+          We will review support messages as soon as possible. Most account, login, and data requests will receive a response within 1-3 business days.
         </p>
-        <p>
-          反馈时请尽量提供：账号邮箱、设备型号、系统版本、问题页面、发生时间和截图。我们会根据问题类型尽快处理。
+        <p class="bilingual">
+          我们会尽快查看支持邮件。账号、登录和数据类请求通常会在 1-3 个工作日内处理或回复。
         </p>
 
-        <h2>相关页面</h2>
+        <h2>Related Pages / 相关页面</h2>
         <ul>
-          <li><a href="/privacy.html">隐私政策</a></li>
-          <li><a href="https://www.gangyantong.com">港研通首页</a></li>
+          <li><a href="/privacy.html">Privacy Policy / 隐私政策</a></li>
+          <li><a href="https://www.gangyantong.com">GangYanTong Website / 港研通首页</a></li>
         </ul>
 
         <p class="footer">
-          © 2026 港研通。保留所有权利。
+          © 2026 GangYanTong. All rights reserved.
         </p>
       </article>
     </main>

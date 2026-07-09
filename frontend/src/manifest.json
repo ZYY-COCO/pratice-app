@@ -3,7 +3,7 @@
     "appid" : "__UNI__FEDCA88",
     "description" : "面向港澳台考研初试用户的刷题与学习分析工具",
     "versionName" : "1.0",
-    "versionCode" : "6",
+    "versionCode" : "7",
     "transformPx" : false,
     "h5" : {
         "title" : "港研通"

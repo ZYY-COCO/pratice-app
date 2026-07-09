@@ -1,83 +1,50 @@
 <template>
-  <view class="page pro-page" :style="themeInlineStyle">
-    <template v-if="isProMember">
-      <view class="member-hero">
-        <view class="member-hero-top">
-          <view class="member-hero-copy">
-            <view class="hero-tag active">学习权益 · 已开通</view>
-            <view class="member-hero-title">{{ memberName }}的学习权益</view>
-            <view class="member-hero-subtitle">{{ memberUntilText }}</view>
-          </view>
-          <view class="member-badge">PRO</view>
-        </view>
+  <view class="page access-page" :style="themeInlineStyle">
+    <view class="access-hero">
+      <view class="hero-tag">免费开放</view>
+      <view class="hero-title">学习功能说明</view>
+      <view class="hero-subtitle">
+        当前 App Store 版本不提供付费数字内容、订阅、App 内购买或外部支付入口。登录后可免费使用当前已开放的刷题、复盘和学习记录功能。
+      </view>
+    </view>
 
-        <view class="member-meta-grid">
-          <view class="member-meta-item">
-            <view class="member-meta-label">权益状态</view>
-            <view class="member-meta-value">使用中</view>
-          </view>
-          <view class="member-meta-item">
-            <view class="member-meta-label">AI 功能</view>
-            <view class="member-meta-value">已解锁</view>
+    <SectionCard title="当前可用功能" subtitle="以下学习工具均为当前版本免费开放内容。">
+      <view class="feature-list">
+        <view v-for="item in freeFeatures" :key="item.title" class="feature-row">
+          <view class="feature-icon" :class="item.tone">{{ item.icon }}</view>
+          <view class="feature-copy">
+            <view class="feature-title">{{ item.title }}</view>
+            <view class="feature-desc">{{ item.desc }}</view>
           </view>
         </view>
       </view>
+    </SectionCard>
 
-      <SectionCard title="已解锁权益" subtitle="这些能力会随会员状态保持可用。">
-        <view class="unlock-list">
-          <view v-for="item in unlockedBenefits" :key="item" class="unlock-row">
-            <view class="unlock-check">✓</view>
-            <view class="unlock-text">{{ item }}</view>
+    <SectionCard title="支持与反馈" subtitle="遇到账号、刷题记录、错题本或学习报告问题时，可通过以下方式联系我们。">
+      <view class="support-list">
+        <button class="support-row" @tap="openSupportPage">
+          <view>
+            <view class="support-title">帮助与支持页面</view>
+            <view class="support-desc">查看常见问题、联系方式和账号数据说明</view>
           </view>
-        </view>
-      </SectionCard>
-
-      <SectionCard title="会员服务" subtitle="当前 App Store 版本暂不开放续费、订单或发票服务。">
-        <view class="service-list">
-          <view class="service-row" @tap="showComingSoon('服务记录暂未开放')">
-            <view>
-              <view class="service-title">服务记录</view>
-              <view class="service-desc">后续版本会展示权益变化与服务说明</view>
-            </view>
-            <view class="service-arrow">›</view>
+          <view class="support-arrow">›</view>
+        </button>
+        <button class="support-row" @tap="openPrivacyPage">
+          <view>
+            <view class="support-title">隐私政策</view>
+            <view class="support-desc">了解账号信息、学习记录和反馈数据的使用方式</view>
           </view>
-          <view class="service-row" @tap="showComingSoon('续期管理暂未开放')">
-            <view>
-              <view class="service-title">权益说明</view>
-              <view class="service-desc">查看当前版本已开放的学习能力</view>
-            </view>
-            <view class="service-arrow">›</view>
+          <view class="support-arrow">›</view>
+        </button>
+        <button class="support-row" @tap="copyEmail">
+          <view>
+            <view class="support-title">联系邮箱</view>
+            <view class="support-desc">{{ supportEmail }}</view>
           </view>
-        </view>
-      </SectionCard>
-    </template>
-
-    <template v-else>
-      <SectionCard title="学习功能预览" subtitle="当前 App Store 版本专注刷题与学习记录体验。">
-        <view class="compare-grid">
-          <view class="compare-card free">
-            <view class="plan-title">当前开放</view>
-            <view v-for="item in freeFeatures" :key="item" class="feature-line">{{ item }}</view>
-          </view>
-          <view class="compare-card pro">
-            <view class="plan-title">后续增强</view>
-            <view v-for="item in proFeatures" :key="item" class="feature-line strong">{{ item }}</view>
-          </view>
-        </view>
-      </SectionCard>
-
-      <SectionCard title="版本说明" subtitle="第一版先聚焦刷题、错题和学习记录体验。">
-        <view class="service-list">
-          <view v-for="item in releaseNotes" :key="item.title" class="service-row">
-            <view>
-              <view class="service-title">{{ item.title }}</view>
-              <view class="service-desc">{{ item.desc }}</view>
-            </view>
-            <view class="service-arrow">✓</view>
-          </view>
-        </view>
-      </SectionCard>
-    </template>
+          <view class="support-copy">复制</view>
+        </button>
+      </view>
+    </SectionCard>
 
     <!-- #ifdef H5 -->
     <IcpFooter />
@@ -86,406 +53,236 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import { fetchMembershipStatus } from '../../api/membership'
-import { getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
-import { getUserDisplayName } from '../../utils/userDisplay'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
-const authUser = ref(getAuthUser())
+const supportEmail = '2982326925@qq.com'
+const supportUrl = 'https://www.gangyantong.com/support.html'
+const privacyUrl = 'https://www.gangyantong.com/privacy.html'
 
 const freeFeatures = [
-  '注册登录与基础刷题',
-  '专项刷题 / 综合刷题',
-  '基础错题本',
-  '基础能力统计'
+  {
+    title: '专项刷题',
+    desc: '按科目、模块和考点进行练习，帮助用户持续推进备考。',
+    icon: '题',
+    tone: 'blue'
+  },
+  {
+    title: '错题复盘',
+    desc: '记录错题、收藏和练习历史，便于回看薄弱点。',
+    icon: '复',
+    tone: 'green'
+  },
+  {
+    title: '学习报告',
+    desc: '根据练习记录展示正确率、薄弱模块和训练建议。',
+    icon: '报',
+    tone: 'purple'
+  },
+  {
+    title: 'AI 专项练习',
+    desc: '登录后可按知识点生成专项练习内容，用于巩固学习。',
+    icon: 'AI',
+    tone: 'orange'
+  }
 ]
 
-const proFeatures = [
-  'AI 薄弱诊断',
-  '错题同类加练',
-  '每日训练计划',
-  '每周提分报告'
-]
+function openExternalUrl(url) {
+  // #ifdef APP-PLUS
+  if (typeof plus !== 'undefined' && plus?.runtime?.openURL) {
+    plus.runtime.openURL(url)
+    return
+  }
+  // #endif
 
-const unlockedBenefits = [
-  '收藏、错题和练习记录长期保存',
-  '根据薄弱点智能生成题目与解析',
-  '查看更详细的正确率与能力分析',
-  '自动推荐更适合你的训练内容'
-]
+  // #ifdef H5
+  if (typeof window !== 'undefined') {
+    window.location.href = url
+    return
+  }
+  // #endif
 
-const releaseNotes = [
-  { title: '无收费入口', desc: '当前版本不展示套餐或收费信息。' },
-  { title: '学习数据同步', desc: '登录后可同步刷题记录、收藏和错题本。' },
-  { title: '后续功能预览', desc: '增强学习报告和训练建议会在后续版本逐步开放。' }
-]
-
-const isProMember = computed(() => getMembershipStatus(authUser.value) === 'active')
-const memberName = computed(() => getUserDisplayName(authUser.value, '你'))
-const membershipExpiresAt = computed(() => getMembershipExpiresAt(authUser.value))
-const memberUntilText = computed(() =>
-  membershipExpiresAt.value
-    ? `学习权益已开通，有效期至 ${membershipExpiresAt.value}。`
-    : '学习权益已开通，可以使用当前版本的增强学习功能。'
-)
-
-onShow(() => {
-  authUser.value = getAuthUser()
-  refreshMembershipStatus()
-})
-
-async function refreshMembershipStatus() {
-  if (!uni.getStorageSync('accessToken')) return
-  try {
-    const membership = await fetchMembershipStatus()
-    const nextUser = updateAuthUser(membership)
-    if (nextUser) {
-      authUser.value = nextUser
+  uni.setClipboardData({
+    data: url,
+    success() {
+      uni.showToast({ title: '链接已复制', icon: 'none' })
     }
-  } catch (error) {
-    // The membership migration may not be applied yet; keep the cached user state.
-  }
+  })
 }
 
-function showComingSoon(title) {
-  uni.showToast({ title, icon: 'none' })
+function openSupportPage() {
+  openExternalUrl(supportUrl)
 }
 
-function getMembershipStatus(user) {
-  const status = String(
-    user?.membership_status ||
-    user?.pro_status ||
-    user?.subscription_status ||
-    user?.vip_status ||
-    uni.getStorageSync('proMembershipStatus') ||
-    ''
-  ).toLowerCase()
-  if (user?.membership_active || user?.is_pro || user?.isPro || user?.pro_member || status === 'active' || status === 'paid') {
-    return 'active'
-  }
-  return 'inactive'
+function openPrivacyPage() {
+  openExternalUrl(privacyUrl)
 }
 
-function getMembershipExpiresAt(user) {
-  const rawValue = user?.membership_expires_at || user?.pro_expires_at || user?.vip_expires_at || ''
-  if (!rawValue) return ''
-  const date = new Date(rawValue)
-  if (Number.isNaN(date.getTime())) {
-    return String(rawValue).slice(0, 10)
-  }
-  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`
+function copyEmail() {
+  uni.setClipboardData({
+    data: supportEmail,
+    success() {
+      uni.showToast({ title: '邮箱已复制', icon: 'none' })
+    }
+  })
 }
 </script>
 
 <style scoped>
-.pro-page {
+.access-page {
   padding-bottom: calc(env(safe-area-inset-bottom) + 48rpx);
 }
 
-.member-hero {
-  padding: 34rpx 30rpx 28rpx;
-  border-radius: 36rpx;
+.access-hero {
+  padding: 34rpx 30rpx 32rpx;
+  border-radius: 32rpx;
   background:
-    radial-gradient(circle at 82% 14%, rgba(52, 211, 153, 0.28), transparent 30%),
-    linear-gradient(135deg, #0f172a 0%, #14532d 100%);
-  color: #ffffff;
-  box-shadow: 0 18rpx 42rpx rgba(15, 23, 42, 0.18);
-}
-
-.member-hero-top {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 20rpx;
-}
-
-.member-hero-copy {
-  flex: 1;
-  min-width: 0;
+    radial-gradient(circle at 88% 10%, rgba(52, 120, 246, 0.24), transparent 30%),
+    linear-gradient(135deg, #ffffff 0%, #f4f8ff 100%);
+  border: 2rpx solid #dbe8ff;
+  box-shadow: 0 18rpx 42rpx rgba(25, 48, 89, 0.08);
 }
 
 .hero-tag {
   display: inline-flex;
   padding: 10rpx 16rpx;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.16);
+  background: #eafbf1;
+  color: #16a34a;
   font-size: 22rpx;
   line-height: 1.2;
-  font-weight: 800;
+  font-weight: 900;
 }
 
-.hero-tag.active {
-  background: rgba(255, 255, 255, 0.18);
-}
-
-.member-hero-title {
-  margin-top: 22rpx;
+.hero-title {
+  margin-top: 20rpx;
+  color: #101828;
   font-size: 42rpx;
-  line-height: 1.25;
+  line-height: 1.2;
   font-weight: 950;
 }
 
-.member-hero-subtitle {
+.hero-subtitle {
   margin-top: 14rpx;
-  color: rgba(255, 255, 255, 0.84);
+  color: #5f6b7d;
   font-size: 24rpx;
   line-height: 1.65;
   font-weight: 650;
 }
 
-.member-badge {
-  width: 104rpx;
-  height: 104rpx;
-  flex: 0 0 104rpx;
-  border-radius: 30rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.16);
-  color: #ffffff;
-  font-size: 30rpx;
-  font-weight: 950;
-}
-
-.member-meta-grid {
-  margin-top: 28rpx;
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 14rpx;
-}
-
-.member-meta-item {
-  padding: 18rpx 10rpx;
-  border-radius: 22rpx;
-  background: rgba(255, 255, 255, 0.12);
-  text-align: center;
-}
-
-.member-meta-label {
-  color: rgba(255, 255, 255, 0.68);
-  font-size: 20rpx;
-  line-height: 1.3;
-  font-weight: 700;
-}
-
-.member-meta-value {
-  margin-top: 8rpx;
-  color: #ffffff;
-  font-size: 25rpx;
-  line-height: 1.25;
-  font-weight: 950;
-}
-
-.unlock-list,
-.service-list,
-.price-list {
+.feature-list,
+.support-list {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
 }
 
-.unlock-row {
+.feature-row {
   display: flex;
-  align-items: center;
-  gap: 14rpx;
-  color: #475467;
-  font-size: 24rpx;
-  line-height: 1.5;
-  font-weight: 750;
+  align-items: flex-start;
+  gap: 18rpx;
+  padding: 20rpx;
+  border-radius: 22rpx;
+  background: #f8fbff;
+  border: 2rpx solid #edf2fb;
 }
 
-.unlock-check {
-  width: 32rpx;
-  height: 32rpx;
-  flex: 0 0 32rpx;
-  border-radius: 50%;
-  background: #10b981;
-  color: #ffffff;
-  text-align: center;
-  font-size: 20rpx;
-  line-height: 32rpx;
+.feature-icon {
+  width: 54rpx;
+  height: 54rpx;
+  flex: 0 0 54rpx;
+  border-radius: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  line-height: 1;
   font-weight: 950;
 }
 
-.unlock-text {
+.feature-icon.blue {
+  background: #edf4ff;
+  color: #3478f6;
+}
+
+.feature-icon.green {
+  background: #eafbf1;
+  color: #16a34a;
+}
+
+.feature-icon.purple {
+  background: #f0edff;
+  color: #6d5dfc;
+}
+
+.feature-icon.orange {
+  background: #fff4e5;
+  color: #f59e0b;
+}
+
+.feature-copy {
   flex: 1;
   min-width: 0;
 }
 
-.service-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 18rpx;
-  padding: 20rpx 0;
-  border-bottom: 2rpx solid #edf1f7;
-}
-
-.service-row:last-child {
-  border-bottom: 0;
-}
-
-.service-title {
-  color: #172033;
-  font-size: 26rpx;
+.feature-title {
+  color: #101828;
+  font-size: 25rpx;
   line-height: 1.35;
   font-weight: 900;
 }
 
-.service-desc {
+.feature-desc {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.support-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 20rpx 0;
+  border: 0;
+  border-bottom: 2rpx solid #edf1f7;
+  border-radius: 0;
+  background: transparent;
+  text-align: left;
+}
+
+.support-row:last-child {
+  border-bottom: 0;
+}
+
+.support-title {
+  color: #172033;
+  font-size: 25rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.support-desc {
   margin-top: 8rpx;
   color: #667085;
   font-size: 22rpx;
   line-height: 1.45;
 }
 
-.service-arrow {
+.support-arrow {
   color: #98a2b3;
   font-size: 42rpx;
   font-weight: 800;
 }
 
-.compare-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 16rpx;
-}
-
-.compare-card,
-.price-card {
-  padding: 22rpx;
-  border-radius: 26rpx;
-  border: 2rpx solid #e6ebf5;
-  background: #fbfcff;
-}
-
-.compare-card.pro {
-  border-color: var(--gyt-primary-shadow);
-  background: var(--gyt-primary-tint);
-}
-
-.plan-title,
-.price-name {
-  color: #172033;
-  font-size: 27rpx;
+.support-copy {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 22rpx;
   font-weight: 900;
-}
-
-.feature-line {
-  margin-top: 14rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.5;
-}
-
-.feature-line.strong {
-  color: var(--gyt-primary);
-  font-weight: 800;
-}
-
-.price-desc {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.7;
-}
-
-.price-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 22rpx;
-  background: #ffffff;
-}
-
-.price-card.hot {
-  border-color: var(--gyt-primary);
-  background: linear-gradient(135deg, #ffffff, var(--gyt-primary-soft));
-}
-
-.price-content {
-  flex: 1;
-  min-width: 0;
-}
-
-.price-name-row {
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.price-badge {
-  padding: 6rpx 12rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary);
-  color: #ffffff;
-  font-size: 18rpx;
-  line-height: 1.2;
-  font-weight: 900;
-}
-
-.price-value {
-  color: #172033;
-  font-size: 34rpx;
-  font-weight: 900;
-  white-space: nowrap;
-}
-
-.price-note {
-  margin-top: 8rpx;
-  color: #98a2b3;
-  font-size: 21rpx;
-  line-height: 1.5;
-  font-weight: 700;
-}
-
-.price-side {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 12rpx;
-  flex: 0 0 auto;
-}
-
-.price-action-btn {
-  min-width: 148rpx;
-  min-height: 58rpx;
-  margin: 0;
-  padding: 0 18rpx;
-  border: 0;
-  border-radius: 16rpx;
-  background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
-  color: #ffffff;
-  font-size: 23rpx;
-  line-height: 58rpx;
-  font-weight: 900;
-  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
-}
-
-.price-action-btn:disabled {
-  background: #e8edf7;
-  color: #98a2b3;
-  box-shadow: none;
-}
-
-@media (max-width: 380px) {
-  .compare-grid,
-  .member-meta-grid {
-    grid-template-columns: 1fr;
-  }
-
-  .price-card {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .price-side {
-    align-items: stretch;
-  }
 }
 </style>
