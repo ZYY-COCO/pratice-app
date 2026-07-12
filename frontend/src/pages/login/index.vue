@@ -2,7 +2,12 @@
   <view class="page login-page" :style="themeInlineStyle">
     <view class="auth-shell">
       <view class="auth-topbar">
-        <button class="topbar-back" aria-label="返回" @tap="goBackHome">
+        <button
+          v-if="mode !== 'login'"
+          class="topbar-back"
+          aria-label="返回邮密登录"
+          @tap="switchMode('login')"
+        >
           <image class="topbar-back-icon" src="/static/ui-icons/auth-back.svg" mode="aspectFit" alt="返回" />
         </button>
         <button class="topbar-help" @tap="openHelp">帮助</button>
@@ -11,7 +16,7 @@
       <view class="brand" aria-label="港研通">
         <image
           class="brand-image"
-          src="/static/gangyantong-wordmark.png"
+          src="/static/gangyantong-home-wordmark-4k.png"
           mode="widthFix"
           alt="港研通"
         />
@@ -1084,6 +1089,7 @@ function openSupportPage() {
 }
 
 .topbar-help {
+  margin-left: auto;
   min-width: 88rpx;
   min-height: 72rpx;
   padding: 0 8rpx;

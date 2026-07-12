@@ -1647,7 +1647,7 @@ function logout() {
       clearAuthSession()
       authUser.value = null
       authed.value = false
-      uni.showToast({ title: '已退出登录', icon: 'none' })
+      uni.reLaunch({ url: '/pages/login/index' })
     }
   })
 }
