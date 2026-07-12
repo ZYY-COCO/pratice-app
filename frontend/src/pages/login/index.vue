@@ -1,66 +1,22 @@
 <template>
   <view class="page login-page" :style="themeInlineStyle">
-    <view class="auth-hero">
-      <view class="hero-badge">账户中心</view>
-      <view class="hero-title">{{ heroTitle }}</view>
-      <view class="hero-sub">{{ heroSubtitle }}</view>
-    </view>
-
-    <view class="segment-wrap">
-      <view class="segment">
-        <button class="segment-btn" :class="{ active: mode === 'login' }" @tap="switchMode('login')">登录</button>
-        <button class="segment-btn" :class="{ active: mode === 'register' }" @tap="switchMode('register')">注册</button>
-        <button class="segment-btn" :class="{ active: mode === 'reset' }" @tap="switchMode('reset')">找回密码</button>
+    <view class="auth-shell">
+      <view class="brand" aria-label="港研通">
+        <image
+          class="brand-image"
+          src="/static/gangyantong-wordmark.png"
+          mode="widthFix"
+          alt="港研通"
+        />
       </view>
-    </view>
 
-    <view class="login-card">
-      <view class="method-switch">
-        <button class="method-btn" :class="{ active: authMethod === 'email' }" @tap="switchAuthMethod('email')">
-          <text class="method-label">邮箱</text>
-        </button>
-        <button class="method-btn disabled" @tap="switchAuthMethod('phone')">
-          <text class="method-label">手机号</text>
-          <text class="soon-badge">即将开放</text>
-        </button>
-      </view>
-      <view class="login-mode-note">目前仅支持邮箱注册登录，登录后可同步错题、收藏和学习记录。</view>
+      <view class="login-card">
+        <view v-if="mode !== 'login'" class="mode-heading">
+          {{ mode === 'register' ? '创建账号' : '找回密码' }}
+        </view>
 
-      <template v-if="mode === 'login'">
-        <template v-if="authMethod === 'phone'">
+        <template v-if="mode === 'login'">
           <view class="field">
-            <view class="label">手机号</view>
-            <input
-              v-model.trim="phoneLoginForm.phone"
-              class="input"
-              type="text"
-              maxlength="15"
-              placeholder="请输入手机号（可带区号）"
-            />
-          </view>
-
-          <view class="field">
-            <view class="label">验证码</view>
-            <view class="code-row">
-              <input
-                v-model.trim="phoneLoginForm.code"
-                class="input code-input"
-                type="text"
-                maxlength="6"
-                placeholder="请输入验证码"
-              />
-              <button class="code-btn" :disabled="sendingCode.phoneLogin" @tap="handleSendPhoneLoginCode">
-                {{ sendingCode.phoneLogin ? '发送中...' : '发送验证码' }}
-              </button>
-            </view>
-          </view>
-
-          <view class="auth-note">验证码登录，无需记密码，登录后自动同步错题和报告。</view>
-        </template>
-
-        <template v-else>
-          <view class="field">
-            <view class="label">邮箱</view>
             <input
               v-model.trim="loginForm.email"
               class="input"
@@ -70,7 +26,6 @@
           </view>
 
           <view class="field">
-            <view class="label">密码</view>
             <view class="password-input-wrap">
               <input
                 v-model="loginForm.password"
@@ -90,51 +45,9 @@
             </view>
           </view>
         </template>
-      </template>
 
-      <template v-else-if="mode === 'register'">
-        <view class="field">
-          <view class="label">昵称</view>
-          <input
-            v-model.trim="registerForm.nickname"
-            class="input"
-            type="text"
-            placeholder="请输入昵称（可选）"
-          />
-        </view>
-
-        <template v-if="authMethod === 'phone'">
+        <template v-else-if="mode === 'register'">
           <view class="field">
-            <view class="label">手机号</view>
-            <input
-              v-model.trim="phoneRegisterForm.phone"
-              class="input"
-              type="text"
-              maxlength="15"
-              placeholder="请输入手机号（可带区号）"
-            />
-          </view>
-
-          <view class="field">
-            <view class="label">验证码</view>
-            <view class="code-row">
-              <input
-                v-model.trim="phoneRegisterForm.code"
-                class="input code-input"
-                type="text"
-                maxlength="6"
-                placeholder="请输入验证码"
-              />
-              <button class="code-btn" :disabled="sendingCode.phoneRegister" @tap="handleSendPhoneRegisterCode">
-                {{ sendingCode.phoneRegister ? '发送中...' : '发送验证码' }}
-              </button>
-            </view>
-          </view>
-        </template>
-
-        <template v-else>
-          <view class="field">
-            <view class="label">邮箱</view>
             <input
               v-model.trim="registerForm.email"
               class="input"
@@ -144,7 +57,6 @@
           </view>
 
           <view class="field">
-            <view class="label">验证码</view>
             <view class="code-row">
               <input
                 v-model.trim="registerForm.code"
@@ -160,7 +72,6 @@
           </view>
 
           <view class="field">
-            <view class="label">密码</view>
             <view class="password-input-wrap">
               <input
                 v-model="registerForm.password"
@@ -181,7 +92,6 @@
           </view>
 
           <view class="field">
-            <view class="label">确认密码</view>
             <view class="password-input-wrap">
               <input
                 v-model="registerForm.confirmPassword"
@@ -202,49 +112,8 @@
           </view>
         </template>
 
-        <view class="field">
-          <view class="label">目标版本</view>
-          <picker :range="examLabels" :value="registerExamIndex" @change="onExamChange">
-            <view class="picker-box">{{ activeRegisterExamTarget || '请选择目标版本' }}</view>
-          </picker>
-        </view>
-      </template>
-
-      <template v-else>
-        <template v-if="authMethod === 'phone'">
-          <view class="field">
-            <view class="label">手机号</view>
-            <input
-              v-model.trim="phoneResetForm.phone"
-              class="input"
-              type="text"
-              maxlength="15"
-              placeholder="请输入手机号（可带区号）"
-            />
-          </view>
-
-          <view class="field">
-            <view class="label">验证码</view>
-            <view class="code-row">
-              <input
-                v-model.trim="phoneResetForm.code"
-                class="input code-input"
-                type="text"
-                maxlength="6"
-                placeholder="请输入验证码"
-              />
-              <button class="code-btn" :disabled="sendingCode.phoneReset" @tap="handleSendPhoneResetCode">
-                {{ sendingCode.phoneReset ? '发送中...' : '发送验证码' }}
-              </button>
-            </view>
-          </view>
-
-          <view class="auth-note">手机号账号不需要找回密码，验证短信后会直接登录。</view>
-        </template>
-
         <template v-else>
           <view class="field">
-            <view class="label">邮箱</view>
             <input
               v-model.trim="resetForm.email"
               class="input"
@@ -254,7 +123,6 @@
           </view>
 
           <view class="field">
-            <view class="label">验证码</view>
             <view class="code-row">
               <input
                 v-model.trim="resetForm.code"
@@ -270,7 +138,6 @@
           </view>
 
           <view class="field">
-            <view class="label">新密码</view>
             <view class="password-input-wrap">
               <input
                 v-model="resetForm.newPassword"
@@ -291,7 +158,6 @@
           </view>
 
           <view class="field">
-            <view class="label">确认新密码</view>
             <view class="password-input-wrap">
               <input
                 v-model="resetForm.confirmPassword"
@@ -311,23 +177,53 @@
             </view>
           </view>
         </template>
-      </template>
 
-      <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
-        {{ submitButtonText }}
-      </button>
+        <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
+          {{ submitButtonText }}
+        </button>
 
-      <button class="wechat-button disabled" @tap="handleWechatLogin">
-        <text class="wechat-icon">微</text>
-        <text>微信登录 · 即将开放</text>
-      </button>
+        <button v-if="mode === 'login'" class="wechat-button disabled" @tap="handleWechatLogin">
+          <text class="wechat-icon">微</text>
+          <text>微信登录 · 即将开放</text>
+        </button>
 
-      <button class="ghost-button home-btn" @tap="goBackHome">返回首页</button>
-    </view>
+        <view v-if="tipText" class="inline-tip" :class="{ success: tipType === 'success' }">
+          {{ tipText }}
+        </view>
 
-    <view v-if="tipText" class="tip-card" :class="{ success: tipType === 'success' }">
-      <view class="tip-title">{{ tipType === 'success' ? '操作结果' : '提示信息' }}</view>
-      <view class="tip-text">{{ tipText }}</view>
+        <view class="shortcut-divider"></view>
+
+        <view class="shortcut-grid">
+          <button v-if="mode !== 'login'" class="shortcut-btn" @tap="switchMode('login')">
+            <view class="shortcut-icon login-icon"><view class="login-arrow"></view></view>
+            <text>返回登录</text>
+          </button>
+
+          <button v-if="mode !== 'register'" class="shortcut-btn" @tap="switchMode('register')">
+            <view class="shortcut-icon register-icon">
+              <image
+                class="shortcut-image"
+                src="/static/ui-icons/register.svg"
+                mode="aspectFit"
+                alt="注册"
+              />
+            </view>
+            <text>注册</text>
+          </button>
+
+          <button v-if="mode !== 'reset'" class="shortcut-btn" @tap="switchMode('reset')">
+            <view class="shortcut-icon lock-icon">
+              <image
+                class="shortcut-image"
+                src="/static/ui-icons/reset-password.svg"
+                mode="aspectFit"
+                alt="找回密码"
+              />
+            </view>
+            <text>找回密码</text>
+          </button>
+        </view>
+      </view>
     </view>
 
     <!-- #ifdef H5 -->
@@ -1071,10 +967,10 @@ function goBackHome() {
 .login-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(var(--status-bar-height) + 14rpx) 30rpx calc(env(safe-area-inset-bottom) + 40rpx);
+  padding: calc(var(--status-bar-height) + 54rpx) 30rpx calc(env(safe-area-inset-bottom) + 36rpx);
   background:
-    radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 28%),
-    var(--gyt-page-bg);
+    radial-gradient(circle at 74% 0%, rgba(42, 112, 244, 0.13), transparent 36%),
+    linear-gradient(180deg, #f9fbff 0%, #ffffff 58%, #f7faff 100%);
 }
 
 .login-page view,
@@ -1087,171 +983,54 @@ function goBackHome() {
   border: 0;
 }
 
-.auth-hero {
-  padding: 26rpx 30rpx 28rpx;
-  border-radius: 30rpx;
-  background:
-    radial-gradient(circle at 88% 18%, var(--gyt-primary-shadow), transparent 32%),
-    linear-gradient(145deg, rgba(255, 255, 255, 0.96), rgba(241, 246, 255, 0.98));
-  border: 2rpx solid rgba(219, 228, 245, 0.92);
-  box-shadow: 0 14rpx 34rpx rgba(20, 31, 66, 0.06);
+.auth-shell {
+  width: 100%;
+  max-width: 690rpx;
+  margin: 0 auto;
 }
 
-.hero-badge {
-  display: inline-flex;
-  align-items: center;
-  padding: 8rpx 15rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary-soft);
-  color: var(--gyt-primary);
-  font-size: 22rpx;
-  font-weight: 900;
-}
-
-.hero-title {
-  margin-top: 14rpx;
-  color: #101828;
-  font-size: 38rpx;
-  line-height: 1.22;
-  font-weight: 900;
-}
-
-.hero-sub {
-  margin-top: 10rpx;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 1.45;
-}
-
-.segment-wrap {
-  margin-top: 18rpx;
-}
-
-.segment {
+.brand {
+  margin: 52rpx 0 66rpx;
   display: flex;
-  gap: 6rpx;
-  padding: 7rpx;
-  border-radius: 26rpx;
-  background: rgba(255, 255, 255, 0.96);
-  border: 2rpx solid #e8eef8;
-  box-shadow: 0 8rpx 22rpx rgba(20, 31, 66, 0.045);
-}
-
-.segment-btn {
-  flex: 1;
-  width: 0;
-  min-height: 68rpx;
-  margin: 0;
-  border: 0;
-  border-radius: 20rpx;
-  background: transparent;
-  color: #667085;
-  font-size: 24rpx;
-  font-weight: 900;
-  line-height: 1;
-  padding: 0;
-  display: flex;
-  align-items: center;
   justify-content: center;
 }
 
-.segment-btn.active {
-  background: var(--gyt-primary-gradient);
-  color: #ffffff;
-  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
+.brand-image {
+  display: block;
+  width: min(500rpx, 78vw);
+  height: auto;
+  mix-blend-mode: multiply;
 }
 
 .login-card {
-  margin-top: 18rpx;
-  padding: 24rpx 26rpx 26rpx;
-  border-radius: 30rpx;
-  background: #ffffff;
-  border: 2rpx solid #e6ebf5;
-  box-shadow: 0 14rpx 34rpx rgba(20, 31, 66, 0.06);
+  padding: 70rpx 38rpx 54rpx;
+  border-radius: 32rpx;
+  background: rgba(255, 255, 255, 0.96);
+  border: 2rpx solid #e5ebf5;
+  box-shadow: 0 24rpx 60rpx rgba(29, 57, 116, 0.09);
 }
 
-.method-switch {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 10rpx;
-  margin-bottom: 24rpx;
-  padding: 8rpx;
-  border-radius: 24rpx;
-  background: var(--gyt-primary-tint);
-  border: 2rpx solid #e8edf7;
-}
-
-.method-btn {
-  width: 100%;
-  min-height: 70rpx;
-  margin: 0;
-  border: 0;
-  border-radius: 18rpx;
-  background: transparent;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 1;
+.mode-heading {
+  margin: -12rpx 0 34rpx;
+  color: #172033;
+  font-size: 34rpx;
+  line-height: 1.2;
   font-weight: 900;
-  padding: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-}
-
-.method-btn.active {
-  background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
-  color: var(--gyt-primary);
-  box-shadow: 0 8rpx 18rpx rgba(20, 31, 66, 0.075);
-}
-
-.method-btn.disabled {
-  color: #98a2b3;
-}
-
-.method-label {
-  line-height: 1;
-}
-
-.soon-badge {
-  padding: 6rpx 10rpx;
-  border-radius: 999rpx;
-  background: #eef2f7;
-  color: #667085;
-  font-size: 18rpx;
-  line-height: 1;
-  font-weight: 900;
-}
-
-.login-mode-note {
-  margin: -8rpx 0 22rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 20rpx;
-  background: #fff8eb;
-  border: 2rpx solid #fde7b0;
-  color: #8a5a13;
-  font-size: 23rpx;
-  line-height: 1.55;
+  text-align: center;
 }
 
 .field + .field {
-  margin-top: 20rpx;
+  margin-top: 26rpx;
 }
 
-.label {
-  color: #344054;
-  font-size: 24rpx;
-  font-weight: 900;
-}
-
-.input,
-.picker-box {
-  margin-top: 10rpx;
-  min-height: 86rpx;
-  padding: 0 24rpx;
-  border-radius: 22rpx;
+.input {
+  width: 100%;
+  min-height: 94rpx;
+  height: 94rpx;
+  padding: 0 28rpx;
+  border-radius: 20rpx;
   border: 2rpx solid var(--gyt-primary-border);
-  background: var(--gyt-primary-tint);
+  background: #f8faff;
   font-size: 28rpx;
   color: #172033;
   display: flex;
@@ -1260,11 +1039,6 @@ function goBackHome() {
 
 .password-input-wrap {
   position: relative;
-  margin-top: 10rpx;
-}
-
-.password-input-wrap .input {
-  margin-top: 0;
 }
 
 .password-input {
@@ -1280,7 +1054,7 @@ function goBackHome() {
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 20rpx;
+  border-radius: 50%;
   background: transparent;
   display: flex;
   align-items: center;
@@ -1349,14 +1123,14 @@ function goBackHome() {
 
 .code-btn {
   width: 184rpx;
-  min-height: 86rpx;
+  min-height: 94rpx;
   border: 0;
-  border-radius: 22rpx;
-  background: linear-gradient(180deg, var(--gyt-primary-soft) 0%, var(--gyt-primary-soft) 100%);
+  border-radius: 20rpx;
+  background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
   font-size: 23rpx;
   font-weight: 900;
-  line-height: 86rpx;
+  line-height: 94rpx;
   padding: 0 10rpx;
 }
 
@@ -1364,34 +1138,22 @@ function goBackHome() {
   color: #98a2b3;
 }
 
-.auth-note {
-  margin-top: 16rpx;
-  padding: 16rpx 20rpx;
-  border-radius: 20rpx;
-  background: linear-gradient(180deg, var(--gyt-primary-tint) 0%, var(--gyt-primary-tint) 100%);
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.55;
-}
-
 .submit-btn {
-  margin-top: 28rpx;
-  min-height: 92rpx;
-  border-radius: 26rpx;
+  margin-top: 32rpx;
+  min-height: 96rpx;
+  border-radius: 20rpx;
   font-size: 30rpx;
-  line-height: 92rpx;
+  line-height: 96rpx;
 }
 
 .wechat-button {
-  margin-top: 14rpx;
-  min-height: 84rpx;
+  margin-top: 20rpx;
+  min-height: 88rpx;
   border: 0;
-  border-radius: 24rpx;
-  background: #f1fbf5;
-  color: #138a43;
+  border-radius: 20rpx;
   font-size: 25rpx;
   font-weight: 900;
-  line-height: 84rpx;
+  line-height: 88rpx;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -1399,8 +1161,8 @@ function goBackHome() {
 }
 
 .wechat-button.disabled {
-  background: #f4f6fa;
-  color: #98a2b3;
+  background: #f2f4f8;
+  color: #7f8ba3;
 }
 
 .wechat-button.disabled .wechat-icon {
@@ -1411,49 +1173,104 @@ function goBackHome() {
   width: 42rpx;
   height: 42rpx;
   border-radius: 50%;
-  background: #16a34a;
+  background: #c6cfdd;
   color: #ffffff;
   font-size: 22rpx;
   line-height: 42rpx;
   text-align: center;
 }
 
-.home-btn {
-  margin-top: 14rpx;
-  min-height: 84rpx;
-  border-radius: 24rpx;
-  line-height: 84rpx;
-}
-
-.tip-card {
-  margin-top: 22rpx;
-  padding: 26rpx;
-  border-radius: 28rpx;
+.inline-tip {
+  margin-top: 20rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 16rpx;
   background: #fff8eb;
   border: 2rpx solid #fde7b0;
+  color: #8a5a13;
+  font-size: 23rpx;
+  line-height: 1.55;
 }
 
-.tip-card.success {
+.inline-tip.success {
   background: #effcf4;
   border-color: #b7ebc6;
-}
-
-.tip-title {
-  color: #8a5a13;
-  font-size: 25rpx;
-  font-weight: 900;
-}
-
-.tip-card.success .tip-title,
-.tip-card.success .tip-text {
   color: #17663a;
 }
 
-.tip-text {
-  margin-top: 10rpx;
-  color: #8a5a13;
+.shortcut-divider {
+  height: 2rpx;
+  margin: 48rpx 0 34rpx;
+  background: #e7ebf2;
+}
+
+.shortcut-grid {
+  display: flex;
+  justify-content: space-around;
+  gap: 24rpx;
+}
+
+.shortcut-btn {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #536078;
   font-size: 25rpx;
-  line-height: 1.7;
+  font-weight: 700;
+  line-height: 1.3;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15rpx;
+}
+
+.shortcut-icon {
+  position: relative;
+  width: 92rpx;
+  height: 92rpx;
+  border: 2rpx solid #dce4f2;
+  border-radius: 50%;
+  background: #ffffff;
+}
+
+.shortcut-image {
+  position: absolute;
+  left: 19rpx;
+  top: 19rpx;
+  width: 54rpx;
+  height: 54rpx;
+}
+
+.login-arrow {
+  position: absolute;
+  left: 24rpx;
+  top: 41rpx;
+  width: 42rpx;
+  height: 5rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary);
+}
+
+.login-arrow::before,
+.login-arrow::after {
+  content: '';
+  position: absolute;
+  right: -1rpx;
+  width: 22rpx;
+  height: 5rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary);
+  transform-origin: right center;
+}
+
+.login-arrow::before {
+  transform: rotate(42deg);
+}
+
+.login-arrow::after {
+  transform: rotate(-42deg);
 }
 
 @media (max-width: 380px) {
@@ -1469,6 +1286,16 @@ function goBackHome() {
 
   .code-btn {
     width: 100%;
+  }
+
+  .brand {
+    margin-top: 28rpx;
+    margin-bottom: 46rpx;
+  }
+
+  .login-card {
+    padding-left: 28rpx;
+    padding-right: 28rpx;
   }
 }
 </style>
