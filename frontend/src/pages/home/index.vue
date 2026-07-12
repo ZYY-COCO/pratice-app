@@ -797,8 +797,8 @@ const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
 const tabs = [
-  { key: 'home', label: '首页', icon: '⌂' },
-  { key: 'profile', label: '我的', icon: '☺' }
+  { key: 'home', label: '首页', iconSrc: '/static/ui-icons/tab-home.svg' },
+  { key: 'profile', label: '我的', iconSrc: '/static/ui-icons/tab-profile.svg' }
 ]
 const showBottomTab = computed(() => !retestMode.value && !['mistakes', 'report'].includes(activeTab.value))
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']

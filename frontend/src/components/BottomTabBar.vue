@@ -7,7 +7,14 @@
       :class="{ active: modelValue === item.key }"
       @tap="$emit('update:modelValue', item.key)"
     >
-      <text class="tab-icon">{{ item.icon }}</text>
+      <image
+        v-if="item.iconSrc"
+        class="tab-icon-image"
+        :src="item.iconSrc"
+        mode="aspectFit"
+        :alt="item.label"
+      />
+      <text v-else class="tab-icon">{{ item.icon }}</text>
       <text class="tab-label">{{ item.label }}</text>
     </view>
   </view>
@@ -69,6 +76,12 @@ defineEmits(['update:modelValue'])
   font-weight: 900;
 }
 
+.tab-icon-image {
+  width: 36rpx;
+  height: 36rpx;
+  filter: grayscale(1) opacity(0.68);
+}
+
 .tab-label {
   color: #8a94a6;
   font-size: 25rpx;
@@ -78,6 +91,10 @@ defineEmits(['update:modelValue'])
 
 .tab-item.active .tab-icon {
   color: var(--gyt-primary, #1677ff);
+}
+
+.tab-item.active .tab-icon-image {
+  filter: invert(44%) sepia(92%) saturate(2631%) hue-rotate(204deg) brightness(101%) contrast(101%);
 }
 
 .tab-item.active .tab-label {
