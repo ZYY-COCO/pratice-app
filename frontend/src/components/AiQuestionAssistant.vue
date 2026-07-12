@@ -27,7 +27,7 @@
             <view class="panel-subtitle">基于当前题目为你解答</view>
           </view>
           <button class="close-btn" hover-class="close-btn-active" @tap.stop="closePanel">
-            <text class="close-icon">×</text>
+            <CloseIcon />
           </button>
         </view>
 
@@ -147,6 +147,7 @@
 <script setup>
 import { computed, nextTick, onMounted, ref, watch } from 'vue'
 import { aiQuestionChat } from '../api/ai'
+import CloseIcon from './CloseIcon.vue'
 import MathText from './MathText.vue'
 
 const props = defineProps({
@@ -607,14 +608,6 @@ onMounted(() => {
   font-size: 0;
   line-height: 1;
   box-shadow: 0 8rpx 20rpx rgba(15, 23, 42, 0.06);
-}
-
-.close-icon {
-  color: inherit;
-  font-size: 34rpx;
-  font-weight: 700;
-  line-height: 1;
-  transform: translateY(-1rpx);
 }
 
 .close-btn-active {

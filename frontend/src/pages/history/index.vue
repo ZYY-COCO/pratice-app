@@ -24,7 +24,7 @@
         placeholder="搜索题干、科目、模块"
         confirm-type="search"
       />
-      <text v-if="searchKeyword" class="search-clear" @tap="clearSearch">×</text>
+      <view v-if="searchKeyword" class="search-clear" aria-label="清除搜索" @tap="clearSearch"><CloseIcon /></view>
     </view>
 
     <view class="filter-tabs">
@@ -84,7 +84,7 @@
             <view class="sheet-title">筛选练习记录</view>
             <view class="sheet-sub">按结果、科目、模块和时间快速定位题目</view>
           </view>
-          <view class="sheet-close" @tap="closeFilterPanel">×</view>
+          <view class="sheet-close" aria-label="关闭" @tap="closeFilterPanel"><CloseIcon /></view>
         </view>
 
         <view class="filter-section">
@@ -164,7 +164,7 @@
               {{ getQuestionSourceLabel(selectedItem.question) }}
             </view>
           </view>
-          <view class="close-btn" @tap="closeDetail">×</view>
+          <view class="close-btn" aria-label="关闭" @tap="closeDetail"><CloseIcon /></view>
         </view>
         <MathText class="detail-stem" :value="selectedItem.question?.stem" />
         <view class="option-list">
@@ -195,6 +195,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
+import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
@@ -622,10 +623,9 @@ function goBack() {
   border-radius: 50%;
   background: #f2f4f7;
   color: #667085;
-  text-align: center;
-  line-height: 42rpx;
-  font-size: 30rpx;
-  font-weight: 900;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .filter-tabs {

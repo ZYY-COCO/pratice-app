@@ -1,4 +1,4 @@
-import { request } from './http'
+import { request, uploadFileRequest } from './http'
 
 function buildNoAuthRequest(url, payload, timeout = 12000) {
   return request({
@@ -97,6 +97,17 @@ export function updateProfile(payload) {
     url: '/auth/profile',
     method: 'PATCH',
     data: payload
+  })
+}
+
+export function uploadAvatar({ filePath, file, fileName }) {
+  return uploadFileRequest({
+    url: '/auth/avatar',
+    filePath,
+    file,
+    fileName,
+    name: 'file',
+    timeout: 60000
   })
 }
 

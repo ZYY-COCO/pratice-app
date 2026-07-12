@@ -1,16 +1,14 @@
 <template>
   <view class="page profile-edit-page" :style="themeInlineStyle">
-    <view class="profile-edit-head">
-      <view class="head-mark">资料</view>
-      <view class="head-copy">
-        <view class="head-eyebrow">账号设置</view>
-        <view class="head-title">编辑个人资料</view>
-        <view class="head-subtitle">修改昵称、头像样式、性别和绑定账号</view>
-      </view>
-    </view>
-
     <view class="profile-card">
-      <view class="avatar-preview">{{ form.avatar_url || avatarText }}</view>
+      <image
+        v-if="isImageAvatar(form.avatar_url)"
+        class="avatar-preview avatar-preview-image"
+        :src="form.avatar_url"
+        mode="aspectFill"
+        alt="用户头像"
+      />
+      <view v-else class="avatar-preview">{{ avatarText }}</view>
       <view class="profile-card-copy">
         <view class="profile-name">{{ profileName }}</view>
         <view class="profile-email">{{ profileContact }}</view>
@@ -31,9 +29,18 @@
             :key="item"
             class="avatar-option"
             :class="{ active: form.avatar_url === item }"
-            @tap="form.avatar_url = item"
+            @tap="selectAvatarOption(item)"
           >
             {{ item }}
+          </button>
+          <button
+            class="avatar-option upload-avatar-option"
+            :class="{ active: isImageAvatar(form.avatar_url) }"
+            :disabled="uploadingAvatar"
+            aria-label="从相册选择头像"
+            @tap="chooseAvatarImage"
+          >
+            <text class="avatar-upload-plus">{{ uploadingAvatar ? '…' : '+' }}</text>
           </button>
         </view>
       </view>
@@ -99,12 +106,12 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import { changeEmailWithCode, deleteAccount, sendChangeEmailCode, updateProfile } from '../../api/auth'
+import { changeEmailWithCode, deleteAccount, sendChangeEmailCode, updateProfile, uploadAvatar } from '../../api/auth'
 import { clearAuthSession, getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
-const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI', '港']
+const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI']
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const genderOptions = [
   { label: '男', value: 'male' },
@@ -116,6 +123,7 @@ const savingProfile = ref(false)
 const sendingCode = ref(false)
 const bindingEmail = ref(false)
 const deletingAccount = ref(false)
+const uploadingAvatar = ref(false)
 const form = reactive({
   nickname: '',
   avatar_url: '',
@@ -153,6 +161,69 @@ onShow(() => {
     gender: form.gender
   }
 })
+
+function isImageAvatar(value) {
+  const avatar = String(value || '')
+  return avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:image')
+}
+
+function selectAvatarOption(item) {
+  form.avatar_url = item
+}
+
+function chooseAvatarImage() {
+  if (uploadingAvatar.value) return
+
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: ['album'],
+    success(result) {
+      const selected = result.tempFiles?.[0]
+      const filePath = result.tempFilePaths?.[0] || selected?.path || ''
+      const browserFile =
+        selected?.file ||
+        (typeof File !== 'undefined' && selected instanceof File ? selected : null)
+
+      if (!filePath && !browserFile) {
+        uni.showToast({ title: '未读取到所选图片', icon: 'none' })
+        return
+      }
+
+      uploadSelectedAvatar({
+        filePath,
+        file: browserFile,
+        fileName: selected?.name || browserFile?.name || 'avatar'
+      })
+    },
+    fail(error) {
+      const message = error?.errMsg || ''
+      if (message.toLowerCase().includes('cancel')) return
+      uni.showModal({
+        title: '无法访问相册',
+        content: '请在系统设置中允许港研通访问照片，然后重新选择头像。',
+        showCancel: false,
+        confirmText: '我知道了'
+      })
+    }
+  })
+}
+
+async function uploadSelectedAvatar(fileInfo) {
+  uploadingAvatar.value = true
+  try {
+    const nextUser = await uploadAvatar(fileInfo)
+    updateAuthUser(nextUser)
+    user.value = getAuthUser() || nextUser
+    form.avatar_url = nextUser.avatar_url || ''
+    initialProfile.value.avatar_url = form.avatar_url
+    uni.showToast({ title: '头像已更换', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '头像上传失败，请稍后重试', icon: 'none' })
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
 
 function isValidEmail(email) {
   return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)
@@ -296,57 +367,6 @@ async function deleteCurrentAccount() {
     linear-gradient(180deg, rgba(232, 240, 255, 0.86), rgba(246, 248, 252, 0.98) 34%, #f6f8fc 100%);
 }
 
-.profile-edit-head {
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  margin-bottom: 24rpx;
-}
-
-.head-mark {
-  width: 82rpx;
-  height: 82rpx;
-  border-radius: 26rpx;
-  background: #ffffff;
-  color: var(--gyt-primary);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 82rpx;
-  font-size: 24rpx;
-  line-height: 1;
-  font-weight: 950;
-  box-shadow: 0 12rpx 28rpx var(--gyt-primary-shadow);
-}
-
-.head-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.head-eyebrow {
-  color: var(--gyt-primary);
-  font-size: 22rpx;
-  line-height: 1.3;
-  font-weight: 900;
-}
-
-.head-title {
-  margin-top: 6rpx;
-  color: #101828;
-  font-size: 38rpx;
-  line-height: 1.25;
-  font-weight: 950;
-}
-
-.head-subtitle {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 1.45;
-  font-weight: 650;
-}
-
 .profile-card {
   display: flex;
   align-items: center;
@@ -373,6 +393,12 @@ async function deleteCurrentAccount() {
   font-size: 38rpx;
   font-weight: 950;
   box-shadow: 0 14rpx 26rpx var(--gyt-primary-shadow);
+}
+
+.avatar-preview-image {
+  display: block;
+  object-fit: cover;
+  background: #ffffff;
 }
 
 .profile-card-copy {
@@ -451,6 +477,24 @@ async function deleteCurrentAccount() {
   background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
   box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
+}
+
+.upload-avatar-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.upload-avatar-option[disabled] {
+  opacity: 0.6;
+}
+
+.avatar-upload-plus {
+  color: var(--gyt-primary);
+  font-size: 46rpx;
+  line-height: 1;
+  font-weight: 500;
 }
 
 .save-hint {

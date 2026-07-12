@@ -1,7 +1,9 @@
 import logging
 from datetime import datetime, timezone
+from urllib.parse import unquote
+from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.db import get_supabase_admin, get_supabase_anon
 from app.dependencies import get_current_user_id
@@ -58,6 +60,13 @@ MEMBERSHIP_FIELDS = (
 PROFILE_ADMIN_FIELDS = ("role", "disabled_at")
 FREE_MEMBERSHIP_EXPIRES_AT = datetime(2099, 12, 31, 23, 59, 59, tzinfo=timezone.utc)
 FREE_MEMBERSHIP_PLAN = "free_until_2099"
+AVATAR_BUCKET = "avatars"
+MAX_AVATAR_BYTES = 5 * 1024 * 1024
+AVATAR_CONTENT_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
 
 
 def _safe_error_summary(exc: Exception) -> str:
@@ -78,6 +87,44 @@ def _safe_error_summary(exc: Exception) -> str:
 
     text = str(exc).strip()
     return text or "Unknown auth error"
+
+
+def _detect_avatar_content_type(data: bytes) -> tuple[str, str] | None:
+    if data.startswith(b"\x89PNG\r\n\x1a\n"):
+        return "image/png", "png"
+    if data.startswith(b"\xff\xd8\xff"):
+        return "image/jpeg", "jpg"
+    if len(data) >= 12 and data.startswith(b"RIFF") and data[8:12] == b"WEBP":
+        return "image/webp", "webp"
+    return None
+
+
+def _ensure_avatar_bucket(storage) -> None:
+    try:
+        storage.get_bucket(AVATAR_BUCKET)
+        return
+    except Exception:
+        pass
+
+    try:
+        storage.create_bucket(
+            AVATAR_BUCKET,
+            options={
+                "public": True,
+                "file_size_limit": MAX_AVATAR_BYTES,
+                "allowed_mime_types": list(AVATAR_CONTENT_TYPES),
+            },
+        )
+    except Exception:
+        # Another request may have created the bucket at the same time.
+        storage.get_bucket(AVATAR_BUCKET)
+
+
+def _get_avatar_storage_path(avatar_url: str | None) -> str | None:
+    marker = f"/storage/v1/object/public/{AVATAR_BUCKET}/"
+    if not avatar_url or marker not in avatar_url:
+        return None
+    return unquote(avatar_url.split(marker, 1)[1].split("?", 1)[0])
 
 
 def _get_profile_by_email(email: str) -> dict | None:
@@ -585,10 +632,20 @@ def update_profile(
     user_id: str = Depends(get_current_user_id),
 ) -> AuthUser:
     supabase_admin = get_supabase_admin()
+    previous_avatar_url = None
     update_data = {}
     if payload.nickname is not None:
         update_data["nickname"] = payload.nickname.strip() or None
     if payload.avatar_url is not None:
+        previous_response = (
+            supabase_admin.table("users")
+            .select("avatar_url")
+            .eq("id", user_id)
+            .limit(1)
+            .execute()
+        )
+        if previous_response.data:
+            previous_avatar_url = previous_response.data[0].get("avatar_url")
         update_data["avatar_url"] = payload.avatar_url.strip() or None
     if payload.gender is not None:
         update_data["gender"] = payload.gender
@@ -634,15 +691,119 @@ def update_profile(
             detail=f"Update profile failed: {error_summary}",
         ) from exc
 
+    previous_path = _get_avatar_storage_path(previous_avatar_url)
+    current_path = _get_avatar_storage_path(profile.get("avatar_url"))
+    if previous_path and previous_path != current_path:
+        try:
+            supabase_admin.storage.from_(AVATAR_BUCKET).remove([previous_path])
+        except Exception:
+            logger.warning("Old avatar cleanup failed for user_id=%s path=%s", user_id, previous_path)
+
+    return AuthUser(**profile)
+
+
+@router.post("/avatar", response_model=AuthUser)
+async def upload_avatar(
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> AuthUser:
+    data = await file.read(MAX_AVATAR_BYTES + 1)
+    await file.close()
+
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Avatar file is empty")
+    if len(data) > MAX_AVATAR_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="Avatar file exceeds 5 MB")
+
+    detected = _detect_avatar_content_type(data)
+    if not detected:
+        raise HTTPException(
+            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
+            detail="Avatar must be a PNG, JPEG, or WebP image",
+        )
+
+    content_type, extension = detected
+    supabase_admin = get_supabase_admin()
+    profile_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+    if not profile_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+    previous_profile = profile_response.data[0]
+    storage_path = f"{user_id}/{uuid4().hex}.{extension}"
+    bucket = None
+
+    try:
+        _ensure_avatar_bucket(supabase_admin.storage)
+        bucket = supabase_admin.storage.from_(AVATAR_BUCKET)
+        bucket.upload(
+            storage_path,
+            data,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "31536000",
+                "upsert": "false",
+            },
+        )
+        avatar_url = bucket.get_public_url(storage_path)
+        (
+            supabase_admin.table("users")
+            .update({"avatar_url": avatar_url})
+            .eq("id", user_id)
+            .execute()
+        )
+        updated_response = supabase_admin.table("users").select("*").eq("id", user_id).limit(1).execute()
+        if not updated_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+        profile = updated_response.data[0]
+        supabase_admin.auth.admin.update_user_by_id(
+            user_id,
+            {
+                "user_metadata": {
+                    "nickname": profile.get("nickname"),
+                    "avatar_url": profile.get("avatar_url"),
+                    "gender": profile.get("gender"),
+                    "exam_target": profile.get("exam_target"),
+                }
+            },
+        )
+    except HTTPException:
+        if bucket:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        raise
+    except Exception as exc:
+        if bucket:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Avatar upload failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Avatar upload failed: {error_summary}",
+        ) from exc
+
+    previous_path = _get_avatar_storage_path(previous_profile.get("avatar_url"))
+    if previous_path and previous_path != storage_path:
+        try:
+            bucket.remove([previous_path])
+        except Exception:
+            logger.warning("Old avatar cleanup failed for user_id=%s path=%s", user_id, previous_path)
+
     return AuthUser(**profile)
 
 
 @router.delete("/account", response_model=MessageResponse)
 def delete_account(user_id: str = Depends(get_current_user_id)) -> MessageResponse:
     supabase_admin = get_supabase_admin()
-    profile_response = supabase_admin.table("users").select("id").eq("id", user_id).limit(1).execute()
+    profile_response = supabase_admin.table("users").select("id, avatar_url").eq("id", user_id).limit(1).execute()
     if not profile_response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    avatar_path = _get_avatar_storage_path(profile_response.data[0].get("avatar_url"))
 
     delete_user = getattr(supabase_admin.auth.admin, "delete_user", None)
     if not callable(delete_user):
@@ -662,6 +823,12 @@ def delete_account(user_id: str = Depends(get_current_user_id)) -> MessageRespon
         supabase_admin.table("users").delete().eq("id", user_id).execute()
     except Exception as exc:
         logger.warning("Delete public user cleanup skipped for user_id=%s: %s", user_id, _safe_error_summary(exc))
+
+    if avatar_path:
+        try:
+            supabase_admin.storage.from_(AVATAR_BUCKET).remove([avatar_path])
+        except Exception:
+            logger.warning("Delete avatar cleanup skipped for user_id=%s path=%s", user_id, avatar_path)
 
     return MessageResponse(detail="Account deleted")
 

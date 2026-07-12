@@ -26,7 +26,9 @@
             "autoclose" : true,
             "delay" : 0
         },
-        "modules" : {},
+        "modules" : {
+            "Camera" : {}
+        },
         "distribute" : {
             "android" : {
                 "permissions" : [
@@ -61,7 +63,10 @@
             "ios" : {
                 "appid" : "com.gangyantong.app",
                 "idfa" : false,
-                "dSYMs" : false
+                "dSYMs" : false,
+                "privacyDescription" : {
+                    "NSPhotoLibraryUsageDescription" : "港研通需要访问您的相册，以便您选择并上传个人头像。"
+                }
             }
         }
     }

@@ -7,12 +7,10 @@
       :class="{ active: modelValue === item.key }"
       @tap="$emit('update:modelValue', item.key)"
     >
-      <image
+      <view
         v-if="item.iconSrc"
-        class="tab-icon-image"
-        :src="item.iconSrc"
-        mode="aspectFit"
-        :alt="item.label"
+        class="tab-icon-image tab-icon-mask"
+        :style="getIconMaskStyle(item.iconSrc)"
       />
       <text v-else class="tab-icon">{{ item.icon }}</text>
       <text class="tab-label">{{ item.label }}</text>
@@ -33,6 +31,11 @@ defineProps({
 })
 
 defineEmits(['update:modelValue'])
+
+const getIconMaskStyle = (iconSrc) => ({
+  WebkitMaskImage: `url("${iconSrc}")`,
+  maskImage: `url("${iconSrc}")`
+})
 </script>
 
 <style scoped>
@@ -79,7 +82,16 @@ defineEmits(['update:modelValue'])
 .tab-icon-image {
   width: 36rpx;
   height: 36rpx;
-  filter: grayscale(1) opacity(0.68);
+  background-color: #98a2b3;
+}
+
+.tab-icon-mask {
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
 
 .tab-label {
@@ -94,7 +106,7 @@ defineEmits(['update:modelValue'])
 }
 
 .tab-item.active .tab-icon-image {
-  filter: invert(44%) sepia(92%) saturate(2631%) hue-rotate(204deg) brightness(101%) contrast(101%);
+  background-color: var(--gyt-primary, #1677ff);
 }
 
 .tab-item.active .tab-label {

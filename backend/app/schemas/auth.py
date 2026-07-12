@@ -59,7 +59,7 @@ class ResetPasswordRequest(BaseModel):
 
 class ProfileUpdateRequest(BaseModel):
     nickname: str | None = Field(default=None, max_length=40)
-    avatar_url: str | None = Field(default=None, max_length=120)
+    avatar_url: str | None = Field(default=None, max_length=500)
     gender: str | None = Field(default=None, pattern="^(male|female)$")
     exam_target: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 

@@ -434,7 +434,7 @@
           >
             {{ reviewStatusText(activeReviewQuestion.review_status) }}
           </text>
-          <button class="review-close-btn" @tap="closeReviewQueue">×</button>
+          <button class="review-close-btn" aria-label="关闭" @tap="closeReviewQueue"><CloseIcon /></button>
         </view>
 
         <view v-if="reviewQueueLoading" class="inline-state">正在加载审核队列...</view>
@@ -564,6 +564,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import CloseIcon from '../../components/CloseIcon.vue'
 import {
   cancelAdminMembership,
   createAdminQuestion,

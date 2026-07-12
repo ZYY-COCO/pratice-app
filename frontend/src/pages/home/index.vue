@@ -20,7 +20,14 @@
               <view v-if="officialUnreadCount > 0" class="message-dot"></view>
             </button>
             <view class="profile-entry" @tap="activeTab = 'profile'">
-              <text>{{ avatarText }}</text>
+              <image
+                v-if="avatarImageUrl"
+                class="profile-entry-image"
+                :src="avatarImageUrl"
+                mode="aspectFill"
+                alt="用户头像"
+              />
+              <text v-else>{{ avatarText }}</text>
             </view>
           </view>
         </view>
@@ -224,7 +231,7 @@
                 {{ selectedWrongDetail.question.subject }} / {{ selectedWrongDetail.question.module }}
               </view>
             </view>
-            <button class="wrong-modal-close" @tap="closeWrongDetail">×</button>
+            <button class="wrong-modal-close" aria-label="关闭" @tap="closeWrongDetail"><CloseIcon /></button>
           </view>
           <scroll-view scroll-y class="wrong-modal-scroll">
             <view class="wrong-detail">
@@ -373,7 +380,14 @@
         <view class="profile-top-title">港研通</view>
 
         <view class="account-card" :class="{ guest: !isAuthed }" @tap="handleAccountEntry">
-          <view class="account-avatar">{{ profileAvatarText }}</view>
+          <image
+            v-if="avatarImageUrl"
+            class="account-avatar account-avatar-image"
+            :src="avatarImageUrl"
+            mode="aspectFill"
+            alt="用户头像"
+          />
+          <view v-else class="account-avatar">{{ profileAvatarText }}</view>
           <view class="account-main">
             <view class="account-name-row">
               <text class="account-name">{{ profile.userName }}</text>
@@ -406,7 +420,11 @@
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
               <view class="benefit-icon" :class="item.iconClass">
-                <image v-if="item.iconSrc" class="benefit-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <view
+                  v-if="item.iconSrc"
+                  class="benefit-icon-img theme-icon-mask"
+                  :style="getThemeIconStyle(item.iconSrc)"
+                />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
               </view>
               <view class="benefit-label">{{ item.label }}</view>
@@ -425,7 +443,11 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <image v-if="item.iconSrc" class="menu-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <view
+                  v-if="item.iconSrc"
+                  class="menu-icon-img theme-icon-mask"
+                  :style="getThemeIconStyle(item.iconSrc)"
+                />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
               </view>
               <view class="menu-copy">
@@ -445,7 +467,11 @@
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
               <view class="menu-icon" :class="item.tone">
-                <image v-if="item.iconSrc" class="menu-icon-img" :src="item.iconSrc" mode="aspectFit" />
+                <view
+                  v-if="item.iconSrc"
+                  class="menu-icon-img theme-icon-mask"
+                  :style="getThemeIconStyle(item.iconSrc)"
+                />
                 <text v-else>{{ item.icon }}</text>
               </view>
               <view class="menu-copy">
@@ -596,7 +622,7 @@
     <view v-if="showStudyAdviceDetail" class="advice-detail-mask" @tap="closeStudyAdviceDetail">
       <view class="advice-detail-sheet" @tap.stop>
         <view class="advice-detail-handle"></view>
-        <button class="advice-detail-close" @tap="closeStudyAdviceDetail">×</button>
+        <button class="advice-detail-close" aria-label="关闭" @tap="closeStudyAdviceDetail"><CloseIcon /></button>
         <view class="advice-detail-head">
           <view class="advice-detail-title">详细学习建议</view>
           <view class="advice-detail-subtitle">{{ studyAdviceSummary }}</view>
@@ -645,7 +671,7 @@
     <view v-if="showThemeModal" class="theme-modal-mask" @tap="handleCloseThemeModal">
       <view class="theme-modal-sheet" @tap.stop>
         <view class="theme-modal-handle"></view>
-        <button class="theme-modal-close" @tap="handleCloseThemeModal">×</button>
+        <button class="theme-modal-close" aria-label="关闭" @tap="handleCloseThemeModal"><CloseIcon /></button>
         <view class="theme-modal-head">
           <view class="theme-modal-title">外观主题</view>
           <view class="theme-modal-subtitle">选择一套浅色主题，首页和常用页面会立即更新。</view>
@@ -675,7 +701,7 @@
     <view v-if="showOfficialMessageModal" class="official-modal-mask" @tap="closeOfficialMessages">
       <view class="official-modal-sheet" @tap.stop>
         <view class="official-modal-handle"></view>
-        <button class="official-modal-close" @tap="closeOfficialMessages">×</button>
+        <button class="official-modal-close" aria-label="关闭" @tap="closeOfficialMessages"><CloseIcon /></button>
         <view class="official-modal-head">
           <view class="official-modal-title">官方消息</view>
           <view class="official-modal-subtitle">港研通公告、更新与运营通知</view>
@@ -711,6 +737,7 @@
 import { computed, ref, watch } from 'vue'
 import { onLoad, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
@@ -853,10 +880,21 @@ const memberCardSubtitle = computed(() => {
   return '当前版本所有学习功能均免费开放，不提供付费购买、订阅或外部支付入口。'
 })
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
+const avatarImageUrl = computed(() => {
+  const avatar = authUser.value?.avatar_url || ''
+  return isImageAvatar(avatar) ? avatar : ''
+})
 const profileAvatarText = computed(() => {
   if (!isAuthed.value) return '研'
-  return authUser.value?.avatar_url || (getUserDisplayName(authUser.value, profile.value.userName || examCode.value || '游')).slice(0, 1)
+  const avatar = authUser.value?.avatar_url || ''
+  if (avatar && !isImageAvatar(avatar)) return avatar.slice(0, 2)
+  return (getUserDisplayName(authUser.value, profile.value.userName || examCode.value || '游')).slice(0, 1)
 })
+
+function isImageAvatar(value) {
+  const avatar = String(value || '')
+  return avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:image')
+}
 
 const dashboard = computed(() => {
   const base = getHomeDashboard(examCode.value)
@@ -965,6 +1003,10 @@ const practiceTools = computed(() => {
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
+const getThemeIconStyle = (iconSrc) => ({
+  WebkitMaskImage: `url("${iconSrc}")`,
+  maskImage: `url("${iconSrc}")`
+})
 const isAdminUser = computed(() => {
   // #ifdef APP-PLUS
   return false
@@ -974,8 +1016,22 @@ const isAdminUser = computed(() => {
 })
 const serviceTools = computed(() => {
   const items = [
-    { label: '外观主题', desc: `当前：${currentThemeName.value}`, icon: '◐', tone: 'blue', action: 'theme' },
-    { label: '关于我们', desc: '帮助反馈、隐私政策与支持信息', icon: 'i', tone: 'blue', action: 'about' }
+    {
+      label: '外观主题',
+      desc: `当前：${currentThemeName.value}`,
+      icon: '',
+      iconSrc: '/static/ui-icons/theme.svg',
+      tone: 'blue',
+      action: 'theme'
+    },
+    {
+      label: '关于我们',
+      desc: '帮助反馈、隐私政策与支持信息',
+      icon: '',
+      iconSrc: '/static/ui-icons/about.svg',
+      tone: 'blue',
+      action: 'about'
+    }
   ]
   if (isAdminUser.value) {
     items.unshift(
@@ -2295,6 +2351,14 @@ function formatDateTime(value) {
   font-size: 32rpx;
   font-weight: 900;
   box-shadow: inset 0 -4rpx 8rpx rgba(20, 31, 66, 0.04);
+}
+
+.profile-entry-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: 50%;
+  object-fit: cover;
 }
 
 .home-actions {
@@ -4793,6 +4857,12 @@ function formatDateTime(value) {
   box-shadow: 0 14rpx 26rpx var(--gyt-primary-shadow, rgba(37, 99, 235, 0.22));
 }
 
+.account-avatar-image {
+  display: block;
+  object-fit: cover;
+  background: #ffffff;
+}
+
 .account-main {
   flex: 1;
   min-width: 0;
@@ -4993,20 +5063,32 @@ function formatDateTime(value) {
   height: 54rpx;
   margin: 0 auto 10rpx;
   border-radius: 18rpx;
-  background: #ffffff;
+  background: var(--gyt-primary-soft, #edf4ff);
   color: var(--gyt-primary, #1677ff);
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 28rpx;
   font-weight: 900;
-  box-shadow: 0 8rpx 20rpx rgba(25, 48, 89, 0.08);
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  box-shadow: 0 8rpx 20rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.12));
+  box-sizing: border-box;
 }
 
 .benefit-icon-img {
   width: 32rpx;
   height: 32rpx;
   display: block;
+}
+
+.theme-icon-mask {
+  background-color: currentColor;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
 }
 
 .benefit-icon.book-icon,
@@ -5116,12 +5198,14 @@ function formatDateTime(value) {
   border-radius: 18rpx;
   background: var(--gyt-primary-soft, #edf4ff);
   color: var(--gyt-primary, #1677ff);
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
   display: flex;
   align-items: center;
   justify-content: center;
   flex-shrink: 0;
   font-size: 28rpx;
   font-weight: 900;
+  box-sizing: border-box;
 }
 
 .menu-icon-img {
@@ -5131,28 +5215,29 @@ function formatDateTime(value) {
 }
 
 .menu-icon.green {
-  background: #eafbf1;
-  color: #16a34a;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
 }
 
 .menu-icon.purple {
-  background: #f0edff;
-  color: #6d5dfc;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
 }
 
 .menu-icon.orange {
-  background: #fff3e8;
-  color: #f97316;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
 }
 
 .menu-icon.dark {
-  background: #eef2f7;
-  color: #344054;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #1677ff);
 }
 
 .menu-icon.locked {
-  background: #f2f4f7;
-  color: #98a2b3;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: var(--gyt-primary, #1677ff);
+  opacity: 0.58;
 }
 
 .menu-copy {
@@ -5199,5 +5284,14 @@ function formatDateTime(value) {
   justify-content: center;
   font-size: 27rpx;
   font-weight: 900;
+}
+
+.advice-detail-close,
+.theme-modal-close,
+.official-modal-close,
+.wrong-modal-close {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 </style>

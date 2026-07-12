@@ -249,7 +249,7 @@
       <view class="help-dialog" role="dialog" aria-modal="true" aria-label="帮助" @tap.stop>
         <view class="help-dialog-header">
           <text class="help-dialog-title">帮助</text>
-          <button class="help-close" aria-label="关闭" @tap="closeHelp">×</button>
+          <button class="help-close" aria-label="关闭" @tap="closeHelp"><CloseIcon /></button>
         </view>
         <button class="help-entry" @tap="openSupportPage">
           <view class="help-entry-copy">
@@ -270,6 +270,7 @@
 <script setup>
 import { computed, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import {
   checkBackendHealth,
@@ -1100,7 +1101,7 @@ function openSupportPage() {
 }
 
 .brand {
-  margin: 28rpx 0 58rpx;
+  margin: 28rpx 0 32rpx;
   display: flex;
   justify-content: center;
 }
@@ -1397,6 +1398,9 @@ function openSupportPage() {
   color: #667085;
   font-size: 38rpx;
   line-height: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .help-entry {
@@ -1459,7 +1463,7 @@ function openSupportPage() {
 
   .brand {
     margin-top: 16rpx;
-    margin-bottom: 46rpx;
+    margin-bottom: 28rpx;
   }
 
   .login-card {

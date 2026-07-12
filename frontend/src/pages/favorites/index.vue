@@ -80,7 +80,7 @@
           </view>
           <view class="detail-actions">
             <button class="star-btn active" :disabled="toggling" @tap="toggleSelectedFavorite">★</button>
-            <button class="close-btn" @tap="closeDetail">×</button>
+            <button class="close-btn" aria-label="关闭" @tap="closeDetail"><CloseIcon /></button>
           </view>
         </view>
 
@@ -113,6 +113,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
+import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
