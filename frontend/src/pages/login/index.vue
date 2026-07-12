@@ -1,6 +1,13 @@
 <template>
   <view class="page login-page" :style="themeInlineStyle">
     <view class="auth-shell">
+      <view class="auth-topbar">
+        <button class="topbar-back" aria-label="返回" @tap="goBackHome">
+          <image class="topbar-back-icon" src="/static/ui-icons/auth-back.svg" mode="aspectFit" alt="返回" />
+        </button>
+        <button class="topbar-help" @tap="openHelp">帮助</button>
+      </view>
+
       <view class="brand" aria-label="港研通">
         <image
           class="brand-image"
@@ -195,8 +202,15 @@
 
         <view class="shortcut-grid">
           <button v-if="mode !== 'login'" class="shortcut-btn" @tap="switchMode('login')">
-            <view class="shortcut-icon login-icon"><view class="login-arrow"></view></view>
-            <text>返回登录</text>
+            <view class="shortcut-icon login-icon">
+              <image
+                class="shortcut-image"
+                src="/static/ui-icons/email-login.svg"
+                mode="aspectFit"
+                alt="邮密登录"
+              />
+            </view>
+            <text>邮密登录</text>
           </button>
 
           <button v-if="mode !== 'register'" class="shortcut-btn" @tap="switchMode('register')">
@@ -223,6 +237,22 @@
             <text>找回密码</text>
           </button>
         </view>
+      </view>
+    </view>
+
+    <view v-if="helpVisible" class="help-mask" @tap="closeHelp">
+      <view class="help-dialog" role="dialog" aria-modal="true" aria-label="帮助" @tap.stop>
+        <view class="help-dialog-header">
+          <text class="help-dialog-title">帮助</text>
+          <button class="help-close" aria-label="关闭" @tap="closeHelp">×</button>
+        </view>
+        <button class="help-entry" @tap="openSupportPage">
+          <view class="help-entry-copy">
+            <text class="help-entry-title">问题与反馈</text>
+            <text class="help-entry-subtitle">进入港研通帮助与支持页面</text>
+          </view>
+          <text class="help-entry-arrow">›</text>
+        </button>
       </view>
     </view>
 
@@ -256,10 +286,12 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const mode = ref('login')
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const supportUrl = 'https://www.gangyantong.com/support.html'
 const PHONE_AUTH_ENABLED = false
 const WECHAT_AUTH_ENABLED = false
 const authMethod = ref('email')
 const submitting = ref(false)
+const helpVisible = ref(false)
 const redirect = ref('/pages/home/index')
 const tipText = ref('')
 const tipType = ref('warning')
@@ -961,6 +993,39 @@ function goBackHome() {
     }
   })
 }
+
+function openHelp() {
+  helpVisible.value = true
+}
+
+function closeHelp() {
+  helpVisible.value = false
+}
+
+function openSupportPage() {
+  closeHelp()
+
+  // #ifdef APP-PLUS
+  if (typeof plus !== 'undefined' && plus?.runtime?.openURL) {
+    plus.runtime.openURL(supportUrl)
+    return
+  }
+  // #endif
+
+  // #ifdef H5
+  if (typeof window !== 'undefined') {
+    window.location.href = supportUrl
+    return
+  }
+  // #endif
+
+  uni.setClipboardData({
+    data: supportUrl,
+    success() {
+      uni.showToast({ title: '支持页链接已复制', icon: 'none' })
+    }
+  })
+}
 </script>
 
 <style scoped>
@@ -989,8 +1054,47 @@ function goBackHome() {
   margin: 0 auto;
 }
 
+.auth-topbar {
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.topbar-back,
+.topbar-help {
+  margin: 0;
+  border: 0;
+  background: transparent;
+}
+
+.topbar-back {
+  width: 72rpx;
+  height: 72rpx;
+  padding: 10rpx;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.topbar-back-icon {
+  width: 52rpx;
+  height: 52rpx;
+}
+
+.topbar-help {
+  min-width: 88rpx;
+  min-height: 72rpx;
+  padding: 0 8rpx;
+  color: #344054;
+  font-size: 28rpx;
+  font-weight: 700;
+  line-height: 72rpx;
+}
+
 .brand {
-  margin: 52rpx 0 66rpx;
+  margin: 28rpx 0 58rpx;
   display: flex;
   justify-content: center;
 }
@@ -1243,34 +1347,93 @@ function goBackHome() {
   height: 54rpx;
 }
 
-.login-arrow {
-  position: absolute;
-  left: 24rpx;
-  top: 41rpx;
-  width: 42rpx;
-  height: 5rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary);
+.help-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 80;
+  padding: 30rpx;
+  background: rgba(15, 23, 42, 0.42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.login-arrow::before,
-.login-arrow::after {
-  content: '';
-  position: absolute;
-  right: -1rpx;
-  width: 22rpx;
-  height: 5rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary);
-  transform-origin: right center;
+.help-dialog {
+  width: 100%;
+  max-width: 620rpx;
+  padding: 28rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 28rpx 70rpx rgba(15, 23, 42, 0.2);
 }
 
-.login-arrow::before {
-  transform: rotate(42deg);
+.help-dialog-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
 }
 
-.login-arrow::after {
-  transform: rotate(-42deg);
+.help-dialog-title {
+  color: #172033;
+  font-size: 32rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.help-close {
+  width: 60rpx;
+  height: 60rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f4f8;
+  color: #667085;
+  font-size: 38rpx;
+  line-height: 56rpx;
+}
+
+.help-entry {
+  width: 100%;
+  min-height: 110rpx;
+  margin: 24rpx 0 0;
+  padding: 20rpx 22rpx;
+  border: 2rpx solid #e3eaf5;
+  border-radius: 16rpx;
+  background: #f8faff;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  text-align: left;
+}
+
+.help-entry-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.help-entry-title {
+  color: #172033;
+  font-size: 28rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.help-entry-subtitle {
+  color: #7f8ba3;
+  font-size: 22rpx;
+  line-height: 1.45;
+}
+
+.help-entry-arrow {
+  flex-shrink: 0;
+  color: var(--gyt-primary);
+  font-size: 46rpx;
+  line-height: 1;
 }
 
 @media (max-width: 380px) {
@@ -1289,7 +1452,7 @@ function goBackHome() {
   }
 
   .brand {
-    margin-top: 28rpx;
+    margin-top: 16rpx;
     margin-bottom: 46rpx;
   }
 

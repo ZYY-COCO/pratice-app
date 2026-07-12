@@ -4,7 +4,14 @@
       <view class="home-dashboard">
         <view class="home-header">
           <view class="brand-line">
-            <text class="brand-title">港研通</text>
+            <view class="brand-title" aria-label="港研通">
+              <image
+                class="brand-title-image"
+                src="/static/gangyantong-home-wordmark-4k.png"
+                mode="widthFix"
+                alt="港研通"
+              />
+            </view>
             <text v-if="isAuthed" class="brand-badge">{{ examCode }}</text>
           </view>
           <view class="home-actions">
@@ -2248,12 +2255,21 @@ function formatDateTime(value) {
 }
 
 .brand-title {
-  color: #101828;
-  font-size: 42rpx;
-  line-height: 1.15;
-  font-weight: 900;
-  letter-spacing: -1rpx;
-  white-space: nowrap;
+  position: relative;
+  width: 170rpx;
+  height: 60rpx;
+  flex-shrink: 0;
+  overflow: hidden;
+}
+
+.brand-title-image {
+  position: absolute;
+  left: -37rpx;
+  top: -38rpx;
+  display: block;
+  width: 244rpx;
+  height: auto;
+  mix-blend-mode: multiply;
 }
 
 .brand-badge {
