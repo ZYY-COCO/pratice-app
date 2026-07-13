@@ -173,10 +173,9 @@
       </template>
 
       <template v-else>
-        <SectionCard title="最近需要重刷">
+        <SectionCard>
           <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
           <view v-else class="filter-card">
-            <view class="filter-tip">先选择科目或模块，再点击右上角重测，可只复盘当前范围的错题。</view>
             <scroll-view scroll-x class="filter-scroll">
               <button
                 v-for="item in subjectFilters"
@@ -225,7 +224,7 @@
         <view class="wrong-modal-panel" @tap.stop>
           <view class="wrong-modal-grabber"></view>
           <view class="wrong-modal-head">
-            <view>
+            <view class="wrong-modal-heading">
               <view class="wrong-modal-title">错题重练</view>
               <view class="wrong-modal-sub">
                 {{ selectedWrongDetail.question.subject }} / {{ selectedWrongDetail.question.module }}
@@ -962,9 +961,16 @@ const generateProgressWidth = computed(() => {
   return `${Math.min(96, Math.max(8, progress))}%`
 })
 const realMistakes = computed(() => wrongItems.value.map(formatWrongQuestion))
+const activeExamSubjects = computed(() => {
+  const option = EXAM_OPTIONS.find((item) => item.code === examCode.value) || EXAM_OPTIONS[0]
+  return option.subjects || []
+})
+const examMistakes = computed(() =>
+  realMistakes.value.filter((item) => activeExamSubjects.value.includes(item.subject))
+)
 const wrongSummaryCount = computed(() => {
   if (!isAuthed.value) return '0'
-  return String(Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0))
+  return String(examMistakes.value.length)
 })
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const practiceTools = computed(() => {
@@ -1056,7 +1062,7 @@ const serviceTools = computed(() => {
   return items
 })
 const filteredMistakes = computed(() =>
-  realMistakes.value.filter((item) => {
+  examMistakes.value.filter((item) => {
     if (wrongFilters.value.subject && item.subject !== wrongFilters.value.subject) return false
     if (wrongFilters.value.module && item.module !== wrongFilters.value.module) return false
     if (wrongFilters.value.submodule && item.submodule !== wrongFilters.value.submodule) return false
@@ -1074,10 +1080,10 @@ const retestProgressLabel = computed(() => {
   return `${Math.min(retestIndex.value + 1, retestTotal.value)} / ${retestTotal.value}`
 })
 const retestOptions = computed(() => buildQuestionOptions(retestDetail.value?.question))
-const subjectFilters = computed(() => ['', '中华文化', '英语运用', '逻辑推理', '数学基础'])
-const moduleFilters = computed(() => buildFilterOptions(realMistakes.value, 'module', { subject: wrongFilters.value.subject }))
+const subjectFilters = computed(() => ['', ...activeExamSubjects.value])
+const moduleFilters = computed(() => buildFilterOptions(examMistakes.value, 'module', { subject: wrongFilters.value.subject }))
 const submoduleFilters = computed(() =>
-  buildFilterOptions(realMistakes.value, 'submodule', {
+  buildFilterOptions(examMistakes.value, 'submodule', {
     subject: wrongFilters.value.subject,
     module: wrongFilters.value.module
   })
@@ -1097,8 +1103,8 @@ const mistakeSubtitle = computed(() => {
   if (!isAuthed.value) {
     return '登录后会读取你的真实错题记录；当前展示示例内容。'
   }
-  if (realMistakes.value.length) {
-    return `已同步 ${realMistakes.value.length} 道真实错题，按最近错误时间排序。`
+  if (examMistakes.value.length) {
+    return `已同步 ${examMistakes.value.length} 道真实错题，按最近错误时间排序。`
   }
   return '已连接真实错题接口，做错题后会自动归档到这里。'
 })
@@ -1282,6 +1288,11 @@ const profile = computed(() => {
 
 watch(examCode, (value) => {
   uni.setStorageSync('examCode', value)
+  wrongFilters.value = {
+    subject: '',
+    module: '',
+    submodule: ''
+  }
   syncTrainingSubject()
   studyAdvice.value = null
   studyAdviceExamCode.value = ''
@@ -2266,6 +2277,7 @@ function formatDateTime(value) {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
+  overflow-x: clip;
   padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
 }
 
@@ -2643,17 +2655,17 @@ function formatDateTime(value) {
 }
 
 .filter-card {
-  margin-bottom: 16rpx;
-  padding: 8rpx 0 2rpx;
+  position: sticky;
+  top: calc(env(safe-area-inset-top) + 12rpx);
+  z-index: 24;
+  margin: -8rpx -12rpx 16rpx;
+  padding: 14rpx 12rpx 12rpx;
   display: flex;
   flex-direction: column;
   gap: 10rpx;
-}
-
-.filter-tip {
-  color: #667085;
-  font-size: 22rpx;
-  line-height: 1.5;
+  background: #ffffff;
+  border-bottom: 2rpx solid rgba(230, 235, 245, 0.96);
+  box-shadow: 0 10rpx 22rpx rgba(20, 31, 66, 0.05);
 }
 
 .filter-scroll {
@@ -4378,6 +4390,11 @@ function formatDateTime(value) {
   border-bottom: 2rpx solid #eef2f8;
 }
 
+.wrong-modal-heading {
+  flex: 1;
+  min-width: 0;
+}
+
 .wrong-modal-title {
   color: #101828;
   font-size: 32rpx;
@@ -4400,6 +4417,7 @@ function formatDateTime(value) {
 .wrong-modal-close {
   width: 54rpx;
   height: 54rpx;
+  margin: 0 0 0 auto;
   flex: 0 0 54rpx;
   border: 0;
   border-radius: 18rpx;

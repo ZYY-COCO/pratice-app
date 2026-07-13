@@ -38,6 +38,9 @@ defineProps({
 
 <style scoped>
 .icp-footer {
+  position: relative;
+  z-index: 0;
+  isolation: isolate;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -49,6 +52,8 @@ defineProps({
 }
 
 .icp-footer-inner {
+  position: relative;
+  z-index: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -66,6 +71,8 @@ defineProps({
 }
 
 .police-link {
+  position: relative;
+  z-index: 0;
   display: inline-flex;
   align-items: center;
   gap: 8rpx;

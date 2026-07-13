@@ -77,8 +77,12 @@
                 maxlength="6"
                 placeholder="请输入邮箱验证码"
               />
-              <button class="code-btn" :disabled="sendingCode.register" @tap="handleSendRegisterCode">
-                {{ sendingCode.register ? '发送中...' : '发送验证码' }}
+              <button
+                class="code-btn"
+                :disabled="sendingCode.register || codeCountdown.register > 0"
+                @tap="handleSendRegisterCode"
+              >
+                {{ getCodeButtonText('register') }}
               </button>
             </view>
           </view>
@@ -143,8 +147,12 @@
                 maxlength="6"
                 placeholder="请输入邮箱验证码"
               />
-              <button class="code-btn" :disabled="sendingCode.reset" @tap="handleSendResetCode">
-                {{ sendingCode.reset ? '发送中...' : '发送验证码' }}
+              <button
+                class="code-btn"
+                :disabled="sendingCode.reset || codeCountdown.reset > 0"
+                @tap="handleSendResetCode"
+              >
+                {{ getCodeButtonText('reset') }}
               </button>
             </view>
           </view>
@@ -269,7 +277,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onUnload } from '@dcloudio/uni-app'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import {
@@ -308,6 +316,18 @@ const sendingCode = reactive({
   phoneRegister: false,
   phoneReset: false
 })
+const codeCountdown = reactive({
+  register: 0,
+  reset: 0
+})
+const codeCountdownEndsAt = {
+  register: 0,
+  reset: 0
+}
+const codeCountdownTimers = {
+  register: null,
+  reset: null
+}
 const passwordVisible = reactive({
   login: false,
   register: false,
@@ -406,6 +426,32 @@ function togglePasswordVisibility(key) {
   passwordVisible[key] = !passwordVisible[key]
 }
 
+function getCodeButtonText(key) {
+  if (sendingCode[key]) return '发送中...'
+  if (codeCountdown[key] > 0) return `${codeCountdown[key]}s`
+  return '发送验证码'
+}
+
+function stopCodeCountdown(key) {
+  if (codeCountdownTimers[key]) {
+    clearInterval(codeCountdownTimers[key])
+    codeCountdownTimers[key] = null
+  }
+}
+
+function updateCodeCountdown(key) {
+  const seconds = Math.max(0, Math.ceil((codeCountdownEndsAt[key] - Date.now()) / 1000))
+  codeCountdown[key] = seconds
+  if (seconds === 0) stopCodeCountdown(key)
+}
+
+function startCodeCountdown(key) {
+  stopCodeCountdown(key)
+  codeCountdownEndsAt[key] = Date.now() + 60 * 1000
+  updateCodeCountdown(key)
+  codeCountdownTimers[key] = setInterval(() => updateCodeCountdown(key), 1000)
+}
+
 onLoad((options) => {
   if (options?.redirect) {
     redirect.value = decodeURIComponent(options.redirect)
@@ -445,6 +491,10 @@ onLoad((options) => {
   }
 
   redirectIfAlreadyAuthed(redirect.value)
+})
+
+onUnload(() => {
+  Object.keys(codeCountdownTimers).forEach(stopCodeCountdown)
 })
 
 function switchMode(nextMode) {
@@ -560,6 +610,8 @@ async function ensureBackendAvailable() {
 }
 
 async function handleSendRegisterCode() {
+  if (sendingCode.register || codeCountdown.register > 0) return
+
   if (!registerForm.email) {
     uni.showToast({ title: '请先填写邮箱', icon: 'none' })
     return
@@ -573,6 +625,7 @@ async function handleSendRegisterCode() {
     const response = await sendRegisterCode({ email: registerForm.email })
     tipType.value = 'success'
     tipText.value = response.detail || '验证码已发送，请检查邮箱。'
+    startCodeCountdown('register')
     uni.showToast({ title: '验证码已发送', icon: 'success' })
   } catch (error) {
     const message = normalizeUiError(error, '发送验证码失败')
@@ -585,6 +638,8 @@ async function handleSendRegisterCode() {
 }
 
 async function handleSendResetCode() {
+  if (sendingCode.reset || codeCountdown.reset > 0) return
+
   if (!resetForm.email) {
     uni.showToast({ title: '请先填写邮箱', icon: 'none' })
     return
@@ -598,6 +653,7 @@ async function handleSendResetCode() {
     const response = await sendResetCode({ email: resetForm.email })
     tipType.value = 'success'
     tipText.value = response.detail || '验证码已发送，请检查邮箱。'
+    startCodeCountdown('reset')
     uni.showToast({ title: '验证码已发送', icon: 'success' })
   } catch (error) {
     const message = normalizeUiError(error, '发送验证码失败')

@@ -115,8 +115,8 @@
             <text>开始复习</text>
             <text class="sticky-btn-sub">{{ cultureReviewButtonText }}</text>
           </button>
-          <button class="sticky-btn" :disabled="loading" @tap="startQuiz">
-            {{ loading ? '加载中...' : startButtonText }}
+          <button class="sticky-btn start-sticky-btn" :disabled="loading" @tap="startQuiz">
+            <text class="start-sticky-label">{{ loading ? '加载中...' : startButtonText }}</text>
           </button>
         </view>
       </view>
@@ -221,9 +221,10 @@
               class="favorite-btn"
               :class="{ active: currentFavorited }"
               :disabled="favoriteLoading || !canFavoriteCurrent"
+              :aria-label="currentFavorited ? '取消收藏' : '收藏题目'"
               @tap.stop="toggleCurrentFavorite"
             >
-              {{ currentFavorited ? '★' : '☆' }}
+              <FavoriteIcon />
             </button>
           </view>
           <QuestionStem class="question-title" :question="normalizedCurrentQuestion" />
@@ -340,7 +341,6 @@
       <view class="answer-sheet" @tap.stop>
         <view class="sheet-handle"></view>
         <view class="sheet-title">答题卡</view>
-        <view class="sheet-subtitle">蓝色为已作答，白色为当前题，灰色为未作答。</view>
 
         <view
           v-for="section in answerSheetSections"
@@ -385,6 +385,7 @@ import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
+import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import OptionCard from '../../components/OptionCard.vue'
 import QuestionStem from '../../components/QuestionStem.vue'
@@ -2752,6 +2753,7 @@ function scrollToResultSection() {
 
 .sticky-bar {
   position: fixed;
+  z-index: 30;
   left: 28rpx;
   right: 28rpx;
   bottom: calc(env(safe-area-inset-bottom) + 22rpx);
@@ -2761,7 +2763,7 @@ function scrollToResultSection() {
   gap: 16rpx;
   padding: 22rpx 24rpx;
   border-radius: 36rpx;
-  background: rgba(255, 255, 255, 0.96);
+  background: #ffffff;
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 18rpx 44rpx rgba(20, 31, 66, 0.12);
   backdrop-filter: blur(16rpx);
@@ -2815,6 +2817,17 @@ function scrollToResultSection() {
   padding: 0 20rpx;
 }
 
+.start-sticky-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1.2;
+}
+
+.start-sticky-label {
+  transform: translateY(2rpx);
+}
+
 .review-sticky-btn {
   background: #ffffff;
   color: var(--gyt-primary);
@@ -2840,7 +2853,7 @@ function scrollToResultSection() {
 
 .review-sticky-btn[disabled] {
   background: #f2f4f7;
-  color: #98a2b3;
+  color: #a7afb9;
   border-color: #e6ebf5;
   box-shadow: none;
 }
@@ -2918,8 +2931,8 @@ function scrollToResultSection() {
 }
 
 .favorite-btn.active {
-  background: #fff7e8;
-  color: #f59e0b;
+  background: #fff8d9;
+  color: #f5b700;
 }
 
 .favorite-btn[disabled] {
@@ -3310,13 +3323,6 @@ function scrollToResultSection() {
   color: #172033;
   font-size: 32rpx;
   font-weight: 900;
-}
-
-.sheet-subtitle {
-  margin-top: 8rpx;
-  text-align: center;
-  color: #8a95a8;
-  font-size: 22rpx;
 }
 
 .sheet-section {

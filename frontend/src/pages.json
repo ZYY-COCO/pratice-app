@@ -3,7 +3,7 @@
     {
       "path": "pages/login/index",
       "style": {
-        "navigationBarTitleText": "登录注册"
+        "navigationStyle": "custom"
       }
     },
     {

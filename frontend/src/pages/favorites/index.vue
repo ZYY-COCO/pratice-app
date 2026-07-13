@@ -37,7 +37,7 @@
     </scroll-view>
 
     <view class="summary-card">
-      <view class="summary-icon">★</view>
+      <view class="summary-icon"><FavoriteIcon /></view>
       <view>
         <view class="summary-number">{{ favoriteCards.length }}</view>
         <view class="summary-label">总收藏</view>
@@ -79,7 +79,14 @@
             <view v-if="selectedItem.sourceLabel" class="detail-source-tag">{{ selectedItem.sourceLabel }}</view>
           </view>
           <view class="detail-actions">
-            <button class="star-btn active" :disabled="toggling" @tap="toggleSelectedFavorite">★</button>
+            <button
+              class="star-btn active"
+              :disabled="toggling"
+              aria-label="取消收藏"
+              @tap="toggleSelectedFavorite"
+            >
+              <FavoriteIcon />
+            </button>
             <button class="close-btn" aria-label="关闭" @tap="closeDetail"><CloseIcon /></button>
           </view>
         </view>
@@ -114,6 +121,7 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
 import CloseIcon from '../../components/CloseIcon.vue'
+import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
@@ -371,8 +379,8 @@ function goBack() {
   width: 68rpx;
   height: 68rpx;
   border-radius: 22rpx;
-  background: #fff7e8;
-  color: #f59e0b;
+  background: #fff8d9;
+  color: #f5b700;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -572,8 +580,8 @@ function goBack() {
 }
 
 .star-btn.active {
-  background: #fff7e8;
-  color: #f59e0b;
+  background: #fff8d9;
+  color: #f5b700;
 }
 
 .star-btn[disabled] {
