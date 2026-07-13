@@ -1157,7 +1157,7 @@ function openSupportPage() {
 }
 
 .brand {
-  margin: 28rpx 0 32rpx;
+  margin: -12rpx 0 32rpx;
   display: flex;
   justify-content: center;
 }
@@ -1518,7 +1518,7 @@ function openSupportPage() {
   }
 
   .brand {
-    margin-top: 16rpx;
+    margin-top: -24rpx;
     margin-bottom: 28rpx;
   }
 
