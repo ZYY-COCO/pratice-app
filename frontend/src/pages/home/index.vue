@@ -16,7 +16,7 @@
           </view>
           <view class="home-actions">
             <button v-if="isAuthed" class="message-bell" :class="{ unread: officialUnreadCount > 0 }" @tap="openOfficialMessages">
-              <text>🔔</text>
+              <view class="message-bell-icon" aria-hidden="true"></view>
               <view v-if="officialUnreadCount > 0" class="message-dot"></view>
             </button>
             <view class="profile-entry" @tap="activeTab = 'profile'">
@@ -703,7 +703,6 @@
         <button class="official-modal-close" aria-label="关闭" @tap="closeOfficialMessages"><CloseIcon /></button>
         <view class="official-modal-head">
           <view class="official-modal-title">官方消息</view>
-          <view class="official-modal-subtitle">港研通公告、更新与运营通知</view>
         </view>
         <scroll-view scroll-y class="official-modal-scroll">
           <view v-if="officialMessages.length === 0" class="official-empty">暂无官方消息</view>
@@ -2399,8 +2398,17 @@ function formatDateTime(value) {
 }
 
 .message-bell.unread {
-  background: var(--gyt-primary-soft, #edf4ff);
-  color: var(--gyt-primary, #1677ff);
+  color: #f5b700;
+}
+
+.message-bell-icon {
+  display: block;
+  width: 34rpx;
+  height: 34rpx;
+  flex-shrink: 0;
+  background-color: currentColor;
+  -webkit-mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
 }
 
 .message-dot {
@@ -4105,18 +4113,25 @@ function formatDateTime(value) {
   top: 28rpx;
   width: 64rpx;
   height: 64rpx;
+  padding: 0;
   border: 0;
-  border-radius: 999rpx;
-  background: #f3f6fb;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: #667085;
   font-size: 40rpx;
   line-height: 60rpx;
   font-weight: 900;
 }
 
+.official-modal-close::after {
+  border: 0;
+}
+
 .official-modal-head {
-  padding: 26rpx 32rpx 22rpx;
+  padding: 26rpx 108rpx 22rpx;
   border-bottom: 2rpx solid #eef2f8;
+  text-align: center;
 }
 
 .official-modal-title {
@@ -4124,14 +4139,6 @@ function formatDateTime(value) {
   font-size: 36rpx;
   font-weight: 950;
   line-height: 1.3;
-}
-
-.official-modal-subtitle {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 1.4;
-  font-weight: 700;
 }
 
 .official-modal-scroll {
@@ -4419,13 +4426,19 @@ function formatDateTime(value) {
   height: 54rpx;
   margin: 0 0 0 auto;
   flex: 0 0 54rpx;
+  padding: 0;
   border: 0;
-  border-radius: 18rpx;
-  background: #f3f6fb;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: #667085;
   font-size: 32rpx;
   line-height: 50rpx;
   font-weight: 900;
+}
+
+.wrong-modal-close::after {
+  border: 0;
 }
 
 .wrong-modal-scroll {

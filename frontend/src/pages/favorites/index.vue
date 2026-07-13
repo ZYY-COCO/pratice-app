@@ -124,6 +124,7 @@ import CloseIcon from '../../components/CloseIcon.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { confirmFavoriteRemoval } from '../../utils/favorites'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
@@ -215,11 +216,15 @@ function closeDetail() {
 
 async function toggleSelectedFavorite() {
   if (!selectedItem.value?.question_id || toggling.value) return
+  const questionId = selectedItem.value.question_id
   toggling.value = true
   try {
-    const result = await toggleFavorite(selectedItem.value.question_id)
+    const confirmed = await confirmFavoriteRemoval()
+    if (!confirmed) return
+
+    const result = await toggleFavorite(questionId)
     if (!result.is_favorited) {
-      favoriteRows.value = favoriteRows.value.filter((row) => row.question_id !== selectedItem.value.question_id)
+      favoriteRows.value = favoriteRows.value.filter((row) => row.question_id !== questionId)
       selectedItem.value = null
       uni.showToast({ title: '已取消收藏', icon: 'none' })
     }
@@ -572,7 +577,9 @@ function goBack() {
   margin: 0;
   padding: 0;
   border: 0;
-  background: #f3f6fb;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
   color: #667085;
   font-size: 34rpx;
   font-weight: 900;
@@ -580,8 +587,13 @@ function goBack() {
 }
 
 .star-btn.active {
-  background: #fff8d9;
+  background: transparent;
   color: #f5b700;
+}
+
+.close-btn::after,
+.star-btn::after {
+  border: 0;
 }
 
 .star-btn[disabled] {

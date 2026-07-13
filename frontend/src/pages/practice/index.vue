@@ -392,6 +392,7 @@ import QuestionStem from '../../components/QuestionStem.vue'
 import SourceTag from '../../components/SourceTag.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
+import { confirmFavoriteRemoval } from '../../utils/favorites'
 import { getSubjectTree } from '../../utils/knowledgeTree'
 import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality'
 
@@ -2262,6 +2263,11 @@ async function toggleCurrentFavorite() {
   const questionId = questionMeta.value.questionId
   favoriteLoading.value = true
   try {
+    if (currentFavorited.value) {
+      const confirmed = await confirmFavoriteRemoval()
+      if (!confirmed) return
+    }
+
     const result = await toggleFavorite(questionId)
     currentFavorited.value = Boolean(result.is_favorited)
     uni.showToast({ title: result.is_favorited ? '已收藏' : '已取消收藏', icon: 'none' })
