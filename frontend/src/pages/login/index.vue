@@ -27,24 +27,7 @@
           {{ mode === 'register' ? '创建账号' : '找回密码' }}
         </view>
 
-        <!-- #ifdef MP-WEIXIN -->
-        <view v-if="mode === 'login' && !showMpEmailLogin" class="mp-wechat-login">
-          <view class="mp-wechat-mark">微</view>
-          <view class="mp-wechat-title">微信快捷登录</view>
-          <view class="mp-wechat-subtitle">无需填写账号密码，登录后自动同步错题、收藏和学习记录。</view>
-          <button class="wechat-button primary" :disabled="submitting" @tap="handleWechatLogin">
-            <text class="wechat-icon">微</text>
-            <text>{{ submitting ? '正在登录...' : '使用微信登录' }}</text>
-          </button>
-          <view class="mp-privacy-note">
-            登录即表示你已阅读并同意
-            <text class="mp-privacy-link" @tap.stop="openWechatPrivacyContract">《用户隐私保护指引》</text>
-          </view>
-          <button class="mp-email-entry" @tap="showMpEmailLogin = true">已有邮箱账号？使用邮箱密码登录</button>
-        </view>
-        <!-- #endif -->
-
-        <template v-if="mode === 'login' && showEmailLoginForm">
+        <template v-if="mode === 'login'">
           <view class="field">
             <input
               v-model.trim="loginForm.email"
@@ -215,20 +198,27 @@
           </view>
         </template>
 
-        <button v-if="mode !== 'login' || showEmailLoginForm" class="primary-button submit-btn" :disabled="submitting" @tap="submit">
+        <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
           {{ submitButtonText }}
         </button>
+
+        <!-- #ifdef MP-WEIXIN -->
+        <view v-if="mode === 'login'" class="mp-wechat-inline">
+          <button class="wechat-button primary" :disabled="submitting" @tap="handleWechatLogin">
+            <text class="wechat-icon">微</text>
+            <text>{{ submitting ? '正在登录...' : '使用微信登录' }}</text>
+          </button>
+          <view class="mp-privacy-note">
+            登录即表示你已阅读并同意
+            <text class="mp-privacy-link" @tap.stop="openWechatPrivacyContract">《用户隐私保护指引》</text>
+          </view>
+        </view>
+        <!-- #endif -->
 
         <!-- #ifndef MP-WEIXIN -->
         <button v-if="mode === 'login'" class="wechat-button disabled" @tap="handleWechatLogin">
           <text class="wechat-icon">微</text>
           <text>微信登录 · 即将开放</text>
-        </button>
-        <!-- #endif -->
-
-        <!-- #ifdef MP-WEIXIN -->
-        <button v-if="mode === 'login' && showMpEmailLogin" class="mp-wechat-return" @tap="showMpEmailLogin = false">
-          返回微信快捷登录
         </button>
         <!-- #endif -->
 
@@ -346,14 +336,10 @@ const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
 const PHONE_AUTH_ENABLED = false
 let WECHAT_AUTH_ENABLED = false
-let IS_MP_WEIXIN_LOGIN = false
 // #ifdef MP-WEIXIN
 WECHAT_AUTH_ENABLED = true
-IS_MP_WEIXIN_LOGIN = true
 // #endif
 const authMethod = ref('email')
-const showMpEmailLogin = ref(false)
-const showEmailLoginForm = computed(() => !IS_MP_WEIXIN_LOGIN || showMpEmailLogin.value)
 const submitting = ref(false)
 const helpVisible = ref(false)
 const redirect = ref('/pages/home/index')
@@ -550,9 +536,6 @@ onUnload(() => {
 
 function switchMode(nextMode) {
   mode.value = nextMode
-  if (nextMode === 'login') {
-    showMpEmailLogin.value = false
-  }
   tipText.value = ''
 }
 
@@ -1619,46 +1602,15 @@ function openWechatPrivacyContract() {
   padding: 48rpx 34rpx 40rpx;
 }
 
-.mp-wechat-login {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
+.mp-wechat-inline {
+  width: 100%;
   text-align: center;
-}
-
-.mp-wechat-mark {
-  width: 112rpx;
-  height: 112rpx;
-  border-radius: 36rpx;
-  background: linear-gradient(145deg, #20c56a, #07a84f);
-  color: #ffffff;
-  box-shadow: 0 18rpx 34rpx rgba(7, 168, 79, 0.22);
-  font-size: 48rpx;
-  line-height: 112rpx;
-  font-weight: 900;
-}
-
-.mp-wechat-title {
-  margin-top: 28rpx;
-  color: #172033;
-  font-size: 38rpx;
-  line-height: 1.25;
-  font-weight: 900;
-}
-
-.mp-wechat-subtitle {
-  max-width: 520rpx;
-  margin-top: 14rpx;
-  color: #7f8ba3;
-  font-size: 24rpx;
-  line-height: 1.6;
-  font-weight: 600;
 }
 
 .wechat-button.primary {
   width: 100%;
   min-height: 96rpx;
-  margin-top: 34rpx;
+  margin-top: 16rpx;
   border-radius: 22rpx;
   background: linear-gradient(135deg, #16b85c, #07a84f);
   color: #ffffff;
@@ -1677,7 +1629,7 @@ function openWechatPrivacyContract() {
 }
 
 .mp-privacy-note {
-  margin-top: 20rpx;
+  margin-top: 12rpx;
   color: #98a2b3;
   font-size: 21rpx;
   line-height: 1.55;
@@ -1688,26 +1640,8 @@ function openWechatPrivacyContract() {
   font-weight: 800;
 }
 
-.mp-email-entry,
-.mp-wechat-return {
-  min-height: 68rpx;
-  margin: 18rpx 0 0;
-  padding: 0 20rpx;
-  border: 0;
-  background: transparent;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 68rpx;
-  font-weight: 700;
-}
-
-.mp-wechat-return {
-  width: 100%;
-  color: #07a84f;
-}
-
 .shortcut-divider {
-  margin-top: 34rpx;
+  margin-top: 28rpx;
 }
 /* #endif */
 

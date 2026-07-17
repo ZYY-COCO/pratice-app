@@ -74,6 +74,16 @@ class ChangeEmailRequest(BaseModel):
     verification_code: str = Field(min_length=4, max_length=8)
 
 
+class WechatEmailBindingRequest(BaseModel):
+    email: EmailStr
+    verification_code: str = Field(min_length=4, max_length=8)
+    profile_source: str | None = Field(default=None, pattern="^(wechat|email)$")
+
+
+class WechatEmailUnbindRequest(BaseModel):
+    verification_code: str = Field(min_length=4, max_length=8)
+
+
 class MessageResponse(BaseModel):
     detail: str
 
@@ -101,3 +111,17 @@ class AuthResponse(BaseModel):
     access_token: str
     refresh_token: str | None = None
     user: AuthUser
+
+
+class AccountMergePreview(BaseModel):
+    nickname: str | None = None
+    email_masked: str | None = None
+    exam_target: str | None = None
+
+
+class EmailBindingResult(BaseModel):
+    status: str = Field(pattern="^(bound|merge_required)$")
+    detail: str
+    auth: AuthResponse | None = None
+    wechat_account: AccountMergePreview | None = None
+    email_account: AccountMergePreview | None = None

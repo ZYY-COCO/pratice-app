@@ -71,7 +71,14 @@ def store_verification_code(supabase: Client, email: str, purpose: str, code: st
     ).execute()
 
 
-def verify_code_or_raise(supabase: Client, email: str, purpose: str, code: str) -> None:
+def verify_code_or_raise(
+    supabase: Client,
+    email: str,
+    purpose: str,
+    code: str,
+    *,
+    consume: bool = True,
+) -> None:
     normalized_email = normalize_email(email)
     response = (
         supabase.table("auth_email_codes")
@@ -97,9 +104,16 @@ def verify_code_or_raise(supabase: Client, email: str, purpose: str, code: str) 
     if expected_hash != row["code_hash"]:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid verification code")
 
-    (
-        supabase.table("auth_email_codes")
-        .update({"consumed_at": datetime.now(timezone.utc).isoformat()})
-        .eq("id", row["id"])
-        .execute()
-    )
+    if consume:
+        consume_response = (
+            supabase.table("auth_email_codes")
+            .update({"consumed_at": datetime.now(timezone.utc).isoformat()})
+            .eq("id", row["id"])
+            .is_("consumed_at", "null")
+            .execute()
+        )
+        if not consume_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Verification code already used",
+            )

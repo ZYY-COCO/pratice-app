@@ -66,8 +66,13 @@
       </button>
     </SectionCard>
 
-    <SectionCard title="绑定 / 更改 QQ 邮箱" subtitle="手机号账号也可以额外绑定邮箱，验证码验证后生效。">
+    <SectionCard title="绑定 / 更改 QQ 邮箱" :subtitle="emailSectionSubtitle">
       <view class="current-email">当前邮箱：{{ currentEmailText }}</view>
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="isWechatBindingFlow" class="binding-rule">
+        未注册邮箱可直接绑定；已注册邮箱需要确认合并，并选择保留微信或邮箱账号资料。
+      </view>
+      <!-- #endif -->
       <view class="field">
         <view class="label">新 QQ 邮箱</view>
         <input v-model.trim="emailForm.email" class="input" type="text" placeholder="例如：123456@qq.com" />
@@ -82,8 +87,32 @@
         </view>
       </view>
       <button class="ghost-button bind-btn" :disabled="bindingEmail" @tap="bindEmail">
-        {{ bindingEmail ? '换绑中...' : '确认换绑' }}
+        {{ bindingEmail ? (isWechatBindingFlow ? '处理中...' : '换绑中...') : isWechatBindingFlow ? '确认绑定 / 检查合并' : '确认换绑' }}
       </button>
+
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="canUnbindWechat" class="unbind-panel">
+        <view class="unbind-title">解除微信绑定</view>
+        <view class="unbind-copy">
+          解绑后将不能再用当前微信进入此邮箱账号，请先确认可以通过邮箱找回密码。
+        </view>
+        <view class="code-row">
+          <input
+            v-model.trim="unbindForm.code"
+            class="input code-input"
+            type="text"
+            maxlength="8"
+            placeholder="当前邮箱验证码"
+          />
+          <button class="code-btn" :disabled="sendingUnbindCode" @tap="sendWechatUnbindCode">
+            {{ sendingUnbindCode ? '发送中...' : '发送解绑码' }}
+          </button>
+        </view>
+        <button class="unbind-button" :disabled="unbindingWechat" @tap="confirmWechatUnbind">
+          {{ unbindingWechat ? '解绑中...' : '解除当前微信绑定' }}
+        </button>
+      </view>
+      <!-- #endif -->
     </SectionCard>
 
     <SectionCard title="账号安全" subtitle="删除账号后将无法恢复当前学习数据。">
@@ -106,8 +135,18 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
-import { changeEmailWithCode, deleteAccount, sendChangeEmailCode, updateProfile, uploadAvatar } from '../../api/auth'
-import { clearAuthSession, getAuthUser, updateAuthUser } from '../../utils/auth'
+import {
+  bindWechatEmail,
+  changeEmailWithCode,
+  deleteAccount,
+  sendBindEmailCode,
+  sendChangeEmailCode,
+  sendUnbindWechatCode,
+  unbindWechat,
+  updateProfile,
+  uploadAvatar
+} from '../../api/auth'
+import { clearAuthSession, getAuthUser, saveAuthSession, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
@@ -120,9 +159,15 @@ const genderOptions = [
 ]
 
 const user = ref(getAuthUser() || {})
+let IS_MP_WEIXIN = false
+// #ifdef MP-WEIXIN
+IS_MP_WEIXIN = true
+// #endif
 const savingProfile = ref(false)
 const sendingCode = ref(false)
 const bindingEmail = ref(false)
+const sendingUnbindCode = ref(false)
+const unbindingWechat = ref(false)
 const deletingAccount = ref(false)
 const uploadingAvatar = ref(false)
 const form = reactive({
@@ -134,10 +179,21 @@ const emailForm = reactive({
   email: '',
   code: ''
 })
+const unbindForm = reactive({
+  code: ''
+})
 
 const profileName = computed(() => form.nickname || getUserDisplayName(user.value, '用户'))
 const profileContact = computed(() => getUserContactLabel(user.value, '未绑定账号'))
-const currentEmailText = computed(() => getPublicEmail(user.value) || '未绑定')
+const currentPublicEmail = computed(() => getPublicEmail(user.value) || '')
+const currentEmailText = computed(() => currentPublicEmail.value || '未绑定')
+const isWechatBindingFlow = computed(() => Boolean(IS_MP_WEIXIN && user.value?.wechat_openid))
+const canUnbindWechat = computed(() => Boolean(isWechatBindingFlow.value && currentPublicEmail.value))
+const emailSectionSubtitle = computed(() => (
+  isWechatBindingFlow.value
+    ? '微信用户验证邮箱后可直接绑定，或安全合并已有邮箱账号。'
+    : '手机号账号也可以额外绑定邮箱，验证码验证后生效。'
+))
 const avatarText = computed(() => (form.avatar_url || profileName.value || '用').slice(0, 1))
 const initialProfile = ref({
   nickname: '',
@@ -297,10 +353,14 @@ async function sendEmailCode() {
 
   sendingCode.value = true
   try {
-    await sendChangeEmailCode({ email: emailForm.email })
+    if (isWechatBindingFlow.value) {
+      await sendBindEmailCode({ email: emailForm.email })
+    } else {
+      await sendChangeEmailCode({ email: emailForm.email })
+    }
     uni.showToast({ title: '验证码已发送', icon: 'none' })
   } catch (error) {
-    uni.showToast({ title: error?.detail || '验证码发送失败', icon: 'none' })
+    showEmailBindingError(error, '验证码发送失败')
   } finally {
     sendingCode.value = false
   }
@@ -314,19 +374,160 @@ async function bindEmail() {
 
   bindingEmail.value = true
   try {
-    const nextUser = await changeEmailWithCode({
-      email: emailForm.email,
-      verification_code: emailForm.code
-    })
-    updateAuthUser(nextUser)
-    user.value = getAuthUser() || nextUser
+    if (isWechatBindingFlow.value) {
+      let result = await bindWechatEmail({
+        email: emailForm.email,
+        verification_code: emailForm.code
+      })
+
+      if (result?.status === 'merge_required') {
+        const profileSource = await chooseMergeProfileSource(result)
+        if (!profileSource) {
+          uni.showToast({ title: '已取消账号合并', icon: 'none' })
+          return
+        }
+        result = await bindWechatEmail({
+          email: emailForm.email,
+          verification_code: emailForm.code,
+          profile_source: profileSource
+        })
+      }
+
+      applyAuthResult(result?.auth)
+      uni.showToast({ title: result?.detail || '邮箱绑定成功', icon: 'success' })
+    } else {
+      const nextUser = await changeEmailWithCode({
+        email: emailForm.email,
+        verification_code: emailForm.code
+      })
+      updateAuthUser(nextUser)
+      user.value = getAuthUser() || nextUser
+      uni.showToast({ title: '绑定邮箱已更新', icon: 'none' })
+    }
+
     emailForm.email = ''
     emailForm.code = ''
-    uni.showToast({ title: '绑定邮箱已更新', icon: 'none' })
   } catch (error) {
-    uni.showToast({ title: error?.detail || '换绑失败，请检查验证码', icon: 'none' })
+    showEmailBindingError(error, '绑定失败，请检查验证码')
   } finally {
     bindingEmail.value = false
+  }
+}
+
+function applyAuthResult(auth) {
+  if (!auth?.access_token || !auth?.user) {
+    throw { detail: '账号会话更新失败，请重新登录' }
+  }
+  saveAuthSession({
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token,
+    user: auth.user
+  })
+  user.value = auth.user
+  form.nickname = auth.user.nickname || ''
+  form.avatar_url = auth.user.avatar_url || ''
+  form.gender = auth.user.gender || ''
+  initialProfile.value = {
+    nickname: form.nickname,
+    avatar_url: form.avatar_url,
+    gender: form.gender
+  }
+}
+
+function chooseMergeProfileSource(result) {
+  const emailNickname = result?.email_account?.nickname || '邮箱账号'
+  const wechatNickname = result?.wechat_account?.nickname || '微信账号'
+  const maskedEmail = result?.email_account?.email_masked || emailForm.email
+
+  return new Promise((resolve) => {
+    uni.showModal({
+      title: '发现已注册邮箱账号',
+      content: `${maskedEmail} 已注册。合并后两边的作答、错题、收藏和统计都会保留，是否继续？`,
+      confirmText: '继续合并',
+      cancelText: '暂不合并',
+      success(modalResult) {
+        if (!modalResult.confirm) {
+          resolve(null)
+          return
+        }
+        uni.showActionSheet({
+          title: '选择合并后使用的账号资料',
+          itemList: [
+            `保留微信资料（${wechatNickname}）`,
+            `保留邮箱资料（${emailNickname}）`
+          ],
+          success(actionResult) {
+            resolve(actionResult.tapIndex === 0 ? 'wechat' : 'email')
+          },
+          fail() {
+            resolve(null)
+          }
+        })
+      },
+      fail() {
+        resolve(null)
+      }
+    })
+  })
+}
+
+function showEmailBindingError(error, fallback) {
+  const message = error?.detail || fallback
+  if (message.includes('已绑定其他微信账号')) {
+    uni.showModal({
+      title: '该邮箱已被绑定',
+      content: '该邮箱已经绑定其他微信账号，请先登录原账号，在个人资料中解除微信绑定。',
+      showCancel: false,
+      confirmText: '我知道了'
+    })
+    return
+  }
+  uni.showToast({ title: message, icon: 'none' })
+}
+
+async function sendWechatUnbindCode() {
+  sendingUnbindCode.value = true
+  try {
+    await sendUnbindWechatCode()
+    uni.showToast({ title: '解绑验证码已发送', icon: 'none' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '解绑验证码发送失败', icon: 'none' })
+  } finally {
+    sendingUnbindCode.value = false
+  }
+}
+
+function confirmWechatUnbind() {
+  if (!unbindForm.code) {
+    uni.showToast({ title: '请填写当前邮箱收到的验证码', icon: 'none' })
+    return
+  }
+
+  uni.showModal({
+    title: '确认解除微信绑定？',
+    content: '解绑后不能再使用当前微信进入此邮箱账号。请确认你可以通过邮箱登录或找回密码。',
+    confirmText: '确认解绑',
+    cancelText: '取消',
+    success(result) {
+      if (result.confirm) {
+        unbindCurrentWechat()
+      }
+    }
+  })
+}
+
+async function unbindCurrentWechat() {
+  unbindingWechat.value = true
+  try {
+    const nextUser = await unbindWechat({ verification_code: unbindForm.code })
+    updateAuthUser(nextUser)
+    user.value = getAuthUser() || nextUser
+    unbindForm.code = ''
+    uni.showToast({ title: '微信绑定已解除', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '解除微信绑定失败', icon: 'none' })
+  } finally {
+    unbindingWechat.value = false
   }
 }
 
@@ -430,6 +631,17 @@ async function deleteCurrentAccount() {
   font-weight: 650;
 }
 
+.binding-rule {
+  margin-top: 16rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 20rpx;
+  background: var(--gyt-primary-tint);
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.55;
+  font-weight: 650;
+}
+
 .field {
   margin-top: 22rpx;
 }
@@ -518,6 +730,43 @@ async function deleteCurrentAccount() {
   margin-top: 18rpx;
 }
 
+.unbind-panel {
+  margin-top: 28rpx;
+  padding-top: 26rpx;
+  border-top: 2rpx solid #edf1f7;
+}
+
+.unbind-title {
+  color: #344054;
+  font-size: 25rpx;
+  line-height: 1.4;
+  font-weight: 900;
+}
+
+.unbind-copy {
+  margin-top: 8rpx;
+  color: #7f8ba3;
+  font-size: 22rpx;
+  line-height: 1.55;
+  font-weight: 650;
+}
+
+.unbind-button {
+  width: 100%;
+  min-height: 82rpx;
+  margin-top: 16rpx;
+  border: 2rpx solid #fecaca;
+  border-radius: 24rpx;
+  background: #fff7f7;
+  color: #b42318;
+  font-size: 25rpx;
+  line-height: 82rpx;
+  font-weight: 900;
+}
+
+.unbind-button[disabled] {
+  opacity: 0.6;
+}
 .save-btn:disabled {
   background: #d9e2f1;
   color: #8a95a8;

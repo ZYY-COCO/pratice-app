@@ -8,9 +8,11 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from app.db import get_supabase_admin, get_supabase_anon
 from app.dependencies import get_current_user_id
 from app.schemas.auth import (
+    AccountMergePreview,
     AuthResponse,
     AuthUser,
     ChangeEmailRequest,
+    EmailBindingResult,
     LoginRequest,
     MessageResponse,
     PhoneCodeResponse,
@@ -23,6 +25,8 @@ from app.schemas.auth import (
     SendEmailCodeRequest,
     SendPhoneCodeRequest,
     WechatAuthUrlResponse,
+    WechatEmailBindingRequest,
+    WechatEmailUnbindRequest,
     WechatLoginRequest,
 )
 from app.services.auth_codes import (
@@ -165,6 +169,18 @@ def _get_profile_by_wechat_openid(openid: str) -> dict | None:
     return response.data[0] if response.data else None
 
 
+def _get_profile_by_id(user_id: str) -> dict | None:
+    supabase_admin = get_supabase_admin()
+    response = (
+        supabase_admin.table("users")
+        .select("*")
+        .eq("id", user_id)
+        .limit(1)
+        .execute()
+    )
+    return response.data[0] if response.data else None
+
+
 def _merge_profile_data(profile: dict, db_profile: dict) -> dict:
     merged = {
         **profile,
@@ -237,6 +253,213 @@ def _auth_response_from_profile(profile: dict, password: str) -> AuthResponse:
         access_token=session.access_token,
         refresh_token=session.refresh_token,
         user=AuthUser(**profile),
+    )
+
+
+def _magic_link_session(email: str):
+    supabase_admin = get_supabase_admin()
+    supabase_auth = get_supabase_anon()
+    try:
+        link_response = supabase_admin.auth.admin.generate_link(
+            {"type": "magiclink", "email": normalize_email(email)}
+        )
+        token_hash = link_response.properties.hashed_token
+        auth_response = supabase_auth.auth.verify_otp(
+            {"token_hash": token_hash, "type": "magiclink"}
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Create internal auth session failed for email=%s: %s", email, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to create login session",
+        ) from exc
+
+    if not auth_response.session:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="Unable to create login session",
+        )
+    return auth_response.session
+
+
+def _auth_response_from_magic_link(profile: dict) -> AuthResponse:
+    session = _magic_link_session(profile["email"])
+    return AuthResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token,
+        user=AuthUser(**profile),
+    )
+
+
+def _normalize_qq_email(email: str) -> str:
+    normalized = normalize_email(email)
+    domain = normalized.rsplit("@", maxsplit=1)[-1]
+    if domain not in {"qq.com", "vip.qq.com", "foxmail.com"}:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="目前仅支持绑定 QQ 邮箱",
+        )
+    return normalized
+
+
+def _is_wechat_placeholder_email(email: str | None) -> bool:
+    return normalize_email(email or "").endswith("@wechat.gangyantong.local")
+
+
+def _mask_email(email: str | None) -> str | None:
+    normalized = normalize_email(email or "")
+    if "@" not in normalized:
+        return None
+    local, domain = normalized.split("@", maxsplit=1)
+    if len(local) <= 2:
+        masked_local = f"{local[:1]}*"
+    else:
+        masked_local = f"{local[:2]}{'*' * min(4, len(local) - 2)}"
+    return f"{masked_local}@{domain}"
+
+
+def _account_merge_preview(profile: dict) -> AccountMergePreview:
+    return AccountMergePreview(
+        nickname=profile.get("nickname"),
+        email_masked=_mask_email(profile.get("email")),
+        exam_target=profile.get("exam_target"),
+    )
+
+
+def _require_wechat_profile(user_id: str) -> dict:
+    profile = _get_profile_by_id(user_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前账号已停用")
+    if not profile.get("wechat_openid"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="当前账号没有绑定微信",
+        )
+    return profile
+
+
+def _auth_user_metadata(profile: dict) -> dict:
+    return {
+        "wechat_openid": profile.get("wechat_openid"),
+        "nickname": profile.get("nickname"),
+        "avatar_url": profile.get("avatar_url"),
+        "gender": profile.get("gender"),
+        "exam_target": profile.get("exam_target"),
+        "auth_provider": profile.get("auth_provider") or "email",
+    }
+
+
+def _bind_unused_email(profile: dict, normalized_email: str) -> AuthResponse:
+    supabase_admin = get_supabase_admin()
+    old_email = normalize_email(profile.get("email") or "")
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            profile["id"],
+            {
+                "email": normalized_email,
+                "email_confirm": True,
+                "user_metadata": _auth_user_metadata(profile),
+            },
+        )
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Bind email auth update failed for user_id=%s: %s", profile["id"], error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该邮箱已被注册，请重新检查账号状态",
+        ) from exc
+
+    try:
+        update_response = (
+            supabase_admin.table("users")
+            .update({"email": normalized_email})
+            .eq("id", profile["id"])
+            .execute()
+        )
+        if not update_response.data:
+            raise RuntimeError("User profile email update returned no rows")
+    except Exception as exc:
+        if old_email:
+            try:
+                supabase_admin.auth.admin.update_user_by_id(
+                    profile["id"],
+                    {"email": old_email, "email_confirm": True},
+                )
+            except Exception:
+                logger.exception("Rollback auth email failed for user_id=%s", profile["id"])
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Bind email profile update failed for user_id=%s: %s", profile["id"], error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="绑定邮箱失败，请稍后重试",
+        ) from exc
+
+    updated_profile = _get_profile_by_id(profile["id"])
+    if not updated_profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    return _auth_response_from_magic_link(updated_profile)
+
+
+def _merge_wechat_email_accounts(
+    source_profile: dict,
+    target_profile: dict,
+    profile_source: str,
+) -> AuthResponse:
+    supabase_admin = get_supabase_admin()
+    target_session = _magic_link_session(target_profile["email"])
+
+    try:
+        supabase_admin.rpc(
+            "merge_wechat_email_accounts",
+            {
+                "p_source_user_id": source_profile["id"],
+                "p_target_user_id": target_profile["id"],
+                "p_profile_source": profile_source,
+            },
+        ).execute()
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception(
+            "Merge WeChat account failed source=%s target=%s: %s",
+            source_profile["id"],
+            target_profile["id"],
+            error_summary,
+        )
+        if "merge_wechat_email_accounts" in error_summary or "PGRST202" in error_summary:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="账号合并功能尚未完成数据库初始化",
+            ) from exc
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="账号合并失败，两个账号均未删除，请稍后重试",
+        ) from exc
+
+    merged_profile = _get_profile_by_id(target_profile["id"])
+    if not merged_profile:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Merged profile missing")
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            target_profile["id"],
+            {"user_metadata": _auth_user_metadata(merged_profile)},
+        )
+    except Exception:
+        logger.exception("Update merged auth metadata failed for user_id=%s", target_profile["id"])
+
+    try:
+        supabase_admin.auth.admin.delete_user(source_profile["id"])
+    except Exception:
+        logger.exception("Delete merged source auth user failed for user_id=%s", source_profile["id"])
+
+    return AuthResponse(
+        access_token=target_session.access_token,
+        refresh_token=target_session.refresh_token,
+        user=AuthUser(**merged_profile),
     )
 
 
@@ -341,6 +564,186 @@ def send_change_email_code(
         ) from exc
 
     return MessageResponse(detail="Change email code sent")
+
+
+@router.post("/send-bind-email-code", response_model=MessageResponse)
+def send_bind_email_code(
+    payload: SendEmailCodeRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MessageResponse:
+    profile = _require_wechat_profile(user_id)
+    normalized_email = _normalize_qq_email(payload.email)
+    current_email = normalize_email(profile.get("email") or "")
+    if normalized_email == current_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已经绑定当前账号")
+
+    existing_profile = _get_profile_by_email(normalized_email)
+    if (
+        existing_profile
+        and existing_profile.get("id") != user_id
+        and existing_profile.get("wechat_openid")
+    ):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该邮箱已绑定其他微信账号，请先登录原账号解除绑定",
+        )
+
+    try:
+        _send_code(normalized_email, "change_email")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send bind email code failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码发送失败，请稍后重试",
+        ) from exc
+
+    return MessageResponse(detail="验证码已发送")
+
+
+@router.post("/bind-wechat-email", response_model=EmailBindingResult)
+def bind_wechat_email(
+    payload: WechatEmailBindingRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> EmailBindingResult:
+    supabase_admin = get_supabase_admin()
+    source_profile = _require_wechat_profile(user_id)
+    normalized_email = _normalize_qq_email(payload.email)
+    current_email = normalize_email(source_profile.get("email") or "")
+    if normalized_email == current_email:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已经绑定当前账号")
+
+    target_profile = _get_profile_by_email(normalized_email)
+    if not target_profile:
+        verify_code_or_raise(
+            supabase=supabase_admin,
+            email=normalized_email,
+            purpose="change_email",
+            code=payload.verification_code,
+        )
+        auth = _bind_unused_email(source_profile, normalized_email)
+        return EmailBindingResult(
+            status="bound",
+            detail="QQ 邮箱绑定成功",
+            auth=auth,
+        )
+
+    if target_profile.get("id") == user_id:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该邮箱已经绑定当前账号")
+
+    if target_profile.get("disabled_at"):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="该邮箱账号已停用，不能执行账号合并",
+        )
+
+    if target_profile.get("wechat_openid"):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该邮箱已绑定其他微信账号，请先登录原账号解除绑定",
+        )
+
+    if not payload.profile_source:
+        verify_code_or_raise(
+            supabase=supabase_admin,
+            email=normalized_email,
+            purpose="change_email",
+            code=payload.verification_code,
+            consume=False,
+        )
+        return EmailBindingResult(
+            status="merge_required",
+            detail="该邮箱已注册，可以合并两个账号",
+            wechat_account=_account_merge_preview(source_profile),
+            email_account=_account_merge_preview(target_profile),
+        )
+
+    verify_code_or_raise(
+        supabase=supabase_admin,
+        email=normalized_email,
+        purpose="change_email",
+        code=payload.verification_code,
+    )
+    auth = _merge_wechat_email_accounts(
+        source_profile=source_profile,
+        target_profile=target_profile,
+        profile_source=payload.profile_source,
+    )
+    return EmailBindingResult(
+        status="bound",
+        detail="微信账号与邮箱账号已合并",
+        auth=auth,
+    )
+
+
+@router.post("/send-unbind-wechat-code", response_model=MessageResponse)
+def send_unbind_wechat_code(
+    user_id: str = Depends(get_current_user_id),
+) -> MessageResponse:
+    profile = _require_wechat_profile(user_id)
+    current_email = normalize_email(profile.get("email") or "")
+    if not current_email or _is_wechat_placeholder_email(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先绑定 QQ 邮箱，再解除微信绑定",
+        )
+
+    try:
+        _send_code(current_email, "change_email")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send unbind WeChat code failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="验证码发送失败，请稍后重试",
+        ) from exc
+    return MessageResponse(detail="解绑验证码已发送")
+
+
+@router.post("/unbind-wechat", response_model=AuthUser)
+def unbind_wechat(
+    payload: WechatEmailUnbindRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> AuthUser:
+    supabase_admin = get_supabase_admin()
+    profile = _require_wechat_profile(user_id)
+    current_email = normalize_email(profile.get("email") or "")
+    if not current_email or _is_wechat_placeholder_email(current_email):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="请先绑定 QQ 邮箱，再解除微信绑定",
+        )
+
+    verify_code_or_raise(
+        supabase=supabase_admin,
+        email=current_email,
+        purpose="change_email",
+        code=payload.verification_code,
+    )
+
+    update_response = (
+        supabase_admin.table("users")
+        .update({"wechat_openid": None, "auth_provider": "email"})
+        .eq("id", user_id)
+        .execute()
+    )
+    if not update_response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+    updated_profile = update_response.data[0]
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            user_id,
+            {"user_metadata": _auth_user_metadata(updated_profile)},
+        )
+    except Exception:
+        logger.exception("Update auth metadata after WeChat unbind failed for user_id=%s", user_id)
+
+    return AuthUser(**updated_profile)
 
 
 @router.post("/phone-register", response_model=AuthResponse)
@@ -458,8 +861,6 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
             profile_updates["nickname"] = wechat_profile.get("nickname")
         if not profile.get("avatar_url") and wechat_profile.get("avatar_url"):
             profile_updates["avatar_url"] = wechat_profile.get("avatar_url")
-        if profile.get("auth_provider") != "wechat":
-            profile_updates["auth_provider"] = "wechat"
         if profile_updates:
             supabase_admin.table("users").update(profile_updates).eq("id", profile["id"]).execute()
             profile.update(profile_updates)
@@ -468,24 +869,20 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
             supabase_admin.auth.admin.update_user_by_id(
                 profile["id"],
                 {
-                    "password": password,
                     "user_metadata": {
                         "wechat_openid": openid,
                         "nickname": profile.get("nickname") or wechat_profile.get("nickname"),
                         "avatar_url": profile.get("avatar_url") or wechat_profile.get("avatar_url"),
+                        "gender": profile.get("gender"),
                         "exam_target": profile.get("exam_target"),
-                        "auth_provider": "wechat",
+                        "auth_provider": profile.get("auth_provider") or "wechat",
                     },
                 },
             )
         except Exception as exc:
             error_summary = _safe_error_summary(exc)
-            logger.exception("WeChat login password refresh failed for openid=%s: %s", openid, error_summary)
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"WeChat login failed: {error_summary}",
-            ) from exc
-        return _auth_response_from_profile(profile, password)
+            logger.exception("WeChat login metadata refresh failed for openid=%s: %s", openid, error_summary)
+        return _auth_response_from_magic_link(profile)
 
     wechat_email = make_wechat_email(openid)
     nickname = wechat_profile.get("nickname") or "微信用户"
@@ -527,7 +924,7 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
         **_new_user_trial_membership_fields(),
     }
     supabase_admin.table("users").upsert(profile).execute()
-    return _auth_response_from_profile(profile, password)
+    return _auth_response_from_magic_link(profile)
 
 
 @router.post("/register", response_model=AuthResponse)

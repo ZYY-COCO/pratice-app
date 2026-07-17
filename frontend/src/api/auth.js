@@ -92,6 +92,42 @@ export function changeEmailWithCode(payload) {
   })
 }
 
+export function sendBindEmailCode(payload) {
+  return request({
+    url: '/auth/send-bind-email-code',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
+export function bindWechatEmail(payload) {
+  return request({
+    url: '/auth/bind-wechat-email',
+    method: 'POST',
+    timeout: 30000,
+    data: payload
+  })
+}
+
+export function sendUnbindWechatCode() {
+  return request({
+    url: '/auth/send-unbind-wechat-code',
+    method: 'POST',
+    timeout: 25000,
+    data: {}
+  })
+}
+
+export function unbindWechat(payload) {
+  return request({
+    url: '/auth/unbind-wechat',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
 export function updateProfile(payload) {
   return request({
     url: '/auth/profile',
