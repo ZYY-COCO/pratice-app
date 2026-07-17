@@ -22,6 +22,16 @@ If the env file is empty, edit it:
 nano /opt/gangyantong/backend.env
 ```
 
+For WeChat Mini Program login, the existing server env must include:
+
+```env
+WECHAT_MINIPROGRAM_APP_ID=
+WECHAT_MINIPROGRAM_APP_SECRET=
+WECHAT_AUTH_PASSWORD_SECRET=
+```
+
+Keep these values only in `/opt/gangyantong/backend.env`; never put the AppSecret in frontend code or Git.
+
 Then deploy:
 
 ```bash

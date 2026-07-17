@@ -14,6 +14,10 @@ class LoginRequest(BaseModel):
     password: str
 
 
+class RefreshTokenRequest(BaseModel):
+    refresh_token: str = Field(min_length=16)
+
+
 class SendEmailCodeRequest(BaseModel):
     email: EmailStr
 
@@ -49,6 +53,7 @@ class WechatLoginRequest(BaseModel):
     code: str | None = None
     state: str | None = None
     redirect_uri: str | None = None
+    platform: str = Field(default="h5", pattern="^(h5|miniprogram)$")
 
 
 class ResetPasswordRequest(BaseModel):

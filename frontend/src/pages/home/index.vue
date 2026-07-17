@@ -1,5 +1,5 @@
 <template>
-  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }" :style="themeInlineStyle">
+  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }" :style="pageInlineStyle">
     <template v-if="activeTab === 'home'">
       <view class="home-dashboard">
         <view class="home-header">
@@ -7,7 +7,7 @@
             <view class="brand-title" aria-label="港研通">
               <image
                 class="brand-title-image"
-                src="/static/gangyantong-home-wordmark-4k.png"
+                :src="wordmarkSrc"
                 mode="widthFix"
                 alt="港研通"
               />
@@ -19,7 +19,7 @@
               <view class="message-bell-icon" aria-hidden="true"></view>
               <view v-if="officialUnreadCount > 0" class="message-dot"></view>
             </button>
-            <view class="profile-entry" @tap="activeTab = 'profile'">
+            <view class="profile-entry" aria-label="打开我的页面" @tap.stop="openProfileTab">
               <image
                 v-if="avatarImageUrl"
                 class="profile-entry-image"
@@ -419,12 +419,23 @@
           <view class="benefit-row">
             <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
               <view class="benefit-icon" :class="item.iconClass">
+                <!-- #ifdef MP-WEIXIN -->
+                <image
+                  v-if="item.iconSrc"
+                  class="benefit-icon-img"
+                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  mode="aspectFit"
+                />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
                 <view
                   v-if="item.iconSrc"
                   class="benefit-icon-img theme-icon-mask"
                   :style="getThemeIconStyle(item.iconSrc)"
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
               </view>
               <view class="benefit-label">{{ item.label }}</view>
             </view>
@@ -442,12 +453,23 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
+                <!-- #ifdef MP-WEIXIN -->
+                <image
+                  v-if="item.iconSrc"
+                  class="menu-icon-img"
+                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  mode="aspectFit"
+                />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
                 <view
                   v-if="item.iconSrc"
                   class="menu-icon-img theme-icon-mask"
                   :style="getThemeIconStyle(item.iconSrc)"
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
               </view>
               <view class="menu-copy">
                 <view class="menu-title-row">
@@ -466,12 +488,23 @@
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
               <view class="menu-icon" :class="item.tone">
+                <!-- #ifdef MP-WEIXIN -->
+                <image
+                  v-if="item.iconSrc"
+                  class="menu-icon-img"
+                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  mode="aspectFit"
+                />
+                <text v-else>{{ item.icon }}</text>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
                 <view
                   v-if="item.iconSrc"
                   class="menu-icon-img theme-icon-mask"
                   :style="getThemeIconStyle(item.iconSrc)"
                 />
                 <text v-else>{{ item.icon }}</text>
+                <!-- #endif -->
               </view>
               <view class="menu-copy">
                 <view class="menu-title">{{ item.label }}</view>
@@ -755,8 +788,17 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { THEME_PRESETS, applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
+
+// #ifdef MP-WEIXIN
+const wordmarkSrc = '/static/gangyantong-wordmark.png'
+// #endif
+
+// #ifndef MP-WEIXIN
+const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
+// #endif
 
 const examOptions = EXAM_OPTIONS
 const themePresets = THEME_PRESETS
@@ -821,10 +863,20 @@ const generateCountdown = ref(45)
 const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
-const tabs = [
-  { key: 'home', label: '首页', iconSrc: '/static/ui-icons/tab-home.svg' },
-  { key: 'profile', label: '我的', iconSrc: '/static/ui-icons/tab-profile.svg' }
-]
+const tabs = computed(() => [
+  {
+    key: 'home',
+    label: '首页',
+    iconSrc: '/static/ui-icons/tab-home.svg',
+    mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
+  },
+  {
+    key: 'profile',
+    label: '我的',
+    iconSrc: '/static/ui-icons/tab-profile.svg',
+    mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-profile.svg')
+  }
+])
 const showBottomTab = computed(() => !retestMode.value && !['mistakes', 'report'].includes(activeTab.value))
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
 const fallbackSmartRecommendation = {
@@ -1008,6 +1060,19 @@ const practiceTools = computed(() => {
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
+const mpLayoutStyle = ref('')
+const pageInlineStyle = computed(() => [themeInlineStyle.value, mpLayoutStyle.value].filter(Boolean).join(';'))
+
+// #ifdef MP-WEIXIN
+function syncMpSafeLayout() {
+  mpLayoutStyle.value = buildMpPageSafeStyle()
+}
+// #endif
+
+const getMpThemeIconSrc = (iconSrc) => {
+  const filename = String(iconSrc || '').split('/').pop().replace(/\.svg$/i, '.png')
+  return `/static/mp-weixin/theme-icons/${selectedThemeKey.value}/${filename}`
+}
 const getThemeIconStyle = (iconSrc) => ({
   WebkitMaskImage: `url("${iconSrc}")`,
   maskImage: `url("${iconSrc}")`
@@ -1327,12 +1392,18 @@ watch(wrongItems, () => {
 })
 
 onLoad((options) => {
+  // #ifdef MP-WEIXIN
+  syncMpSafeLayout()
+  // #endif
   if (options?.tab === 'profile') {
     activeTab.value = 'profile'
   }
 })
 
 onShow(() => {
+  // #ifdef MP-WEIXIN
+  syncMpSafeLayout()
+  // #endif
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
   refreshLearningData()
@@ -1716,6 +1787,13 @@ function logout() {
       uni.reLaunch({ url: '/pages/login/index' })
     }
   })
+}
+
+function openProfileTab() {
+  activeTab.value = 'profile'
+  // #ifdef MP-WEIXIN
+  uni.pageScrollTo({ scrollTop: 0, duration: 0 })
+  // #endif
 }
 
 function openMistakes() {
@@ -5325,4 +5403,59 @@ function formatDateTime(value) {
   align-items: center;
   justify-content: center;
 }
+
+/* #ifdef MP-WEIXIN */
+.home-page {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
+.home-header {
+  min-height: var(--mp-page-header-height, 40px);
+  padding: 2rpx 10rpx 0;
+}
+
+.brand-line {
+  gap: 12rpx;
+}
+
+.brand-title {
+  width: 190rpx;
+  height: 64rpx;
+}
+
+.brand-title-image {
+  left: -34rpx;
+  top: -36rpx;
+  width: 244rpx;
+  mix-blend-mode: multiply;
+}
+
+.brand-badge {
+  padding: 8rpx 14rpx;
+  font-size: 24rpx;
+}
+
+.home-actions {
+  gap: 12rpx;
+}
+
+.message-bell {
+  width: 66rpx;
+  height: 66rpx;
+  line-height: 66rpx;
+}
+
+.message-bell-icon {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.profile-entry {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 34rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.1);
+}
+/* #endif */
 </style>

@@ -41,6 +41,8 @@ class Settings(BaseSettings):
     wechat_oauth_app_id: str | None = None
     wechat_oauth_app_secret: str | None = None
     wechat_oauth_scope: str = "snsapi_userinfo"
+    wechat_miniprogram_app_id: str | None = None
+    wechat_miniprogram_app_secret: str | None = None
     wechat_auth_password_secret: str | None = None
     admin_emails: str = "2221073755@qq.com"
 

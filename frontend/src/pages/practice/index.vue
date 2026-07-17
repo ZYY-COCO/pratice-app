@@ -383,6 +383,7 @@ import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
+import { readLegacyH5Storage } from '../../platform/runtime'
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
@@ -759,8 +760,8 @@ function readAccessToken() {
     token = ''
   }
 
-  if (!token && typeof window !== 'undefined' && window.localStorage) {
-    token = window.localStorage.getItem('uni-storage-accessToken') || window.localStorage.getItem('accessToken') || ''
+  if (!token) {
+    token = readLegacyH5Storage(['uni-storage-accessToken', 'accessToken'])
   }
 
   return typeof token === 'string' ? token.trim() : ''

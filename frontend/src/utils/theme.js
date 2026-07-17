@@ -1,3 +1,5 @@
+import { applyRootCssVariables } from '../platform/runtime'
+
 export const THEME_STORAGE_KEY = 'gangyantong_theme_key'
 
 export const THEME_PRESETS = [
@@ -98,18 +100,15 @@ export function applyThemeByKey(key) {
     // Storage can fail in private browsing; theme still applies for this session on H5.
   }
 
-  if (typeof document === 'undefined') {
-    return preset
-  }
-
-  const root = document.documentElement
-  root.style.setProperty('--gyt-primary', preset.primary)
-  root.style.setProperty('--gyt-primary-soft', preset.primarySoft)
-  root.style.setProperty('--gyt-primary-tint', preset.primaryTint)
-  root.style.setProperty('--gyt-primary-border', preset.primaryBorder)
-  root.style.setProperty('--gyt-primary-gradient', preset.primaryGradient)
-  root.style.setProperty('--gyt-primary-shadow', preset.primaryShadow)
-  root.style.setProperty('--gyt-page-bg', preset.pageBg)
-  root.style.setProperty('--gyt-panel-bg', preset.panelBg)
+  applyRootCssVariables({
+    '--gyt-primary': preset.primary,
+    '--gyt-primary-soft': preset.primarySoft,
+    '--gyt-primary-tint': preset.primaryTint,
+    '--gyt-primary-border': preset.primaryBorder,
+    '--gyt-primary-gradient': preset.primaryGradient,
+    '--gyt-primary-shadow': preset.primaryShadow,
+    '--gyt-page-bg': preset.pageBg,
+    '--gyt-panel-bg': preset.panelBg
+  })
   return preset
 }

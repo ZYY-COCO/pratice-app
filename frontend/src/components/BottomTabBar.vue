@@ -7,12 +7,23 @@
       :class="{ active: modelValue === item.key }"
       @tap="$emit('update:modelValue', item.key)"
     >
+      <!-- #ifdef MP-WEIXIN -->
+      <image
+        v-if="item.mpIconSrc"
+        class="tab-icon-image tab-icon-png"
+        :src="item.mpIconSrc"
+        mode="aspectFit"
+      />
+      <text v-else class="tab-icon">{{ item.icon }}</text>
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
       <view
         v-if="item.iconSrc"
         class="tab-icon-image tab-icon-mask"
         :style="getIconMaskStyle(item.iconSrc)"
       />
       <text v-else class="tab-icon">{{ item.icon }}</text>
+      <!-- #endif -->
       <text class="tab-label">{{ item.label }}</text>
     </view>
   </view>
@@ -94,6 +105,11 @@ const getIconMaskStyle = (iconSrc) => ({
   mask-size: contain;
 }
 
+.tab-icon-png {
+  background-color: transparent;
+  opacity: 0.46;
+}
+
 .tab-label {
   color: #8a94a6;
   font-size: 25rpx;
@@ -107,6 +123,11 @@ const getIconMaskStyle = (iconSrc) => ({
 
 .tab-item.active .tab-icon-image {
   background-color: var(--gyt-primary, #1677ff);
+}
+
+.tab-item.active .tab-icon-png {
+  background-color: transparent;
+  opacity: 1;
 }
 
 .tab-item.active .tab-label {

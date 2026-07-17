@@ -154,3 +154,47 @@ def exchange_wechat_code(code: str, state: str | None = None) -> dict:
             profile["unionid"] = userinfo.get("unionid") or profile["unionid"]
 
     return profile
+
+
+def exchange_wechat_miniprogram_code(code: str) -> dict:
+    settings = get_settings()
+    if not settings.wechat_miniprogram_app_id or not settings.wechat_miniprogram_app_secret:
+        raise HTTPException(
+            status_code=status.HTTP_501_NOT_IMPLEMENTED,
+            detail="WeChat Mini Program login is not configured",
+        )
+    if not code:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Missing WeChat Mini Program code")
+
+    session_query = parse.urlencode(
+        {
+            "appid": settings.wechat_miniprogram_app_id,
+            "secret": settings.wechat_miniprogram_app_secret,
+            "js_code": code,
+            "grant_type": "authorization_code",
+        }
+    )
+    try:
+        session_data = _get_json(f"https://api.weixin.qq.com/sns/jscode2session?{session_query}")
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_502_BAD_GATEWAY,
+            detail="WeChat Mini Program session exchange failed",
+        ) from exc
+
+    if session_data.get("errcode"):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"WeChat Mini Program login failed: {session_data.get('errmsg') or session_data.get('errcode')}",
+        )
+
+    openid = session_data.get("openid")
+    if not openid:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="WeChat Mini Program openid missing")
+
+    return {
+        "openid": openid,
+        "unionid": session_data.get("unionid"),
+        "nickname": None,
+        "avatar_url": None,
+    }

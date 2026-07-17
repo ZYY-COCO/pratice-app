@@ -1,5 +1,5 @@
 <template>
-  <view class="page history-page" :style="themeInlineStyle">
+  <view class="page history-page" :style="pageInlineStyle">
     <view class="history-topbar">
       <view class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
@@ -198,10 +198,13 @@ import { fetchAnswerHistory } from '../../api/answers'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
+import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const mpLayoutStyle = ref(buildMpPageSafeStyle())
+const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
 const filters = [
   { key: 'all', label: '全部' },
   { key: 'correct', label: '答对' },
@@ -281,6 +284,7 @@ const filteredItems = computed(() => {
 })
 
 onShow(() => {
+  mpLayoutStyle.value = buildMpPageSafeStyle()
   loadHistory()
 })
 
@@ -478,6 +482,16 @@ function goBack() {
 .back-btn {
   justify-self: start;
 }
+
+/* #ifdef MP-WEIXIN */
+.history-page {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
+.history-topbar {
+  min-height: var(--mp-page-header-height, 40px);
+}
+/* #endif */
 
 .back-icon {
   width: 28rpx;

@@ -136,7 +136,7 @@
               <textarea
                 v-model="item.rawText"
                 class="ocr-textarea"
-                placeholder="粘贴识别文本。单题格式：题干...&#10;A. ...&#10;B. ...&#10;C. ...&#10;D. ...&#10;答案：B&#10;解析：...&#10;&#10;多题可用 1. / 题目1 / --- 分隔。"
+                :placeholder="ocrTextPlaceholder"
                 @input="markDryRunDirty"
               />
               <view class="image-actions">
@@ -254,6 +254,7 @@ import {
 } from '../../api/admin'
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
@@ -265,6 +266,17 @@ const dryRunResult = ref(null)
 const dryRunLoading = ref(false)
 const importSaving = ref(false)
 const answerOptions = ['A', 'B', 'C', 'D']
+const ocrTextPlaceholder = [
+  '粘贴识别文本。单题格式：题干...',
+  'A. ...',
+  'B. ...',
+  'C. ...',
+  'D. ...',
+  '答案：B',
+  '解析：...',
+  '',
+  '多题可用 1. / 题目1 / --- 分隔。'
+].join('\n')
 const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
 const landingSteps = [
   { icon: '▱', title: '选择文件' },
@@ -412,7 +424,14 @@ function handleDifficultyChange(event) {
   markDryRunDirty()
 }
 
-function chooseImportFiles() {
+async function chooseImportFiles() {
+  try {
+    await requireWechatPrivacyAuthorization()
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '需要同意隐私保护指引后才能选择文件', icon: 'none' })
+    return
+  }
+
   if (typeof uni.chooseFile === 'function') {
     uni.chooseFile({
       count: 9,

@@ -1,8 +1,33 @@
 import { API_BASE_URL } from './config'
-import { clearAuthSession, getAccessToken } from '../utils/auth'
+import {
+  clearAuthSession,
+  getAccessToken,
+  getAuthUser,
+  getRefreshToken,
+  isAccessTokenExpiring,
+  saveAuthSession
+} from '../utils/auth'
 
-export function request(options) {
-  const token = getAccessToken()
+let refreshPromise = null
+let authRedirectPending = false
+
+export async function request(options) {
+  let token = getAccessToken()
+
+  if (shouldRefreshBeforeRequest(options, token)) {
+    try {
+      await refreshAuthSession()
+      token = getAccessToken()
+    } catch (error) {
+      handleAuthFailure()
+      return Promise.reject(error)
+    }
+  }
+
+  return dispatchRequest(options, token, false)
+}
+
+function dispatchRequest(options, token, retried) {
   const data = cleanRequestData(options.data)
 
   return new Promise((resolve, reject) => {
@@ -16,20 +41,22 @@ export function request(options) {
         ...(token ? { Authorization: `Bearer ${token}` } : {}),
         ...(options.header || {})
       },
-      success(response) {
+      async success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve(response.data)
           return
         }
 
-        if (response.statusCode === 401 && token && options.authRedirect !== false) {
-          clearAuthSession()
-          uni.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
-          setTimeout(() => {
-            uni.navigateTo({
-              url: `/pages/login/index?redirect=${encodeURIComponent(getCurrentPagePath())}`
-            })
-          }, 300)
+        if (response.statusCode === 401 && token && options.authRedirect !== false && !retried) {
+          try {
+            await refreshAuthSession()
+            resolve(dispatchRequest(options, getAccessToken(), true))
+            return
+          } catch (error) {
+            handleAuthFailure()
+          }
+        } else if (response.statusCode === 401 && token && options.authRedirect !== false) {
+          handleAuthFailure()
         }
 
         reject(response.data || { detail: '请求失败' })
@@ -46,6 +73,69 @@ export function request(options) {
       }
     })
   })
+}
+
+function shouldRefreshBeforeRequest(options, token) {
+  if (!token || options.authRedirect === false) return false
+  if (options.header?.Authorization === '') return false
+  return Boolean(getRefreshToken() && isAccessTokenExpiring(token))
+}
+
+function refreshAuthSession() {
+  if (refreshPromise) return refreshPromise
+
+  const refreshToken = getRefreshToken()
+  if (!refreshToken) {
+    return Promise.reject({ detail: '登录已过期，请重新登录' })
+  }
+
+  refreshPromise = new Promise((resolve, reject) => {
+    uni.request({
+      url: `${API_BASE_URL}/auth/refresh`,
+      method: 'POST',
+      timeout: 12000,
+      data: { refresh_token: refreshToken },
+      header: { 'Content-Type': 'application/json' },
+      success(response) {
+        if (response.statusCode >= 200 && response.statusCode < 300 && response.data?.access_token) {
+          saveAuthSession({
+            accessToken: response.data.access_token,
+            refreshToken: response.data.refresh_token || refreshToken,
+            user: response.data.user || getAuthUser()
+          })
+          resolve(response.data)
+          return
+        }
+        reject(response.data || { detail: '登录已过期，请重新登录' })
+      },
+      fail(error) {
+        reject({ detail: error?.errMsg || '登录状态刷新失败' })
+      }
+    })
+  }).finally(() => {
+    refreshPromise = null
+  })
+
+  return refreshPromise
+}
+
+function handleAuthFailure() {
+  clearAuthSession()
+  if (authRedirectPending) return
+
+  authRedirectPending = true
+  const redirect = encodeURIComponent(getCurrentPagePath())
+  uni.showToast({ title: '登录已过期，请重新登录', icon: 'none' })
+  setTimeout(() => {
+    uni.reLaunch({
+      url: `/pages/login/index?redirect=${redirect}`,
+      complete() {
+        setTimeout(() => {
+          authRedirectPending = false
+        }, 1000)
+      }
+    })
+  }, 300)
 }
 
 export function uploadFileRequest(options) {

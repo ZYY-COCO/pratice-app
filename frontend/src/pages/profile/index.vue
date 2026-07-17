@@ -110,6 +110,7 @@ import { changeEmailWithCode, deleteAccount, sendChangeEmailCode, updateProfile,
 import { clearAuthSession, getAuthUser, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
+import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 
 const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI']
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -171,8 +172,15 @@ function selectAvatarOption(item) {
   form.avatar_url = item
 }
 
-function chooseAvatarImage() {
+async function chooseAvatarImage() {
   if (uploadingAvatar.value) return
+
+  try {
+    await requireWechatPrivacyAuthorization()
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '需要同意隐私保护指引后才能选择头像', icon: 'none' })
+    return
+  }
 
   uni.chooseImage({
     count: 1,

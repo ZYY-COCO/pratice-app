@@ -17,6 +17,7 @@ from app.schemas.auth import (
     PhoneLoginRequest,
     PhoneRegisterRequest,
     ProfileUpdateRequest,
+    RefreshTokenRequest,
     RegisterRequest,
     ResetPasswordRequest,
     SendEmailCodeRequest,
@@ -42,6 +43,7 @@ from app.services.phone_auth import (
 from app.services.wechat_auth import (
     build_wechat_auth_url,
     exchange_wechat_code,
+    exchange_wechat_miniprogram_code,
     make_wechat_email,
     make_wechat_password,
 )
@@ -442,7 +444,10 @@ def phone_login(payload: PhoneLoginRequest) -> AuthResponse:
 @router.post("/wechat-login", response_model=AuthResponse)
 def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
     supabase_admin = get_supabase_admin()
-    wechat_profile = exchange_wechat_code(payload.code or "", payload.state)
+    if payload.platform == "miniprogram":
+        wechat_profile = exchange_wechat_miniprogram_code(payload.code or "")
+    else:
+        wechat_profile = exchange_wechat_code(payload.code or "", payload.state)
     openid = wechat_profile["openid"]
     profile = _get_profile_by_wechat_openid(openid)
     password = make_wechat_password(openid)
@@ -927,5 +932,45 @@ def login(payload: LoginRequest) -> AuthResponse:
     return AuthResponse(
         access_token=session.access_token,
         refresh_token=session.refresh_token,
+        user=AuthUser(**profile),
+    )
+
+
+@router.post("/refresh", response_model=AuthResponse)
+def refresh_session(payload: RefreshTokenRequest) -> AuthResponse:
+    supabase_auth = get_supabase_anon()
+    try:
+        auth_response = supabase_auth.auth.refresh_session(payload.refresh_token)
+    except Exception as exc:
+        logger.info("Refresh auth session failed: %s", _safe_error_summary(exc))
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid or expired") from exc
+
+    user = auth_response.user
+    session = auth_response.session
+    if not user or not session:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid or expired")
+
+    user_metadata = getattr(user, "user_metadata", {}) or {}
+    profile = {
+        "id": user.id,
+        "email": user.email,
+        "nickname": user_metadata.get("nickname"),
+        "avatar_url": user_metadata.get("avatar_url"),
+        "gender": user_metadata.get("gender"),
+        "exam_target": user_metadata.get("exam_target"),
+        "membership_status": "inactive",
+    }
+
+    supabase_admin = get_supabase_admin()
+    try:
+        profile_response = supabase_admin.table("users").select("*").eq("id", user.id).limit(1).execute()
+        if profile_response.data:
+            profile = _merge_profile_data(profile, profile_response.data[0])
+    except Exception as exc:
+        logger.warning("Read profile after token refresh failed for user_id=%s: %s", user.id, _safe_error_summary(exc))
+
+    return AuthResponse(
+        access_token=session.access_token,
+        refresh_token=session.refresh_token or payload.refresh_token,
         user=AuthUser(**profile),
     )

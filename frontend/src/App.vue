@@ -1,24 +1,7 @@
 <script>
 import { enforceAuthOnCurrentPage } from './utils/routeGuard'
 import { applyThemeByKey, getStoredThemeKey } from './utils/theme'
-
-function closeNativeSplashscreen() {
-  // #ifdef APP-PLUS
-  const close = () => {
-    try {
-      const runtime = typeof plus === 'undefined' ? null : plus
-      if (runtime?.navigator?.closeSplashscreen) {
-        runtime.navigator.closeSplashscreen()
-      }
-    } catch (error) {
-      // Keep launch resilient if the native runtime is not ready yet.
-    }
-  }
-
-  setTimeout(close, 300)
-  setTimeout(close, 1200)
-  // #endif
-}
+import { closeNativeSplashscreen } from './platform/runtime'
 
 export default {
   onLaunch() {

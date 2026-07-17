@@ -55,6 +55,7 @@
 <script setup>
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
+import { openExternalUrl } from '../../platform/runtime'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -88,29 +89,6 @@ const freeFeatures = [
     tone: 'orange'
   }
 ]
-
-function openExternalUrl(url) {
-  // #ifdef APP-PLUS
-  if (typeof plus !== 'undefined' && plus?.runtime?.openURL) {
-    plus.runtime.openURL(url)
-    return
-  }
-  // #endif
-
-  // #ifdef H5
-  if (typeof window !== 'undefined') {
-    window.location.href = url
-    return
-  }
-  // #endif
-
-  uni.setClipboardData({
-    data: url,
-    success() {
-      uni.showToast({ title: '链接已复制', icon: 'none' })
-    }
-  })
-}
 
 function openSupportPage() {
   openExternalUrl(supportUrl)

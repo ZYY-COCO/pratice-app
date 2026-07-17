@@ -1,5 +1,5 @@
 <template>
-  <view class="page login-page" :style="themeInlineStyle">
+  <view class="page login-page" :style="pageInlineStyle">
     <view class="auth-shell">
       <view class="auth-topbar">
         <button
@@ -16,7 +16,7 @@
       <view class="brand" aria-label="港研通">
         <image
           class="brand-image"
-          src="/static/gangyantong-home-wordmark-4k.png"
+          :src="wordmarkSrc"
           mode="widthFix"
           alt="港研通"
         />
@@ -27,7 +27,24 @@
           {{ mode === 'register' ? '创建账号' : '找回密码' }}
         </view>
 
-        <template v-if="mode === 'login'">
+        <!-- #ifdef MP-WEIXIN -->
+        <view v-if="mode === 'login' && !showMpEmailLogin" class="mp-wechat-login">
+          <view class="mp-wechat-mark">微</view>
+          <view class="mp-wechat-title">微信快捷登录</view>
+          <view class="mp-wechat-subtitle">无需填写账号密码，登录后自动同步错题、收藏和学习记录。</view>
+          <button class="wechat-button primary" :disabled="submitting" @tap="handleWechatLogin">
+            <text class="wechat-icon">微</text>
+            <text>{{ submitting ? '正在登录...' : '使用微信登录' }}</text>
+          </button>
+          <view class="mp-privacy-note">
+            登录即表示你已阅读并同意
+            <text class="mp-privacy-link" @tap.stop="openWechatPrivacyContract">《用户隐私保护指引》</text>
+          </view>
+          <button class="mp-email-entry" @tap="showMpEmailLogin = true">已有邮箱账号？使用邮箱密码登录</button>
+        </view>
+        <!-- #endif -->
+
+        <template v-if="mode === 'login' && showEmailLoginForm">
           <view class="field">
             <input
               v-model.trim="loginForm.email"
@@ -198,14 +215,22 @@
           </view>
         </template>
 
-        <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
+        <button v-if="mode !== 'login' || showEmailLoginForm" class="primary-button submit-btn" :disabled="submitting" @tap="submit">
           {{ submitButtonText }}
         </button>
 
+        <!-- #ifndef MP-WEIXIN -->
         <button v-if="mode === 'login'" class="wechat-button disabled" @tap="handleWechatLogin">
           <text class="wechat-icon">微</text>
           <text>微信登录 · 即将开放</text>
         </button>
+        <!-- #endif -->
+
+        <!-- #ifdef MP-WEIXIN -->
+        <button v-if="mode === 'login' && showMpEmailLogin" class="mp-wechat-return" @tap="showMpEmailLogin = false">
+          返回微信快捷登录
+        </button>
+        <!-- #endif -->
 
         <view v-if="tipText" class="inline-tip" :class="{ success: tipType === 'success' }">
           {{ tipText }}
@@ -293,17 +318,42 @@ import {
   sendRegisterCode,
   sendResetCode
 } from '../../api/auth'
+import {
+  getCurrentH5Url,
+  openExternalUrl,
+  redirectH5,
+  replaceCurrentH5Url
+} from '../../platform/runtime'
 import { saveAuthSession } from '../../utils/auth'
 import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+
+// #ifdef MP-WEIXIN
+const wordmarkSrc = '/static/gangyantong-wordmark.png'
+// #endif
+
+// #ifndef MP-WEIXIN
+const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
+// #endif
 
 const mode = ref('login')
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const mpLayoutStyle = ref(buildMpPageSafeStyle())
+const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
 const supportUrl = 'https://www.gangyantong.com/support.html'
+const privacyUrl = 'https://www.gangyantong.com/privacy.html'
 const PHONE_AUTH_ENABLED = false
-const WECHAT_AUTH_ENABLED = false
+let WECHAT_AUTH_ENABLED = false
+let IS_MP_WEIXIN_LOGIN = false
+// #ifdef MP-WEIXIN
+WECHAT_AUTH_ENABLED = true
+IS_MP_WEIXIN_LOGIN = true
+// #endif
 const authMethod = ref('email')
+const showMpEmailLogin = ref(false)
+const showEmailLoginForm = computed(() => !IS_MP_WEIXIN_LOGIN || showMpEmailLogin.value)
 const submitting = ref(false)
 const helpVisible = ref(false)
 const redirect = ref('/pages/home/index')
@@ -453,6 +503,7 @@ function startCodeCountdown(key) {
 }
 
 onLoad((options) => {
+  mpLayoutStyle.value = buildMpPageSafeStyle()
   if (options?.redirect) {
     redirect.value = decodeURIComponent(options.redirect)
   }
@@ -499,6 +550,9 @@ onUnload(() => {
 
 function switchMode(nextMode) {
   mode.value = nextMode
+  if (nextMode === 'login') {
+    showMpEmailLogin.value = false
+  }
   tipText.value = ''
 }
 
@@ -577,6 +631,10 @@ function normalizeUiError(error, fallbackText) {
 
   if (detail.includes('WeChat login is not configured')) {
     return '微信登录还没有配置 AppID 和 AppSecret，请先完成微信开放平台配置'
+  }
+
+  if (detail.includes('WeChat Mini Program login is not configured')) {
+    return '微信小程序登录尚未配置，请在后端设置小程序 AppID 和 AppSecret'
   }
 
   if (detail.includes('Invalid WeChat state') || detail.includes('WeChat state expired')) {
@@ -949,6 +1007,18 @@ async function handleWechatLogin() {
 
   try {
     await ensureBackendAvailable()
+
+    // #ifdef MP-WEIXIN
+    const code = await getMiniProgramLoginCode()
+    const response = await loginWithWechat({
+      code,
+      platform: 'miniprogram'
+    })
+    saveSessionAndRedirect(response, '微信登录成功')
+    return
+    // #endif
+
+    // #ifndef MP-WEIXIN
     const redirectUri = getWechatRedirectUri()
     if (!redirectUri) {
       throw { detail: '当前环境暂不支持微信网页授权' }
@@ -957,7 +1027,10 @@ async function handleWechatLogin() {
     if (!response?.auth_url) {
       throw { detail: '微信授权地址生成失败' }
     }
-    window.location.href = response.auth_url
+    if (!redirectH5(response.auth_url)) {
+      throw { detail: '当前环境暂不支持微信网页授权' }
+    }
+    // #endif
   } catch (error) {
     const message = normalizeUiError(error, '微信登录暂未开放')
     tipType.value = 'warning'
@@ -992,8 +1065,9 @@ async function handleWechatCodeLogin(params) {
 }
 
 function getWechatRedirectUri() {
-  if (typeof window === 'undefined') return ''
-  const url = new URL(window.location.href)
+  const currentUrl = getCurrentH5Url()
+  if (!currentUrl) return ''
+  const url = new URL(currentUrl)
   url.searchParams.delete('code')
   url.searchParams.delete('state')
   const hashIndex = url.hash.indexOf('?')
@@ -1013,11 +1087,13 @@ function getWechatOAuthParams(options = {}) {
     code: options?.code || '',
     state: options?.state || ''
   }
-  if (params.code || typeof window === 'undefined') {
+  if (params.code) {
     return params
   }
 
-  const url = new URL(window.location.href)
+  const currentUrl = getCurrentH5Url()
+  if (!currentUrl) return params
+  const url = new URL(currentUrl)
   params.code = url.searchParams.get('code') || ''
   params.state = url.searchParams.get('state') || ''
   if (params.code) return params
@@ -1032,8 +1108,9 @@ function getWechatOAuthParams(options = {}) {
 }
 
 function cleanupWechatUrl() {
-  if (typeof window === 'undefined' || !window.history?.replaceState) return
-  const url = new URL(window.location.href)
+  const currentUrl = getCurrentH5Url()
+  if (!currentUrl) return
+  const url = new URL(currentUrl)
   url.searchParams.delete('code')
   url.searchParams.delete('state')
   const hashIndex = url.hash.indexOf('?')
@@ -1045,7 +1122,7 @@ function cleanupWechatUrl() {
     const nextHash = hashQuery.toString()
     url.hash = nextHash ? `${hashPath}?${nextHash}` : hashPath
   }
-  window.history.replaceState({}, document.title, url.toString())
+  replaceCurrentH5Url(url.toString())
 }
 
 function goBackHome() {
@@ -1055,6 +1132,26 @@ function goBackHome() {
     }
   })
 }
+
+// #ifdef MP-WEIXIN
+function getMiniProgramLoginCode() {
+  return new Promise((resolve, reject) => {
+    uni.login({
+      provider: 'weixin',
+      success(result) {
+        if (result?.code) {
+          resolve(result.code)
+          return
+        }
+        reject({ detail: '微信未返回登录凭证，请重新尝试' })
+      },
+      fail(error) {
+        reject({ detail: error?.errMsg || '无法获取微信登录凭证' })
+      }
+    })
+  })
+}
+// #endif
 
 function openHelp() {
   helpVisible.value = true
@@ -1066,26 +1163,25 @@ function closeHelp() {
 
 function openSupportPage() {
   closeHelp()
+  openExternalUrl(supportUrl, {
+    copyMessage: '支持页链接已复制'
+  })
+}
 
-  // #ifdef APP-PLUS
-  if (typeof plus !== 'undefined' && plus?.runtime?.openURL) {
-    plus.runtime.openURL(supportUrl)
+function openWechatPrivacyContract() {
+  // #ifdef MP-WEIXIN
+  if (typeof wx !== 'undefined' && typeof wx.openPrivacyContract === 'function') {
+    wx.openPrivacyContract({
+      fail() {
+        uni.showToast({ title: '请在小程序资料中查看隐私保护指引', icon: 'none' })
+      }
+    })
     return
   }
   // #endif
 
-  // #ifdef H5
-  if (typeof window !== 'undefined') {
-    window.location.href = supportUrl
-    return
-  }
-  // #endif
-
-  uni.setClipboardData({
-    data: supportUrl,
-    success() {
-      uni.showToast({ title: '支持页链接已复制', icon: 'none' })
-    }
+  openExternalUrl(privacyUrl, {
+    copyMessage: '隐私政策链接已复制'
   })
 }
 </script>
@@ -1501,6 +1597,119 @@ function openSupportPage() {
   font-size: 46rpx;
   line-height: 1;
 }
+
+/* #ifdef MP-WEIXIN */
+.login-page {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
+.auth-topbar {
+  min-height: var(--mp-page-header-height, 40px);
+}
+
+.brand {
+  margin: -2rpx 0 22rpx;
+}
+
+.brand-image {
+  width: 390rpx;
+}
+
+.login-card {
+  padding: 48rpx 34rpx 40rpx;
+}
+
+.mp-wechat-login {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.mp-wechat-mark {
+  width: 112rpx;
+  height: 112rpx;
+  border-radius: 36rpx;
+  background: linear-gradient(145deg, #20c56a, #07a84f);
+  color: #ffffff;
+  box-shadow: 0 18rpx 34rpx rgba(7, 168, 79, 0.22);
+  font-size: 48rpx;
+  line-height: 112rpx;
+  font-weight: 900;
+}
+
+.mp-wechat-title {
+  margin-top: 28rpx;
+  color: #172033;
+  font-size: 38rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mp-wechat-subtitle {
+  max-width: 520rpx;
+  margin-top: 14rpx;
+  color: #7f8ba3;
+  font-size: 24rpx;
+  line-height: 1.6;
+  font-weight: 600;
+}
+
+.wechat-button.primary {
+  width: 100%;
+  min-height: 96rpx;
+  margin-top: 34rpx;
+  border-radius: 22rpx;
+  background: linear-gradient(135deg, #16b85c, #07a84f);
+  color: #ffffff;
+  box-shadow: 0 16rpx 30rpx rgba(7, 168, 79, 0.2);
+  font-size: 29rpx;
+  line-height: 96rpx;
+}
+
+.wechat-button.primary[disabled] {
+  opacity: 0.68;
+}
+
+.wechat-button.primary .wechat-icon {
+  background: rgba(255, 255, 255, 0.2);
+  color: #ffffff;
+}
+
+.mp-privacy-note {
+  margin-top: 20rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.55;
+}
+
+.mp-privacy-link {
+  color: var(--gyt-primary);
+  font-weight: 800;
+}
+
+.mp-email-entry,
+.mp-wechat-return {
+  min-height: 68rpx;
+  margin: 18rpx 0 0;
+  padding: 0 20rpx;
+  border: 0;
+  background: transparent;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 68rpx;
+  font-weight: 700;
+}
+
+.mp-wechat-return {
+  width: 100%;
+  color: #07a84f;
+}
+
+.shortcut-divider {
+  margin-top: 34rpx;
+}
+/* #endif */
 
 @media (max-width: 380px) {
   .login-page {

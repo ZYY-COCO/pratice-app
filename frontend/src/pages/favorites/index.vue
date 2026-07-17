@@ -1,5 +1,5 @@
 <template>
-  <view class="page favorites-page" :style="themeInlineStyle">
+  <view class="page favorites-page" :style="pageInlineStyle">
     <view class="topbar">
       <view class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
@@ -125,10 +125,13 @@ import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
 import { confirmFavoriteRemoval } from '../../utils/favorites'
+import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { getQuestionSourceLabel } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const mpLayoutStyle = ref(buildMpPageSafeStyle())
+const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
 const keyword = ref('')
 const activeSubject = ref('全部')
 const selectedItem = ref(null)
@@ -190,6 +193,7 @@ const selectedOptions = computed(() => {
 })
 
 onShow(() => {
+  mpLayoutStyle.value = buildMpPageSafeStyle()
   loadFavorites()
 })
 
@@ -285,6 +289,16 @@ function goBack() {
   background: #ffffff;
   box-shadow: 0 10rpx 26rpx rgba(25, 48, 89, 0.06);
 }
+
+/* #ifdef MP-WEIXIN */
+.favorites-page {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
+.topbar {
+  min-height: var(--mp-page-header-height, 40px);
+}
+/* #endif */
 
 .back-icon {
   width: 28rpx;

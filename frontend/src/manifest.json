@@ -2,14 +2,15 @@
     "name" : "港研通",
     "appid" : "__UNI__FEDCA88",
     "description" : "面向港澳台考研初试用户的刷题与学习分析工具",
-    "versionName" : "1.0",
-    "versionCode" : "7",
+    "versionName" : "1.0.1",
+    "versionCode" : "8",
     "transformPx" : false,
     "h5" : {
         "title" : "港研通"
     },
     "mp-weixin" : {
         "appid" : "wx6f589394c3d604c5",
+        "__usePrivacyCheck__" : true,
         "setting" : {
             "urlCheck" : true,
             "es6" : true,
