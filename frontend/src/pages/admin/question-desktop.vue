@@ -242,19 +242,6 @@
           v-if="activeSection === 'questions' && !activeQuestionBank"
           class="content-section question-bank-section"
         >
-          <view class="bank-library-hero">
-            <view>
-              <view class="bank-library-kicker">QUESTION BANK LIBRARY</view>
-              <view class="bank-library-title">题库文件</view>
-              <view class="bank-library-copy">
-                每个文件对应一个独立题库。双击文件进入题目管理，可新建题库并修改名称。
-              </view>
-            </view>
-            <button class="primary-button bank-create-button" @tap="openQuestionBankDialog('create')">
-              ＋ 新建题库
-            </button>
-          </view>
-
           <view v-if="questionBanksLoading" class="bank-library-state">
             <view class="state-spinner"></view>
             <text>正在加载题库文件…</text>
@@ -283,7 +270,6 @@
                     重命名
                   </button>
                 </view>
-                <view class="bank-file-count">{{ formatCount(bank.question_count) }} 道题目</view>
                 <view class="bank-file-date">最近修改：{{ formatDateTime(bank.updated_at) }}</view>
               </view>
               <view class="bank-file-enter">双击进入 <text>→</text></view>
@@ -2278,55 +2264,8 @@ button {
   max-width: 1420px;
 }
 
-.bank-library-hero {
-  min-height: 132px;
-  padding: 28px 30px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 24px;
-  border: 1px solid #dce9e8;
-  border-radius: 17px;
-  box-sizing: border-box;
-  background:
-    radial-gradient(circle at 92% 8%, rgba(104, 220, 195, 0.2), transparent 31%),
-    linear-gradient(135deg, #ffffff, #f5fbfa);
-  box-shadow: 0 12px 30px rgba(31, 50, 71, 0.035);
-}
-
-.bank-library-kicker {
-  color: #47ac98;
-  font-size: 9px;
-  font-weight: 800;
-  letter-spacing: 0.13em;
-}
-
-.bank-library-title {
-  margin-top: 7px;
-  color: #26354a;
-  font-size: 21px;
-  font-weight: 760;
-  letter-spacing: -0.025em;
-}
-
-.bank-library-copy {
-  max-width: 570px;
-  margin-top: 8px;
-  color: #7f8c9d;
-  font-size: 10px;
-  line-height: 1.7;
-}
-
-.bank-create-button {
-  min-width: 108px;
-  height: 38px;
-  flex: 0 0 auto;
-  box-shadow: 0 8px 18px rgba(55, 193, 164, 0.18);
-}
-
 .bank-library-state {
   min-height: 280px;
-  margin-top: 18px;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -2344,7 +2283,6 @@ button {
 }
 
 .bank-file-grid {
-  margin-top: 19px;
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
   gap: 15px;
@@ -2444,15 +2382,8 @@ button {
   line-height: 1;
 }
 
-.bank-file-count {
-  margin-top: 13px;
-  color: #526377;
-  font-size: 11px;
-  font-weight: 650;
-}
-
 .bank-file-date {
-  margin-top: 7px;
+  margin-top: 12px;
   color: #96a1ad;
   font-size: 8px;
 }
@@ -2471,6 +2402,11 @@ button {
 }
 
 .bank-file-create-card {
+  width: 100%;
+  min-height: 172px;
+  margin: 0;
+  padding: 21px;
+  box-sizing: border-box;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4081,11 +4017,6 @@ button {
   .question-summary,
   .import-flow {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .bank-library-hero {
-    align-items: flex-start;
-    flex-direction: column;
   }
 
   .bank-file-grid {
