@@ -22,8 +22,8 @@
         >
           <text class="nav-glyph">{{ item.icon }}</text>
           <text class="nav-label">{{ item.label }}</text>
-          <text v-if="item.key === 'review' && questionStats.pendingReview" class="nav-count">
-            {{ compactCount(questionStats.pendingReview) }}
+          <text v-if="item.key === 'review' && globalQuestionStats.pendingReview" class="nav-count">
+            {{ compactCount(globalQuestionStats.pendingReview) }}
           </text>
         </button>
       </view>
@@ -208,7 +208,66 @@
         </section>
 
         <section
-          v-if="activeSection === 'questions' || activeSection === 'review'"
+          v-if="activeSection === 'questions' && !activeQuestionBank"
+          class="content-section question-bank-section"
+        >
+          <view class="bank-library-hero">
+            <view>
+              <view class="bank-library-kicker">QUESTION BANK LIBRARY</view>
+              <view class="bank-library-title">题库文件</view>
+              <view class="bank-library-copy">
+                每个文件对应一个独立题库。双击文件进入题目管理，可新建题库并修改名称。
+              </view>
+            </view>
+            <button class="primary-button bank-create-button" @tap="openQuestionBankDialog('create')">
+              ＋ 新建题库
+            </button>
+          </view>
+
+          <view v-if="questionBanksLoading" class="bank-library-state">
+            <view class="state-spinner"></view>
+            <text>正在加载题库文件…</text>
+          </view>
+          <view v-else-if="questionBanksError" class="bank-library-state error">
+            <view>题库文件加载失败，请检查网络或权限状态。</view>
+            <button class="secondary-button" @tap="loadQuestionBanks">重新加载</button>
+          </view>
+          <view v-else class="bank-file-grid">
+            <view
+              v-for="bank in questionBanks"
+              :key="bank.id"
+              class="bank-file-card"
+              @dblclick="openQuestionBank(bank)"
+            >
+              <view class="bank-file-icon" aria-hidden="true">
+                <view class="bank-file-tab"></view>
+                <view class="bank-file-face">
+                  <text>题</text>
+                </view>
+              </view>
+              <view class="bank-file-main">
+                <view class="bank-file-title-row">
+                  <view class="bank-file-name">{{ bank.name }}</view>
+                  <button class="bank-rename-button" @tap.stop="openQuestionBankDialog('rename', bank)">
+                    重命名
+                  </button>
+                </view>
+                <view class="bank-file-count">{{ formatCount(bank.question_count) }} 道题目</view>
+                <view class="bank-file-date">最近修改：{{ formatDateTime(bank.updated_at) }}</view>
+              </view>
+              <view class="bank-file-enter">双击进入 <text>→</text></view>
+            </view>
+
+            <button class="bank-file-card bank-file-create-card" @tap="openQuestionBankDialog('create')">
+              <view class="bank-file-create-icon">＋</view>
+              <view class="bank-file-create-title">新建题库</view>
+              <view class="bank-file-create-copy">创建一个新的题库文件</view>
+            </button>
+          </view>
+        </section>
+
+        <section
+          v-if="(activeSection === 'questions' && activeQuestionBank) || activeSection === 'review'"
           class="content-section question-section"
         >
           <view class="question-summary">
@@ -230,11 +289,18 @@
           <view class="question-workspace">
             <view class="workspace-heading">
               <view>
-                <view class="panel-title">{{ activeSection === 'review' ? '审核队列' : '题目列表' }}</view>
+                <view v-if="activeSection === 'questions' && activeQuestionBank" class="question-bank-crumb">
+                  <button @tap="returnToQuestionBanks">← 题库文件</button>
+                  <text>/</text>
+                  <text>{{ activeQuestionBank.name }}</text>
+                </view>
+                <view class="panel-title">
+                  {{ activeSection === 'review' ? '审核队列' : `${activeQuestionBank?.name || ''} · 题目列表` }}
+                </view>
                 <view class="panel-subtitle">
                   {{ activeSection === 'review'
                     ? '逐题检查内容，确认后发布或退回修改。'
-                    : '搜索、筛选、编辑并维护正式题库。' }}
+                    : '搜索、筛选、编辑并维护当前题库。' }}
                 </view>
               </view>
               <view class="workspace-actions">
@@ -549,6 +615,36 @@
         </view>
       </view>
     </view>
+
+    <view v-if="questionBankDialogVisible" class="bank-dialog-backdrop" @tap="closeQuestionBankDialog">
+      <view class="bank-dialog" @tap.stop>
+        <view class="bank-dialog-kicker">
+          {{ questionBankDialogMode === 'create' ? 'NEW QUESTION BANK' : 'RENAME QUESTION BANK' }}
+        </view>
+        <view class="bank-dialog-title">
+          {{ questionBankDialogMode === 'create' ? '新建题库' : '重命名题库' }}
+        </view>
+        <view class="bank-dialog-copy">
+          {{ questionBankDialogMode === 'create'
+            ? '创建后可双击进入，并在其中维护独立题目。'
+            : '修改后不会影响题目内容或学生端刷题。' }}
+        </view>
+        <input
+          v-model.trim="questionBankNameDraft"
+          class="bank-dialog-input"
+          maxlength="80"
+          placeholder="请输入题库名称"
+          confirm-type="done"
+          @confirm="saveQuestionBankDialog"
+        />
+        <view class="bank-dialog-actions">
+          <button class="bank-dialog-cancel" :disabled="questionBankSaving" @tap="closeQuestionBankDialog">取消</button>
+          <button class="bank-dialog-confirm" :disabled="questionBankSaving" @tap="saveQuestionBankDialog">
+            {{ questionBankSaving ? '保存中…' : '保存' }}
+          </button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -558,10 +654,13 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import {
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
+  createAdminQuestionBank,
   fetchAdminQuestionDetail,
+  fetchAdminQuestionBanks,
   fetchAdminQuestions,
   fetchQuestionAdminDashboard,
   fetchQuestionAdminPortalMe,
+  renameAdminQuestionBank,
   updateAdminQuestion,
   updateAdminQuestionReview,
   updateAdminQuestionStatus
@@ -580,6 +679,8 @@ const refreshing = ref(false)
 const dashboardLoading = ref(false)
 const questionsLoading = ref(false)
 const questionLoadError = ref(false)
+const questionBanksLoading = ref(false)
+const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
@@ -592,11 +693,24 @@ const dashboardFilters = reactive({
   subject: '',
   sort_by: 'wrong_count'
 })
+const globalQuestionStats = reactive({
+  active: 0,
+  archived: 0,
+  pendingReview: 0
+})
 const questionStats = reactive({
   active: 0,
   archived: 0,
   pendingReview: 0
 })
+const questionBanks = ref([])
+const activeQuestionBank = ref(null)
+const questionBankDialogVisible = ref(false)
+const questionBankDialogMode = ref('create')
+const questionBankNameDraft = ref('')
+const questionBankTarget = ref(null)
+const questionBankSaving = ref(false)
+const requestedQuestionBankId = ref('')
 const questions = ref([])
 const questionCount = ref(0)
 const currentPage = ref(1)
@@ -742,13 +856,21 @@ const previewQuestions = [
   }
 ]
 
-const currentNavLabel = computed(() => navItems.find((item) => item.key === activeSection.value)?.label || '题库中台')
+const currentNavLabel = computed(() => {
+  const label = navItems.find((item) => item.key === activeSection.value)?.label || '题库中台'
+  return activeSection.value === 'questions' && activeQuestionBank.value
+    ? `${label} / ${activeQuestionBank.value.name}`
+    : label
+})
 const pageTitle = computed(() => {
   const titles = {
     dashboard: '题库仪表盘',
     questions: '题目管理',
     review: '审核队列',
     import: '批量导入'
+  }
+  if (activeSection.value === 'questions' && activeQuestionBank.value) {
+    return activeQuestionBank.value.name
   }
   return titles[activeSection.value] || '题库中台'
 })
@@ -767,12 +889,17 @@ const greeting = computed(() => {
   return '晚上好'
 })
 const totalQuestionCount = computed(() => (
+  Number(globalQuestionStats.active || 0) +
+  Number(globalQuestionStats.archived || 0) +
+  Number(globalQuestionStats.pendingReview || 0)
+))
+const activeQuestionBankCount = computed(() => (
   Number(questionStats.active || 0) +
   Number(questionStats.archived || 0) +
   Number(questionStats.pendingReview || 0)
 ))
 const summaryCards = computed(() => [
-  { key: '', label: '全部题目', value: totalQuestionCount.value, icon: '题', tone: 'blue' },
+  { key: '', label: '全部题目', value: activeQuestionBankCount.value, icon: '题', tone: 'blue' },
   { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: questionStats.pendingReview, icon: '审', tone: 'orange' },
   { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: questionStats.active, icon: '发', tone: 'mint' },
   { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: questionStats.archived, icon: '架', tone: 'slate' }
@@ -853,6 +980,7 @@ onLoad(async (options = {}) => {
   if (['dashboard', 'questions', 'review', 'import'].includes(options.section)) {
     activeSection.value = options.section
   }
+  requestedQuestionBankId.value = String(options.question_bank_id || '')
   if (import.meta.env.DEV && options.preview === '1') {
     devPreviewMode.value = true
     loadDevPreview()
@@ -881,7 +1009,11 @@ async function bootstrap() {
       authUser.value = updateAuthUser(me.profile) || me.profile
     }
     await Promise.all([loadDashboard(), loadQuestionStats()])
-    if (activeSection.value === 'questions' || activeSection.value === 'review') {
+    if (activeSection.value === 'questions') {
+      await loadQuestionBanks()
+      const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
+      if (requestedBank) await openQuestionBank(requestedBank)
+    } else if (activeSection.value === 'review') {
       await loadQuestions()
     }
   } catch (error) {
@@ -914,34 +1046,73 @@ async function loadDashboard() {
   }
 }
 
-async function loadQuestionStats() {
+async function loadQuestionStats(questionBankId = '') {
+  const target = questionBankId ? questionStats : globalQuestionStats
   if (devPreviewMode.value) {
-    questionStats.active = 2846
-    questionStats.archived = 126
-    questionStats.pendingReview = 38
+    target.active = questionBankId ? 2846 : 11321
+    target.archived = questionBankId ? 126 : 326
+    target.pendingReview = questionBankId ? 38 : 0
+    if (!questionBankId && (!activeQuestionBank.value || activeSection.value === 'review')) {
+      Object.assign(questionStats, target)
+    }
     return
   }
+  const questionBankParams = questionBankId ? { question_bank_id: questionBankId } : {}
   const [activeResult, archivedResult, pendingResult] = await Promise.allSettled([
-    fetchAdminQuestions({ status: QUESTION_STATUS.ACTIVE, limit: 1, offset: 0 }),
+    fetchAdminQuestions({ ...questionBankParams, status: QUESTION_STATUS.ACTIVE, limit: 1, offset: 0 }),
     fetchAdminQuestions({
+      ...questionBankParams,
       status: QUESTION_STATUS.ARCHIVED,
       exclude_review_status: 'pending',
       limit: 1,
       offset: 0
     }),
     fetchAdminQuestions({
+      ...questionBankParams,
       status: QUESTION_STATUS.ARCHIVED,
       review_status: 'pending',
       limit: 1,
       offset: 0
     })
   ])
-  questionStats.active = settledCount(activeResult)
-  questionStats.archived = settledCount(archivedResult)
-  questionStats.pendingReview = settledCount(pendingResult)
+  target.active = settledCount(activeResult)
+  target.archived = settledCount(archivedResult)
+  target.pendingReview = settledCount(pendingResult)
+  if (!questionBankId && (!activeQuestionBank.value || activeSection.value === 'review')) {
+    Object.assign(questionStats, target)
+  }
+}
+
+async function loadQuestionBanks() {
+  if (devPreviewMode.value) {
+    questionBanks.value = [{
+      id: 'preview-question-bank-z',
+      name: 'Z',
+      question_count: 3010,
+      created_at: '2026-07-18T03:00:00Z',
+      updated_at: '2026-07-24T10:30:00Z'
+    }]
+    questionBanksError.value = false
+    return
+  }
+  questionBanksLoading.value = true
+  questionBanksError.value = false
+  try {
+    const response = await fetchAdminQuestionBanks()
+    questionBanks.value = Array.isArray(response?.items) ? response.items : []
+  } catch (error) {
+    questionBanks.value = []
+    questionBanksError.value = true
+  } finally {
+    questionBanksLoading.value = false
+  }
 }
 
 async function loadQuestions() {
+  if (activeSection.value === 'questions' && !activeQuestionBank.value) {
+    await loadQuestionBanks()
+    return
+  }
   if (devPreviewMode.value) {
     const status = activeSection.value === 'review' ? QUESTION_STATUS.PENDING_REVIEW : filters.status
     const filtered = previewQuestions.filter((item) => {
@@ -980,16 +1151,24 @@ async function loadQuestions() {
 }
 
 async function switchSection(section) {
-  if (activeSection.value === section) return
+  if (activeSection.value === section) {
+    if (section === 'questions' && activeQuestionBank.value) {
+      await returnToQuestionBanks()
+    }
+    return
+  }
   activeSection.value = section
   currentPage.value = 1
   selectedIds.value = []
   if (section === 'review') {
+    activeQuestionBank.value = null
     filters.status = QUESTION_STATUS.PENDING_REVIEW
+    await loadQuestionStats()
     await loadQuestions()
   } else if (section === 'questions') {
+    activeQuestionBank.value = null
     if (filters.status === QUESTION_STATUS.PENDING_REVIEW) filters.status = ''
-    await loadQuestions()
+    await loadQuestionBanks()
   } else if (section === 'dashboard') {
     await Promise.all([loadDashboard(), loadQuestionStats()])
   }
@@ -1001,6 +1180,8 @@ async function refreshCurrentSection() {
   try {
     if (activeSection.value === 'dashboard') {
       await Promise.all([loadDashboard(), loadQuestionStats()])
+    } else if (activeSection.value === 'questions' && !activeQuestionBank.value) {
+      await loadQuestionBanks()
     } else if (activeSection.value === 'questions' || activeSection.value === 'review') {
       await refreshQuestionData()
     } else {
@@ -1012,11 +1193,17 @@ async function refreshCurrentSection() {
 }
 
 async function refreshQuestionData() {
-  await Promise.all([loadQuestionStats(), loadQuestions()])
+  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+  const tasks = [loadQuestionStats(questionBankId), loadQuestions()]
+  if (questionBankId) tasks.push(loadQuestionStats())
+  await Promise.all(tasks)
 }
 
 function buildQuestionParams() {
   const params = {}
+  if (activeSection.value === 'questions' && activeQuestionBank.value?.id) {
+    params.question_bank_id = activeQuestionBank.value.id
+  }
   if (filters.subject) params.subject = filters.subject
   if (filters.module) params.module = filters.module
   if (filters.difficulty) params.difficulty = filters.difficulty
@@ -1089,21 +1276,94 @@ async function handleDashboardSortChange(event) {
   await loadDashboard()
 }
 
-function applySummaryFilter(status) {
+async function applySummaryFilter(status) {
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
     activeSection.value = 'review'
+    activeQuestionBank.value = null
     filters.status = status
   } else {
     activeSection.value = 'questions'
     filters.status = status
   }
   currentPage.value = 1
-  loadQuestions()
+  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+  await Promise.all([loadQuestionStats(questionBankId), loadQuestions()])
 }
 
 function summaryCardActive(status) {
   if (activeSection.value === 'review') return status === QUESTION_STATUS.PENDING_REVIEW
   return activeSection.value === 'questions' && filters.status === status
+}
+
+function openQuestionBankDialog(mode, bank = null) {
+  questionBankDialogMode.value = mode
+  questionBankTarget.value = bank
+  questionBankNameDraft.value = mode === 'rename' ? String(bank?.name || '') : ''
+  questionBankDialogVisible.value = true
+}
+
+function closeQuestionBankDialog(force = false) {
+  if (questionBankSaving.value && !force) return
+  questionBankDialogVisible.value = false
+  questionBankTarget.value = null
+  questionBankNameDraft.value = ''
+}
+
+async function saveQuestionBankDialog() {
+  if (questionBankSaving.value) return
+  const name = String(questionBankNameDraft.value || '').trim()
+  if (!name) {
+    uni.showToast({ title: '请输入题库名称', icon: 'none' })
+    return
+  }
+  questionBankSaving.value = true
+  try {
+    if (questionBankDialogMode.value === 'create') {
+      await createAdminQuestionBank({ name })
+      uni.showToast({ title: '题库已创建', icon: 'success' })
+    } else if (questionBankTarget.value?.id) {
+      await renameAdminQuestionBank(questionBankTarget.value.id, { name })
+      uni.showToast({ title: '题库名称已更新', icon: 'success' })
+    }
+    closeQuestionBankDialog(true)
+    await loadQuestionBanks()
+  } catch (error) {
+    uni.showToast({
+      title: questionBankDialogMode.value === 'create' ? '题库创建失败' : '题库重命名失败',
+      icon: 'none'
+    })
+  } finally {
+    questionBankSaving.value = false
+  }
+}
+
+async function openQuestionBank(bank) {
+  if (!bank?.id) return
+  activeSection.value = 'questions'
+  activeQuestionBank.value = bank
+  currentPage.value = 1
+  selectedIds.value = []
+  clearFiltersForQuestionBank()
+  await Promise.all([loadQuestionStats(bank.id), loadQuestions()])
+}
+
+async function returnToQuestionBanks() {
+  if (saving.value) return
+  drawerVisible.value = false
+  activeQuestionBank.value = null
+  currentPage.value = 1
+  selectedIds.value = []
+  clearFiltersForQuestionBank()
+  Object.assign(questionStats, globalQuestionStats)
+  await loadQuestionBanks()
+}
+
+function clearFiltersForQuestionBank() {
+  filters.subject = ''
+  filters.module = ''
+  filters.difficulty = ''
+  filters.status = ''
+  filters.search = ''
 }
 
 function changePage(page) {
@@ -1292,6 +1552,7 @@ async function createQuestion(target) {
   try {
     await createAdminQuestion({
       ...editable,
+      question_bank_id: activeQuestionBank.value?.id || null,
       question_type: 'single_choice',
       source_type: 'manual',
       source_year: null,
@@ -1406,7 +1667,12 @@ function requestCloseDrawer() {
 
 function openImportWorkspace() {
   lastSectionBeforeImport.value = activeSection.value
-  uni.navigateTo({ url: '/pages/admin/question-image-import?portal=1' })
+  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id : ''
+  const questionBankName = activeSection.value === 'questions' ? activeQuestionBank.value?.name : ''
+  const params = ['portal=1']
+  if (questionBankId) params.push(`question_bank_id=${encodeURIComponent(questionBankId)}`)
+  if (questionBankName) params.push(`question_bank_name=${encodeURIComponent(questionBankName)}`)
+  uni.navigateTo({ url: `/pages/admin/question-image-import?${params.join('&')}` })
 }
 
 function logout() {
@@ -1440,7 +1706,12 @@ function loadDevPreview() {
   portalLoading.value = false
   loadDevPreviewDashboard()
   loadQuestionStats()
-  if (activeSection.value === 'questions' || activeSection.value === 'review') {
+  if (activeSection.value === 'questions') {
+    loadQuestionBanks().then(() => {
+      const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
+      if (requestedBank) openQuestionBank(requestedBank)
+    })
+  } else if (activeSection.value === 'review') {
     loadQuestions()
   }
 }
@@ -1571,6 +1842,20 @@ function formatDate(value) {
     year: '2-digit',
     month: '2-digit',
     day: '2-digit'
+  }).format(date)
+}
+
+function formatDateTime(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
   }).format(date)
 }
 
@@ -1905,6 +2190,244 @@ button {
   box-sizing: border-box;
 }
 
+.question-bank-section {
+  max-width: 1420px;
+}
+
+.bank-library-hero {
+  min-height: 132px;
+  padding: 28px 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 24px;
+  border: 1px solid #dce9e8;
+  border-radius: 17px;
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 92% 8%, rgba(104, 220, 195, 0.2), transparent 31%),
+    linear-gradient(135deg, #ffffff, #f5fbfa);
+  box-shadow: 0 12px 30px rgba(31, 50, 71, 0.035);
+}
+
+.bank-library-kicker {
+  color: #47ac98;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: 0.13em;
+}
+
+.bank-library-title {
+  margin-top: 7px;
+  color: #26354a;
+  font-size: 21px;
+  font-weight: 760;
+  letter-spacing: -0.025em;
+}
+
+.bank-library-copy {
+  max-width: 570px;
+  margin-top: 8px;
+  color: #7f8c9d;
+  font-size: 10px;
+  line-height: 1.7;
+}
+
+.bank-create-button {
+  min-width: 108px;
+  height: 38px;
+  flex: 0 0 auto;
+  box-shadow: 0 8px 18px rgba(55, 193, 164, 0.18);
+}
+
+.bank-library-state {
+  min-height: 280px;
+  margin-top: 18px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  border: 1px solid #e0e8ec;
+  border-radius: 15px;
+  color: #8592a1;
+  background: #fff;
+  font-size: 11px;
+}
+
+.bank-library-state.error {
+  color: #b2605b;
+}
+
+.bank-file-grid {
+  margin-top: 19px;
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(255px, 1fr));
+  gap: 15px;
+}
+
+.bank-file-card {
+  min-height: 172px;
+  padding: 21px;
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  gap: 15px;
+  overflow: hidden;
+  border: 1px solid #e0e8ec;
+  border-radius: 14px;
+  box-sizing: border-box;
+  cursor: pointer;
+  background: #fff;
+  box-shadow: 0 9px 24px rgba(31, 50, 71, 0.025);
+  transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
+}
+
+.bank-file-card:hover {
+  transform: translateY(-2px);
+  border-color: #9bdfd0;
+  box-shadow: 0 14px 30px rgba(38, 109, 96, 0.11);
+}
+
+.bank-file-icon {
+  width: 55px;
+  height: 49px;
+  margin-top: 4px;
+  position: relative;
+  flex: 0 0 auto;
+}
+
+.bank-file-tab {
+  width: 24px;
+  height: 10px;
+  position: absolute;
+  top: 0;
+  left: 5px;
+  border-radius: 7px 7px 0 0;
+  background: #a6ead9;
+}
+
+.bank-file-face {
+  width: 55px;
+  height: 40px;
+  position: absolute;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #8edcca;
+  border-radius: 8px 10px 10px 10px;
+  color: #258371;
+  background: linear-gradient(135deg, #dff8f1, #bcecdf);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.bank-file-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.bank-file-title-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.bank-file-name {
+  min-width: 0;
+  overflow: hidden;
+  color: #2c3a4d;
+  font-size: 14px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bank-rename-button {
+  width: auto;
+  height: 25px;
+  margin: 0;
+  padding: 0 7px;
+  flex: 0 0 auto;
+  border: 1px solid #dce8e6;
+  border-radius: 6px;
+  color: #5d827b;
+  background: #f7fbfa;
+  font-size: 8px;
+  line-height: 1;
+}
+
+.bank-file-count {
+  margin-top: 13px;
+  color: #526377;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.bank-file-date {
+  margin-top: 7px;
+  color: #96a1ad;
+  font-size: 8px;
+}
+
+.bank-file-enter {
+  position: absolute;
+  right: 20px;
+  bottom: 17px;
+  color: #5b9c8f;
+  font-size: 8px;
+}
+
+.bank-file-enter text {
+  margin-left: 3px;
+  font-size: 11px;
+}
+
+.bank-file-create-card {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border-style: dashed;
+  border-color: #b8dbd4;
+  color: #66817c;
+  background: rgba(255, 255, 255, 0.6);
+}
+
+.bank-file-create-card:hover {
+  border-color: #62c8b2;
+  background: #f8fdfc;
+}
+
+.bank-file-create-icon {
+  width: 35px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 11px;
+  color: #288c78;
+  background: #dff5ef;
+  font-size: 21px;
+  font-weight: 400;
+}
+
+.bank-file-create-title {
+  margin-top: 3px;
+  color: #49726b;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.bank-file-create-copy {
+  color: #95a6a3;
+  font-size: 8px;
+}
+
 .welcome-row {
   display: flex;
   align-items: flex-end;
@@ -2100,6 +2623,26 @@ button {
   justify-content: space-between;
   border-bottom: 1px solid #e8eef1;
   box-sizing: border-box;
+}
+
+.question-bank-crumb {
+  margin-bottom: 5px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #99a6b1;
+  font-size: 8px;
+}
+
+.question-bank-crumb button {
+  width: auto;
+  height: auto;
+  margin: 0;
+  padding: 0;
+  color: #4caa96;
+  background: transparent;
+  font-size: 8px;
+  line-height: 1.2;
 }
 
 .dashboard-panel .panel-heading {
@@ -2936,6 +3479,102 @@ button {
   line-height: 1.55;
 }
 
+.bank-dialog-backdrop {
+  position: fixed;
+  z-index: 101;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 22px;
+  box-sizing: border-box;
+  background: rgba(20, 35, 52, 0.37);
+  backdrop-filter: blur(3px);
+}
+
+.bank-dialog {
+  width: min(400px, 100%);
+  padding: 28px;
+  border: 1px solid rgba(221, 233, 235, 0.9);
+  border-radius: 16px;
+  box-sizing: border-box;
+  background: #fff;
+  box-shadow: 0 22px 64px rgba(19, 35, 52, 0.2);
+}
+
+.bank-dialog-kicker {
+  color: #4ba993;
+  font-size: 8px;
+  font-weight: 800;
+  letter-spacing: 0.14em;
+}
+
+.bank-dialog-title {
+  margin-top: 8px;
+  color: #28374b;
+  font-size: 18px;
+  font-weight: 760;
+}
+
+.bank-dialog-copy {
+  margin-top: 8px;
+  color: #8491a0;
+  font-size: 10px;
+  line-height: 1.65;
+}
+
+.bank-dialog-input {
+  width: 100%;
+  height: 40px;
+  margin-top: 20px;
+  padding: 0 12px;
+  border: 1px solid #d9e4e8;
+  border-radius: 9px;
+  box-sizing: border-box;
+  color: #304057;
+  background: #fbfcfc;
+  font-size: 12px;
+}
+
+.bank-dialog-input:focus {
+  border-color: #6acbb6;
+  background: #fff;
+}
+
+.bank-dialog-actions {
+  margin-top: 22px;
+  display: flex;
+  justify-content: flex-end;
+  gap: 9px;
+}
+
+.bank-dialog-cancel,
+.bank-dialog-confirm {
+  width: auto;
+  height: 34px;
+  margin: 0;
+  padding: 0 15px;
+  border-radius: 8px;
+  font-size: 10px;
+  line-height: 1;
+}
+
+.bank-dialog-cancel {
+  border: 1px solid #dce5e9;
+  color: #718095;
+  background: #fff;
+}
+
+.bank-dialog-confirm {
+  color: #153f3a;
+  background: linear-gradient(135deg, #69ddc4, #4ccaae);
+}
+
+.bank-dialog-confirm[disabled],
+.bank-dialog-cancel[disabled] {
+  opacity: 0.58;
+}
+
 .drawer-backdrop {
   position: fixed;
   z-index: 100;
@@ -3335,6 +3974,15 @@ button {
   .dashboard-metrics,
   .question-summary,
   .import-flow {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .bank-library-hero {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .bank-file-grid {
     grid-template-columns: 1fr 1fr;
   }
 

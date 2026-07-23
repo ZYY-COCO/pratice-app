@@ -32,6 +32,10 @@ from app.schemas.admin import (
     QuestionAdminDashboardQuestionItem,
     QuestionAdminDashboardResponse,
     QuestionAdminPortalMeResponse,
+    QuestionBankCreateRequest,
+    QuestionBankItem,
+    QuestionBankListResponse,
+    QuestionBankRenameRequest,
 )
 from app.services.question_sources import (
     AI_QUESTION_SOURCE_TYPE,
@@ -260,6 +264,7 @@ def _load_question_admin_dashboard(
 def _apply_admin_question_filters(
     query,
     *,
+    question_bank_id: str | None = None,
     exam_code: str | None = None,
     subject: str | None = None,
     module: str | None = None,
@@ -269,6 +274,8 @@ def _apply_admin_question_filters(
     search: str | None = None,
     difficulty: int | None = None,
 ):
+    if question_bank_id:
+        query = query.eq("question_bank_id", question_bank_id)
     if exam_code:
         query = query.eq("exam_code", exam_code)
     if subject:
@@ -383,6 +390,58 @@ def _get_user_or_404(supabase, user_id: str) -> dict:
     return response.data[0]
 
 
+def _normalize_question_bank_name(value: str) -> str:
+    name = value.strip()
+    if not name:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="题库名称不能为空")
+    return name
+
+
+def _get_question_bank_or_404(supabase, question_bank_id: str) -> dict:
+    response = (
+        supabase.table("question_banks")
+        .select("id,name,created_at,updated_at")
+        .eq("id", question_bank_id)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="题库不存在")
+    return response.data[0]
+
+
+def _list_question_bank_items(supabase) -> list[QuestionBankItem]:
+    bank_response = (
+        supabase.table("question_banks")
+        .select("id,name,created_at,updated_at")
+        .order("updated_at", desc=True)
+        .limit(1000)
+        .execute()
+    )
+    question_response = (
+        exclude_ai_generated_questions(supabase.table("questions").select("question_bank_id"))
+        .limit(20000)
+        .execute()
+    )
+    counts: dict[str, int] = defaultdict(int)
+    for row in question_response.data or []:
+        question_bank_id = str(row.get("question_bank_id") or "")
+        if question_bank_id:
+            counts[question_bank_id] += 1
+
+    return [
+        QuestionBankItem(
+            id=str(row.get("id")),
+            name=str(row.get("name") or "未命名题库"),
+            question_count=counts.get(str(row.get("id")), 0),
+            created_at=row.get("created_at"),
+            updated_at=row.get("updated_at"),
+        )
+        for row in bank_response.data or []
+        if row.get("id")
+    ]
+
+
 def _get_question_or_404(supabase, question_id: str) -> dict:
     response = supabase.table("questions").select("*").eq("id", question_id).limit(1).execute()
     if not response.data:
@@ -423,7 +482,10 @@ def _validation_error_messages(exc: ValidationError) -> list[str]:
     return messages or ["题目字段格式不正确"]
 
 
-def _build_image_import_create_payload(item) -> AdminQuestionCreateRequest:
+def _build_image_import_create_payload(
+    item,
+    question_bank_id: str | None = None,
+) -> AdminQuestionCreateRequest:
     raw = item.model_dump()
     source_type = str(raw.get("source_type") or "source_extracted").strip()
     if source_type not in IMAGE_IMPORT_SOURCE_TYPES:
@@ -442,6 +504,7 @@ def _build_image_import_create_payload(item) -> AdminQuestionCreateRequest:
     review_note = f"图片导入：{image_name}" if image_name else "图片导入"
 
     return AdminQuestionCreateRequest(
+        question_bank_id=question_bank_id,
         exam_code=str(raw.get("exam_code") or "").strip(),
         subject=str(raw.get("subject") or "").strip(),
         module=str(raw.get("module") or "").strip(),
@@ -481,6 +544,8 @@ def _find_existing_question_duplicate_id(supabase, question: dict) -> str | None
         .eq("module", question["module"])
         .eq("submodule", question["submodule"])
     )
+    if question.get("question_bank_id"):
+        query = query.eq("question_bank_id", question["question_bank_id"])
     response = query.limit(1).execute()
     if response.data:
         return str(response.data[0].get("id") or "")
@@ -492,6 +557,9 @@ def _dry_run_image_import_questions(
     payload: AdminQuestionImageImportRequest,
     admin_profile: dict,
 ) -> AdminQuestionImageImportDryRunResponse:
+    if payload.question_bank_id:
+        _get_question_bank_or_404(supabase, payload.question_bank_id)
+
     results: list[AdminQuestionImageImportResultItem] = []
     seen_keys: dict[tuple[str, str, str, str], int] = {}
 
@@ -502,7 +570,7 @@ def _dry_run_image_import_questions(
         has_duplicate = False
 
         try:
-            create_payload = _build_image_import_create_payload(item)
+            create_payload = _build_image_import_create_payload(item, payload.question_bank_id)
             question = _build_question_create_data(create_payload, admin_profile)
             duplicate_key = _question_duplicate_key(question)
             first_index = seen_keys.get(duplicate_key)
@@ -948,8 +1016,82 @@ def question_admin_portal_dashboard(
     )
 
 
+@router.get("/question-banks", response_model=QuestionBankListResponse)
+def admin_question_banks(
+    _: dict = Depends(require_question_admin_user),
+) -> QuestionBankListResponse:
+    return QuestionBankListResponse(items=_list_question_bank_items(get_supabase_admin()))
+
+
+@router.post("/question-banks", response_model=QuestionBankItem, status_code=status.HTTP_201_CREATED)
+def admin_create_question_bank(
+    payload: QuestionBankCreateRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> QuestionBankItem:
+    supabase = get_supabase_admin()
+    name = _normalize_question_bank_name(payload.name)
+    response = supabase.table("question_banks").insert({
+        "name": name,
+        "created_by": admin_profile.get("id"),
+    }).execute()
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="题库创建失败")
+    row = response.data[0]
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="create_question_bank",
+        target_type="question_bank",
+        target_id=str(row.get("id") or ""),
+        details={"name": name},
+    )
+    return QuestionBankItem(
+        id=str(row.get("id")),
+        name=str(row.get("name") or name),
+        question_count=0,
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+@router.patch("/question-banks/{question_bank_id}", response_model=QuestionBankItem)
+def admin_rename_question_bank(
+    question_bank_id: str,
+    payload: QuestionBankRenameRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> QuestionBankItem:
+    supabase = get_supabase_admin()
+    existing = _get_question_bank_or_404(supabase, question_bank_id)
+    name = _normalize_question_bank_name(payload.name)
+    response = (
+        supabase.table("question_banks")
+        .update({"name": name})
+        .eq("id", question_bank_id)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="题库重命名失败")
+    row = response.data[0]
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="rename_question_bank",
+        target_type="question_bank",
+        target_id=question_bank_id,
+        details={"from": existing.get("name"), "to": name},
+    )
+    return QuestionBankItem(
+        id=str(row.get("id")),
+        name=str(row.get("name") or name),
+        question_count=0,
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
 @router.get("/questions", response_model=AdminQuestionListResponse)
 def admin_questions(
+    question_bank_id: str | None = Query(default=None, max_length=80),
     exam_code: str | None = Query(default=None, max_length=20),
     subject: str | None = Query(default=None, max_length=40),
     module: str | None = Query(default=None, max_length=80),
@@ -968,6 +1110,7 @@ def admin_questions(
     )
     query = _apply_admin_question_filters(
         query,
+        question_bank_id=question_bank_id,
         exam_code=exam_code,
         subject=subject,
         module=module,
@@ -987,6 +1130,8 @@ def admin_create_question(
     admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
+    if payload.question_bank_id:
+        _get_question_bank_or_404(supabase, payload.question_bank_id)
     insert_data = _build_question_create_data(payload, admin_profile)
     response = supabase.table("questions").insert(insert_data).execute()
     if not response.data:
@@ -1088,6 +1233,7 @@ def admin_bulk_update_question_status(
             )
             query = _apply_admin_question_filters(
                 query,
+                question_bank_id=filters.question_bank_id,
                 exam_code=filters.exam_code,
                 subject=filters.subject,
                 module=filters.module,

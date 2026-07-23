@@ -7,6 +7,7 @@
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
         <view class="hero-subtitle">上传文件，识别并校对题目内容</view>
+        <view v-if="questionBankName" class="target-bank-chip">导入至：{{ questionBankName }}</view>
       </view>
       <button class="history-btn" @tap="showImportHistory">
         <text class="history-icon">◷</text>
@@ -260,6 +261,8 @@ const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
 const allowed = ref(false)
 const portalEntry = ref(false)
+const questionBankId = ref('')
+const questionBankName = ref('')
 const editorVisible = ref(false)
 const imageItems = ref([])
 const drafts = ref([])
@@ -360,6 +363,8 @@ const canCommit = computed(() => (
 
 onLoad(async (options = {}) => {
   portalEntry.value = options.portal === '1'
+  questionBankId.value = String(options.question_bank_id || '')
+  questionBankName.value = String(options.question_bank_name || '')
   if (!isLoggedIn()) {
     const loginTarget = portalEntry.value
       ? '/pages/admin/question-login'
@@ -1125,6 +1130,7 @@ function draftStatusText(draft, index) {
 
 function buildImportPayload() {
   return {
+    question_bank_id: questionBankId.value || undefined,
     questions: drafts.value.map((draft, index) => {
       const catalog = getDraftCatalog(draft)
       return {
@@ -1231,7 +1237,7 @@ function returnFromImport() {
   uni.navigateBack({
     fail() {
       const target = portalEntry.value
-        ? '/pages/admin/question-desktop?section=questions'
+        ? `/pages/admin/question-desktop?section=questions${questionBankId.value ? `&question_bank_id=${encodeURIComponent(questionBankId.value)}` : ''}`
         : '/pages/admin/index?tab=questions'
       uni.redirectTo({ url: target })
     }
@@ -1314,6 +1320,17 @@ function returnFromImport() {
   margin-top: 10rpx;
   font-size: 23rpx;
   color: #6b7280;
+}
+
+.target-bank-chip {
+  width: fit-content;
+  margin-top: 12rpx;
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+  color: #177b68;
+  background: #ddf5ee;
+  font-size: 20rpx;
+  font-weight: 700;
 }
 
 .history-btn {
@@ -2360,6 +2377,12 @@ function returnFromImport() {
     margin-top: 5px;
     color: #7d8b9c;
     font-size: 11px;
+  }
+
+  .target-bank-chip {
+    margin-top: 6px;
+    padding: 3px 8px;
+    font-size: 9px;
   }
 
   .back-btn,

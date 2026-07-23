@@ -67,6 +67,7 @@ class AdminQuestionStatusRequest(BaseModel):
 
 
 class AdminQuestionCreateRequest(BaseModel):
+    question_bank_id: str | None = Field(default=None, max_length=80)
     exam_code: str = Field(pattern="^(Z001|Z002|COMMON)$")
     subject: str = Field(min_length=1, max_length=40)
     module: str = Field(min_length=1, max_length=80)
@@ -109,6 +110,7 @@ class AdminQuestionReviewRequest(BaseModel):
 
 
 class AdminQuestionBulkFilters(BaseModel):
+    question_bank_id: str | None = Field(default=None, max_length=80)
     exam_code: str | None = Field(default=None, max_length=20)
     subject: str | None = Field(default=None, max_length=40)
     module: str | None = Field(default=None, max_length=80)
@@ -150,6 +152,7 @@ class AdminQuestionImageImportItem(BaseModel):
 
 
 class AdminQuestionImageImportRequest(BaseModel):
+    question_bank_id: str | None = Field(default=None, max_length=80)
     questions: list[AdminQuestionImageImportItem] = Field(min_length=1, max_length=100)
 
 
@@ -190,6 +193,26 @@ class AdminQuestionDetailResponse(BaseModel):
 class AdminQuestionListResponse(BaseModel):
     items: list[dict]
     count: int
+
+
+class QuestionBankItem(BaseModel):
+    id: str
+    name: str
+    question_count: int = 0
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class QuestionBankListResponse(BaseModel):
+    items: list[QuestionBankItem] = Field(default_factory=list)
+
+
+class QuestionBankCreateRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
+
+
+class QuestionBankRenameRequest(BaseModel):
+    name: str = Field(min_length=1, max_length=80)
 
 
 class QuestionAdminPortalMeResponse(BaseModel):

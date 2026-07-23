@@ -23,6 +23,29 @@ export function fetchQuestionAdminDashboard(params = {}) {
   })
 }
 
+export function fetchAdminQuestionBanks() {
+  return request({
+    url: '/admin/question-banks',
+    method: 'GET'
+  })
+}
+
+export function createAdminQuestionBank(payload) {
+  return request({
+    url: '/admin/question-banks',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function renameAdminQuestionBank(questionBankId, payload) {
+  return request({
+    url: `/admin/question-banks/${questionBankId}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchAdminOverview() {
   return request({
     url: '/admin/overview',
