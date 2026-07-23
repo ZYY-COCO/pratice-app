@@ -54,10 +54,11 @@
             <text>{{ refreshing ? '刷新中' : '刷新数据' }}</text>
           </button>
           <view class="profile-chip">
-            <view class="profile-avatar">{{ profileInitial }}</view>
+            <view class="profile-avatar">
+              <image class="profile-avatar-image" src="/static/brand/question-bank-manager-avatar.png" mode="aspectFit" />
+            </view>
             <view class="profile-copy">
               <view class="profile-name">{{ profileName }}</view>
-              <view class="profile-role">题库运营</view>
             </view>
           </view>
         </view>
@@ -912,8 +913,7 @@ const pageTitle = computed(() => {
   }
   return titles[activeSection.value] || '题库中台'
 })
-const profileName = computed(() => authUser.value?.nickname || authUser.value?.email?.split('@')[0] || '运营同事')
-const profileInitial = computed(() => String(profileName.value || '港').slice(0, 1).toUpperCase())
+const profileName = '题库管理'
 const todayLabel = computed(() => new Intl.DateTimeFormat('zh-CN', {
   month: 'long',
   day: 'numeric',
@@ -2241,11 +2241,15 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border-radius: 11px;
-  color: #1a544b;
-  background: #d9f4ed;
-  font-size: 13px;
-  font-weight: 800;
+  background: #101c2a;
+}
+
+.profile-avatar-image {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .profile-name {
@@ -2256,12 +2260,6 @@ button {
   font-weight: 700;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.profile-role {
-  margin-top: 3px;
-  color: #97a1ae;
-  font-size: 9px;
 }
 
 .content-section {
