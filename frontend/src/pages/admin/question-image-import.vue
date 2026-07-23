@@ -367,7 +367,7 @@ onLoad(async (options = {}) => {
   questionBankName.value = String(options.question_bank_name || '')
   if (!isLoggedIn()) {
     const loginTarget = portalEntry.value
-      ? '/pages/admin/question-login'
+      ? `/pages/login/index?portal=1&redirect=${encodeURIComponent('/pages/admin/question-desktop?section=questions')}`
       : `/pages/login/index?redirect=${encodeURIComponent('/pages/admin/question-image-import')}`
     uni.redirectTo({ url: loginTarget })
     return

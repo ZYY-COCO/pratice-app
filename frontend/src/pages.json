@@ -60,7 +60,7 @@
     {
       "path": "pages/admin/question-login",
       "style": {
-        "navigationBarTitleText": "题库中台登录",
+        "navigationBarTitleText": "登录",
         "navigationStyle": "custom"
       }
     },

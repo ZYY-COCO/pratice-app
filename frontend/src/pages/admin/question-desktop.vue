@@ -1764,7 +1764,8 @@ function logout() {
 }
 
 function goToPortalLogin() {
-  uni.reLaunch({ url: '/pages/admin/question-login' })
+  const redirect = encodeURIComponent('/pages/admin/question-desktop')
+  uni.reLaunch({ url: `/pages/login/index?portal=1&redirect=${redirect}` })
 }
 
 function loadDevPreview() {

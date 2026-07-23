@@ -314,7 +314,8 @@ import {
   redirectH5,
   replaceCurrentH5Url
 } from '../../platform/runtime'
-import { saveAuthSession } from '../../utils/auth'
+import { fetchQuestionAdminPortalMe } from '../../api/admin'
+import { clearAuthSession, isLoggedIn, saveAuthSession } from '../../utils/auth'
 import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
@@ -343,6 +344,7 @@ const authMethod = ref('email')
 const submitting = ref(false)
 const helpVisible = ref(false)
 const redirect = ref('/pages/home/index')
+const portalLogin = ref(false)
 const tipText = ref('')
 const tipType = ref('warning')
 const sendingCode = reactive({
@@ -488,8 +490,9 @@ function startCodeCountdown(key) {
   codeCountdownTimers[key] = setInterval(() => updateCodeCountdown(key), 1000)
 }
 
-onLoad((options) => {
+onLoad(async (options) => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
+  portalLogin.value = options?.portal === '1'
   if (options?.redirect) {
     redirect.value = decodeURIComponent(options.redirect)
   }
@@ -527,7 +530,7 @@ onLoad((options) => {
     return
   }
 
-  redirectIfAlreadyAuthed(redirect.value)
+  await redirectPortalSessionIfNeeded()
 })
 
 onUnload(() => {
@@ -774,12 +777,14 @@ async function submit() {
   await submitResetPassword()
 }
 
-function saveSessionAndRedirect(response, successText) {
+async function saveSessionAndRedirect(response, successText) {
   saveAuthSession({
     accessToken: response.access_token,
     refreshToken: response.refresh_token,
     user: response.user
   })
+
+  if (!(await ensureQuestionPortalAccess())) return
 
   tipType.value = 'success'
   tipText.value = successText
@@ -788,6 +793,35 @@ function saveSessionAndRedirect(response, successText) {
   setTimeout(() => {
     uni.reLaunch({ url: redirect.value })
   }, 200)
+}
+
+async function redirectPortalSessionIfNeeded() {
+  if (portalLogin.value && isLoggedIn()) {
+    submitting.value = true
+    const allowed = await ensureQuestionPortalAccess()
+    submitting.value = false
+    if (!allowed) return
+  }
+  redirectIfAlreadyAuthed(redirect.value)
+}
+
+async function ensureQuestionPortalAccess() {
+  if (!portalLogin.value) return true
+
+  try {
+    await fetchQuestionAdminPortalMe()
+    return true
+  } catch (error) {
+    clearAuthSession()
+    const detail = String(error?.detail || '')
+    const message = detail.includes('not configured')
+      ? '题库管理权限尚未配置，请联系系统维护人员'
+      : '该账号尚未加入题库管理权限名单'
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+    return false
+  }
 }
 
 async function submitPhoneLogin(form) {
@@ -866,6 +900,8 @@ async function submitLogin() {
       refreshToken: response.refresh_token,
       user: response.user
     })
+
+    if (!(await ensureQuestionPortalAccess())) return
 
     tipType.value = 'success'
     tipText.value = '登录成功，已保存登录状态。'
