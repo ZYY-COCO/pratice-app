@@ -42,11 +42,12 @@ as $$
       ) as today_start,
       now() - interval '15 minutes' as online_start
   ),
-  today_practicing as (
-    select count(distinct ua.user_id)::integer as total
-    from public.user_answers ua
+  today_visitors as (
+    select count(distinct auth_user.id)::integer as total
+    from auth.users auth_user
+    join public.users app_user on app_user.id = auth_user.id
     cross join boundaries b
-    where ua.created_at >= b.today_start
+    where auth_user.last_sign_in_at >= b.today_start
   ),
   online_member_activity as (
     select count(distinct ua.user_id)::integer as total
@@ -98,7 +99,7 @@ as $$
     join public.questions q on q.id = rq.question_id
   )
   select jsonb_build_object(
-    'today_practicing_users', (select total from today_practicing),
+    'today_practicing_users', (select total from today_visitors),
     'online_members', (select total from online_member_activity),
     'online_window_minutes', 15,
     'difficult_questions', (select items from difficult_questions)

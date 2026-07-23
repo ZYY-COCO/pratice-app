@@ -87,7 +87,7 @@
               <view class="metric-content">
                 <view class="metric-label">今日访问</view>
                 <view class="metric-value">{{ formatCount(dashboard.today_practicing_users) }}</view>
-                <view class="metric-note">今日产生刷题记录的去重用户</view>
+                <view class="metric-note">今日成功登录的去重用户</view>
               </view>
               <view class="metric-chip">北京时间</view>
             </view>
