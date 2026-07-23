@@ -296,7 +296,9 @@
               @tap="applySummaryFilter(item.key)"
             >
               <view class="summary-top">
-                <view class="summary-icon" :class="item.tone">{{ item.icon }}</view>
+                <view class="summary-icon summary-icon-asset" :class="item.tone">
+                  <image class="summary-icon-image" :src="item.iconSrc" mode="aspectFit" />
+                </view>
                 <view class="summary-label">{{ item.label }}</view>
               </view>
               <view class="summary-value">{{ formatCount(item.value) }}</view>
@@ -929,10 +931,10 @@ const activeQuestionBankCount = computed(() => (
   Number(questionStats.pendingReview || 0)
 ))
 const summaryCards = computed(() => [
-  { key: '', label: '全部题目', value: activeQuestionBankCount.value, icon: '题', tone: 'blue' },
-  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: questionStats.pendingReview, icon: '审', tone: 'orange' },
-  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: questionStats.active, icon: '发', tone: 'mint' },
-  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: questionStats.archived, icon: '架', tone: 'slate' }
+  { key: '', label: '全部题目', value: activeQuestionBankCount.value, iconSrc: '/static/admin-icons/question-count.svg', tone: 'blue' },
+  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: questionStats.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange' },
+  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: questionStats.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint' },
+  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: questionStats.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate' }
 ])
 const moduleOptions = computed(() => [
   { label: '全部模块', value: '' },
@@ -2983,6 +2985,17 @@ button {
   height: 31px;
   border-radius: 9px;
   font-size: 10px;
+}
+
+.summary-icon.summary-icon-asset {
+  padding: 6px;
+  box-sizing: border-box;
+}
+
+.summary-icon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
 }
 
 .summary-label {

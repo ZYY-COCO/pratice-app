@@ -803,26 +803,26 @@ const questionStatCards = computed(() => [
   {
     label: '题量',
     value: overview.value.total_questions || questionListCount.value || 0,
-    icon: '题',
+    iconSrc: '/static/admin-icons/question-count.svg',
     tone: 'blue'
   },
   {
     label: '待审核',
     value: questionStats.pendingReview,
-    icon: '审',
+    iconSrc: '/static/admin-icons/pending-review.svg',
     tone: 'orange'
   },
   {
     label: '下架',
     value: questionStats.archived,
-    icon: '架',
-    tone: 'slate'
+    iconSrc: '/static/admin-icons/unpublish.svg',
+    tone: 'green'
   },
   {
     label: '发布',
     value: questionStats.active,
-    icon: '发',
-    tone: 'mint'
+    iconSrc: '/static/admin-icons/publish.svg',
+    tone: 'blue'
   }
 ])
 
@@ -2659,16 +2659,13 @@ function goBack() {
 }
 
 .question-stat-icon {
-  flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: center;
   width: 36rpx;
   height: 36rpx;
-  border-radius: 10rpx;
-  color: #416b98;
-  background: #e5eef8;
-  font-size: 20rpx;
+  color: #2563eb;
+  font-size: 28rpx;
   font-weight: 900;
   line-height: 1;
 }
@@ -2684,28 +2681,9 @@ function goBack() {
   color: #f97316;
 }
 
-.question-stat-card.orange .question-stat-icon {
-  color: #bd7544;
-  background: #fff0e1;
-}
-
-.question-stat-card.mint .question-stat-icon,
-.question-stat-card.mint .question-stat-value {
+.question-stat-card.green .question-stat-icon,
+.question-stat-card.green .question-stat-value {
   color: #16a34a;
-}
-
-.question-stat-card.mint .question-stat-icon {
-  color: #16836e;
-  background: #dcf6ef;
-}
-
-.question-stat-card.slate .question-stat-icon,
-.question-stat-card.slate .question-stat-value {
-  color: #64748b;
-}
-
-.question-stat-card.slate .question-stat-icon {
-  background: #edf1f4;
 }
 
 .question-stat-label {
