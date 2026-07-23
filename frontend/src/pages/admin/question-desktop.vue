@@ -86,7 +86,9 @@
 
           <view class="dashboard-metrics">
             <view class="metric-card">
-              <view class="metric-icon mint">今</view>
+              <view class="metric-icon metric-icon-asset">
+                <image class="metric-icon-image" src="/static/admin-icons/dashboard-visits.svg" mode="aspectFit" />
+              </view>
               <view class="metric-content">
                 <view class="metric-label">今日访问</view>
                 <view class="metric-value">{{ formatCount(dashboard.today_practicing_users) }}</view>
@@ -96,7 +98,9 @@
             </view>
 
             <view class="metric-card">
-              <view class="metric-icon blue">会</view>
+              <view class="metric-icon metric-icon-asset">
+                <image class="metric-icon-image" src="/static/admin-icons/dashboard-members.svg" mode="aspectFit" />
+              </view>
               <view class="metric-content">
                 <view class="metric-label">在线会员</view>
                 <view class="metric-value">{{ formatCount(dashboard.online_members) }}</view>
@@ -106,7 +110,9 @@
             </view>
 
             <view class="metric-card">
-              <view class="metric-icon slate">题</view>
+              <view class="metric-icon metric-icon-asset">
+                <image class="metric-icon-image" src="/static/admin-icons/dashboard-question-bank.svg" mode="aspectFit" />
+              </view>
               <view class="metric-content">
                 <view class="metric-label">正式题库</view>
                 <view class="metric-value">{{ formatCount(totalQuestionCount) }}</view>
@@ -2604,6 +2610,20 @@ button {
 .summary-icon.slate {
   color: #65758b;
   background: #edf1f4;
+}
+
+.metric-icon.metric-icon-asset {
+  padding: 9px;
+  box-sizing: border-box;
+  background: #e7f6f1;
+  border: 1px solid #d0eee5;
+}
+
+.metric-icon-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+  filter: brightness(0) saturate(100%) invert(45%) sepia(30%) saturate(1130%) hue-rotate(121deg) brightness(94%) contrast(88%);
 }
 
 .summary-icon.orange {
