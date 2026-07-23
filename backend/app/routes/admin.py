@@ -53,6 +53,8 @@ QUESTION_ADMIN_DASHBOARD_LIMIT = 8
 QUESTION_ADMIN_ONLINE_WINDOW_MINUTES = 15
 QUESTION_ADMIN_DASHBOARD_SUBJECTS = {"中华文化", "英语运用", "逻辑推理", "数学基础"}
 QUESTION_ADMIN_DASHBOARD_SORTS = {"wrong_count", "accuracy", "attempt_count"}
+QUESTION_ADMIN_DASHBOARD_PERIOD_DAYS = {0, 7, 30}
+QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS = 5
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 
 
@@ -124,6 +126,8 @@ def _question_admin_dashboard_fallback(
     *,
     subject: str | None = None,
     sort_by: str = "wrong_count",
+    min_attempts: int = QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS,
+    period_days: int = 0,
 ) -> QuestionAdminDashboardResponse:
     """Compatibility path while the dashboard RPC migration is being applied."""
 
@@ -132,6 +136,7 @@ def _question_admin_dashboard_fallback(
     shanghai_day_start = shanghai_now.replace(hour=0, minute=0, second=0, microsecond=0)
     day_start = shanghai_day_start.astimezone(timezone.utc)
     online_start = current - timedelta(minutes=QUESTION_ADMIN_ONLINE_WINDOW_MINUTES)
+    period_start = current - timedelta(days=period_days) if period_days else None
 
     today_response = (
         supabase.table("user_answers")
@@ -176,12 +181,15 @@ def _question_admin_dashboard_fallback(
 
     answer_response = (
         supabase.table("user_answers")
-        .select("question_id,is_correct")
+        .select("question_id,is_correct,created_at")
         .limit(20000)
         .execute()
     )
     aggregates: dict[str, dict[str, int]] = defaultdict(lambda: {"attempt_count": 0, "wrong_count": 0})
     for row in answer_response.data or []:
+        answered_at = _parse_datetime(row.get("created_at"))
+        if period_start and (not answered_at or answered_at < period_start):
+            continue
         question_id = str(row.get("question_id") or "")
         if not question_id:
             continue
@@ -205,6 +213,8 @@ def _question_admin_dashboard_fallback(
         if not question:
             continue
         attempts = stats["attempt_count"]
+        if attempts < min_attempts:
+            continue
         correct = max(attempts - stats["wrong_count"], 0)
         difficult_questions.append(QuestionAdminDashboardQuestionItem(
             question_id=question_id,
@@ -230,6 +240,8 @@ def _load_question_admin_dashboard(
     *,
     subject: str | None = None,
     sort_by: str = "wrong_count",
+    min_attempts: int = QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS,
+    period_days: int = 0,
 ) -> QuestionAdminDashboardResponse:
     try:
         response = supabase.rpc(
@@ -238,6 +250,8 @@ def _load_question_admin_dashboard(
                 "p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT,
                 "p_subject": subject,
                 "p_sort_by": sort_by,
+                "p_min_attempts": min_attempts,
+                "p_period_days": period_days,
             },
         ).execute()
         return _normalize_question_admin_dashboard(response.data)
@@ -246,6 +260,8 @@ def _load_question_admin_dashboard(
             supabase,
             subject=subject,
             sort_by=sort_by,
+            min_attempts=min_attempts,
+            period_days=period_days,
         )
         try:
             legacy_response = supabase.rpc(
@@ -999,6 +1015,8 @@ def question_admin_portal_me(
 def question_admin_portal_dashboard(
     subject: str | None = Query(default=None, max_length=40),
     sort_by: str = Query(default="wrong_count", max_length=30),
+    min_attempts: int = Query(default=QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS, ge=1, le=10000),
+    period_days: int = Query(default=0, ge=0, le=365),
     _: dict = Depends(require_question_admin_user),
 ) -> QuestionAdminDashboardResponse:
     normalized_subject = subject.strip() if subject else None
@@ -1008,11 +1026,15 @@ def question_admin_portal_dashboard(
     normalized_sort = sort_by.strip().lower() or "wrong_count"
     if normalized_sort not in QUESTION_ADMIN_DASHBOARD_SORTS:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方式")
+    if period_days not in QUESTION_ADMIN_DASHBOARD_PERIOD_DAYS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的时间范围")
 
     return _load_question_admin_dashboard(
         get_supabase_admin(),
         subject=normalized_subject,
         sort_by=normalized_sort,
+        min_attempts=min_attempts,
+        period_days=period_days,
     )
 
 

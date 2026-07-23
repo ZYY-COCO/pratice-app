@@ -1,29 +1,5 @@
--- Internal question-bank portal access and dashboard aggregation.
--- Apply this migration before granting non-admin users access to the portal.
-
-create table if not exists public.question_admin_access (
-  user_id uuid primary key references public.users(id) on delete cascade,
-  display_name text,
-  note text,
-  is_active boolean not null default true,
-  created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
-);
-
-create index if not exists idx_question_admin_access_active
-  on public.question_admin_access (is_active)
-  where is_active = true;
-
-drop trigger if exists set_question_admin_access_updated_at
-  on public.question_admin_access;
-create trigger set_question_admin_access_updated_at
-before update on public.question_admin_access
-for each row execute function public.set_updated_at();
-
-alter table public.question_admin_access enable row level security;
-
-revoke all on public.question_admin_access from anon, authenticated;
-grant all on public.question_admin_access to service_role;
+-- Incremental migration for high-frequency-question dashboard filters.
+-- Run this in Supabase SQL Editor after deploying the dashboard filter update.
 
 create or replace function public.question_admin_dashboard_snapshot(
   p_limit integer default 8,
@@ -128,8 +104,6 @@ as $$
   );
 $$;
 
--- Replace the previous function signatures so calls with p_limit only keep
--- resolving to this function through its default parameters.
 drop function if exists public.question_admin_dashboard_snapshot(integer);
 drop function if exists public.question_admin_dashboard_snapshot(integer, text, text);
 
@@ -137,16 +111,3 @@ revoke all on function public.question_admin_dashboard_snapshot(integer, text, t
   from public, anon, authenticated;
 grant execute on function public.question_admin_dashboard_snapshot(integer, text, text, integer, integer)
   to service_role;
-
--- Grant access by inserting an existing app user. There is intentionally no
--- management UI for this table.
---
--- insert into public.question_admin_access (user_id, display_name, note)
--- select id, coalesce(nickname, email), '题库后台'
--- from public.users
--- where lower(email) = lower('editor@example.com')
--- on conflict (user_id) do update
--- set is_active = true,
---     display_name = excluded.display_name,
---     note = excluded.note,
---     updated_at = now();

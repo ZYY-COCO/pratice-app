@@ -135,6 +135,30 @@
                   </picker>
                 </view>
                 <view class="dashboard-filter-control">
+                  <text class="dashboard-filter-label">时间范围</text>
+                  <picker
+                    :range="dashboardTimeRangeLabels"
+                    :value="selectedDashboardTimeRangeIndex"
+                    @change="handleDashboardTimeRangeChange"
+                  >
+                    <view class="dashboard-select compact">
+                      <text>{{ selectedDashboardTimeRangeLabel }}</text><text class="select-arrow">⌄</text>
+                    </view>
+                  </picker>
+                </view>
+                <view class="dashboard-filter-control">
+                  <text class="dashboard-filter-label">最少作答</text>
+                  <picker
+                    :range="dashboardMinAttemptsLabels"
+                    :value="selectedDashboardMinAttemptsIndex"
+                    @change="handleDashboardMinAttemptsChange"
+                  >
+                    <view class="dashboard-select attempts">
+                      <text>{{ selectedDashboardMinAttemptsLabel }}</text><text class="select-arrow">⌄</text>
+                    </view>
+                  </picker>
+                </view>
+                <view class="dashboard-filter-control">
                   <text class="dashboard-filter-label">排序</text>
                   <picker
                     :range="dashboardSortLabels"
@@ -691,7 +715,9 @@ const dashboard = reactive({
 })
 const dashboardFilters = reactive({
   subject: '',
-  sort_by: 'wrong_count'
+  sort_by: 'wrong_count',
+  min_attempts: 5,
+  period_days: 0
 })
 const globalQuestionStats = reactive({
   active: 0,
@@ -779,6 +805,18 @@ const dashboardSortOptions = [
   { label: '答错次数排序', value: 'wrong_count' },
   { label: '正确率排序', value: 'accuracy' },
   { label: '作答次数排序', value: 'attempt_count' }
+]
+const dashboardTimeRangeOptions = [
+  { label: '全部时间', value: 0 },
+  { label: '近 7 天', value: 7 },
+  { label: '近 30 天', value: 30 }
+]
+const dashboardMinAttemptsOptions = [
+  { label: '全部作答', value: 1 },
+  { label: '至少 3 次', value: 3 },
+  { label: '至少 5 次', value: 5 },
+  { label: '至少 10 次', value: 10 },
+  { label: '至少 20 次', value: 20 }
 ]
 const answerOptions = ['A', 'B', 'C', 'D']
 const previewQuestions = [
@@ -918,6 +956,8 @@ const dashboardSubjectOptions = computed(() => [
 ])
 const dashboardSubjectLabels = computed(() => dashboardSubjectOptions.value.map((item) => item.label))
 const dashboardSortLabels = computed(() => dashboardSortOptions.map((item) => item.label))
+const dashboardTimeRangeLabels = computed(() => dashboardTimeRangeOptions.map((item) => item.label))
+const dashboardMinAttemptsLabels = computed(() => dashboardMinAttemptsOptions.map((item) => item.label))
 const moduleLabels = computed(() => moduleOptions.value.map((item) => item.label))
 const difficultyLabels = computed(() => difficultyOptions.map((item) => item.label))
 const statusLabels = computed(() => statusOptions.map((item) => item.label))
@@ -930,6 +970,14 @@ const selectedDashboardSortIndex = computed(() => optionIndex(
   dashboardSortOptions,
   dashboardFilters.sort_by
 ))
+const selectedDashboardTimeRangeIndex = computed(() => optionIndex(
+  dashboardTimeRangeOptions,
+  Number(dashboardFilters.period_days || 0)
+))
+const selectedDashboardMinAttemptsIndex = computed(() => optionIndex(
+  dashboardMinAttemptsOptions,
+  Number(dashboardFilters.min_attempts || 1)
+))
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, filters.module))
 const selectedDifficultyIndex = computed(() => optionIndex(difficultyOptions, filters.difficulty))
 const selectedStatusIndex = computed(() => optionIndex(statusOptions, filters.status))
@@ -940,11 +988,17 @@ const selectedDashboardSubjectLabel = computed(() => (
 const selectedDashboardSortLabel = computed(() => (
   dashboardSortOptions[selectedDashboardSortIndex.value]?.label || '答错次数排序'
 ))
+const selectedDashboardTimeRangeLabel = computed(() => (
+  dashboardTimeRangeOptions[selectedDashboardTimeRangeIndex.value]?.label || '全部时间'
+))
+const selectedDashboardMinAttemptsLabel = computed(() => (
+  dashboardMinAttemptsOptions[selectedDashboardMinAttemptsIndex.value]?.label || '至少 5 次'
+))
 const selectedModuleLabel = computed(() => moduleOptions.value[selectedModuleIndex.value]?.label || '全部模块')
 const selectedDifficultyLabel = computed(() => difficultyOptions[selectedDifficultyIndex.value]?.label || '全部难度')
 const selectedStatusLabel = computed(() => statusOptions[selectedStatusIndex.value]?.label || '全部状态')
 const dashboardInsightSubtitle = computed(() => (
-  `${selectedDashboardSubjectLabel.value} · ${selectedDashboardSortLabel.value}，用于优先发现题目质量或知识盲区问题。`
+  `${selectedDashboardSubjectLabel.value} · ${selectedDashboardTimeRangeLabel.value} · ${selectedDashboardMinAttemptsLabel.value} · ${selectedDashboardSortLabel.value}`
 ))
 const dashboardLegendText = computed(() => {
   if (dashboardFilters.sort_by === 'accuracy') return '正确率越低越需要关注'
@@ -1032,7 +1086,9 @@ async function loadDashboard() {
   try {
     const response = await fetchQuestionAdminDashboard({
       subject: dashboardFilters.subject,
-      sort_by: dashboardFilters.sort_by
+      sort_by: dashboardFilters.sort_by,
+      min_attempts: dashboardFilters.min_attempts,
+      period_days: dashboardFilters.period_days
     })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
     dashboard.online_members = Number(response?.online_members || 0)
@@ -1273,6 +1329,20 @@ async function handleDashboardSubjectChange(event) {
 
 async function handleDashboardSortChange(event) {
   dashboardFilters.sort_by = dashboardSortOptions[Number(event?.detail?.value || 0)]?.value || 'wrong_count'
+  await loadDashboard()
+}
+
+async function handleDashboardTimeRangeChange(event) {
+  dashboardFilters.period_days = Number(
+    dashboardTimeRangeOptions[Number(event?.detail?.value || 0)]?.value || 0
+  )
+  await loadDashboard()
+}
+
+async function handleDashboardMinAttemptsChange(event) {
+  dashboardFilters.min_attempts = Number(
+    dashboardMinAttemptsOptions[Number(event?.detail?.value || 0)]?.value || 5
+  )
   await loadDashboard()
 }
 
@@ -1728,7 +1798,8 @@ function loadDevPreviewDashboard() {
       module: previewQuestions[3].module,
       wrong_count: 89,
       attempt_count: 152,
-      accuracy: 41.4
+      accuracy: 41.4,
+      latest_answered_at: new Date(Date.now() - 2 * 24 * 60 * 60 * 1000).toISOString()
     },
     {
       question_id: previewQuestions[2].id,
@@ -1737,7 +1808,8 @@ function loadDevPreviewDashboard() {
       module: previewQuestions[2].module,
       wrong_count: 76,
       attempt_count: 113,
-      accuracy: 32.7
+      accuracy: 32.7,
+      latest_answered_at: new Date(Date.now() - 9 * 24 * 60 * 60 * 1000).toISOString()
     },
     {
       question_id: previewQuestions[1].id,
@@ -1746,7 +1818,8 @@ function loadDevPreviewDashboard() {
       module: previewQuestions[1].module,
       wrong_count: 64,
       attempt_count: 174,
-      accuracy: 63.2
+      accuracy: 63.2,
+      latest_answered_at: new Date(Date.now() - 18 * 24 * 60 * 60 * 1000).toISOString()
     },
     {
       question_id: previewQuestions[0].id,
@@ -1755,12 +1828,18 @@ function loadDevPreviewDashboard() {
       module: previewQuestions[0].module,
       wrong_count: 43,
       attempt_count: 201,
-      accuracy: 78.6
+      accuracy: 78.6,
+      latest_answered_at: new Date(Date.now() - 43 * 24 * 60 * 60 * 1000).toISOString()
     }
   ]
-  const filteredItems = dashboardFilters.subject
-    ? previewItems.filter((item) => item.subject === dashboardFilters.subject)
-    : previewItems
+  const periodDays = Number(dashboardFilters.period_days || 0)
+  const periodStart = periodDays ? Date.now() - periodDays * 24 * 60 * 60 * 1000 : 0
+  const filteredItems = previewItems.filter((item) => {
+    if (dashboardFilters.subject && item.subject !== dashboardFilters.subject) return false
+    if (item.attempt_count < Number(dashboardFilters.min_attempts || 1)) return false
+    if (periodStart && new Date(item.latest_answered_at).getTime() < periodStart) return false
+    return true
+  })
   filteredItems.sort((left, right) => {
     if (dashboardFilters.sort_by === 'accuracy') {
       return left.accuracy - right.accuracy || right.wrong_count - left.wrong_count
@@ -2706,6 +2785,14 @@ button {
 
 .dashboard-select.sort {
   width: 142px;
+}
+
+.dashboard-select.compact {
+  width: 104px;
+}
+
+.dashboard-select.attempts {
+  width: 112px;
 }
 
 .legend-dot {
