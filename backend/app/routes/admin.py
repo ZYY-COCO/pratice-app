@@ -47,6 +47,8 @@ QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
 IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
 QUESTION_ADMIN_DASHBOARD_LIMIT = 8
 QUESTION_ADMIN_ONLINE_WINDOW_MINUTES = 15
+QUESTION_ADMIN_DASHBOARD_SUBJECTS = {"中华文化", "英语运用", "逻辑推理", "数学基础"}
+QUESTION_ADMIN_DASHBOARD_SORTS = {"wrong_count", "accuracy", "attempt_count"}
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 
 
@@ -102,7 +104,23 @@ def _normalize_question_admin_dashboard(raw: object) -> QuestionAdminDashboardRe
     )
 
 
-def _question_admin_dashboard_fallback(supabase) -> QuestionAdminDashboardResponse:
+def _dashboard_question_sort_key(
+    item: QuestionAdminDashboardQuestionItem,
+    sort_by: str,
+) -> tuple[float | int | str, ...]:
+    if sort_by == "accuracy":
+        return (item.accuracy, -item.wrong_count, -item.attempt_count, item.question_id)
+    if sort_by == "attempt_count":
+        return (-item.attempt_count, -item.wrong_count, item.accuracy, item.question_id)
+    return (-item.wrong_count, -item.attempt_count, item.accuracy, item.question_id)
+
+
+def _question_admin_dashboard_fallback(
+    supabase,
+    *,
+    subject: str | None = None,
+    sort_by: str = "wrong_count",
+) -> QuestionAdminDashboardResponse:
     """Compatibility path while the dashboard RPC migration is being applied."""
 
     current = _now()
@@ -167,37 +185,21 @@ def _question_admin_dashboard_fallback(supabase) -> QuestionAdminDashboardRespon
         if not bool(row.get("is_correct")):
             aggregates[question_id]["wrong_count"] += 1
 
-    ranked_ids = [
-        question_id
-        for question_id, _ in sorted(
-            aggregates.items(),
-            key=lambda pair: (
-                pair[1]["wrong_count"],
-                pair[1]["attempt_count"],
-            ),
-            reverse=True,
-        )[:QUESTION_ADMIN_DASHBOARD_LIMIT]
-    ]
-    question_map = {}
-    if ranked_ids:
-        question_response = (
-            supabase.table("questions")
-            .select("id,stem,subject,module,source_type")
-            .in_("id", ranked_ids)
-            .execute()
-        )
-        question_map = {
-            str(row.get("id")): row
-            for row in question_response.data or []
-            if row.get("id") and not is_ai_generated_question(row)
-        }
+    question_query = supabase.table("questions").select("id,stem,subject,module,source_type")
+    if subject:
+        question_query = question_query.eq("subject", subject)
+    question_response = question_query.limit(20000).execute()
+    question_map = {
+        str(row.get("id")): row
+        for row in question_response.data or []
+        if row.get("id") and not is_ai_generated_question(row)
+    }
 
     difficult_questions = []
-    for question_id in ranked_ids:
+    for question_id, stats in aggregates.items():
         question = question_map.get(question_id)
         if not question:
             continue
-        stats = aggregates[question_id]
         attempts = stats["attempt_count"]
         correct = max(attempts - stats["wrong_count"], 0)
         difficult_questions.append(QuestionAdminDashboardQuestionItem(
@@ -209,24 +211,50 @@ def _question_admin_dashboard_fallback(supabase) -> QuestionAdminDashboardRespon
             attempt_count=attempts,
             accuracy=round((correct / attempts) * 100, 1) if attempts else 0,
         ))
+    difficult_questions.sort(key=lambda item: _dashboard_question_sort_key(item, sort_by))
 
     return QuestionAdminDashboardResponse(
         today_practicing_users=len(today_users),
         online_members=online_members,
         online_window_minutes=QUESTION_ADMIN_ONLINE_WINDOW_MINUTES,
-        difficult_questions=difficult_questions,
+        difficult_questions=difficult_questions[:QUESTION_ADMIN_DASHBOARD_LIMIT],
     )
 
 
-def _load_question_admin_dashboard(supabase) -> QuestionAdminDashboardResponse:
+def _load_question_admin_dashboard(
+    supabase,
+    *,
+    subject: str | None = None,
+    sort_by: str = "wrong_count",
+) -> QuestionAdminDashboardResponse:
     try:
         response = supabase.rpc(
             "question_admin_dashboard_snapshot",
-            {"p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT},
+            {
+                "p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT,
+                "p_subject": subject,
+                "p_sort_by": sort_by,
+            },
         ).execute()
         return _normalize_question_admin_dashboard(response.data)
     except Exception:
-        return _question_admin_dashboard_fallback(supabase)
+        fallback = _question_admin_dashboard_fallback(
+            supabase,
+            subject=subject,
+            sort_by=sort_by,
+        )
+        try:
+            legacy_response = supabase.rpc(
+                "question_admin_dashboard_snapshot",
+                {"p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT},
+            ).execute()
+            legacy_dashboard = _normalize_question_admin_dashboard(legacy_response.data)
+            fallback.today_practicing_users = legacy_dashboard.today_practicing_users
+            fallback.online_members = legacy_dashboard.online_members
+            fallback.online_window_minutes = legacy_dashboard.online_window_minutes
+        except Exception:
+            pass
+        return fallback
 
 
 def _apply_admin_question_filters(
@@ -901,9 +929,23 @@ def question_admin_portal_me(
 
 @router.get("/question-portal/dashboard", response_model=QuestionAdminDashboardResponse)
 def question_admin_portal_dashboard(
+    subject: str | None = Query(default=None, max_length=40),
+    sort_by: str = Query(default="wrong_count", max_length=30),
     _: dict = Depends(require_question_admin_user),
 ) -> QuestionAdminDashboardResponse:
-    return _load_question_admin_dashboard(get_supabase_admin())
+    normalized_subject = subject.strip() if subject else None
+    if normalized_subject and normalized_subject not in QUESTION_ADMIN_DASHBOARD_SUBJECTS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的题目类型")
+
+    normalized_sort = sort_by.strip().lower() or "wrong_count"
+    if normalized_sort not in QUESTION_ADMIN_DASHBOARD_SORTS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方式")
+
+    return _load_question_admin_dashboard(
+        get_supabase_admin(),
+        subject=normalized_subject,
+        sort_by=normalized_sort,
+    )
 
 
 @router.get("/questions", response_model=AdminQuestionListResponse)

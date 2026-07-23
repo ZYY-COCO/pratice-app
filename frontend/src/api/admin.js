@@ -15,10 +15,11 @@ export function fetchQuestionAdminPortalMe() {
   })
 }
 
-export function fetchQuestionAdminDashboard() {
+export function fetchQuestionAdminDashboard(params = {}) {
   return request({
     url: '/admin/question-portal/dashboard',
-    method: 'GET'
+    method: 'GET',
+    data: params
   })
 }
 

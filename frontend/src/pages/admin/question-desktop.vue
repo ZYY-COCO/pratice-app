@@ -119,11 +119,37 @@
             <view class="panel-heading">
               <view>
                 <view class="panel-title">刷题数据 · 高频错题</view>
-                <view class="panel-subtitle">按累计答错次数排序，用于优先发现题目质量或知识盲区问题。</view>
+                <view class="panel-subtitle">{{ dashboardInsightSubtitle }}</view>
+              </view>
+              <view class="dashboard-filter-bar">
+                <view class="dashboard-filter-control">
+                  <text class="dashboard-filter-label">题目类型</text>
+                  <picker
+                    :range="dashboardSubjectLabels"
+                    :value="selectedDashboardSubjectIndex"
+                    @change="handleDashboardSubjectChange"
+                  >
+                    <view class="dashboard-select">
+                      <text>{{ selectedDashboardSubjectLabel }}</text><text class="select-arrow">⌄</text>
+                    </view>
+                  </picker>
+                </view>
+                <view class="dashboard-filter-control">
+                  <text class="dashboard-filter-label">排序</text>
+                  <picker
+                    :range="dashboardSortLabels"
+                    :value="selectedDashboardSortIndex"
+                    @change="handleDashboardSortChange"
+                  >
+                    <view class="dashboard-select sort">
+                      <text>{{ selectedDashboardSortLabel }}</text><text class="select-arrow">⌄</text>
+                    </view>
+                  </picker>
+                </view>
               </view>
               <view class="panel-legend">
                 <text class="legend-dot"></text>
-                正确率越低越需要关注
+                {{ dashboardLegendText }}
               </view>
             </view>
 
@@ -562,6 +588,10 @@ const dashboard = reactive({
   online_window_minutes: 15,
   difficult_questions: []
 })
+const dashboardFilters = reactive({
+  subject: '',
+  sort_by: 'wrong_count'
+})
 const questionStats = reactive({
   active: 0,
   archived: 0,
@@ -630,6 +660,11 @@ const statusOptions = [
   { label: '待审核', value: QUESTION_STATUS.PENDING_REVIEW },
   { label: '已发布', value: QUESTION_STATUS.ACTIVE },
   { label: '已下架', value: QUESTION_STATUS.ARCHIVED }
+]
+const dashboardSortOptions = [
+  { label: '答错次数排序', value: 'wrong_count' },
+  { label: '正确率排序', value: 'accuracy' },
+  { label: '作答次数排序', value: 'attempt_count' }
 ]
 const answerOptions = ['A', 'B', 'C', 'D']
 const previewQuestions = [
@@ -747,17 +782,48 @@ const moduleOptions = computed(() => [
   ...(QUESTION_MODULES[filters.subject] || []).map((item) => ({ label: item, value: item }))
 ])
 const subjectLabels = computed(() => QUESTION_SUBJECTS.map((item) => item.label))
+const dashboardSubjectOptions = computed(() => [
+  { label: '全部类型', value: '' },
+  { label: '中华文化', value: '中华文化' },
+  { label: '英语运用', value: '英语运用' },
+  { label: '逻辑推理', value: '逻辑推理' },
+  { label: '数学基础', value: '数学基础' }
+])
+const dashboardSubjectLabels = computed(() => dashboardSubjectOptions.value.map((item) => item.label))
+const dashboardSortLabels = computed(() => dashboardSortOptions.map((item) => item.label))
 const moduleLabels = computed(() => moduleOptions.value.map((item) => item.label))
 const difficultyLabels = computed(() => difficultyOptions.map((item) => item.label))
 const statusLabels = computed(() => statusOptions.map((item) => item.label))
 const selectedSubjectIndex = computed(() => optionIndex(QUESTION_SUBJECTS, filters.subject))
+const selectedDashboardSubjectIndex = computed(() => optionIndex(
+  dashboardSubjectOptions.value,
+  dashboardFilters.subject
+))
+const selectedDashboardSortIndex = computed(() => optionIndex(
+  dashboardSortOptions,
+  dashboardFilters.sort_by
+))
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, filters.module))
 const selectedDifficultyIndex = computed(() => optionIndex(difficultyOptions, filters.difficulty))
 const selectedStatusIndex = computed(() => optionIndex(statusOptions, filters.status))
 const selectedSubjectLabel = computed(() => QUESTION_SUBJECTS[selectedSubjectIndex.value]?.label || '全部科目')
+const selectedDashboardSubjectLabel = computed(() => (
+  dashboardSubjectOptions.value[selectedDashboardSubjectIndex.value]?.label || '全部类型'
+))
+const selectedDashboardSortLabel = computed(() => (
+  dashboardSortOptions[selectedDashboardSortIndex.value]?.label || '答错次数排序'
+))
 const selectedModuleLabel = computed(() => moduleOptions.value[selectedModuleIndex.value]?.label || '全部模块')
 const selectedDifficultyLabel = computed(() => difficultyOptions[selectedDifficultyIndex.value]?.label || '全部难度')
 const selectedStatusLabel = computed(() => statusOptions[selectedStatusIndex.value]?.label || '全部状态')
+const dashboardInsightSubtitle = computed(() => (
+  `${selectedDashboardSubjectLabel.value} · ${selectedDashboardSortLabel.value}，用于优先发现题目质量或知识盲区问题。`
+))
+const dashboardLegendText = computed(() => {
+  if (dashboardFilters.sort_by === 'accuracy') return '正确率越低越需要关注'
+  if (dashboardFilters.sort_by === 'attempt_count') return '作答次数越高，覆盖越广'
+  return '答错次数越高越需要关注'
+})
 const hasFilters = computed(() => Boolean(
   filters.subject || filters.module || filters.difficulty || filters.status || filters.search
 ))
@@ -832,7 +898,10 @@ async function loadDashboard() {
   }
   dashboardLoading.value = true
   try {
-    const response = await fetchQuestionAdminDashboard()
+    const response = await fetchQuestionAdminDashboard({
+      subject: dashboardFilters.subject,
+      sort_by: dashboardFilters.sort_by
+    })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
     dashboard.online_members = Number(response?.online_members || 0)
     dashboard.online_window_minutes = Number(response?.online_window_minutes || 15)
@@ -1008,6 +1077,16 @@ function handleDifficultyChange(event) {
 function handleStatusChange(event) {
   filters.status = statusOptions[Number(event?.detail?.value || 0)]?.value || ''
   applyFilters()
+}
+
+async function handleDashboardSubjectChange(event) {
+  dashboardFilters.subject = dashboardSubjectOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  await loadDashboard()
+}
+
+async function handleDashboardSortChange(event) {
+  dashboardFilters.sort_by = dashboardSortOptions[Number(event?.detail?.value || 0)]?.value || 'wrong_count'
+  await loadDashboard()
 }
 
 function applySummaryFilter(status) {
@@ -1370,7 +1449,7 @@ function loadDevPreviewDashboard() {
   dashboard.today_practicing_users = 186
   dashboard.online_members = 24
   dashboard.online_window_minutes = 15
-  dashboard.difficult_questions = [
+  const previewItems = [
     {
       question_id: previewQuestions[3].id,
       stem: previewQuestions[3].stem,
@@ -1408,6 +1487,19 @@ function loadDevPreviewDashboard() {
       accuracy: 78.6
     }
   ]
+  const filteredItems = dashboardFilters.subject
+    ? previewItems.filter((item) => item.subject === dashboardFilters.subject)
+    : previewItems
+  filteredItems.sort((left, right) => {
+    if (dashboardFilters.sort_by === 'accuracy') {
+      return left.accuracy - right.accuracy || right.wrong_count - left.wrong_count
+    }
+    if (dashboardFilters.sort_by === 'attempt_count') {
+      return right.attempt_count - left.attempt_count || right.wrong_count - left.wrong_count
+    }
+    return right.wrong_count - left.wrong_count || right.attempt_count - left.attempt_count
+  })
+  dashboard.difficult_questions = filteredItems
 }
 
 function optionIndex(options, value) {
@@ -2010,6 +2102,10 @@ button {
   box-sizing: border-box;
 }
 
+.dashboard-panel .panel-heading {
+  gap: 18px;
+}
+
 .panel-title {
   color: #26354a;
   font-size: 14px;
@@ -2028,6 +2124,45 @@ button {
   gap: 7px;
   color: #8c97a5;
   font-size: 9px;
+}
+
+.dashboard-filter-bar {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.dashboard-filter-control {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.dashboard-filter-label {
+  color: #8693a3;
+  font-size: 9px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.dashboard-select {
+  width: 126px;
+  height: 34px;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border: 1px solid #dbe4e8;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #657389;
+  background: #fff;
+  font-size: 9px;
+}
+
+.dashboard-select.sort {
+  width: 142px;
 }
 
 .legend-dot {
@@ -3169,6 +3304,17 @@ button {
   .filter-toolbar {
     flex-wrap: wrap;
   }
+
+  .dashboard-panel .panel-heading {
+    min-height: 104px;
+    padding-top: 14px;
+    padding-bottom: 14px;
+    flex-wrap: wrap;
+  }
+
+  .dashboard-filter-bar {
+    margin-left: 0;
+  }
 }
 
 @media (max-width: 820px) {
@@ -3198,6 +3344,20 @@ button {
 
   .import-visual {
     display: none;
+  }
+
+  .dashboard-panel .panel-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .dashboard-filter-bar {
+    width: 100%;
+    flex-wrap: wrap;
+  }
+
+  .panel-legend {
+    margin-left: 0;
   }
 }
 </style>

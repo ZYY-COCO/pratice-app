@@ -26,7 +26,9 @@ revoke all on public.question_admin_access from anon, authenticated;
 grant all on public.question_admin_access to service_role;
 
 create or replace function public.question_admin_dashboard_snapshot(
-  p_limit integer default 8
+  p_limit integer default 8,
+  p_subject text default null,
+  p_sort_by text default 'wrong_count'
 )
 returns jsonb
 language sql
@@ -73,8 +75,16 @@ as $$
     from public.user_answers ua
     join public.questions q on q.id = ua.question_id
     where coalesce(q.source_type, '') <> 'ai_deepseek'
+      and (p_subject is null or q.subject = p_subject)
     group by ua.question_id
     order by
+      case when p_sort_by = 'accuracy' then
+        count(*) filter (where ua.is_correct = true)::numeric / nullif(count(*), 0)
+      end asc nulls last,
+      case when p_sort_by = 'attempt_count' then count(*) end desc,
+      case when p_sort_by = 'wrong_count' then
+        count(*) filter (where ua.is_correct = false)
+      end desc,
       count(*) filter (where ua.is_correct = false) desc,
       count(*) desc
     limit greatest(1, least(coalesce(p_limit, 8), 20))
@@ -91,7 +101,12 @@ as $$
           'attempt_count', rq.attempt_count,
           'accuracy', coalesce(rq.accuracy, 0)
         )
-        order by rq.wrong_count desc, rq.attempt_count desc
+        order by
+          case when p_sort_by = 'accuracy' then rq.accuracy end asc nulls last,
+          case when p_sort_by = 'attempt_count' then rq.attempt_count end desc,
+          case when p_sort_by = 'wrong_count' then rq.wrong_count end desc,
+          rq.wrong_count desc,
+          rq.attempt_count desc
       ),
       '[]'::jsonb
     ) as items
@@ -106,9 +121,13 @@ as $$
   );
 $$;
 
-revoke all on function public.question_admin_dashboard_snapshot(integer)
+-- Replace the previous one-argument version so calls with p_limit only keep
+-- resolving to this function through its default parameters.
+drop function if exists public.question_admin_dashboard_snapshot(integer);
+
+revoke all on function public.question_admin_dashboard_snapshot(integer, text, text)
   from public, anon, authenticated;
-grant execute on function public.question_admin_dashboard_snapshot(integer)
+grant execute on function public.question_admin_dashboard_snapshot(integer, text, text)
   to service_role;
 
 -- Grant access by inserting an existing app user. There is intentionally no
