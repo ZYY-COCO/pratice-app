@@ -249,7 +249,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import {
   commitAdminQuestionImageImport,
   dryRunAdminQuestionImageImport,
-  fetchAdminMe,
+  fetchQuestionAdminPortalMe,
   recognizeAdminQuestionImportFile
 } from '../../api/admin'
 import { isLoggedIn } from '../../utils/auth'
@@ -259,6 +259,7 @@ import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
 const allowed = ref(false)
+const portalEntry = ref(false)
 const editorVisible = ref(false)
 const imageItems = ref([])
 const drafts = ref([])
@@ -357,14 +358,18 @@ const canCommit = computed(() => (
   Number(dryRunResult.value.duplicate_count || 0) === 0
 ))
 
-onLoad(async () => {
+onLoad(async (options = {}) => {
+  portalEntry.value = options.portal === '1'
   if (!isLoggedIn()) {
-    uni.redirectTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/admin/question-image-import')}` })
+    const loginTarget = portalEntry.value
+      ? '/pages/admin/question-login'
+      : `/pages/login/index?redirect=${encodeURIComponent('/pages/admin/question-image-import')}`
+    uni.redirectTo({ url: loginTarget })
     return
   }
   try {
-    const me = await fetchAdminMe()
-    allowed.value = Boolean(me?.is_admin)
+    const me = await fetchQuestionAdminPortalMe()
+    allowed.value = Boolean(me?.allowed)
     if (!allowed.value) {
       uni.showToast({ title: '无后台权限', icon: 'none' })
     }
@@ -1205,7 +1210,7 @@ async function commitImport() {
     ].slice(0, 20))
     uni.showToast({ title: `已导入 ${response.inserted_count || 0} 题`, icon: 'success' })
     setTimeout(() => {
-      uni.redirectTo({ url: '/pages/admin/index?tab=questions' })
+      returnFromImport()
     }, 500)
   } catch (error) {
     const dryRun = error?.detail?.dry_run
@@ -1219,9 +1224,16 @@ async function commitImport() {
 }
 
 function goBack() {
+  returnFromImport()
+}
+
+function returnFromImport() {
   uni.navigateBack({
     fail() {
-      uni.redirectTo({ url: '/pages/admin/index?tab=questions' })
+      const target = portalEntry.value
+        ? '/pages/admin/question-desktop?section=questions'
+        : '/pages/admin/index?tab=questions'
+      uni.redirectTo({ url: target })
     }
   })
 }
@@ -2313,5 +2325,177 @@ function goBack() {
 
 .bottom-btn[disabled] {
   opacity: 0.48;
+}
+
+@media (min-width: 900px) {
+  .image-import-page {
+    min-height: 100vh;
+    padding: 22px 32px 130px;
+    background:
+      radial-gradient(circle at 92% 0%, rgba(79, 209, 181, 0.14), transparent 28%),
+      linear-gradient(180deg, #eef3f7 0%, #f7fafb 100%);
+  }
+
+  .import-hero,
+  .landing-content,
+  .import-content,
+  .screen-state {
+    width: min(1180px, 100%);
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+  }
+
+  .import-hero {
+    min-height: 72px;
+    padding: 0 5px;
+  }
+
+  .hero-title {
+    color: #23364a;
+    font-size: 25px;
+  }
+
+  .hero-subtitle {
+    margin-top: 5px;
+    color: #7d8b9c;
+    font-size: 11px;
+  }
+
+  .back-btn,
+  .history-btn {
+    min-width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .history-btn {
+    width: auto;
+    padding: 0 13px;
+    color: #53657a;
+    background: #ffffff;
+    font-size: 10px;
+  }
+
+  .landing-content,
+  .import-content {
+    margin-top: 15px;
+  }
+
+  .file-drop-zone,
+  .recognition-card,
+  .flow-card,
+  .import-panel {
+    border-color: #dfe7eb;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 9px 26px rgba(31, 50, 71, 0.03);
+  }
+
+  .file-drop-zone {
+    min-height: 280px;
+    padding: 38px;
+    border-style: dashed;
+  }
+
+  .drop-title {
+    font-size: 20px;
+  }
+
+  .drop-action,
+  .drop-formats,
+  .drop-limit,
+  .recognition-copy,
+  .panel-subtitle,
+  .flow-note {
+    font-size: 10px;
+  }
+
+  .file-upload-illustration {
+    transform: scale(0.72);
+    margin: -12px auto;
+  }
+
+  .recognition-card,
+  .flow-card,
+  .import-panel {
+    margin-top: 14px;
+    padding: 20px;
+  }
+
+  .flow-row {
+    gap: 18px;
+  }
+
+  .flow-step {
+    min-height: 100px;
+  }
+
+  .editor-toolbar {
+    min-height: 52px;
+    padding: 0 4px;
+  }
+
+  .picker-grid,
+  .draft-picker-grid {
+    gap: 9px;
+  }
+
+  .picker-pill,
+  .draft-picker {
+    min-height: 38px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
+
+  .draft-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 13px;
+  }
+
+  .draft-card {
+    margin: 0;
+    padding: 17px;
+    border-radius: 12px;
+  }
+
+  .recognize-bottom-bar,
+  .import-bottom-bar {
+    width: min(760px, calc(100vw - 80px));
+    left: 50%;
+    right: auto;
+    bottom: 22px;
+    transform: translateX(-50%);
+    padding: 12px 16px;
+    border: 1px solid #dce7e4;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 18px 42px rgba(24, 47, 65, 0.14);
+  }
+
+  .recognize-btn,
+  .bottom-btn {
+    height: 42px;
+    border-radius: 9px;
+    font-size: 11px;
+  }
+
+  .recognize-btn,
+  .bottom-btn.primary {
+    color: #16413b;
+    background: linear-gradient(135deg, #68dcc3, #49c9ac);
+    box-shadow: none;
+  }
+
+  .bottom-btn.outline {
+    border-color: #50bda6;
+    color: #238873;
+  }
+
+  .bottom-summary,
+  .recognize-hint {
+    font-size: 9px;
+  }
 }
 </style>

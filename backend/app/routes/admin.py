@@ -1,10 +1,11 @@
+from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import ValidationError
 
 from app.db import get_supabase_admin
-from app.dependencies import is_admin_profile, require_admin_user
+from app.dependencies import is_admin_profile, require_admin_user, require_question_admin_user
 from app.schemas.admin import (
     AdminFeedbackListResponse,
     AdminFeedbackStatusRequest,
@@ -28,6 +29,9 @@ from app.schemas.admin import (
     AdminUserDetailResponse,
     AdminUserItem,
     AdminUserListResponse,
+    QuestionAdminDashboardQuestionItem,
+    QuestionAdminDashboardResponse,
+    QuestionAdminPortalMeResponse,
 )
 from app.services.question_sources import (
     AI_QUESTION_SOURCE_TYPE,
@@ -41,6 +45,9 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 QUESTION_BULK_SELECT_PAGE_SIZE = 500
 QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
 IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
+QUESTION_ADMIN_DASHBOARD_LIMIT = 8
+QUESTION_ADMIN_ONLINE_WINDOW_MINUTES = 15
+CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 
 
 def _now() -> datetime:
@@ -62,6 +69,164 @@ def _parse_datetime(value: str | None) -> datetime | None:
     if parsed.tzinfo is None:
         return parsed.replace(tzinfo=timezone.utc)
     return parsed.astimezone(timezone.utc)
+
+
+def _normalize_question_admin_dashboard(raw: object) -> QuestionAdminDashboardResponse:
+    payload = raw
+    if isinstance(payload, list):
+        payload = payload[0] if payload else {}
+    if not isinstance(payload, dict):
+        payload = {}
+
+    difficult_questions = []
+    for item in payload.get("difficult_questions") or []:
+        if not isinstance(item, dict) or not item.get("question_id"):
+            continue
+        difficult_questions.append(QuestionAdminDashboardQuestionItem(
+            question_id=str(item.get("question_id")),
+            stem=str(item.get("stem") or ""),
+            subject=item.get("subject"),
+            module=item.get("module"),
+            wrong_count=int(item.get("wrong_count") or 0),
+            attempt_count=int(item.get("attempt_count") or 0),
+            accuracy=float(item.get("accuracy") or 0),
+        ))
+
+    return QuestionAdminDashboardResponse(
+        today_practicing_users=int(payload.get("today_practicing_users") or 0),
+        online_members=int(payload.get("online_members") or 0),
+        online_window_minutes=int(
+            payload.get("online_window_minutes") or QUESTION_ADMIN_ONLINE_WINDOW_MINUTES
+        ),
+        difficult_questions=difficult_questions,
+    )
+
+
+def _question_admin_dashboard_fallback(supabase) -> QuestionAdminDashboardResponse:
+    """Compatibility path while the dashboard RPC migration is being applied."""
+
+    current = _now()
+    shanghai_now = current.astimezone(CHINA_STANDARD_TIME)
+    shanghai_day_start = shanghai_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    day_start = shanghai_day_start.astimezone(timezone.utc)
+    online_start = current - timedelta(minutes=QUESTION_ADMIN_ONLINE_WINDOW_MINUTES)
+
+    today_response = (
+        supabase.table("user_answers")
+        .select("user_id")
+        .gte("created_at", _to_iso(day_start))
+        .limit(10000)
+        .execute()
+    )
+    today_users = {
+        str(row.get("user_id"))
+        for row in today_response.data or []
+        if row.get("user_id")
+    }
+
+    recent_response = (
+        supabase.table("user_answers")
+        .select("user_id")
+        .gte("created_at", _to_iso(online_start))
+        .limit(10000)
+        .execute()
+    )
+    recent_user_ids = list({
+        str(row.get("user_id"))
+        for row in recent_response.data or []
+        if row.get("user_id")
+    })
+    online_members = 0
+    if recent_user_ids:
+        member_response = (
+            supabase.table("users")
+            .select("id,membership_status,membership_expires_at")
+            .in_("id", recent_user_ids)
+            .execute()
+        )
+        for member in member_response.data or []:
+            if str(member.get("membership_status") or "").lower() != "active":
+                continue
+            expires_at = _parse_datetime(member.get("membership_expires_at"))
+            if expires_at and expires_at <= current:
+                continue
+            online_members += 1
+
+    answer_response = (
+        supabase.table("user_answers")
+        .select("question_id,is_correct")
+        .limit(20000)
+        .execute()
+    )
+    aggregates: dict[str, dict[str, int]] = defaultdict(lambda: {"attempt_count": 0, "wrong_count": 0})
+    for row in answer_response.data or []:
+        question_id = str(row.get("question_id") or "")
+        if not question_id:
+            continue
+        aggregates[question_id]["attempt_count"] += 1
+        if not bool(row.get("is_correct")):
+            aggregates[question_id]["wrong_count"] += 1
+
+    ranked_ids = [
+        question_id
+        for question_id, _ in sorted(
+            aggregates.items(),
+            key=lambda pair: (
+                pair[1]["wrong_count"],
+                pair[1]["attempt_count"],
+            ),
+            reverse=True,
+        )[:QUESTION_ADMIN_DASHBOARD_LIMIT]
+    ]
+    question_map = {}
+    if ranked_ids:
+        question_response = (
+            supabase.table("questions")
+            .select("id,stem,subject,module,source_type")
+            .in_("id", ranked_ids)
+            .execute()
+        )
+        question_map = {
+            str(row.get("id")): row
+            for row in question_response.data or []
+            if row.get("id") and not is_ai_generated_question(row)
+        }
+
+    difficult_questions = []
+    for question_id in ranked_ids:
+        question = question_map.get(question_id)
+        if not question:
+            continue
+        stats = aggregates[question_id]
+        attempts = stats["attempt_count"]
+        correct = max(attempts - stats["wrong_count"], 0)
+        difficult_questions.append(QuestionAdminDashboardQuestionItem(
+            question_id=question_id,
+            stem=str(question.get("stem") or ""),
+            subject=question.get("subject"),
+            module=question.get("module"),
+            wrong_count=stats["wrong_count"],
+            attempt_count=attempts,
+            accuracy=round((correct / attempts) * 100, 1) if attempts else 0,
+        ))
+
+    return QuestionAdminDashboardResponse(
+        today_practicing_users=len(today_users),
+        online_members=online_members,
+        online_window_minutes=QUESTION_ADMIN_ONLINE_WINDOW_MINUTES,
+        difficult_questions=difficult_questions,
+    )
+
+
+def _load_question_admin_dashboard(supabase) -> QuestionAdminDashboardResponse:
+    try:
+        response = supabase.rpc(
+            "question_admin_dashboard_snapshot",
+            {"p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT},
+        ).execute()
+        return _normalize_question_admin_dashboard(response.data)
+    except Exception:
+        return _question_admin_dashboard_fallback(supabase)
 
 
 def _apply_admin_question_filters(
@@ -727,6 +892,20 @@ def admin_update_feedback_status(
     return response.data[0]
 
 
+@router.get("/question-portal/me", response_model=QuestionAdminPortalMeResponse)
+def question_admin_portal_me(
+    profile: dict = Depends(require_question_admin_user),
+) -> QuestionAdminPortalMeResponse:
+    return QuestionAdminPortalMeResponse(allowed=True, profile=profile)
+
+
+@router.get("/question-portal/dashboard", response_model=QuestionAdminDashboardResponse)
+def question_admin_portal_dashboard(
+    _: dict = Depends(require_question_admin_user),
+) -> QuestionAdminDashboardResponse:
+    return _load_question_admin_dashboard(get_supabase_admin())
+
+
 @router.get("/questions", response_model=AdminQuestionListResponse)
 def admin_questions(
     exam_code: str | None = Query(default=None, max_length=20),
@@ -739,7 +918,7 @@ def admin_questions(
     difficulty: str | None = Query(default=None, max_length=8),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    _: dict = Depends(require_admin_user),
+    _: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionListResponse:
     supabase = get_supabase_admin()
     query = exclude_ai_generated_questions(
@@ -763,7 +942,7 @@ def admin_questions(
 @router.post("/questions", response_model=AdminQuestionDetailResponse)
 def admin_create_question(
     payload: AdminQuestionCreateRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
     insert_data = _build_question_create_data(payload, admin_profile)
@@ -789,7 +968,7 @@ def admin_create_question(
 @router.post("/questions/image-import/dry-run", response_model=AdminQuestionImageImportDryRunResponse)
 def admin_question_image_import_dry_run(
     payload: AdminQuestionImageImportRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionImageImportDryRunResponse:
     supabase = get_supabase_admin()
     return _dry_run_image_import_questions(supabase, payload, admin_profile)
@@ -798,7 +977,7 @@ def admin_question_image_import_dry_run(
 @router.post("/questions/image-import/recognize", response_model=AdminQuestionFileRecognizeResponse)
 async def admin_question_image_import_recognize(
     file: UploadFile = File(...),
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionFileRecognizeResponse:
     _ = admin_profile
     content = await file.read()
@@ -812,7 +991,7 @@ async def admin_question_image_import_recognize(
 @router.post("/questions/image-import/commit", response_model=AdminQuestionImageImportCommitResponse)
 def admin_question_image_import_commit(
     payload: AdminQuestionImageImportRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionImageImportCommitResponse:
     supabase = get_supabase_admin()
     dry_run = _dry_run_image_import_questions(supabase, payload, admin_profile)
@@ -852,7 +1031,7 @@ def admin_question_image_import_commit(
 @router.patch("/questions/bulk-status", response_model=AdminQuestionBulkStatusResponse)
 def admin_bulk_update_question_status(
     payload: AdminQuestionBulkStatusRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionBulkStatusResponse:
     supabase = get_supabase_admin()
     current = _now()
@@ -924,7 +1103,10 @@ def admin_bulk_update_question_status(
 
 
 @router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
-def admin_question_detail(question_id: str, _: dict = Depends(require_admin_user)) -> AdminQuestionDetailResponse:
+def admin_question_detail(
+    question_id: str,
+    _: dict = Depends(require_question_admin_user),
+) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
     return AdminQuestionDetailResponse(question=_get_manageable_question_or_404(supabase, question_id))
 
@@ -933,7 +1115,7 @@ def admin_question_detail(question_id: str, _: dict = Depends(require_admin_user
 def admin_update_question(
     question_id: str,
     payload: AdminQuestionUpdateRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
     _get_manageable_question_or_404(supabase, question_id)
@@ -958,7 +1140,7 @@ def admin_update_question(
 def admin_update_question_status(
     question_id: str,
     payload: AdminQuestionStatusRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
     _get_manageable_question_or_404(supabase, question_id)
@@ -994,7 +1176,7 @@ def admin_update_question_status(
 def admin_update_question_review(
     question_id: str,
     payload: AdminQuestionReviewRequest,
-    admin_profile: dict = Depends(require_admin_user),
+    admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
     _get_manageable_question_or_404(supabase, question_id)

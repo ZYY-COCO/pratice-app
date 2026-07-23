@@ -65,3 +65,40 @@ def require_admin_user(profile: Annotated[dict, Depends(get_current_user_profile
     if not is_admin_profile(profile):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Admin permission required")
     return profile
+
+
+def require_question_admin_user(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow existing admins or users explicitly enabled for the question portal."""
+
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+
+    # Keep the existing mobile admin flow working without requiring a migration
+    # to be applied before deployment.
+    if is_admin_profile(profile):
+        return profile
+
+    supabase = get_supabase_admin()
+    try:
+        response = (
+            supabase.table("question_admin_access")
+            .select("user_id")
+            .eq("user_id", profile.get("id"))
+            .eq("is_active", True)
+            .limit(1)
+            .execute()
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Question portal permission storage is not configured",
+        ) from exc
+
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Question portal permission required",
+        )
+    return profile

@@ -190,3 +190,25 @@ class AdminQuestionDetailResponse(BaseModel):
 class AdminQuestionListResponse(BaseModel):
     items: list[dict]
     count: int
+
+
+class QuestionAdminPortalMeResponse(BaseModel):
+    allowed: bool = True
+    profile: dict
+
+
+class QuestionAdminDashboardQuestionItem(BaseModel):
+    question_id: str
+    stem: str
+    subject: str | None = None
+    module: str | None = None
+    wrong_count: int = 0
+    attempt_count: int = 0
+    accuracy: float = 0
+
+
+class QuestionAdminDashboardResponse(BaseModel):
+    today_practicing_users: int = 0
+    online_members: int = 0
+    online_window_minutes: int = 15
+    difficult_questions: list[QuestionAdminDashboardQuestionItem] = Field(default_factory=list)

@@ -58,6 +58,20 @@
       }
     },
     {
+      "path": "pages/admin/question-login",
+      "style": {
+        "navigationBarTitleText": "题库中台登录",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/admin/question-desktop",
+      "style": {
+        "navigationBarTitleText": "题库中台",
+        "navigationStyle": "custom"
+      }
+    },
+    {
       "path": "pages/admin/question-image-import",
       "style": {
         "navigationBarTitleText": "批量导入",

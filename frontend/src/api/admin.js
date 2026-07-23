@@ -7,6 +7,21 @@ export function fetchAdminMe() {
   })
 }
 
+export function fetchQuestionAdminPortalMe() {
+  return request({
+    url: '/admin/question-portal/me',
+    method: 'GET',
+    authRedirect: false
+  })
+}
+
+export function fetchQuestionAdminDashboard() {
+  return request({
+    url: '/admin/question-portal/dashboard',
+    method: 'GET'
+  })
+}
+
 export function fetchAdminOverview() {
   return request({
     url: '/admin/overview',
