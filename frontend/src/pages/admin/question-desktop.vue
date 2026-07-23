@@ -2,7 +2,9 @@
   <view class="portal-shell">
     <aside class="portal-sidebar">
       <view class="sidebar-brand">
-        <view class="brand-mark">港</view>
+        <view class="brand-mark">
+          <image class="brand-logo" src="/static/brand/gangyantong-logo.png" mode="aspectFit" />
+        </view>
         <view class="brand-copy">
           <view class="brand-name">港研通</view>
           <view class="brand-caption">题库中台</view>
@@ -1559,15 +1561,16 @@ button {
   width: 43px;
   height: 43px;
   flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  overflow: hidden;
   border-radius: 13px;
-  color: #173a3c;
-  background: linear-gradient(145deg, #7ce2cd, #48cdb0);
-  box-shadow: 0 12px 24px rgba(44, 192, 160, 0.18);
-  font-size: 20px;
-  font-weight: 800;
+  background: #ffffff;
+  box-shadow: 0 10px 22px rgba(20, 40, 65, 0.2);
+}
+
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand-name {

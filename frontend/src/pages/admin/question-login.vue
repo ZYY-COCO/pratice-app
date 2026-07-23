@@ -4,7 +4,9 @@
       <view class="visual-orb orb-one"></view>
       <view class="visual-orb orb-two"></view>
       <view class="brand-lockup">
-        <view class="brand-mark"><text>港</text></view>
+        <view class="brand-mark">
+          <image class="brand-logo" src="/static/brand/gangyantong-logo.png" mode="aspectFit" />
+        </view>
         <view>
           <view class="brand-name">港研通</view>
           <view class="brand-tagline">QUESTION OPERATIONS</view>
@@ -30,7 +32,9 @@
     <view class="login-panel">
       <view class="login-card">
         <view class="mobile-brand">
-          <view class="brand-mark small"><text>港</text></view>
+          <view class="brand-mark small">
+            <image class="brand-logo" src="/static/brand/gangyantong-logo.png" mode="aspectFit" />
+          </view>
           <view class="brand-name">港研通题库中台</view>
         </view>
         <view class="login-eyebrow">INTERNAL ACCESS</view>
@@ -226,14 +230,15 @@ button::after {
   width: 48px;
   height: 48px;
   border-radius: 15px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #163b3c;
-  font-size: 22px;
-  font-weight: 800;
-  background: linear-gradient(145deg, #7ce4cf, #46cdb0);
-  box-shadow: 0 14px 34px rgba(60, 211, 179, 0.24);
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: 0 14px 34px rgba(18, 41, 70, 0.22);
+}
+
+.brand-logo {
+  display: block;
+  width: 100%;
+  height: 100%;
 }
 
 .brand-mark.small {
