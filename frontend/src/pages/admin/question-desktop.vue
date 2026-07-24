@@ -469,41 +469,12 @@
         </section>
 
         <section v-if="activeSection === 'import'" class="content-section import-section">
-          <view class="import-hero-card">
-            <view class="import-hero-copy">
-              <view class="import-eyebrow">BATCH IMPORT</view>
-              <view class="import-title">批量导入工作区</view>
-              <view class="import-copy">
-                上传图片、JSON、CSV、TXT、XLSX、DOCX 或 PDF，完成识别、预览与 dry-run 后再写入待审核队列。
-              </view>
-              <button class="primary-button large" @tap="openImportWorkspace">打开批量导入工作区 →</button>
-            </view>
-            <view class="import-visual">
-              <view class="import-file file-one">PDF</view>
-              <view class="import-file file-two">XLSX</view>
-              <view class="import-file file-three">JSON</view>
-              <view class="import-orbit"></view>
-              <view class="import-center">⇧</view>
-            </view>
-          </view>
-
-          <view class="import-flow">
-            <view v-for="(item, index) in importSteps" :key="item.title" class="flow-card">
-              <view class="flow-index">0{{ index + 1 }}</view>
-              <view class="flow-title">{{ item.title }}</view>
-              <view class="flow-copy">{{ item.copy }}</view>
-            </view>
-          </view>
-
-          <view class="import-safety">
-            <view class="safety-icon">✓</view>
-            <view>
-              <view class="safety-title">安全导入规则</view>
-              <view class="safety-copy">
-                导入内容不会直接发布。只有 dry-run 中无效题为 0、重复题为 0 时才允许写入，写入后仍保持待审核状态。
-              </view>
-            </view>
-          </view>
+          <QuestionImageImport
+            embedded
+            :portal-entry="true"
+            :question-bank-id="importQuestionBankId"
+            :question-bank-name="importQuestionBankName"
+          />
         </section>
       </template>
     </main>
@@ -669,7 +640,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onLoad } from '@dcloudio/uni-app'
 import {
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
@@ -684,6 +655,7 @@ import {
   updateAdminQuestionReview,
   updateAdminQuestionStatus
 } from '../../api/admin'
+import QuestionImageImport from './question-image-import.vue'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import {
@@ -726,6 +698,8 @@ const questionStats = reactive({
 })
 const questionBanks = ref([])
 const activeQuestionBank = ref(null)
+const importQuestionBankId = ref('')
+const importQuestionBankName = ref('')
 const questionBankDialogVisible = ref(false)
 const questionBankDialogMode = ref('create')
 const questionBankNameDraft = ref('')
@@ -741,7 +715,6 @@ const drawerVisible = ref(false)
 const drawerLoading = ref(false)
 const drawerMode = ref('edit')
 const saving = ref(false)
-const lastSectionBeforeImport = ref('')
 const devPreviewMode = ref(false)
 let searchTimer = null
 
@@ -777,13 +750,6 @@ const navItems = [
   { key: 'questions', label: '题目管理', icon: '≡' },
   { key: 'review', label: '审核队列', icon: '✓' },
   { key: 'import', label: '批量导入', icon: '⇧' }
-]
-
-const importSteps = [
-  { title: '选择文件', copy: '支持图片与常用结构化、Office、PDF 文件。' },
-  { title: '识别解析', copy: '提取题干、选项、答案、解析及分类信息。' },
-  { title: '预览修正', copy: '逐题检查识别内容并补全缺失字段。' },
-  { title: '校验入库', copy: '通过 dry-run 后写入待审核队列。' }
 ]
 
 const difficultyOptions = [
@@ -1037,14 +1003,6 @@ onLoad(async (options = {}) => {
   await bootstrap()
 })
 
-onShow(() => {
-  if (!portalLoading.value && lastSectionBeforeImport.value) {
-    activeSection.value = lastSectionBeforeImport.value
-    lastSectionBeforeImport.value = ''
-    refreshQuestionData()
-  }
-})
-
 async function bootstrap() {
   if (!isLoggedIn()) {
     goToPortalLogin()
@@ -1206,6 +1164,10 @@ async function switchSection(section) {
       await returnToQuestionBanks()
     }
     return
+  }
+  if (section === 'import') {
+    importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+    importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
   }
   activeSection.value = section
   currentPage.value = 1
@@ -1730,13 +1692,9 @@ function requestCloseDrawer() {
 }
 
 function openImportWorkspace() {
-  lastSectionBeforeImport.value = activeSection.value
-  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id : ''
-  const questionBankName = activeSection.value === 'questions' ? activeQuestionBank.value?.name : ''
-  const params = ['portal=1']
-  if (questionBankId) params.push(`question_bank_id=${encodeURIComponent(questionBankId)}`)
-  if (questionBankName) params.push(`question_bank_name=${encodeURIComponent(questionBankName)}`)
-  uni.navigateTo({ url: `/pages/admin/question-image-import?${params.join('&')}` })
+  importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+  importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
+  activeSection.value = 'import'
 }
 
 function logout() {

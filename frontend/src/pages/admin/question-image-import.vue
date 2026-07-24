@@ -1,9 +1,6 @@
 <template>
   <view class="image-import-page" :style="themeInlineStyle">
     <view class="import-hero">
-      <button class="back-btn" @tap="goBack">
-        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
         <view class="hero-subtitle">上传标准 Excel 模板，逐行校验题目内容</view>
@@ -209,7 +206,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   commitAdminQuestionImageImport,
@@ -222,6 +219,18 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const props = defineProps({
+  embedded: Boolean,
+  portalEntry: Boolean,
+  questionBankId: {
+    type: String,
+    default: ''
+  },
+  questionBankName: {
+    type: String,
+    default: ''
+  }
+})
 const loading = ref(true)
 const allowed = ref(false)
 const portalEntry = ref(false)
@@ -316,10 +325,23 @@ const canCommit = computed(() => (
   Number(dryRunResult.value.duplicate_count || 0) === 0
 ))
 
-onLoad(async (options = {}) => {
-  portalEntry.value = options.portal === '1'
-  questionBankId.value = String(options.question_bank_id || '')
-  questionBankName.value = String(options.question_bank_name || '')
+onLoad((options = {}) => {
+  void initializeWorkspace(options)
+})
+
+onMounted(() => {
+  if (!props.embedded) return
+  void initializeWorkspace({
+    portal: props.portalEntry ? '1' : '',
+    question_bank_id: props.questionBankId,
+    question_bank_name: props.questionBankName
+  })
+})
+
+async function initializeWorkspace(options = {}) {
+  portalEntry.value = props.embedded ? Boolean(props.portalEntry) : options.portal === '1'
+  questionBankId.value = String(props.embedded ? props.questionBankId : (options.question_bank_id || ''))
+  questionBankName.value = String(props.embedded ? props.questionBankName : (options.question_bank_name || ''))
   if (!isLoggedIn()) {
     const loginTarget = portalEntry.value
       ? `/pages/login/index?portal=1&redirect=${encodeURIComponent('/pages/admin/question-desktop?section=questions')}`
@@ -339,7 +361,7 @@ onLoad(async (options = {}) => {
   } finally {
     loading.value = false
   }
-})
+}
 
 function optionIndex(options, value) {
   const index = options.findIndex((item) => item === value)
@@ -1177,7 +1199,7 @@ function returnFromImport() {
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 0 210rpx 18rpx 96rpx;
+  padding: 0 210rpx 18rpx;
   box-sizing: border-box;
 }
 
@@ -1198,7 +1220,6 @@ function returnFromImport() {
   box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.08);
 }
 
-.back-btn::after,
 .history-btn::after,
 .file-delete-btn::after,
 .editor-back-btn::after,
@@ -1213,11 +1234,6 @@ function returnFromImport() {
 .danger-line-btn::after,
 .bottom-btn::after {
   border: 0;
-}
-
-.back-icon {
-  width: 30rpx;
-  height: 30rpx;
 }
 
 .hero-copy {
@@ -2346,7 +2362,6 @@ function returnFromImport() {
     font-size: 9px;
   }
 
-  .back-btn,
   .history-btn,
   .template-btn {
     min-width: 38px;
