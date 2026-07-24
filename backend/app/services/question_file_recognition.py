@@ -6,7 +6,7 @@ import io
 import json
 import re
 import zipfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from urllib import error, request
 from xml.etree import ElementTree
 
@@ -20,9 +20,28 @@ MAX_OCR_BYTES = 7 * 1024 * 1024
 MAX_EXTRACTED_TEXT_LENGTH = 200_000
 MAX_ZIP_EXPANDED_BYTES = 50 * 1024 * 1024
 
-TEXT_EXTENSIONS = {"txt", "csv", "json"}
-IMAGE_EXTENSIONS = {"png", "jpg", "jpeg", "webp", "bmp"}
-SUPPORTED_EXTENSIONS = TEXT_EXTENSIONS | IMAGE_EXTENSIONS | {"pdf", "docx", "xlsx"}
+SUPPORTED_EXTENSIONS = {"xlsx"}
+EXCEL_TEMPLATE_SHEET_NAME = "题目"
+EXCEL_TEMPLATE_HEADERS = (
+    "exam_code",
+    "subject",
+    "module",
+    "submodule",
+    "stem",
+    "option_a",
+    "option_b",
+    "option_c",
+    "option_d",
+    "answer",
+    "explanation",
+    "difficulty",
+    "source_type",
+    "source_year",
+)
+MAX_EXCEL_QUESTION_ROWS = 100
+XLSX_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+XLSX_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+PACKAGE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships"
 
 
 class FileRecognitionError(RuntimeError):
@@ -32,42 +51,23 @@ class FileRecognitionError(RuntimeError):
 def recognize_question_file(filename: str, content: bytes) -> dict:
     extension = Path(filename or "").suffix.lower().lstrip(".")
     if extension not in SUPPORTED_EXTENSIONS:
-        raise FileRecognitionError(f"Unsupported file type: {extension or 'unknown'}")
+        raise FileRecognitionError("仅支持 .xlsx Excel 题库模板文件")
     if not content:
         raise FileRecognitionError("Uploaded file is empty")
     if len(content) > MAX_UPLOAD_BYTES:
         raise FileRecognitionError("File exceeds the 20MB upload limit")
 
+    questions = _extract_xlsx_questions(content, filename)
     warnings: list[str] = []
-    if extension in TEXT_EXTENSIONS:
-        text = _decode_text(content)
-        provider = "text"
-    elif extension == "docx":
-        text = _extract_docx_text(content)
-        provider = "docx"
-    elif extension == "xlsx":
-        text = _extract_xlsx_text(content)
-        provider = "xlsx"
-    elif extension == "pdf":
-        text = _extract_pdf_text(content)
-        provider = "pdf"
-        if not _has_meaningful_text(text):
-            text = _tencent_general_basic_ocr(content)
-            provider = "tencent_ocr"
-            warnings.append("PDF did not contain extractable text, so OCR was used.")
-    else:
-        text = _tencent_general_basic_ocr(content)
-        provider = "tencent_ocr"
-
-    text = _normalize_text(text)
-    if not text:
-        warnings.append("No readable text was found in the uploaded file.")
+    if not questions:
+        warnings.append("题目工作表中没有可导入的数据行。请从 Excel 第 2 行开始填写题目。")
 
     return {
         "filename": filename,
         "extension": extension,
-        "provider": provider,
-        "text": text,
+        "provider": "xlsx",
+        "text": f"已读取 {len(questions)} 道题目",
+        "questions": questions,
         "warnings": warnings,
     }
 
@@ -110,34 +110,123 @@ def _extract_docx_text(content: bytes) -> str:
     return "\n".join(lines)
 
 
-def _extract_xlsx_text(content: bytes) -> str:
+def _extract_xlsx_questions(content: bytes, filename: str) -> list[dict]:
     with _validate_zip(content) as archive:
         shared_strings = _xlsx_shared_strings(archive)
-        sheet_names = sorted(
-            name for name in archive.namelist() if re.fullmatch(r"xl/worksheets/sheet\d+\.xml", name)
+        sheet_path = _xlsx_sheet_path(archive, EXCEL_TEMPLATE_SHEET_NAME)
+        root = ElementTree.fromstring(archive.read(sheet_path))
+
+    namespace = {"x": XLSX_NAMESPACE}
+    rows = root.findall(".//x:sheetData/x:row", namespace)
+    if not rows:
+        raise FileRecognitionError("Excel 模板缺少表头。请使用“下载模板”获取标准文件。")
+
+    headers = _xlsx_row_values(rows[0], shared_strings)
+    headers = [value.replace("\ufeff", "").strip() for value in headers]
+    if headers != list(EXCEL_TEMPLATE_HEADERS):
+        expected = "、".join(EXCEL_TEMPLATE_HEADERS)
+        actual = "、".join(headers) or "（空）"
+        raise FileRecognitionError(
+            f"Excel 首行字段与模板不一致。请保持字段顺序不变。期望：{expected}；当前：{actual}"
         )
-        rows: list[str] = []
-        namespace = {"x": "http://schemas.openxmlformats.org/spreadsheetml/2006/main"}
-        for sheet_name in sheet_names:
-            root = ElementTree.fromstring(archive.read(sheet_name))
-            for row in root.findall(".//x:row", namespace):
-                values: list[str] = []
-                for cell in row.findall("x:c", namespace):
-                    cell_type = cell.attrib.get("t", "")
-                    value_node = cell.find("x:v", namespace)
-                    inline_nodes = cell.findall(".//x:is/x:t", namespace)
-                    value = "".join(node.text or "" for node in inline_nodes)
-                    if value_node is not None and value_node.text is not None:
-                        value = value_node.text
-                        if cell_type == "s":
-                            try:
-                                value = shared_strings[int(value)]
-                            except (IndexError, ValueError):
-                                pass
-                    values.append(value.strip())
-                if any(values):
-                    rows.append("\t".join(values))
-    return "\n".join(rows)
+
+    questions: list[dict] = []
+    for offset, row in enumerate(rows[1:], start=2):
+        row_number = _xlsx_row_number(row, offset)
+        values = _xlsx_row_values(row, shared_strings)
+        if len(values) > len(EXCEL_TEMPLATE_HEADERS) and any(values[len(EXCEL_TEMPLATE_HEADERS) :]):
+            raise FileRecognitionError(f"Excel 第 {row_number} 行包含模板以外的内容，请删除多余列后重新上传。")
+        row_values = (values + [""] * len(EXCEL_TEMPLATE_HEADERS))[: len(EXCEL_TEMPLATE_HEADERS)]
+        if not any(value.strip() for value in row_values):
+            continue
+        question = dict(zip(EXCEL_TEMPLATE_HEADERS, row_values, strict=True))
+        question["answer"] = question["answer"].strip().upper()
+        question["source_type"] = question["source_type"].strip() or "manual"
+        question["source_year"] = question["source_year"].strip() or None
+        question["excel_row"] = row_number
+        question["image_name"] = Path(filename).name
+        question["image_index"] = len(questions)
+        questions.append(question)
+        if len(questions) > MAX_EXCEL_QUESTION_ROWS:
+            raise FileRecognitionError(
+                f"单次 Excel 最多导入 {MAX_EXCEL_QUESTION_ROWS} 道题，请拆分文件后重新上传。"
+            )
+    return questions
+
+
+def _xlsx_sheet_path(archive: zipfile.ZipFile, sheet_name: str) -> str:
+    try:
+        workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
+        relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+    except KeyError as exc:
+        raise FileRecognitionError("Excel 文件结构不完整。请使用“下载模板”创建文件。") from exc
+
+    relationship_targets = {
+        relationship.attrib.get("Id"): relationship.attrib.get("Target", "")
+        for relationship in relationships.findall(f"{{{PACKAGE_RELATIONSHIPS_NAMESPACE}}}Relationship")
+    }
+    for sheet in workbook.findall(f".//{{{XLSX_NAMESPACE}}}sheet"):
+        if sheet.attrib.get("name") != sheet_name:
+            continue
+        relationship_id = sheet.attrib.get(f"{{{XLSX_RELATIONSHIPS_NAMESPACE}}}id")
+        target = relationship_targets.get(relationship_id, "")
+        if not target:
+            break
+        candidate = PurePosixPath(target.lstrip("/"))
+        if not str(candidate).startswith("xl/"):
+            candidate = PurePosixPath("xl") / candidate
+        if ".." in candidate.parts:
+            break
+        path = str(candidate)
+        if path in archive.namelist():
+            return path
+        break
+    raise FileRecognitionError("Excel 模板缺少“题目”工作表。请使用“下载模板”获取标准文件。")
+
+
+def _xlsx_row_values(row: ElementTree.Element, shared_strings: list[str]) -> list[str]:
+    namespace = {"x": XLSX_NAMESPACE}
+    cells: dict[int, str] = {}
+    for fallback_index, cell in enumerate(row.findall("x:c", namespace)):
+        reference = cell.attrib.get("r", "")
+        column_index = _xlsx_column_index(reference) if reference else fallback_index
+        cells[column_index] = _xlsx_cell_value(cell, shared_strings)
+    if not cells:
+        return []
+    return [cells.get(index, "") for index in range(max(cells) + 1)]
+
+
+def _xlsx_cell_value(cell: ElementTree.Element, shared_strings: list[str]) -> str:
+    namespace = {"x": XLSX_NAMESPACE}
+    cell_type = cell.attrib.get("t", "")
+    inline_text = "".join(node.text or "" for node in cell.findall(".//x:is//x:t", namespace))
+    if inline_text:
+        return inline_text.strip()
+    value_node = cell.find("x:v", namespace)
+    value = value_node.text if value_node is not None and value_node.text is not None else ""
+    if cell_type == "s" and value:
+        try:
+            value = shared_strings[int(value)]
+        except (IndexError, ValueError):
+            pass
+    return str(value).strip()
+
+
+def _xlsx_column_index(reference: str) -> int:
+    letters = "".join(character for character in reference.upper() if "A" <= character <= "Z")
+    if not letters:
+        return 0
+    index = 0
+    for letter in letters:
+        index = index * 26 + (ord(letter) - ord("A") + 1)
+    return index - 1
+
+
+def _xlsx_row_number(row: ElementTree.Element, fallback: int) -> int:
+    try:
+        return int(row.attrib.get("r", fallback))
+    except (TypeError, ValueError):
+        return fallback
 
 
 def _xlsx_shared_strings(archive: zipfile.ZipFile) -> list[str]:

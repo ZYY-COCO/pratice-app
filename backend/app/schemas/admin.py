@@ -145,10 +145,11 @@ class AdminQuestionImageImportItem(BaseModel):
     answer: str | None = Field(default=None, max_length=4)
     explanation: str | None = Field(default="", max_length=8000)
     difficulty: int | str | None = Field(default=2)
-    source_type: str | None = Field(default="source_extracted", max_length=40)
-    source_year: int | None = Field(default=None, ge=1900, le=2100)
+    source_type: str | None = Field(default="manual", max_length=40)
+    source_year: int | str | None = Field(default=None)
     image_name: str | None = Field(default=None, max_length=200)
     image_index: int | None = Field(default=None, ge=0, le=9999)
+    excel_row: int | None = Field(default=None, ge=2, le=1_000_000)
 
 
 class AdminQuestionImageImportRequest(BaseModel):
@@ -183,6 +184,7 @@ class AdminQuestionFileRecognizeResponse(BaseModel):
     extension: str
     provider: str
     text: str
+    questions: list[AdminQuestionImageImportItem] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
 
 

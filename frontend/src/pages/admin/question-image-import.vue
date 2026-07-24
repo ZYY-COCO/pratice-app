@@ -6,13 +6,16 @@
       </button>
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
-        <view class="hero-subtitle">上传文件，识别并校对题目内容</view>
+        <view class="hero-subtitle">上传标准 Excel 模板，逐行校验题目内容</view>
         <view v-if="questionBankName" class="target-bank-chip">导入至：{{ questionBankName }}</view>
       </view>
-      <button class="history-btn" @tap="showImportHistory">
-        <text class="history-icon">◷</text>
-        <text>导入记录</text>
-      </button>
+      <view class="hero-actions">
+        <button class="template-btn" @tap="downloadImportTemplate">下载模板</button>
+        <button class="history-btn" @tap="showImportHistory">
+          <text class="history-icon">◷</text>
+          <text>导入记录</text>
+        </button>
+      </view>
     </view>
 
     <view v-if="loading" class="screen-state">正在验证后台权限...</view>
@@ -27,9 +30,9 @@
           </view>
           <view class="file-plus">＋</view>
         </view>
-        <view class="drop-title">拖拽文件到这里</view>
-        <view class="drop-action">或点击选择文件</view>
-        <view class="drop-formats">支持图片、JSON、CSV、TXT、XLSX、DOCX、PDF</view>
+        <view class="drop-title">拖拽 Excel 文件到这里</view>
+        <view class="drop-action">或点击选择 .xlsx 文件</view>
+        <view class="drop-formats">仅支持使用“下载模板”创建的 .xlsx 文件</view>
         <view class="drop-limit">单个文件不超过 20MB</view>
       </view>
 
@@ -50,13 +53,13 @@
       </view>
 
       <view class="recognition-card">
-        <view class="landing-section-title">识别内容</view>
+        <view class="landing-section-title">Excel 字段校验</view>
         <view class="recognition-tags">
           <view class="recognition-tag blue">题干与选项</view>
-          <view class="recognition-tag green">正确答案</view>
-          <view class="recognition-tag purple">解析与分类</view>
+          <view class="recognition-tag green">答案与解析</view>
+          <view class="recognition-tag purple">分类与来源</view>
         </view>
-        <view class="recognition-copy">识别完成后，题目将进入预览确认页面，不会直接发布。</view>
+        <view class="recognition-copy">系统会按 Excel 行逐题读取，校验结果会在预览页面显示对应行号，不会直接发布。</view>
       </view>
 
       <view class="flow-card">
@@ -78,7 +81,7 @@
       <view class="editor-toolbar">
         <button class="editor-back-btn" @tap="returnToFileSelection">重新选择文件</button>
         <view class="editor-progress">
-          <text>{{ imageItems.length }} 个文件</text>
+          <text>{{ imageItems.length }} 个 Excel 文件</text>
           <text>{{ drafts.length }} 道草稿</text>
         </view>
       </view>
@@ -110,55 +113,8 @@
       <view class="import-panel">
         <view class="panel-head">
           <view>
-            <view class="panel-title">文件与识别文本</view>
-            <view class="panel-subtitle">自动提取文件内容；识别失败时可手动粘贴 OCR / 导出文本。</view>
-          </view>
-          <button class="primary-mini-btn" @tap="chooseImportFiles">添加文件</button>
-        </view>
-
-        <view v-if="imageItems.length === 0" class="upload-empty" @tap="chooseImportFiles">
-          <view class="upload-icon">＋</view>
-          <view class="upload-title">添加题目文件</view>
-          <view class="upload-desc">支持多选，识别完成后仍需校对题目内容。</view>
-        </view>
-
-        <view v-else class="image-list">
-          <view v-for="(item, index) in imageItems" :key="item.id" class="image-row">
-            <image v-if="isImageItem(item)" class="thumb" :src="item.path" mode="aspectFill" @tap="previewImage(item)" />
-            <view v-else class="thumb file-thumb" :class="fileTypeTone(item)">{{ fileTypeLabel(item) }}</view>
-            <view class="image-main">
-              <view class="image-title-row">
-                <view>
-                  <view class="image-name">{{ item.name }}</view>
-                  <view class="image-meta">第 {{ index + 1 }} 张 · {{ formatSize(item.size) }}</view>
-                </view>
-                <button class="remove-btn" @tap="removeImage(item.id)">移除</button>
-              </view>
-              <textarea
-                v-model="item.rawText"
-                class="ocr-textarea"
-                :placeholder="ocrTextPlaceholder"
-                @input="markDryRunDirty"
-              />
-              <view class="image-actions">
-                <button class="line-btn" @tap="parseSingleImage(item)">解析这张</button>
-                <text class="image-status">{{ item.status || '待解析' }}</text>
-              </view>
-            </view>
-          </view>
-        </view>
-
-        <view class="wide-actions">
-          <button class="outline-action" @tap="addBlankDraft">手动新增一题</button>
-          <button class="filled-action" @tap="parseAllImages">解析全部文本</button>
-        </view>
-      </view>
-
-      <view class="import-panel">
-        <view class="panel-head">
-          <view>
             <view class="panel-title">待导入预览</view>
-            <view class="panel-subtitle">所有题目会以“已下架 / 待审核”写入，老师再进入审核队列发布。</view>
+            <view class="panel-subtitle">逐行修正 Excel 数据后再校验；所有题目都会以“已下架 / 待审核”写入。</view>
           </view>
           <view class="count-badge">{{ drafts.length }} 题</view>
         </view>
@@ -170,7 +126,7 @@
             <view class="draft-head">
               <view>
                 <view class="draft-title">题目 {{ index + 1 }}</view>
-                <view class="draft-source">{{ draft.image_name || '手动新增' }}</view>
+                <view class="draft-source">{{ excelRowLabel(draft, index) }} · {{ draft.image_name || 'Excel 导入' }}</view>
               </view>
               <view class="draft-status">{{ draftStatusText(draft, index) }}</view>
             </view>
@@ -188,6 +144,14 @@
               <picker :range="difficultyLabels" :value="difficultyIndex(draft.difficulty)" @change="handleDraftDifficultyChange(draft, $event)">
                 <view class="draft-picker">难度 {{ draft.difficulty }}<text>⌄</text></view>
               </picker>
+            </view>
+
+            <view class="draft-meta-grid">
+              <input v-model="draft.exam_code" class="draft-meta-input" placeholder="考试代码：COMMON / Z001 / Z002" @input="markDryRunDirty" />
+              <picker :range="sourceTypeLabels" :value="sourceTypeIndex(draft.source_type)" @change="handleDraftSourceTypeChange(draft, $event)">
+                <view class="draft-picker">{{ sourceTypeLabel(draft.source_type) }}<text>⌄</text></view>
+              </picker>
+              <input v-model="draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
             </view>
 
             <textarea v-model="draft.stem" class="draft-textarea stem" placeholder="题干" @input="markDryRunDirty" />
@@ -221,9 +185,9 @@
     <view v-if="allowed && !editorVisible" class="recognize-bottom-bar">
       <button class="recognize-btn" :disabled="imageItems.length === 0 || recognizingCount > 0" @tap="startRecognition">
         <text class="recognize-icon">⌁</text>
-        <text>{{ recognizingCount > 0 ? `自动识别中 ${recognizingCount}` : '开始识别' }}</text>
+        <text>{{ recognizingCount > 0 ? `正在读取 ${recognizingCount}` : '进入预览' }}</text>
       </button>
-      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在提取文件内容，请稍候' : (imageItems.length ? `已完成文件处理，可预览 ${drafts.length} 道草稿` : '请选择文件后自动识别') }}</view>
+      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${drafts.length} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
     </view>
 
     <view v-if="allowed && editorVisible" class="import-bottom-bar">
@@ -270,24 +234,15 @@ const dryRunResult = ref(null)
 const dryRunLoading = ref(false)
 const importSaving = ref(false)
 const answerOptions = ['A', 'B', 'C', 'D']
-const ocrTextPlaceholder = [
-  '粘贴识别文本。单题格式：题干...',
-  'A. ...',
-  'B. ...',
-  'C. ...',
-  'D. ...',
-  '答案：B',
-  '解析：...',
-  '',
-  '多题可用 1. / 题目1 / --- 分隔。'
-].join('\n')
 const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
 const landingSteps = [
   { icon: '▱', title: '选择文件' },
-  { icon: '⌗', title: '开始识别' },
+  { icon: '⌗', title: '读取 Excel' },
   { icon: '▤', title: '预览确认' },
   { icon: '✓', title: '进入待审核' }
 ]
+const sourceTypeOptions = ['manual', 'source_extracted', 'real_exam']
+const sourceTypeLabels = ['手工录入', '资料整理', '真题']
 
 const landingStepIconPaths = [
   '/static/admin-icons/import-select-file.svg',
@@ -444,84 +399,69 @@ async function chooseImportFiles() {
 
   if (typeof uni.chooseFile === 'function') {
     uni.chooseFile({
-      count: 9,
-      extension: ['png', 'jpg', 'jpeg', 'webp', 'json', 'csv', 'txt', 'xlsx', 'docx', 'pdf'],
+      count: 1,
+      extension: ['xlsx'],
       success: appendSelectedFiles
     })
     return
   }
   if (typeof uni.chooseMessageFile === 'function') {
     uni.chooseMessageFile({
-      count: 9,
+      count: 1,
       type: 'file',
-      extension: ['png', 'jpg', 'jpeg', 'webp', 'json', 'csv', 'txt', 'xlsx', 'docx', 'pdf'],
+      extension: ['xlsx'],
       success: appendSelectedFiles
     })
     return
   }
-  chooseImages()
-}
-
-function chooseImages() {
-  uni.chooseImage({
-    count: 9,
-    sizeType: ['compressed', 'original'],
-    sourceType: ['album', 'camera'],
-    success: appendSelectedFiles
-  })
+  uni.showToast({ title: '当前设备不支持 Excel 文件选择，请在网页端操作', icon: 'none' })
 }
 
 function appendSelectedFiles(response) {
   const paths = response.tempFilePaths || []
   const files = response.tempFiles || response.tempFilePaths?.map((path) => ({ path })) || []
-  const nextItems = files.map((file, index) => {
+  const normalizedFiles = files.map((file, index) => {
     const path = file.path || paths[index] || ''
-    const name = file.name || imageNameFromPath(path, imageItems.value.length + index + 1)
-    const extension = fileExtension(name)
-    return {
-      id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
-      path,
-      file: file.file || null,
-      name,
-      extension,
-      size: file.size || 0,
-      rawText: '',
-      recognizing: false,
-      recognitionError: '',
-      recognitionProvider: '',
-      status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
-    }
+    return { ...file, path, file: file.file || null }
   })
-  imageItems.value = [...imageItems.value, ...nextItems]
-  nextItems.forEach(recognizeImportItem)
-  markDryRunDirty()
+  appendImportFiles(normalizedFiles)
 }
 
 function handleDropFiles(event) {
   const files = Array.from(event?.dataTransfer?.files || [])
   if (!files.length) return
-  appendNativeFiles(files.slice(0, 9))
+  appendNativeFiles(files.slice(0, 1))
 }
 
 function appendNativeFiles(files) {
-  const nextItems = files.map((file, index) => {
-    const name = file.name || `导入文件 ${imageItems.value.length + index + 1}`
+  appendImportFiles(files.map((file) => ({ ...file, path: '', file })))
+}
+
+function appendImportFiles(files) {
+  const excelFiles = files.filter((file) => fileExtension(file.name || file.path) === 'xlsx')
+  if (!excelFiles.length) {
+    uni.showToast({ title: '仅支持 .xlsx Excel 题库模板文件', icon: 'none' })
+    return
+  }
+  const nextItems = excelFiles.slice(0, 1).map((file, index) => {
+    const name = file.name || imageNameFromPath(file.path, index + 1)
     const extension = fileExtension(name)
     return {
       id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
-      path: '',
-      file,
+      path: file.path || '',
+      file: file.file || null,
       name,
       extension,
       size: file.size || 0,
-      rawText: '',
+      recognizedQuestions: [],
       recognizing: false,
       recognitionError: '',
       recognitionProvider: '',
-      status: isReadableTextExtension(extension) ? '正在读取' : '文件已就绪'
+      status: '等待读取'
     }
   })
-  imageItems.value = [...imageItems.value, ...nextItems]
+  imageItems.value = nextItems
+  drafts.value = []
   nextItems.forEach(recognizeImportItem)
   markDryRunDirty()
 }
@@ -530,34 +470,19 @@ function fileExtension(name) {
   return String(name || '').split('.').pop()?.toLowerCase() || ''
 }
 
-function isReadableTextExtension(extension) {
-  return ['json', 'csv', 'txt'].includes(String(extension || '').toLowerCase())
-}
-
-function isImageItem(item) {
-  return ['png', 'jpg', 'jpeg', 'webp', 'gif', 'bmp'].includes(item?.extension || fileExtension(item?.name))
-}
-
 function fileTypeLabel(item) {
-  const extension = String(item?.extension || fileExtension(item?.name) || 'FILE').toUpperCase()
-  if (['JPG', 'JPEG', 'PNG', 'WEBP'].includes(extension)) return 'IMG'
-  return extension.slice(0, 4)
+  return String(item?.extension || fileExtension(item?.name) || 'XLSX').toUpperCase()
 }
 
 function fileTypeTone(item) {
-  const extension = String(item?.extension || fileExtension(item?.name)).toLowerCase()
-  if (['xlsx', 'csv'].includes(extension)) return 'sheet'
-  if (['json', 'txt'].includes(extension)) return 'data'
-  if (['pdf', 'docx'].includes(extension)) return 'document'
-  return 'image'
+  return String(item?.extension || fileExtension(item?.name)).toLowerCase() === 'xlsx' ? 'sheet' : 'image'
 }
 
 function fileReadyText(item) {
   if (item?.recognizing) return '识别中...'
   if (item?.recognitionError) return `识别失败：${item.recognitionError}`
-  if (String(item?.rawText || '').trim()) return '内容已读取'
-  if (isReadableTextExtension(item?.extension)) return item?.status || '等待读取'
-  return '文件已就绪'
+  if (Array.isArray(item?.recognizedQuestions) && item.recognizedQuestions.length) return `已读取 ${item.recognizedQuestions.length} 题`
+  return item?.status || '等待读取'
 }
 
 async function recognizeImportItem(item) {
@@ -579,10 +504,9 @@ async function recognizeImportItem(item) {
       fileName: item.name || 'upload'
     })
     if (!imageItems.value.some((current) => current.id === item.id)) return
-    item.rawText = result?.text || ''
+    item.recognizedQuestions = Array.isArray(result?.questions) ? result.questions : []
     item.recognitionProvider = result?.provider || ''
-    const parsedCount = item.rawText.trim() ? parseImageItem(item) : 0
-    item.status = parsedCount ? `已识别 ${parsedCount} 题` : '未识别到文本'
+    item.status = item.recognizedQuestions.length ? `已读取 ${item.recognizedQuestions.length} 题` : '模板中未填写题目'
     if (result?.warnings?.length) {
       item.recognitionError = result.warnings[0]
     }
@@ -590,9 +514,6 @@ async function recognizeImportItem(item) {
     if (!imageItems.value.some((current) => current.id === item.id)) return
     item.status = '识别失败'
     item.recognitionError = errorDetail(error)
-    if (isReadableTextExtension(item.extension)) {
-      hydrateReadableFile(item)
-    }
   } finally {
     item.recognizing = false
     markDryRunDirty()
@@ -608,42 +529,6 @@ function errorDetail(error) {
     return detail.message || JSON.stringify(detail)
   }
   return String(detail || '识别失败')
-}
-
-function hydrateReadableFile(item) {
-  if (!isReadableTextExtension(item.extension)) return
-  if (item.file && typeof FileReader !== 'undefined') {
-    const reader = new FileReader()
-    reader.onload = () => {
-      item.rawText = String(reader.result || '')
-      item.status = '内容已读取'
-    }
-    reader.onerror = () => {
-      item.status = '读取失败'
-    }
-    reader.readAsText(item.file, 'utf-8')
-    return
-  }
-  try {
-    const fileSystem = uni.getFileSystemManager?.()
-    if (!fileSystem || !item.path) {
-      item.status = '需粘贴文本'
-      return
-    }
-    fileSystem.readFile({
-      filePath: item.path,
-      encoding: 'utf8',
-      success: (result) => {
-        item.rawText = String(result.data || '')
-        item.status = '内容已读取'
-      },
-      fail: () => {
-        item.status = '需粘贴文本'
-      }
-    })
-  } catch (error) {
-    item.status = '需粘贴文本'
-  }
 }
 
 function imageNameFromPath(path, index) {
@@ -681,15 +566,18 @@ function startRecognition() {
     uni.showToast({ title: `还有 ${recognizingCount} 个文件正在识别`, icon: 'none' })
     return
   }
-  const readableItems = imageItems.value.filter((item) => String(item.rawText || '').trim())
-  if (readableItems.length) {
-    const total = readableItems.reduce((sum, item) => sum + parseImageItem(item), 0)
-    uni.showToast({ title: `已识别 ${total} 题，请预览确认`, icon: 'success' })
-  } else {
-    uni.showToast({ title: '未识别到题目，可进入下一步手动粘贴文本', icon: 'none' })
+  const readableItems = imageItems.value.filter((item) => Array.isArray(item.recognizedQuestions) && item.recognizedQuestions.length)
+  if (!readableItems.length) {
+    uni.showToast({ title: 'Excel 中未读取到题目，请确认从第 2 行开始填写', icon: 'none' })
+    return
   }
+  const total = readableItems.reduce((sum, item) => sum + parseExcelItem(item), 0)
+  uni.showToast({ title: `已读取 ${total} 题，请逐行预览确认`, icon: 'success' })
   editorVisible.value = true
   markDryRunDirty()
+  setTimeout(() => {
+    void runDryCheck(true)
+  }, 0)
 }
 
 function returnToFileSelection() {
@@ -709,40 +597,30 @@ function showImportHistory() {
   })
 }
 
-function parseSingleImage(item) {
-  const rawText = String(item.rawText || '').trim()
-  if (!rawText) {
-    uni.showToast({ title: '请先粘贴识别文本', icon: 'none' })
+function downloadImportTemplate() {
+  const templateUrl = '/static/templates/港澳台考研题库导入模板.xlsx'
+  if (typeof document !== 'undefined') {
+    const link = document.createElement('a')
+    link.href = templateUrl
+    link.download = '港澳台考研题库导入模板.xlsx'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
     return
   }
-  const count = parseImageItem(item)
-  markDryRunDirty()
-  uni.showToast({ title: `已解析 ${count} 题`, icon: 'success' })
+  uni.showToast({ title: '请在网页端下载 Excel 模板', icon: 'none' })
 }
 
-function parseAllImages() {
-  const targets = imageItems.value.filter((item) => String(item.rawText || '').trim())
-  if (targets.length === 0) {
-    uni.showToast({ title: '请先粘贴至少一张图片的识别文本', icon: 'none' })
-    return
-  }
-  const total = targets.reduce((sum, item) => sum + parseImageItem(item), 0)
-  markDryRunDirty()
-  uni.showToast({ title: `已解析 ${total} 题`, icon: 'success' })
-}
-
-function addBlankDraft() {
-  drafts.value = [...drafts.value, createDraftFromText('', null)]
-  markDryRunDirty()
-}
-
-function parseImageItem(item) {
-  const nextDrafts = createDraftsFromText(item.rawText, item)
+function parseExcelItem(item) {
+  const questions = Array.isArray(item?.recognizedQuestions) ? item.recognizedQuestions : []
+  const nextDrafts = questions.map((question, index) => (
+    createDraftFromQuestionObject(question, item, index, questions.length)
+  ))
   drafts.value = [
     ...drafts.value.filter((entry) => entry.image_id !== item.id),
     ...nextDrafts
   ]
-  item.status = `已解析 ${nextDrafts.length} 题`
+  item.status = `已读取 ${nextDrafts.length} 题`
   return nextDrafts.length
 }
 
@@ -834,6 +712,8 @@ function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCou
   const catalog = importCatalog[subject] || importCatalog[importDefaults.subject]
   const module = String(structuredValue(question, ['module', '模块'], importDefaults.module))
   const submodule = String(structuredValue(question, ['submodule', '考点', '分类'], importDefaults.submodule))
+  const rawDifficulty = structuredValue(question, ['difficulty', '难度'], importDefaults.difficulty)
+  const rawSourceYear = structuredValue(question, ['source_year', '来源年份'], '')
   return {
     id: `${Date.now()}-${blockIndex}-${Math.random().toString(16).slice(2)}`,
     image_id: image?.id || '',
@@ -843,7 +723,7 @@ function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCou
     subject,
     module,
     submodule,
-    difficulty: Number(structuredValue(question, ['difficulty', '难度'], importDefaults.difficulty)) || 2,
+    difficulty: rawDifficulty === '' || rawDifficulty === null || rawDifficulty === undefined ? 2 : rawDifficulty,
     stem: String(structuredValue(question, ['stem', 'question', '题干'], '')),
     option_a: String(structuredValue(question, ['option_a', 'a', 'A', '选项a', '选项A'], options.A || options.a || '')),
     option_b: String(structuredValue(question, ['option_b', 'b', 'B', '选项b', '选项B'], options.B || options.b || '')),
@@ -851,6 +731,9 @@ function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCou
     option_d: String(structuredValue(question, ['option_d', 'd', 'D', '选项d', '选项D'], options.D || options.d || '')),
     answer: String(structuredValue(question, ['answer', 'correct_answer', '答案'], 'A')).toUpperCase(),
     explanation: String(structuredValue(question, ['explanation', 'analysis', '解析'], '')),
+    source_type: String(structuredValue(question, ['source_type', '来源类型'], 'manual')) || 'manual',
+    source_year: rawSourceYear === null || rawSourceYear === undefined ? '' : String(rawSourceYear),
+    excel_row: Number(question?.excel_row) || blockIndex + 2,
     check: null
   }
 }
@@ -1045,6 +928,20 @@ function handleDraftDifficultyChange(draft, event) {
   markDryRunDirty()
 }
 
+function sourceTypeIndex(value) {
+  const index = sourceTypeOptions.findIndex((item) => item === value)
+  return index >= 0 ? index : 0
+}
+
+function sourceTypeLabel(value) {
+  return sourceTypeLabels[sourceTypeIndex(value)] || '手工录入'
+}
+
+function handleDraftSourceTypeChange(draft, event) {
+  draft.source_type = sourceTypeOptions[Number(event?.detail?.value || 0)] || 'manual'
+  markDryRunDirty()
+}
+
 function setDraftAnswer(draft, answer) {
   draft.answer = answer
   markDryRunDirty()
@@ -1093,7 +990,9 @@ function removeDraft(id) {
 
 function draftErrors(draft, index) {
   const errors = []
+  const rowLabel = excelRowLabel(draft, index)
   const required = [
+    ['exam_code', '考试代码'],
     ['subject', '科目'],
     ['module', '模块'],
     ['submodule', '考点'],
@@ -1101,17 +1000,33 @@ function draftErrors(draft, index) {
     ['option_a', 'A 选项'],
     ['option_b', 'B 选项'],
     ['option_c', 'C 选项'],
-    ['option_d', 'D 选项']
+    ['option_d', 'D 选项'],
+    ['explanation', '解析']
   ]
   required.forEach(([field, label]) => {
     if (!String(draft[field] || '').trim()) {
-      errors.push(`${label}不能为空`)
+      errors.push(`${rowLabel}：${label}不能为空`)
     }
   })
-  if (!answerOptions.includes(draft.answer)) errors.push('答案必须为 A-D')
-  if (Number(draft.difficulty) < 1 || Number(draft.difficulty) > 5) errors.push('难度必须为 1-5')
+  if (!['COMMON', 'Z001', 'Z002'].includes(String(draft.exam_code || '').trim())) {
+    errors.push(`${rowLabel}：考试代码只能是 COMMON、Z001 或 Z002`)
+  }
+  if (!answerOptions.includes(String(draft.answer || '').trim().toUpperCase())) errors.push(`${rowLabel}：答案必须为 A-D`)
+  if (!Number.isInteger(Number(draft.difficulty)) || Number(draft.difficulty) < 1 || Number(draft.difficulty) > 5) {
+    errors.push(`${rowLabel}：难度必须为 1-5 的整数`)
+  }
+  if (!sourceTypeOptions.includes(String(draft.source_type || '').trim())) {
+    errors.push(`${rowLabel}：来源类型只能是手工录入、资料整理或真题`)
+  }
+  if (String(draft.source_year || '').trim() && !/^(19\d{2}|20\d{2}|2100)$/.test(String(draft.source_year).trim())) {
+    errors.push(`${rowLabel}：来源年份必须为 1900-2100 的四位年份`)
+  }
   const serverErrors = dryRunResult.value?.items?.find((item) => item.index === index)?.errors || []
   return [...errors, ...serverErrors]
+}
+
+function excelRowLabel(draft, index) {
+  return `Excel 第 ${Number(draft?.excel_row) || index + 2} 行`
 }
 
 function draftTone(draft, index) {
@@ -1132,9 +1047,8 @@ function buildImportPayload() {
   return {
     question_bank_id: questionBankId.value || undefined,
     questions: drafts.value.map((draft, index) => {
-      const catalog = getDraftCatalog(draft)
       return {
-        exam_code: catalog.exam_code || draft.exam_code || 'COMMON',
+        exam_code: String(draft.exam_code || '').trim(),
         subject: draft.subject,
         module: draft.module,
         submodule: draft.submodule,
@@ -1144,13 +1058,14 @@ function buildImportPayload() {
         option_b: draft.option_b,
         option_c: draft.option_c,
         option_d: draft.option_d,
-        answer: draft.answer,
+        answer: String(draft.answer || '').trim().toUpperCase(),
         explanation: draft.explanation,
-        difficulty: Number(draft.difficulty || 2),
-        source_type: 'source_extracted',
-        source_year: null,
+        difficulty: draft.difficulty,
+        source_type: String(draft.source_type || 'manual').trim(),
+        source_year: String(draft.source_year || '').trim() || null,
         image_name: draft.image_name || null,
-        image_index: draft.image_index ?? index
+        image_index: draft.image_index ?? index,
+        excel_row: Number(draft.excel_row) || index + 2
       }
     })
   }
@@ -1160,14 +1075,14 @@ function markDryRunDirty() {
   dryRunResult.value = null
 }
 
-async function runDryCheck() {
+async function runDryCheck(silent = false) {
   if (drafts.value.length === 0) {
-    uni.showToast({ title: '请先解析或新增题目', icon: 'none' })
+    if (!silent) uni.showToast({ title: '请先选择 Excel 文件', icon: 'none' })
     return
   }
   const localInvalidCount = drafts.value.filter((draft, index) => draftErrors(draft, index).length > 0).length
   if (localInvalidCount > 0 && !dryRunResult.value) {
-    uni.showToast({ title: '请先补全草稿必填项', icon: 'none' })
+    if (!silent) uni.showToast({ title: '请先修正 Excel 行错误', icon: 'none' })
     return
   }
   dryRunLoading.value = true
@@ -1175,12 +1090,12 @@ async function runDryCheck() {
     const response = await dryRunAdminQuestionImageImport(buildImportPayload())
     dryRunResult.value = response
     if (response.invalid_count || response.duplicate_count) {
-      uni.showToast({ title: '校验发现问题，请逐题修正', icon: 'none' })
+      if (!silent) uni.showToast({ title: '校验发现问题，请逐行修正', icon: 'none' })
       return
     }
-    uni.showToast({ title: `校验通过 ${response.valid_count} 题`, icon: 'success' })
+    if (!silent) uni.showToast({ title: `校验通过 ${response.valid_count} 题`, icon: 'success' })
   } catch (error) {
-    uni.showToast({ title: 'dry-run 校验失败', icon: 'none' })
+    if (!silent) uni.showToast({ title: 'dry-run 校验失败', icon: 'none' })
   } finally {
     dryRunLoading.value = false
   }
@@ -1334,10 +1249,6 @@ function returnFromImport() {
 }
 
 .history-btn {
-  position: absolute;
-  right: 0;
-  top: 50%;
-  transform: translateY(-50%);
   width: 190rpx;
   height: 68rpx;
   margin: 0;
@@ -1354,6 +1265,37 @@ function returnFromImport() {
   font-weight: 800;
   line-height: 1;
   box-sizing: border-box;
+}
+
+.hero-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  transform: translateY(-50%);
+}
+
+.template-btn {
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #9edfd2;
+  border-radius: 22rpx;
+  color: #147567;
+  background: #ecfbf7;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.template-btn::after {
+  border: 0;
 }
 
 .history-icon {
@@ -2137,6 +2079,25 @@ function returnFromImport() {
   margin-bottom: 16rpx;
 }
 
+.draft-meta-grid {
+  margin-bottom: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.draft-meta-input {
+  min-width: 0;
+  height: 66rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 16rpx;
+  color: #263449;
+  background: #ffffff;
+  font-size: 21rpx;
+  box-sizing: border-box;
+}
+
 .draft-picker {
   min-height: 66rpx;
   font-size: 23rpx;
@@ -2386,7 +2347,8 @@ function returnFromImport() {
   }
 
   .back-btn,
-  .history-btn {
+  .history-btn,
+  .template-btn {
     min-width: 38px;
     height: 38px;
     border-radius: 10px;
@@ -2398,6 +2360,15 @@ function returnFromImport() {
     color: #53657a;
     background: #ffffff;
     font-size: 10px;
+  }
+
+  .hero-actions {
+    gap: 8px;
+  }
+
+  .template-btn {
+    padding: 0 12px;
+    font-size: 12px;
   }
 
   .landing-content,
@@ -2462,6 +2433,17 @@ function returnFromImport() {
   .picker-grid,
   .draft-picker-grid {
     gap: 9px;
+  }
+
+  .draft-meta-grid {
+    gap: 9px;
+  }
+
+  .draft-meta-input {
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
   }
 
   .picker-pill,

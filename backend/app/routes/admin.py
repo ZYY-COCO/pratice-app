@@ -48,7 +48,7 @@ router = APIRouter(prefix="/admin", tags=["admin"])
 
 QUESTION_BULK_SELECT_PAGE_SIZE = 500
 QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
-IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
+IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "manual", "source_extracted"}
 QUESTION_ADMIN_DASHBOARD_LIMIT = 8
 QUESTION_ADMIN_ONLINE_WINDOW_MINUTES = 15
 QUESTION_ADMIN_DASHBOARD_SUBJECTS = {"中华文化", "英语运用", "逻辑推理", "数学基础"}
@@ -503,7 +503,7 @@ def _build_image_import_create_payload(
     question_bank_id: str | None = None,
 ) -> AdminQuestionCreateRequest:
     raw = item.model_dump()
-    source_type = str(raw.get("source_type") or "source_extracted").strip()
+    source_type = str(raw.get("source_type") or "manual").strip()
     if source_type not in IMAGE_IMPORT_SOURCE_TYPES:
         raise ValueError(f"source_type 只能是 {', '.join(sorted(IMAGE_IMPORT_SOURCE_TYPES))}")
 
@@ -516,8 +516,21 @@ def _build_image_import_create_payload(
         except (TypeError, ValueError) as exc:
             raise ValueError("difficulty 必须是 1-5 的整数") from exc
 
+    source_year_value = raw.get("source_year")
+    if source_year_value in (None, ""):
+        source_year = None
+    else:
+        try:
+            source_year = int(str(source_year_value).strip())
+        except (TypeError, ValueError) as exc:
+            raise ValueError("source_year 必须为四位年份") from exc
+        if source_year < 1900 or source_year > 2100:
+            raise ValueError("source_year 必须在 1900-2100 之间")
+
     image_name = str(raw.get("image_name") or "").strip()
-    review_note = f"图片导入：{image_name}" if image_name else "图片导入"
+    excel_row = raw.get("excel_row")
+    row_note = f" · Excel 第 {excel_row} 行" if excel_row else ""
+    review_note = f"Excel 导入：{image_name}{row_note}" if image_name else f"Excel 导入{row_note}"
 
     return AdminQuestionCreateRequest(
         question_bank_id=question_bank_id,
@@ -535,7 +548,7 @@ def _build_image_import_create_payload(
         explanation=str(raw.get("explanation") or "").strip(),
         difficulty=difficulty,
         source_type=source_type,
-        source_year=raw.get("source_year"),
+        source_year=source_year,
         status="archived",
         review_status="pending",
         review_note=review_note,
@@ -591,7 +604,9 @@ def _dry_run_image_import_questions(
             duplicate_key = _question_duplicate_key(question)
             first_index = seen_keys.get(duplicate_key)
             if first_index is not None:
-                errors.append(f"与本次导入第 {first_index + 1} 题重复")
+                first_row = payload.questions[first_index].excel_row
+                first_label = f"Excel 第 {first_row} 行" if first_row else f"第 {first_index + 1} 题"
+                errors.append(f"与本次导入 {first_label} 重复")
                 has_duplicate = True
             else:
                 seen_keys[duplicate_key] = index
@@ -606,6 +621,9 @@ def _dry_run_image_import_questions(
             errors.append(str(exc))
         except HTTPException as exc:
             errors.append(str(exc.detail or "题目校验失败"))
+
+        if item.excel_row:
+            errors = [f"Excel 第 {item.excel_row} 行：{message}" for message in errors]
 
         results.append(
             AdminQuestionImageImportResultItem(
