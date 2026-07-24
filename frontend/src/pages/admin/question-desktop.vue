@@ -2220,6 +2220,10 @@ button {
   box-sizing: border-box;
 }
 
+.import-section {
+  padding: 0;
+}
+
 .question-bank-section {
   max-width: 1420px;
 }

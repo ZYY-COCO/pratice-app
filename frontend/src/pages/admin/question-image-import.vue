@@ -1,5 +1,5 @@
 <template>
-  <view class="image-import-page" :style="themeInlineStyle">
+  <view class="image-import-page" :class="{ embedded: props.embedded }" :style="themeInlineStyle">
     <view class="import-hero">
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
@@ -2328,6 +2328,21 @@ function returnFromImport() {
     background:
       radial-gradient(circle at 92% 0%, rgba(79, 209, 181, 0.14), transparent 28%),
       linear-gradient(180deg, #eef3f7 0%, #f7fafb 100%);
+  }
+
+  .image-import-page.embedded {
+    position: relative;
+    min-height: calc(100vh - 86px);
+    padding: 18px 32px 120px;
+  }
+
+  .image-import-page.embedded .recognize-bottom-bar {
+    position: absolute;
+    width: min(760px, calc(100% - 64px));
+    left: 50%;
+    right: auto;
+    bottom: 12px;
+    transform: translateX(-50%);
   }
 
   .import-hero,
