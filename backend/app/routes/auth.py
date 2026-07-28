@@ -1347,10 +1347,22 @@ def login(payload: LoginRequest) -> AuthResponse:
 def refresh_session(payload: RefreshTokenRequest) -> AuthResponse:
     supabase_auth = get_supabase_anon()
     try:
-        auth_response = supabase_auth.auth.refresh_session(payload.refresh_token)
+        auth_response = call_supabase(
+            lambda: supabase_auth.auth.refresh_session(payload.refresh_token),
+            operation_name="auth session refresh",
+        )
     except Exception as exc:
-        logger.info("Refresh auth session failed: %s", _safe_error_summary(exc))
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Refresh token is invalid or expired") from exc
+        if is_authentication_error(exc):
+            logger.info("Refresh token rejected (error_type=%s)", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Refresh token is invalid or expired",
+            ) from exc
+        logger.warning("Auth session refresh temporarily unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
     user = auth_response.user
     session = auth_response.session

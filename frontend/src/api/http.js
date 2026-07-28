@@ -145,11 +145,25 @@ function refreshAuthSession() {
     return Promise.reject({ detail: '登录已过期，请重新登录', code: 'AUTH_REFRESH_UNAVAILABLE' })
   }
 
-  refreshPromise = new Promise((resolve, reject) => {
+  refreshPromise = refreshAuthSessionOnce(refreshToken)
+    .catch(async (error) => {
+      if (!error?.retryable) throw error
+      await wait(500)
+      return refreshAuthSessionOnce(refreshToken)
+    })
+    .finally(() => {
+      refreshPromise = null
+    })
+
+  return refreshPromise
+}
+
+function refreshAuthSessionOnce(refreshToken) {
+  return new Promise((resolve, reject) => {
     uni.request({
       url: `${API_BASE_URL}/auth/refresh`,
       method: 'POST',
-      timeout: 12000,
+      timeout: 20000,
       data: { refresh_token: refreshToken },
       header: { 'Content-Type': 'application/json' },
       success(response) {
@@ -163,26 +177,30 @@ function refreshAuthSession() {
           return
         }
         const rejectedByAuthServer = response.statusCode === 401 || response.statusCode === 403
+        const retryable = [408, 429, 502, 503, 504].includes(response.statusCode)
         reject({
           ...(response.data || {}),
-          detail: response.data?.detail || '登录状态刷新失败，请稍后重试',
+          detail: response.data?.detail || (
+            response.statusCode === 429
+              ? '登录状态刷新请求过于频繁，请稍后重试'
+              : '登录状态刷新失败，请稍后重试'
+          ),
+          statusCode: response.statusCode,
           code: rejectedByAuthServer ? 'AUTH_REFRESH_REJECTED' : 'AUTH_REFRESH_FAILED',
-          retryable: !rejectedByAuthServer
+          retryable: !rejectedByAuthServer && retryable
         })
       },
       fail(error) {
+        const message = error?.errMsg || ''
+        const timedOut = message.toLowerCase().includes('timeout') || message.includes('-1001')
         reject({
-          detail: error?.errMsg || '登录状态刷新失败，请检查网络后重试',
-          code: 'NETWORK_ERROR',
+          detail: message || '登录状态刷新失败，请检查网络后重试',
+          code: timedOut ? 'NETWORK_TIMEOUT' : 'NETWORK_ERROR',
           retryable: true
         })
       }
     })
-  }).finally(() => {
-    refreshPromise = null
   })
-
-  return refreshPromise
 }
 
 function handleAuthFailure() {
