@@ -291,6 +291,7 @@ import {
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
+import { recognizeQuestionImportXlsxFile } from '../../utils/xlsxQuestionImport.mjs'
 import { QUESTION_CATALOG } from './question-admin-catalog'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -324,6 +325,8 @@ const dryRunLoading = ref(false)
 const importSaving = ref(false)
 const answerOptions = ['A', 'B', 'C', 'D']
 const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
+const LOCAL_RECOGNITION_TIMEOUT_MS = 15000
+const REMOTE_RECOGNITION_TIMEOUT_MS = 30000
 const landingSteps = [
   { icon: '▱', title: '选择文件' },
   { icon: '⌗', title: '读取 Excel' },
@@ -616,11 +619,20 @@ async function recognizeImportItem(item) {
 
   try {
     const uploadFile = await resolveBrowserUploadFile(item)
-    const result = await recognizeAdminQuestionImportFile({
-      file: uploadFile,
-      filePath: uploadFile ? '' : (item.path || ''),
-      fileName: item.name || 'upload'
-    })
+    const result = uploadFile
+      ? await withTimeout(
+          recognizeQuestionImportXlsxFile(uploadFile, item.name || 'upload.xlsx'),
+          LOCAL_RECOGNITION_TIMEOUT_MS,
+          '浏览器读取 Excel 超时，请重新选择文件'
+        )
+      : await withTimeout(
+          recognizeAdminQuestionImportFile({
+            filePath: item.path || '',
+            fileName: item.name || 'upload.xlsx'
+          }),
+          REMOTE_RECOGNITION_TIMEOUT_MS,
+          '上传读取超时，请重新选择文件'
+        )
     if (!imageItems.value.some((current) => current.id === item.id)) return
     item.recognizedQuestions = Array.isArray(result?.questions) ? result.questions : []
     item.recognitionProvider = result?.provider || ''
@@ -635,6 +647,20 @@ async function recognizeImportItem(item) {
   } finally {
     item.recognizing = false
     markDryRunDirty()
+  }
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
   }
 }
 

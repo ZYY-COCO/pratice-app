@@ -24,6 +24,7 @@
     "@dcloudio/uni-components": "3.0.0-alpha-5000720260327001",
     "@dcloudio/uni-h5": "3.0.0-alpha-5000720260327001",
     "@dcloudio/uni-mp-weixin": "3.0.0-alpha-5000720260327001",
+    "fflate": "^0.8.2",
     "katex": "^0.16.47",
     "vue": "3.4.21"
   },
