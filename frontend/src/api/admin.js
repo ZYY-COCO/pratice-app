@@ -3,7 +3,8 @@ import { request, uploadFileRequest } from './http'
 export function fetchAdminMe() {
   return request({
     url: '/admin/me',
-    method: 'GET'
+    method: 'GET',
+    timeout: 20000
   })
 }
 
@@ -64,7 +65,8 @@ export function publishAdminQuestionBankPendingQuestions(questionBankId, payload
 export function fetchAdminOverview() {
   return request({
     url: '/admin/overview',
-    method: 'GET'
+    method: 'GET',
+    timeout: 20000
   })
 }
 
@@ -72,7 +74,8 @@ export function fetchAdminUsers(params = {}) {
   return request({
     url: '/admin/users',
     method: 'GET',
-    data: params
+    data: params,
+    timeout: 20000
   })
 }
 

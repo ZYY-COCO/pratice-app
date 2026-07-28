@@ -13,7 +13,17 @@ let authRedirectPending = false
 
 export async function request(options) {
   const token = await getRequestAccessToken(options)
-  return dispatchRequest(options, token, false)
+  try {
+    return await dispatchRequest(options, token, false)
+  } catch (error) {
+    if (!shouldRetryTransientReadRequest(options, error)) {
+      throw error
+    }
+
+    await wait(350)
+    const retryToken = await getRequestAccessToken(options)
+    return dispatchRequest(options, retryToken, false)
+  }
 }
 
 function dispatchRequest(options, token, retried) {
@@ -104,13 +114,23 @@ function shouldRefreshBeforeRequest(options, token) {
 }
 
 function createHttpError(data, statusCode) {
+  const retryable = [408, 429, 502, 503, 504].includes(statusCode)
   if (data && typeof data === 'object' && !Array.isArray(data)) {
-    return { ...data, statusCode }
+    return { ...data, statusCode, retryable: data.retryable ?? retryable }
   }
   return {
     detail: typeof data === 'string' && data ? data : '请求失败',
-    statusCode
+    statusCode,
+    retryable
   }
+}
+
+function shouldRetryTransientReadRequest(options, error) {
+  return String(options.method || 'GET').toUpperCase() === 'GET' && error?.retryable === true
+}
+
+function wait(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
 }
 
 function shouldClearAuthSession(error) {

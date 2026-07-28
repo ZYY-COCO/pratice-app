@@ -14,6 +14,11 @@
     </view>
 
     <view v-if="loading" class="state-card">正在读取后台数据...</view>
+    <view v-else-if="bootstrapError" class="state-card unavailable">
+      <view class="state-title">后台数据暂时无法读取</view>
+      <view class="state-copy">{{ bootstrapError }}</view>
+      <button class="ghost-btn retry-btn" @tap="bootstrap">重新连接</button>
+    </view>
     <view v-else-if="!allowed" class="state-card denied">
       <view class="state-title">无后台权限</view>
       <view class="state-copy">请使用管理员账号登录后再访问。</view>
@@ -589,10 +594,10 @@ import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
-const ADMIN_EMAIL = '2221073755@qq.com'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
 const allowed = ref(false)
+const bootstrapError = ref('')
 const overview = ref({})
 const activeTab = ref('users')
 const questionEntryMode = ref(false)
@@ -864,10 +869,19 @@ const questionEmptyTitle = computed(() => (
   hasQuestionFilters.value ? '当前筛选下暂无正式题目' : '暂无正式题库题目'
 ))
 const questionEmptyCopy = computed(() => {
+  // #ifdef MP-WEIXIN
+  if (hasQuestionFilters.value) {
+    return '可以清空科目、模块、难度、状态或关键词后再查看。'
+  }
+  return '这里仅管理正式题库。'
+  // #endif
+
+  // #ifndef MP-WEIXIN
   if (hasQuestionFilters.value) {
     return '可以清空科目、模块、难度、状态或关键词后再查看。AI 专项出题不会进入题库管理。'
   }
   return '这里仅管理正式题库；AI 专项出题只会出现在用户收藏和练习历史中。'
+  // #endif
 })
 
 const createQuestionSubjectOptions = computed(() => (
@@ -966,6 +980,8 @@ async function bootstrap() {
   }
 
   loading.value = true
+  bootstrapError.value = ''
+  allowed.value = false
   try {
     const me = await fetchAdminMe()
     allowed.value = Boolean(me?.is_admin)
@@ -983,14 +999,24 @@ async function bootstrap() {
       await Promise.all(initialLoads)
     }
   } catch (error) {
-    const email = String(authUser.value?.email || '').toLowerCase()
-    allowed.value = email === ADMIN_EMAIL
-    if (!allowed.value) {
-      uni.showToast({ title: '无后台权限', icon: 'none' })
-    }
+    bootstrapError.value = getAdminBootstrapErrorMessage(error)
   } finally {
     loading.value = false
   }
+}
+
+function getAdminBootstrapErrorMessage(error) {
+  const detail = String(error?.detail || '')
+  if (Number(error?.statusCode) === 503 || detail.toLowerCase().includes('temporarily unavailable')) {
+    return '服务正在恢复中，登录状态已保留，请稍后重试。'
+  }
+  if (error?.code === 'NETWORK_TIMEOUT') {
+    return '网络响应较慢，请确认网络后重新连接。'
+  }
+  if (error?.code === 'NETWORK_ERROR') {
+    return '网络连接失败，请检查网络后重新连接。'
+  }
+  return '后台请求未完成，数据没有被当作 0 展示。请重新连接。'
 }
 
 async function loadOverview() {
@@ -2247,6 +2273,12 @@ function goBack() {
   background: #fff7f5;
 }
 
+.state-card.unavailable {
+  background: #fffbeb;
+  border-color: #fde68a;
+  color: #92400e;
+}
+
 .state-title {
   color: #101828;
   font-size: 32rpx;
@@ -2255,6 +2287,10 @@ function goBack() {
 
 .state-copy {
   margin-top: 12rpx;
+}
+
+.retry-btn {
+  margin-top: 28rpx;
 }
 
 .stat-grid {

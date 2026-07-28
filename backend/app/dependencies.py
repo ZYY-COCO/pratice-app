@@ -1,9 +1,14 @@
+import logging
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 
 from app.config import get_settings
 from app.db import get_supabase_admin
+from app.services.supabase_resilience import call_supabase, is_authentication_error
+
+
+logger = logging.getLogger(__name__)
 
 
 def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -21,9 +26,18 @@ def get_current_user_id(token: Annotated[str, Depends(get_bearer_token)]) -> str
 
     supabase = get_supabase_admin()
     try:
-        user_response = supabase.auth.get_user(token)
+        user_response = call_supabase(
+            lambda: supabase.auth.get_user(token),
+            operation_name="access-token validation",
+        )
     except Exception as exc:  # Supabase SDK raises provider-specific exceptions.
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
+        if is_authentication_error(exc):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token") from exc
+        logger.warning("Access-token validation unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
     user = getattr(user_response, "user", None)
     if not user:
@@ -46,7 +60,17 @@ def get_optional_current_user_id(authorization: Annotated[str | None, Header()] 
 
 def get_current_user_profile(user_id: Annotated[str, Depends(get_current_user_id)]) -> dict:
     supabase = get_supabase_admin()
-    response = supabase.table("users").select("*").eq("id", user_id).limit(1).execute()
+    try:
+        response = call_supabase(
+            lambda: supabase.table("users").select("*").eq("id", user_id).limit(1).execute(),
+            operation_name="current-user profile lookup",
+        )
+    except Exception as exc:
+        logger.warning("Current-user profile lookup unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="User profile service temporarily unavailable",
+        ) from exc
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
     return response.data[0]
@@ -70,18 +94,22 @@ def require_admin_user(profile: Annotated[dict, Depends(get_current_user_profile
 def _require_question_portal_access(profile: dict) -> dict:
     supabase = get_supabase_admin()
     try:
-        response = (
-            supabase.table("question_admin_access")
-            .select("user_id")
-            .eq("user_id", profile.get("id"))
-            .eq("is_active", True)
-            .limit(1)
-            .execute()
+        response = call_supabase(
+            lambda: (
+                supabase.table("question_admin_access")
+                .select("user_id")
+                .eq("user_id", profile.get("id"))
+                .eq("is_active", True)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question-portal permission lookup",
         )
     except Exception as exc:
+        logger.warning("Question-portal permission lookup unavailable (error_type=%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Question portal permission storage is not configured",
+            detail="Question portal permission service temporarily unavailable",
         ) from exc
 
     if not response.data:

@@ -1,5 +1,7 @@
 import { request, uploadFileRequest } from './http'
 
+const LOGIN_TIMEOUT = 30000
+
 function buildNoAuthRequest(url, payload, timeout = 12000) {
   return request({
     url,
@@ -13,20 +15,17 @@ function buildNoAuthRequest(url, payload, timeout = 12000) {
   })
 }
 
-export function checkBackendHealth() {
-  return request({
-    url: '/health',
-    method: 'GET',
-    authRedirect: false,
-    header: {
-      Authorization: ''
-    },
-    timeout: 3000
-  })
+export async function loginWithEmail(payload) {
+  try {
+    return await buildNoAuthRequest('/auth/login', payload, LOGIN_TIMEOUT)
+  } catch (error) {
+    if (!shouldRetryLogin(error)) throw error
+    return buildNoAuthRequest('/auth/login', payload, LOGIN_TIMEOUT)
+  }
 }
 
-export function loginWithEmail(payload) {
-  return buildNoAuthRequest('/auth/login', payload, 25000)
+function shouldRetryLogin(error) {
+  return error?.retryable === true || [502, 503, 504].includes(Number(error?.statusCode))
 }
 
 export function sendRegisterCode(payload) {

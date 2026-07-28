@@ -1,3 +1,4 @@
+import logging
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
 
@@ -54,8 +55,10 @@ from app.services.question_sources import (
 )
 from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
+from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
 
 router = APIRouter(prefix="/admin", tags=["admin"])
+logger = logging.getLogger(__name__)
 
 QUESTION_BULK_SELECT_PAGE_SIZE = 500
 QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
@@ -374,22 +377,24 @@ def _parse_question_difficulty(value: str | int | None) -> int | None:
 
 
 def _count_query(query) -> int:
-    response = query.limit(1).execute()
+    response = call_supabase(
+        lambda: query.limit(1).execute(),
+        operation_name="admin dashboard count",
+    )
     return int(response.count or 0)
 
 
 def _count_table(supabase, table_name: str) -> int:
-    try:
-        return _count_query(supabase.table(table_name).select("id", count="exact"))
-    except Exception:
-        return 0
+    return _count_query(supabase.table(table_name).select("id", count="exact"))
 
 
 def _count_admin_questions(supabase) -> int:
     try:
         query = exclude_ai_generated_questions(supabase.table("questions").select("id", count="exact"))
         return _count_query(query)
-    except Exception:
+    except Exception as exc:
+        if is_transient_supabase_error(exc):
+            raise
         try:
             return _count_query(
                 supabase.table("questions")
@@ -397,20 +402,20 @@ def _count_admin_questions(supabase) -> int:
                 .neq("source_type", AI_QUESTION_SOURCE_TYPE)
             )
         except Exception:
-            return 0
+            raise
 
 
 def _distinct_active_users(supabase, since: datetime) -> int:
-    try:
-        response = (
+    response = call_supabase(
+        lambda: (
             supabase.table("user_answers")
             .select("user_id")
             .gte("created_at", _to_iso(since))
             .limit(10000)
             .execute()
-        )
-    except Exception:
-        return 0
+        ),
+        operation_name="admin active-user lookup",
+    )
     return len({row.get("user_id") for row in (response.data or []) if row.get("user_id")})
 
 
@@ -895,22 +900,31 @@ def admin_me(profile: dict = Depends(require_admin_user)) -> AdminMeResponse:
 def admin_overview(_: dict = Depends(require_admin_user)) -> AdminOverviewResponse:
     supabase = get_supabase_admin()
     current = _now()
-    total_feedback = _count_table(supabase, "beta_feedback")
-    return AdminOverviewResponse(
-        total_users=_count_table(supabase, "users"),
-        active_today=_distinct_active_users(supabase, current - timedelta(days=1)),
-        active_week=_distinct_active_users(supabase, current - timedelta(days=7)),
-        active_month=_distinct_active_users(supabase, current - timedelta(days=30)),
-        active_year=_distinct_active_users(supabase, current - timedelta(days=365)),
-        total_questions=_count_admin_questions(supabase),
-        total_feedback=total_feedback,
-        pending_feedback=_count_query(
-            supabase.table("beta_feedback").select("id", count="exact").eq("status", "open")
-        ),
-        active_members=_count_query(
-            supabase.table("users").select("id", count="exact").eq("membership_status", "active")
-        ),
-    )
+    try:
+        total_feedback = _count_table(supabase, "beta_feedback")
+        return AdminOverviewResponse(
+            total_users=_count_table(supabase, "users"),
+            active_today=_distinct_active_users(supabase, current - timedelta(days=1)),
+            active_week=_distinct_active_users(supabase, current - timedelta(days=7)),
+            active_month=_distinct_active_users(supabase, current - timedelta(days=30)),
+            active_year=_distinct_active_users(supabase, current - timedelta(days=365)),
+            total_questions=_count_admin_questions(supabase),
+            total_feedback=total_feedback,
+            pending_feedback=_count_query(
+                supabase.table("beta_feedback").select("id", count="exact").eq("status", "open")
+            ),
+            active_members=_count_query(
+                supabase.table("users").select("id", count="exact").eq("membership_status", "active")
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin overview unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin data temporarily unavailable",
+        ) from exc
 
 
 @router.get("/users", response_model=AdminUserListResponse)
@@ -929,28 +943,40 @@ def admin_users(
         term = search.strip()
         if term:
             query = query.ilike("email", f"%{term}%")
-    response = query.range(resolved_offset, resolved_offset + resolved_limit - 1).execute()
-    rows = response.data or []
-    user_ids = [row.get("id") for row in rows if row.get("id")]
-    answer_counts: dict[str, int] = {}
-    if user_ids:
-        try:
-            answer_response = (
-                supabase.table("user_answers")
-                .select("user_id")
-                .in_("user_id", user_ids)
-                .limit(10000)
-                .execute()
+    try:
+        response = call_supabase(
+            lambda: query.range(resolved_offset, resolved_offset + resolved_limit - 1).execute(),
+            operation_name="admin user list",
+        )
+        rows = response.data or []
+        user_ids = [row.get("id") for row in rows if row.get("id")]
+        answer_counts: dict[str, int] = {}
+        if user_ids:
+            answer_response = call_supabase(
+                lambda: (
+                    supabase.table("user_answers")
+                    .select("user_id")
+                    .in_("user_id", user_ids)
+                    .limit(10000)
+                    .execute()
+                ),
+                operation_name="admin user answer-count lookup",
             )
             for row in answer_response.data or []:
                 user_id = str(row.get("user_id") or "")
                 if user_id:
                     answer_counts[user_id] = answer_counts.get(user_id, 0) + 1
-        except Exception:
-            answer_counts = {}
 
-    items = [_build_admin_user_item(row, answer_counts.get(str(row.get("id")), 0)) for row in rows if row.get("id")]
-    return AdminUserListResponse(items=items, count=int(response.count or len(items)))
+        items = [_build_admin_user_item(row, answer_counts.get(str(row.get("id")), 0)) for row in rows if row.get("id")]
+        return AdminUserListResponse(items=items, count=int(response.count or len(items)))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin user list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Admin user data temporarily unavailable",
+        ) from exc
 
 
 @router.get("/users/{user_id}", response_model=AdminUserDetailResponse)

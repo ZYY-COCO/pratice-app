@@ -198,6 +198,27 @@
           </view>
         </template>
 
+        <!-- #ifdef MP-WEIXIN -->
+        <view class="mp-agreement-row">
+          <checkbox-group class="mp-agreement-check" @change="handleMpAgreementChange">
+            <label class="mp-agreement-label">
+              <checkbox
+                class="mp-agreement-checkbox"
+                value="accepted"
+                :checked="mpAgreementAccepted"
+                color="#1677ff"
+              />
+              <text>我已阅读并同意</text>
+            </label>
+          </checkbox-group>
+          <view class="mp-agreement-links">
+            <text class="mp-privacy-link" @tap.stop="openUserServiceAgreement">《用户服务协议》</text>
+            <text>和</text>
+            <text class="mp-privacy-link" @tap.stop="openWechatPrivacyContract">《用户隐私保护指引》</text>
+          </view>
+        </view>
+        <!-- #endif -->
+
         <button class="primary-button submit-btn" :disabled="submitting" @tap="submit">
           {{ submitButtonText }}
         </button>
@@ -208,10 +229,6 @@
             <text class="wechat-icon">微</text>
             <text>{{ submitting ? '正在登录...' : '使用微信登录' }}</text>
           </button>
-          <view class="mp-privacy-note">
-            登录即表示你已阅读并同意
-            <text class="mp-privacy-link" @tap.stop="openWechatPrivacyContract">《用户隐私保护指引》</text>
-          </view>
         </view>
         <!-- #endif -->
 
@@ -296,7 +313,6 @@ import { onLoad, onUnload } from '@dcloudio/uni-app'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import {
-  checkBackendHealth,
   fetchWechatAuthUrl,
   loginWithEmail,
   loginWithPhone,
@@ -320,6 +336,7 @@ import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 
 // #ifdef MP-WEIXIN
 const wordmarkSrc = '/static/gangyantong-wordmark.png'
@@ -348,8 +365,8 @@ WECHAT_AUTH_ENABLED = true
 const authMethod = ref('email')
 const submitting = ref(false)
 const helpVisible = ref(false)
+const mpAgreementAccepted = ref(false)
 const redirect = ref('/pages/home/index')
-const portalLogin = ref(false)
 const tipText = ref('')
 const tipType = ref('warning')
 const sendingCode = reactive({
@@ -497,7 +514,6 @@ function startCodeCountdown(key) {
 
 onLoad(async (options) => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
-  portalLogin.value = options?.portal === '1'
   if (options?.redirect) {
     redirect.value = decodeURIComponent(options.redirect)
   }
@@ -535,7 +551,7 @@ onLoad(async (options) => {
     return
   }
 
-  await redirectPortalSessionIfNeeded()
+  await redirectSessionIfNeeded()
 })
 
 onUnload(() => {
@@ -580,12 +596,29 @@ function normalizeUiError(error, fallbackText) {
     return fallbackText
   }
 
-  if (detail.includes('请求超时')) {
-    return '请求超时，请确认后端已启动，或稍后重试'
+  if (
+    error?.code === 'NETWORK_TIMEOUT' ||
+    detail.includes('请求超时') ||
+    detail.toLowerCase().includes('timed out') ||
+    detail.includes('-1001')
+  ) {
+    return '网络连接超时，请检查网络后重新登录'
   }
 
-  if (detail.includes('Failed to fetch') || detail.includes('Network Error') || detail.includes('网络请求失败')) {
-    return '网络请求失败，请确认前后端服务都在运行'
+  if (
+    error?.code === 'NETWORK_ERROR' ||
+    detail.includes('Failed to fetch') ||
+    detail.includes('Network Error') ||
+    detail.includes('网络请求失败')
+  ) {
+    return '网络连接失败，请检查网络后重新登录'
+  }
+
+  if (
+    Number(error?.statusCode) === 503 ||
+    detail.toLowerCase().includes('temporarily unavailable')
+  ) {
+    return '登录服务暂时繁忙，已自动重试；请稍后再试'
   }
 
   if (detail.includes('Invalid email or password')) {
@@ -647,15 +680,28 @@ function normalizeUiError(error, fallbackText) {
   return detail
 }
 
-async function ensureBackendAvailable() {
-  try {
-    await checkBackendHealth()
-    return true
-  } catch (error) {
-    throw {
-      detail: normalizeUiError(error, '后端服务不可用，请先启动 backend')
-    }
+async function ensureMiniProgramPrivacyAuthorized() {
+  // #ifdef MP-WEIXIN
+  if (!mpAgreementAccepted.value) {
+    const message = '请先阅读并勾选《用户服务协议》和《用户隐私保护指引》'
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none', duration: 2600 })
+    return false
   }
+
+  try {
+    await requireWechatPrivacyAuthorization()
+  } catch (error) {
+    const message = error?.detail || '请先同意《用户隐私保护指引》'
+    tipType.value = 'warning'
+    tipText.value = message
+    uni.showToast({ title: message, icon: 'none' })
+    return false
+  }
+  // #endif
+
+  return true
 }
 
 async function handleSendRegisterCode() {
@@ -665,12 +711,12 @@ async function handleSendRegisterCode() {
     uni.showToast({ title: '请先填写邮箱', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   sendingCode.register = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
     const response = await sendRegisterCode({ email: registerForm.email })
     tipType.value = 'success'
     tipText.value = response.detail || '验证码已发送，请检查邮箱。'
@@ -693,12 +739,12 @@ async function handleSendResetCode() {
     uni.showToast({ title: '请先填写邮箱', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   sendingCode.reset = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
     const response = await sendResetCode({ email: resetForm.email })
     tipType.value = 'success'
     tipText.value = response.detail || '验证码已发送，请检查邮箱。'
@@ -719,12 +765,12 @@ async function sendPhoneVerificationCode(form, purpose, sendingKey) {
     uni.showToast({ title: '请先填写手机号', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   sendingCode[sendingKey] = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
     const response = await sendPhoneCode({
       phone: form.phone,
       purpose
@@ -789,48 +835,41 @@ async function saveSessionAndRedirect(response, successText) {
     user: response.user
   })
 
-  const canEnterQuestionPortal = await ensureQuestionPortalAccess()
+  const destination = await resolvePostLoginDestination()
 
   tipType.value = 'success'
   tipText.value = successText
   uni.showToast({ title: successText, icon: 'success' })
 
   setTimeout(() => {
-    uni.reLaunch({ url: canEnterQuestionPortal ? '/pages/admin/question-desktop' : resolveRegularRedirect() })
+    uni.reLaunch({ url: destination })
   }, 200)
 }
 
-async function redirectPortalSessionIfNeeded() {
+async function redirectSessionIfNeeded() {
   if (!isLoggedIn()) return
 
   submitting.value = true
-  const canEnterQuestionPortal = await ensureQuestionPortalAccess()
+  const destination = await resolvePostLoginDestination()
   submitting.value = false
-
-  if (canEnterQuestionPortal) {
-    redirectIfAlreadyAuthed('/pages/admin/question-desktop')
-    return
-  }
-
-  if (portalLogin.value) return
-  redirectIfAlreadyAuthed(redirect.value)
+  redirectIfAlreadyAuthed(destination)
 }
 
-async function ensureQuestionPortalAccess() {
+async function resolvePostLoginDestination() {
   try {
     await fetchQuestionAdminPortalMe()
-    return true
+    return '/pages/admin/question-desktop'
   } catch {
-    return false
+    // Permission is intentionally checked by the server. Ordinary users keep
+    // their original redirect, while question-bank managers enter the portal.
+    // A non-manager must not be sent back to an access-protected portal URL.
+    return isQuestionPortalDestination(redirect.value) ? HOME_PAGE : redirect.value
   }
 }
 
-function resolveRegularRedirect() {
-  const path = String(redirect.value || '').split('?')[0]
-  if (QUESTION_PORTAL_PAGE_PREFIXES.some((prefix) => path === prefix)) {
-    return HOME_PAGE
-  }
-  return redirect.value
+function isQuestionPortalDestination(url) {
+  const path = String(url || '').split('?')[0]
+  return QUESTION_PORTAL_PAGE_PREFIXES.some((prefix) => path === prefix)
 }
 
 async function submitPhoneLogin(form) {
@@ -838,12 +877,12 @@ async function submitPhoneLogin(form) {
     uni.showToast({ title: '请先填写手机号和验证码', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
     const response = await loginWithPhone({
       phone: form.phone,
       verification_code: form.code
@@ -864,12 +903,12 @@ async function submitPhoneRegister() {
     uni.showToast({ title: '请先填写手机号和验证码', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
     const response = await registerWithPhone({
       phone: phoneRegisterForm.phone,
       verification_code: phoneRegisterForm.code,
@@ -892,33 +931,18 @@ async function submitLogin() {
     uni.showToast({ title: '请先填写邮箱和密码', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
-
     const response = await loginWithEmail({
       email: loginForm.email,
       password: loginForm.password
     })
 
-    saveAuthSession({
-      accessToken: response.access_token,
-      refreshToken: response.refresh_token,
-      user: response.user
-    })
-
-    const canEnterQuestionPortal = await ensureQuestionPortalAccess()
-
-    tipType.value = 'success'
-    tipText.value = '登录成功，已保存登录状态。'
-    uni.showToast({ title: '登录成功', icon: 'success' })
-
-    setTimeout(() => {
-      uni.reLaunch({ url: canEnterQuestionPortal ? '/pages/admin/question-desktop' : resolveRegularRedirect() })
-    }, 200)
+    await saveSessionAndRedirect(response, '登录成功，已保存登录状态。')
   } catch (error) {
     const message = normalizeUiError(error, '登录失败，请检查邮箱和密码')
     tipType.value = 'warning'
@@ -939,13 +963,12 @@ async function submitRegister() {
     uni.showToast({ title: '两次输入的密码不一致', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
-
     const response = await registerWithEmail({
       email: registerForm.email,
       password: registerForm.password,
@@ -996,13 +1019,12 @@ async function submitResetPassword() {
     uni.showToast({ title: '两次输入的新密码不一致', icon: 'none' })
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
-
     const response = await resetPasswordWithCode({
       email: resetForm.email,
       verification_code: resetForm.code,
@@ -1029,13 +1051,12 @@ async function handleWechatLogin() {
     showAuthMethodUnavailable()
     return
   }
+  if (!(await ensureMiniProgramPrivacyAuthorized())) return
 
   submitting.value = true
   tipText.value = ''
 
   try {
-    await ensureBackendAvailable()
-
     // #ifdef MP-WEIXIN
     const code = await getMiniProgramLoginCode()
     const response = await loginWithWechat({
@@ -1074,7 +1095,6 @@ async function handleWechatCodeLogin(params) {
   submitting.value = true
   tipText.value = ''
   try {
-    await ensureBackendAvailable()
     const response = await loginWithWechat({
       code: params.code,
       state: params.state || null
@@ -1187,6 +1207,18 @@ function openHelp() {
 
 function closeHelp() {
   helpVisible.value = false
+}
+
+function handleMpAgreementChange(event) {
+  const values = Array.isArray(event?.detail?.value) ? event.detail.value : []
+  mpAgreementAccepted.value = values.includes('accepted')
+  if (mpAgreementAccepted.value && tipText.value.includes('请先阅读并勾选')) {
+    tipText.value = ''
+  }
+}
+
+function openUserServiceAgreement() {
+  uni.navigateTo({ url: '/pages/legal/user-agreement' })
 }
 
 function openSupportPage() {
@@ -1673,11 +1705,37 @@ function openWechatPrivacyContract() {
   color: #ffffff;
 }
 
-.mp-privacy-note {
-  margin-top: 12rpx;
+.mp-agreement-row {
+  margin: 24rpx 0 18rpx;
+  display: flex;
+  align-items: flex-start;
+  flex-wrap: wrap;
+  gap: 4rpx 8rpx;
   color: #98a2b3;
-  font-size: 21rpx;
-  line-height: 1.55;
+  font-size: 22rpx;
+  line-height: 1.65;
+}
+
+.mp-agreement-check,
+.mp-agreement-label,
+.mp-agreement-links {
+  display: flex;
+  align-items: center;
+}
+
+.mp-agreement-label {
+  min-height: 48rpx;
+}
+
+.mp-agreement-checkbox {
+  margin-right: 4rpx;
+  transform: scale(0.78);
+  transform-origin: center;
+}
+
+.mp-agreement-links {
+  min-height: 48rpx;
+  flex-wrap: wrap;
 }
 
 .mp-privacy-link {

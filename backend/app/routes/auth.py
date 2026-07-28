@@ -44,6 +44,7 @@ from app.services.phone_auth import (
     store_phone_code,
     verify_phone_code_or_raise,
 )
+from app.services.supabase_resilience import call_supabase, is_authentication_error
 from app.services.wechat_auth import (
     build_wechat_auth_url,
     exchange_wechat_code,
@@ -1296,11 +1297,20 @@ def login(payload: LoginRequest) -> AuthResponse:
     normalized_email = normalize_email(payload.email)
 
     try:
-        auth_response = supabase_auth.auth.sign_in_with_password(
-            {"email": normalized_email, "password": payload.password}
+        auth_response = call_supabase(
+            lambda: supabase_auth.auth.sign_in_with_password(
+                {"email": normalized_email, "password": payload.password}
+            ),
+            operation_name="email login",
         )
     except Exception as exc:
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password") from exc
+        if is_authentication_error(exc):
+            raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or password") from exc
+        logger.warning("Email login temporarily unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Authentication service temporarily unavailable",
+        ) from exc
 
     user = auth_response.user
     session = auth_response.session
