@@ -46,6 +46,21 @@ export function renameAdminQuestionBank(questionBankId, payload) {
   })
 }
 
+export function fetchAdminQuestionBankPendingPublishPreview(questionBankId) {
+  return request({
+    url: `/admin/question-banks/${questionBankId}/pending-publish-preview`,
+    method: 'GET'
+  })
+}
+
+export function publishAdminQuestionBankPendingQuestions(questionBankId, payload) {
+  return request({
+    url: `/admin/question-banks/${questionBankId}/publish-pending`,
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function fetchAdminOverview() {
   return request({
     url: '/admin/overview',
@@ -107,6 +122,14 @@ export function fetchAdminQuestions(params = {}) {
   })
 }
 
+export function fetchAdminQuestionStats(params = {}) {
+  return request({
+    url: '/admin/question-stats',
+    method: 'GET',
+    data: params
+  })
+}
+
 export function fetchAdminQuestionDetail(questionId) {
   return request({
     url: `/admin/questions/${questionId}`,
@@ -150,6 +173,14 @@ export function bulkUpdateAdminQuestionStatus(payload) {
   return request({
     url: '/admin/questions/bulk-status',
     method: 'PATCH',
+    data: payload
+  })
+}
+
+export function deleteAdminQuestions(payload) {
+  return request({
+    url: '/admin/questions/bulk',
+    method: 'DELETE',
     data: payload
   })
 }

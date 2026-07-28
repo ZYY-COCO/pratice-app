@@ -17,7 +17,8 @@ from app.schemas.admin import (
     AdminGrantMembershipRequest,
     AdminMeResponse,
     AdminOverviewResponse,
-    AdminQuestionBulkFilters,
+    AdminQuestionBulkDeleteRequest,
+    AdminQuestionBulkDeleteResponse,
     AdminQuestionBulkStatusRequest,
     AdminQuestionBulkStatusResponse,
     AdminQuestionCreateRequest,
@@ -28,6 +29,7 @@ from app.schemas.admin import (
     AdminQuestionImageImportRequest,
     AdminQuestionImageImportResultItem,
     AdminQuestionListResponse,
+    AdminQuestionStatsResponse,
     AdminQuestionReviewRequest,
     AdminQuestionStatusRequest,
     AdminQuestionUpdateRequest,
@@ -40,6 +42,9 @@ from app.schemas.admin import (
     QuestionBankCreateRequest,
     QuestionBankItem,
     QuestionBankListResponse,
+    QuestionBankPendingPublishPreviewResponse,
+    QuestionBankPublishPendingRequest,
+    QuestionBankPublishPendingResponse,
     QuestionBankRenameRequest,
 )
 from app.services.question_sources import (
@@ -47,12 +52,14 @@ from app.services.question_sources import (
     exclude_ai_generated_questions,
     is_ai_generated_question,
 )
+from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 
 QUESTION_BULK_SELECT_PAGE_SIZE = 500
 QUESTION_BULK_UPDATE_CHUNK_SIZE = 100
+QUESTION_BULK_MAX_SIZE = 20_000
 IMAGE_IMPORT_SOURCE_TYPES = {"real_exam", "manual", "source_extracted"}
 QUESTION_ADMIN_DASHBOARD_LIMIT = 8
 QUESTION_ADMIN_ONLINE_WINDOW_MINUTES = 15
@@ -60,6 +67,8 @@ QUESTION_ADMIN_DASHBOARD_SUBJECTS = {"中华文化", "英语运用", "逻辑推�
 QUESTION_ADMIN_DASHBOARD_SORTS = {"wrong_count", "accuracy", "attempt_count"}
 QUESTION_ADMIN_DASHBOARD_PERIOD_DAYS = {0, 7, 30}
 QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS = 5
+QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS = 20_000
+QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS = 10_000
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 
 
@@ -126,6 +135,19 @@ def _dashboard_question_sort_key(
     return (-item.wrong_count, -item.attempt_count, item.accuracy, item.question_id)
 
 
+def _dashboard_fallback_rows(response, *, limit: int, dataset: str) -> list[dict]:
+    total = int(response.count or 0)
+    if total > limit:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                f"Dashboard fallback cannot safely aggregate {dataset} beyond {limit} rows. "
+                "Apply database/question_dashboard_filters.sql."
+            ),
+        )
+    return response.data or []
+
+
 def _question_admin_dashboard_fallback(
     supabase,
     *,
@@ -145,27 +167,35 @@ def _question_admin_dashboard_fallback(
 
     today_response = (
         supabase.table("user_answers")
-        .select("user_id")
+        .select("user_id", count="exact")
         .gte("created_at", _to_iso(day_start))
-        .limit(10000)
+        .limit(QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS)
         .execute()
     )
     today_users = {
         str(row.get("user_id"))
-        for row in today_response.data or []
+        for row in _dashboard_fallback_rows(
+            today_response,
+            limit=QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS,
+            dataset="today activity",
+        )
         if row.get("user_id")
     }
 
     recent_response = (
         supabase.table("user_answers")
-        .select("user_id")
+        .select("user_id", count="exact")
         .gte("created_at", _to_iso(online_start))
-        .limit(10000)
+        .limit(QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS)
         .execute()
     )
     recent_user_ids = list({
         str(row.get("user_id"))
-        for row in recent_response.data or []
+        for row in _dashboard_fallback_rows(
+            recent_response,
+            limit=QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS,
+            dataset="recent activity",
+        )
         if row.get("user_id")
     })
     online_members = 0
@@ -184,17 +214,16 @@ def _question_admin_dashboard_fallback(
                 continue
             online_members += 1
 
-    answer_response = (
-        supabase.table("user_answers")
-        .select("question_id,is_correct,created_at")
-        .limit(20000)
-        .execute()
-    )
+    answer_query = supabase.table("user_answers").select("question_id,is_correct", count="exact")
+    if period_start:
+        answer_query = answer_query.gte("created_at", _to_iso(period_start))
+    answer_response = answer_query.limit(QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS).execute()
     aggregates: dict[str, dict[str, int]] = defaultdict(lambda: {"attempt_count": 0, "wrong_count": 0})
-    for row in answer_response.data or []:
-        answered_at = _parse_datetime(row.get("created_at"))
-        if period_start and (not answered_at or answered_at < period_start):
-            continue
+    for row in _dashboard_fallback_rows(
+        answer_response,
+        limit=QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS,
+        dataset="answers",
+    ):
         question_id = str(row.get("question_id") or "")
         if not question_id:
             continue
@@ -202,13 +231,19 @@ def _question_admin_dashboard_fallback(
         if not bool(row.get("is_correct")):
             aggregates[question_id]["wrong_count"] += 1
 
-    question_query = supabase.table("questions").select("id,stem,subject,module,source_type")
+    question_query = supabase.table("questions").select(
+        "id,stem,subject,module,source_type", count="exact"
+    )
     if subject:
         question_query = question_query.eq("subject", subject)
-    question_response = question_query.limit(20000).execute()
+    question_response = question_query.limit(QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS).execute()
     question_map = {
         str(row.get("id")): row
-        for row in question_response.data or []
+        for row in _dashboard_fallback_rows(
+            question_response,
+            limit=QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS,
+            dataset="questions",
+        )
         if row.get("id") and not is_ai_generated_question(row)
     }
 
@@ -439,22 +474,10 @@ def _list_question_bank_items(supabase) -> list[QuestionBankItem]:
         .limit(1000)
         .execute()
     )
-    question_response = (
-        exclude_ai_generated_questions(supabase.table("questions").select("question_bank_id"))
-        .limit(20000)
-        .execute()
-    )
-    counts: dict[str, int] = defaultdict(int)
-    for row in question_response.data or []:
-        question_bank_id = str(row.get("question_bank_id") or "")
-        if question_bank_id:
-            counts[question_bank_id] += 1
-
     return [
         QuestionBankItem(
             id=str(row.get("id")),
             name=str(row.get("name") or "未命名题库"),
-            question_count=counts.get(str(row.get("id")), 0),
             created_at=row.get("created_at"),
             updated_at=row.get("updated_at"),
         )
@@ -492,6 +515,89 @@ def _assert_bulk_question_ids_manageable(supabase, question_ids: list[str]) -> N
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="AI generated training questions are not managed in the official question bank",
             )
+
+
+def _build_question_status_update_data(question_status: str, admin_profile: dict, current: datetime) -> dict:
+    update_data = {
+        "status": question_status,
+        "archived_at": _to_iso(current) if question_status == "archived" else None,
+        "archived_by": admin_profile.get("id") if question_status == "archived" else None,
+    }
+    if question_status == "active":
+        update_data.update({
+            "review_status": "approved",
+            "review_note": None,
+            "reviewed_at": _to_iso(current),
+            "reviewed_by": admin_profile.get("id"),
+            "review_updated_at": _to_iso(current),
+        })
+    return update_data
+
+
+def _update_question_statuses_by_ids(
+    supabase,
+    question_ids: list[str],
+    question_status: str,
+    admin_profile: dict,
+    current: datetime,
+) -> int:
+    update_data = _build_question_status_update_data(question_status, admin_profile, current)
+    updated_count = 0
+    for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
+        batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
+        response = supabase.table("questions").update(update_data).in_("id", batch_ids).execute()
+        updated_count += len(response.data or batch_ids)
+    return updated_count
+
+
+def _delete_questions_by_ids(supabase, question_ids: list[str]) -> int:
+    deleted_count = 0
+    for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
+        batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
+        response = supabase.table("questions").delete().in_("id", batch_ids).execute()
+        deleted_count += len(response.data or batch_ids)
+    return deleted_count
+
+
+def _count_pending_questions_for_bank(supabase, question_bank_id: str) -> int:
+    response = (
+        exclude_ai_generated_questions(supabase.table("questions").select("id", count="exact"))
+        .eq("question_bank_id", question_bank_id)
+        .eq("review_status", "pending")
+        .limit(1)
+        .execute()
+    )
+    return int(response.count or 0)
+
+
+def _list_pending_question_ids_for_bank(supabase, question_bank_id: str) -> list[str]:
+    first_page = (
+        exclude_ai_generated_questions(supabase.table("questions").select("id", count="exact"))
+        .eq("question_bank_id", question_bank_id)
+        .eq("review_status", "pending")
+        .order("created_at", desc=True)
+        .range(0, QUESTION_BULK_SELECT_PAGE_SIZE - 1)
+        .execute()
+    )
+    pending_count = int(first_page.count or 0)
+    if pending_count > QUESTION_BULK_MAX_SIZE:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Too many pending questions to publish at once",
+        )
+
+    question_ids = [str(row.get("id")) for row in (first_page.data or []) if row.get("id")]
+    for offset in range(QUESTION_BULK_SELECT_PAGE_SIZE, pending_count, QUESTION_BULK_SELECT_PAGE_SIZE):
+        response = (
+            exclude_ai_generated_questions(supabase.table("questions").select("id"))
+            .eq("question_bank_id", question_bank_id)
+            .eq("review_status", "pending")
+            .order("created_at", desc=True)
+            .range(offset, offset + QUESTION_BULK_SELECT_PAGE_SIZE - 1)
+            .execute()
+        )
+        question_ids.extend(str(row.get("id")) for row in (response.data or []) if row.get("id"))
+    return question_ids
 
 
 def _validation_error_messages(exc: ValidationError) -> list[str]:
@@ -678,6 +784,18 @@ def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
     return data
 
 
+def _validate_question_classification_data(data: dict) -> None:
+    try:
+        validate_question_classification(
+            exam_code=str(data.get("exam_code") or ""),
+            subject=str(data.get("subject") or ""),
+            module=str(data.get("module") or ""),
+            submodule=str(data.get("submodule") or ""),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
+
+
 def _build_question_create_data(payload: AdminQuestionCreateRequest, admin_profile: dict) -> dict:
     data = payload.model_dump()
     text_fields = {
@@ -716,6 +834,7 @@ def _build_question_create_data(payload: AdminQuestionCreateRequest, admin_profi
         if not data.get(field):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} cannot be empty")
     data["answer"] = str(data["answer"]).upper()
+    _validate_question_classification_data(data)
     if is_ai_generated_question(data):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -1134,6 +1253,91 @@ def admin_rename_question_bank(
     )
 
 
+@router.get(
+    "/question-banks/{question_bank_id}/pending-publish-preview",
+    response_model=QuestionBankPendingPublishPreviewResponse,
+)
+def admin_preview_pending_question_publish(
+    question_bank_id: str,
+    _: dict = Depends(require_question_admin_user),
+) -> QuestionBankPendingPublishPreviewResponse:
+    supabase = get_supabase_admin()
+    question_bank = _get_question_bank_or_404(supabase, question_bank_id)
+    return QuestionBankPendingPublishPreviewResponse(
+        question_bank_id=question_bank_id,
+        question_bank_name=str(question_bank.get("name") or "未命名题库"),
+        pending_count=_count_pending_questions_for_bank(supabase, question_bank_id),
+    )
+
+
+@router.post(
+    "/question-banks/{question_bank_id}/publish-pending",
+    response_model=QuestionBankPublishPendingResponse,
+)
+def admin_publish_pending_questions_to_bank(
+    question_bank_id: str,
+    payload: QuestionBankPublishPendingRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> QuestionBankPublishPendingResponse:
+    supabase = get_supabase_admin()
+    question_bank = _get_question_bank_or_404(supabase, question_bank_id)
+    question_ids = _list_pending_question_ids_for_bank(supabase, question_bank_id)
+    actual_count = len(question_ids)
+    if actual_count != payload.expected_pending_count:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Pending question count changed. Review the preview and confirm again.",
+        )
+
+    current = _now()
+    updated_count = _update_question_statuses_by_ids(
+        supabase,
+        question_ids,
+        "active",
+        admin_profile,
+        current,
+    )
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="publish_pending_questions_to_bank",
+        target_type="question_bank",
+        target_id=question_bank_id,
+        details={
+            "question_bank_name": question_bank.get("name"),
+            "expected_pending_count": payload.expected_pending_count,
+            "updated_count": updated_count,
+        },
+    )
+    return QuestionBankPublishPendingResponse(updated_count=updated_count)
+
+
+def _count_question_statuses(supabase, question_bank_id: str | None = None) -> AdminQuestionStatsResponse:
+    def base_query():
+        query = exclude_ai_generated_questions(supabase.table("questions").select("id", count="exact"))
+        if question_bank_id:
+            query = query.eq("question_bank_id", question_bank_id)
+        return query
+
+    return AdminQuestionStatsResponse(
+        active=_count_query(base_query().eq("status", "active")),
+        archived=_count_query(
+            base_query().eq("status", "archived").neq("review_status", "pending")
+        ),
+        pending_review=_count_query(
+            base_query().eq("status", "archived").eq("review_status", "pending")
+        ),
+    )
+
+
+@router.get("/question-stats", response_model=AdminQuestionStatsResponse)
+def admin_question_stats(
+    question_bank_id: str | None = Query(default=None, max_length=80),
+    _: dict = Depends(require_question_admin_user),
+) -> AdminQuestionStatsResponse:
+    return _count_question_statuses(get_supabase_admin(), question_bank_id)
+
+
 @router.get("/questions", response_model=AdminQuestionListResponse)
 def admin_questions(
     question_bank_id: str | None = Query(default=None, max_length=80),
@@ -1267,57 +1471,22 @@ def admin_bulk_update_question_status(
 ) -> AdminQuestionBulkStatusResponse:
     supabase = get_supabase_admin()
     current = _now()
-    filters = payload.filters or AdminQuestionBulkFilters()
     question_ids = list(dict.fromkeys([question_id for question_id in payload.ids if question_id]))
 
     if not question_ids:
-        offset = 0
-        while True:
-            query = exclude_ai_generated_questions(
-                supabase.table("questions").select("id").order("created_at", desc=True)
-            )
-            query = _apply_admin_question_filters(
-                query,
-                question_bank_id=filters.question_bank_id,
-                exam_code=filters.exam_code,
-                subject=filters.subject,
-                module=filters.module,
-                question_status=filters.status,
-                review_status=filters.review_status,
-                exclude_review_status=filters.exclude_review_status,
-                search=filters.search,
-                difficulty=filters.difficulty,
-            )
-            response = query.range(offset, offset + QUESTION_BULK_SELECT_PAGE_SIZE - 1).execute()
-            rows = response.data or []
-            question_ids.extend(str(row.get("id")) for row in rows if row.get("id"))
-            if len(rows) < QUESTION_BULK_SELECT_PAGE_SIZE:
-                break
-            offset += QUESTION_BULK_SELECT_PAGE_SIZE
-    else:
-        _assert_bulk_question_ids_manageable(supabase, question_ids)
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Bulk status updates require at least one question id",
+        )
 
-    if not question_ids:
-        return AdminQuestionBulkStatusResponse(updated_count=0)
-
-    update_data = {
-        "status": payload.status,
-        "archived_at": _to_iso(current) if payload.status == "archived" else None,
-        "archived_by": admin_profile.get("id") if payload.status == "archived" else None,
-    }
-    if payload.status == "active":
-        update_data.update({
-            "review_status": "approved",
-            "review_note": None,
-            "reviewed_at": _to_iso(current),
-            "reviewed_by": admin_profile.get("id"),
-            "review_updated_at": _to_iso(current),
-        })
-    updated_count = 0
-    for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
-        batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
-        response = supabase.table("questions").update(update_data).in_("id", batch_ids).execute()
-        updated_count += len(response.data or batch_ids)
+    _assert_bulk_question_ids_manageable(supabase, question_ids)
+    updated_count = _update_question_statuses_by_ids(
+        supabase,
+        question_ids,
+        payload.status,
+        admin_profile,
+        current,
+    )
 
     _log_admin_action(
         supabase,
@@ -1329,10 +1498,40 @@ def admin_bulk_update_question_status(
             "status": payload.status,
             "updated_count": updated_count,
             "selected_count": len(question_ids),
-            "filters": filters.model_dump(exclude_none=True),
         },
     )
     return AdminQuestionBulkStatusResponse(updated_count=updated_count)
+
+
+@router.delete("/questions/bulk", response_model=AdminQuestionBulkDeleteResponse)
+def admin_bulk_delete_questions(
+    payload: AdminQuestionBulkDeleteRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> AdminQuestionBulkDeleteResponse:
+    supabase = get_supabase_admin()
+    question_ids = list(dict.fromkeys([question_id for question_id in payload.ids if question_id]))
+
+    if not question_ids:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Bulk deletion requires at least one question id",
+        )
+
+    _assert_bulk_question_ids_manageable(supabase, question_ids)
+    deleted_count = _delete_questions_by_ids(supabase, question_ids)
+
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action="bulk_delete_questions",
+        target_type="question",
+        target_id="bulk",
+        details={
+            "deleted_count": deleted_count,
+            "selected_count": len(question_ids),
+        },
+    )
+    return AdminQuestionBulkDeleteResponse(deleted_count=deleted_count)
 
 
 @router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
@@ -1351,10 +1550,13 @@ def admin_update_question(
     admin_profile: dict = Depends(require_question_admin_user),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    _get_manageable_question_or_404(supabase, question_id)
+    existing_question = _get_manageable_question_or_404(supabase, question_id)
     update_data = _build_question_update_data(payload)
     if not update_data:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No question fields to update")
+    classification_fields = {"exam_code", "subject", "module", "submodule"}
+    if classification_fields.intersection(update_data):
+        _validate_question_classification_data({**existing_question, **update_data})
     response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
     if not response.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question update failed")
@@ -1427,8 +1629,14 @@ def admin_update_question_review(
         update_data.update({"reviewed_at": None, "reviewed_by": None})
     else:
         update_data.update({"reviewed_at": _to_iso(current), "reviewed_by": admin_profile.get("id")})
-    if review_status == "approved":
+    if review_status == "approved" and payload.publish:
         update_data.update({"status": "active", "archived_at": None, "archived_by": None})
+    elif review_status == "approved":
+        update_data.update({
+            "status": "archived",
+            "archived_at": _to_iso(current),
+            "archived_by": admin_profile.get("id"),
+        })
     elif review_status in {"needs_changes", "rejected"}:
         update_data.update({
             "status": "archived",

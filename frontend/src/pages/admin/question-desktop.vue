@@ -46,7 +46,7 @@
       <header class="portal-header">
         <view class="header-left">
           <button
-            v-if="activeSection === 'questions' && activeQuestionBank"
+          v-if="activeSection === 'questions' && (activeQuestionBank || showGlobalQuestionList)"
             class="header-back-button"
             :disabled="saving"
             @tap="returnToQuestionBanks"
@@ -78,6 +78,12 @@
         <view class="state-spinner"></view>
         <view class="state-title">正在验证内部权限</view>
         <view class="state-copy">请稍候，系统正在建立安全会话。</view>
+      </view>
+
+      <view v-else-if="portalBootstrapError" class="page-state portal-access-error">
+        <view class="state-title">{{ portalBootstrapError.title }}</view>
+        <view class="state-copy">{{ portalBootstrapError.message }}</view>
+        <button class="secondary-button portal-retry-button" @tap="bootstrap">重新连接</button>
       </view>
 
       <template v-else>
@@ -249,7 +255,7 @@
         </section>
 
         <section
-          v-if="activeSection === 'questions' && !activeQuestionBank"
+          v-if="activeSection === 'questions' && !activeQuestionBank && !showGlobalQuestionList"
           class="content-section question-bank-section"
         >
           <view v-if="questionBanksLoading" class="bank-library-state">
@@ -294,7 +300,7 @@
         </section>
 
         <section
-          v-if="(activeSection === 'questions' && activeQuestionBank) || activeSection === 'review'"
+          v-if="(activeSection === 'questions' && (activeQuestionBank || showGlobalQuestionList)) || activeSection === 'review'"
           class="content-section question-section"
         >
           <view v-if="activeSection !== 'review'" class="question-summary">
@@ -319,12 +325,14 @@
             <view class="workspace-heading">
               <view>
                 <view class="panel-title">
-                  {{ activeSection === 'review' ? '审核队列' : `${activeQuestionBank?.name || ''} · 题目列表` }}
+                  {{ activeSection === 'review' ? '审核队列' : `${activeQuestionBank?.name || '全部题目'} · 题目列表` }}
                 </view>
                 <view class="panel-subtitle">
                   {{ activeSection === 'review'
                     ? '逐题检查内容，确认后发布或退回修改。'
-                    : '搜索、筛选、编辑并维护当前题库。' }}
+                    : activeQuestionBank
+                      ? '搜索、筛选、编辑并维护当前题库。'
+                      : '按状态筛选并查看全部题库中的题目。' }}
                 </view>
               </view>
               <view v-if="activeSection === 'review'" class="workspace-actions">
@@ -378,9 +386,18 @@
 
             <view v-if="selectedIds.length" class="bulk-toolbar">
               <view class="bulk-copy">已选择 <text>{{ selectedIds.length }}</text> 道题</view>
-              <button class="bulk-button" @tap="bulkChangeStatus('active')">批量发布</button>
-              <button class="bulk-button danger" @tap="bulkChangeStatus('archived')">批量下架</button>
-              <button class="bulk-cancel" @tap="selectedIds = []">取消选择</button>
+              <view class="bulk-actions">
+                <button
+                  v-if="selectedBulkStatusAction"
+                  class="bulk-button"
+                  :class="selectedBulkStatusAction.tone"
+                  @tap="bulkChangeStatus(selectedBulkStatusAction.status)"
+                >
+                  {{ selectedBulkStatusAction.label }}
+                </button>
+                <button class="bulk-cancel" @tap="selectedIds = []">取消选择</button>
+                <button class="bulk-delete" @tap="deleteSelectedQuestions">删除</button>
+              </view>
             </view>
 
             <view class="question-table-wrap">
@@ -627,7 +644,7 @@
         <view class="bank-dialog-kicker">PUBLISH QUESTIONS</view>
         <view class="bank-dialog-title">选择发布题库</view>
         <view class="bank-dialog-copy">
-          选择一个题库文件。确认后，该题库内全部待审核题目将立即发布。
+          选择题库后先统计待发布题目数量；确认前还会进行一次明确提示。
         </view>
 
         <view v-if="questionBanksLoading" class="publish-bank-state">
@@ -647,7 +664,7 @@
             :key="bank.id"
             class="publish-bank-option"
             :class="{ selected: publishQuestionBankId === bank.id }"
-            @tap="publishQuestionBankId = bank.id"
+            @tap="selectPublishQuestionBank(bank)"
           >
             <view class="publish-bank-folder" aria-hidden="true">
               <view class="publish-bank-folder-tab"></view>
@@ -661,6 +678,20 @@
           </button>
         </view>
 
+        <view v-if="publishQuestionBankId" class="publish-preview" :class="{ error: publishPendingPreviewError }">
+          <text v-if="publishPendingPreviewLoading">正在统计待发布题目数量…</text>
+          <template v-else-if="publishPendingPreviewError">
+            <text>待发布数量获取失败，请重新统计后再确认。</text>
+            <button class="publish-preview-retry" @tap="loadPublishPendingPreview">重新统计</button>
+          </template>
+          <template v-else-if="publishPendingPreview">
+            <text>
+              将发布 <text class="publish-preview-count">{{ formatCount(publishPendingPreview.pending_count) }}</text>
+              道待审核题目，发布后将立即对用户可见。
+            </text>
+          </template>
+        </view>
+
         <view class="bank-dialog-actions">
           <button
             class="bank-dialog-cancel"
@@ -671,7 +702,7 @@
           </button>
           <button
             class="bank-dialog-confirm"
-            :disabled="publishingQuestions || !publishQuestionBankId"
+            :disabled="publishingQuestions || !publishQuestionBankId || publishPendingPreviewLoading || publishPendingPreviewError || !publishPendingPreview"
             @tap="publishPendingQuestionsToBank"
           >
             {{ publishingQuestions ? '发布中…' : '确认发布' }}
@@ -688,10 +719,8 @@
         <view class="bank-dialog-title">
           {{ questionBankDialogMode === 'create' ? '新建题库' : '重命名题库' }}
         </view>
-        <view class="bank-dialog-copy">
-          {{ questionBankDialogMode === 'create'
-            ? '创建后可双击进入，并在其中维护独立题目。'
-            : '修改后不会影响题目内容或学生端刷题。' }}
+        <view v-if="questionBankDialogMode === 'create'" class="bank-dialog-copy">
+          创建后可双击进入，并在其中维护独立题目。
         </view>
         <input
           v-model.trim="questionBankNameDraft"
@@ -719,11 +748,15 @@ import {
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
   createAdminQuestionBank,
+  deleteAdminQuestions,
+  fetchAdminQuestionBankPendingPublishPreview,
   fetchAdminQuestionDetail,
   fetchAdminQuestionBanks,
   fetchAdminQuestions,
+  fetchAdminQuestionStats,
   fetchQuestionAdminDashboard,
   fetchQuestionAdminPortalMe,
+  publishAdminQuestionBankPendingQuestions,
   renameAdminQuestionBank,
   updateAdminQuestion,
   updateAdminQuestionReview,
@@ -740,6 +773,7 @@ import {
 } from './question-admin-catalog'
 
 const portalLoading = ref(true)
+const portalBootstrapError = ref(null)
 const refreshing = ref(false)
 const dashboardLoading = ref(false)
 const questionsLoading = ref(false)
@@ -772,6 +806,7 @@ const questionStats = reactive({
 })
 const questionBanks = ref([])
 const activeQuestionBank = ref(null)
+const showGlobalQuestionList = ref(false)
 const importQuestionBankId = ref('')
 const importQuestionBankName = ref('')
 const questionBankDialogVisible = ref(false)
@@ -781,6 +816,9 @@ const questionBankTarget = ref(null)
 const questionBankSaving = ref(false)
 const publishQuestionBankDialogVisible = ref(false)
 const publishQuestionBankId = ref('')
+const publishPendingPreview = ref(null)
+const publishPendingPreviewLoading = ref(false)
+const publishPendingPreviewError = ref(false)
 const publishingQuestions = ref(false)
 const requestedQuestionBankId = ref('')
 const questions = ref([])
@@ -968,16 +1006,19 @@ const totalQuestionCount = computed(() => (
   Number(globalQuestionStats.archived || 0) +
   Number(globalQuestionStats.pendingReview || 0)
 ))
+const currentQuestionStats = computed(() => (
+  activeQuestionBank.value ? questionStats : globalQuestionStats
+))
 const activeQuestionBankCount = computed(() => (
-  Number(questionStats.active || 0) +
-  Number(questionStats.archived || 0) +
-  Number(questionStats.pendingReview || 0)
+  Number(currentQuestionStats.value.active || 0) +
+  Number(currentQuestionStats.value.archived || 0) +
+  Number(currentQuestionStats.value.pendingReview || 0)
 ))
 const summaryCards = computed(() => [
   { key: '', label: '全部题目', value: activeQuestionBankCount.value, iconSrc: '/static/admin-icons/question-count.svg', tone: 'blue' },
-  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: questionStats.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange' },
-  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: questionStats.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint' },
-  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: questionStats.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate' }
+  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: currentQuestionStats.value.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange' },
+  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: currentQuestionStats.value.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint' },
+  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: currentQuestionStats.value.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate' }
 ])
 const moduleOptions = computed(() => [
   { label: '全部模块', value: '' },
@@ -1047,6 +1088,29 @@ const hasFilters = computed(() => Boolean(
 ))
 const totalPages = computed(() => Math.max(1, Math.ceil(Number(questionCount.value || 0) / pageSize)))
 const selectedSet = computed(() => new Set(selectedIds.value))
+const selectedQuestions = computed(() => questions.value.filter((item) => selectedSet.value.has(item.id)))
+const selectedBulkStatusAction = computed(() => {
+  const items = selectedQuestions.value
+  if (!items.length || items.length !== selectedIds.value.length) return null
+  const statuses = Array.from(new Set(items.map((item) => questionDisplayStatus(item))))
+  if (statuses.length !== 1) return null
+  const selectedCount = items.length
+  if (statuses[0] === QUESTION_STATUS.ACTIVE) {
+    return {
+      status: QUESTION_STATUS.ARCHIVED,
+      label: selectedCount > 1 ? '批量下架' : '下架',
+      tone: 'danger'
+    }
+  }
+  if (statuses[0] === QUESTION_STATUS.ARCHIVED) {
+    return {
+      status: QUESTION_STATUS.ACTIVE,
+      label: selectedCount > 1 ? '批量发布' : '发布',
+      tone: 'publish'
+    }
+  }
+  return null
+})
 const allPageSelected = computed(() => (
   questions.value.length > 0 && questions.value.every((item) => selectedSet.value.has(item.id))
 ))
@@ -1086,6 +1150,7 @@ async function bootstrap() {
     return
   }
   portalLoading.value = true
+  portalBootstrapError.value = null
   try {
     const me = await fetchQuestionAdminPortalMe()
     if (me?.profile) {
@@ -1100,9 +1165,38 @@ async function bootstrap() {
       await loadQuestions()
     }
   } catch (error) {
-    goToPortalLogin()
+    if (isPortalAuthenticationError(error)) {
+      goToPortalLogin()
+      return
+    }
+    portalBootstrapError.value = buildPortalBootstrapError(error)
   } finally {
     portalLoading.value = false
+  }
+}
+
+function isPortalAuthenticationError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  return statusCode === 401 || error?.code === 'AUTH_REFRESH_REJECTED' || error?.code === 'AUTH_REFRESH_UNAVAILABLE'
+}
+
+function buildPortalBootstrapError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  if (statusCode === 403) {
+    return {
+      title: '当前账号没有题库中台权限',
+      message: '请联系管理员将该账号加入题库中台访问白名单。'
+    }
+  }
+  if (statusCode === 503) {
+    return {
+      title: '题库中台暂不可用',
+      message: '服务正在维护或配置中，请稍后重试。'
+    }
+  }
+  return {
+    title: '无法连接题库中台',
+    message: '请检查网络后重试；登录状态已保留。'
   }
 }
 
@@ -1142,27 +1236,18 @@ async function loadQuestionStats(questionBankId = '') {
     }
     return
   }
-  const questionBankParams = questionBankId ? { question_bank_id: questionBankId } : {}
-  const [activeResult, archivedResult, pendingResult] = await Promise.allSettled([
-    fetchAdminQuestions({ ...questionBankParams, status: QUESTION_STATUS.ACTIVE, limit: 1, offset: 0 }),
-    fetchAdminQuestions({
-      ...questionBankParams,
-      status: QUESTION_STATUS.ARCHIVED,
-      exclude_review_status: 'pending',
-      limit: 1,
-      offset: 0
-    }),
-    fetchAdminQuestions({
-      ...questionBankParams,
-      status: QUESTION_STATUS.ARCHIVED,
-      review_status: 'pending',
-      limit: 1,
-      offset: 0
-    })
-  ])
-  target.active = settledCount(activeResult)
-  target.archived = settledCount(archivedResult)
-  target.pendingReview = settledCount(pendingResult)
+  try {
+    const response = await fetchAdminQuestionStats(
+      questionBankId ? { question_bank_id: questionBankId } : {}
+    )
+    target.active = Number(response?.active || 0)
+    target.archived = Number(response?.archived || 0)
+    target.pendingReview = Number(response?.pending_review || 0)
+  } catch (error) {
+    target.active = 0
+    target.archived = 0
+    target.pendingReview = 0
+  }
   if (!questionBankId && (!activeQuestionBank.value || activeSection.value === 'review')) {
     Object.assign(questionStats, target)
   }
@@ -1194,7 +1279,7 @@ async function loadQuestionBanks() {
 }
 
 async function loadQuestions() {
-  if (activeSection.value === 'questions' && !activeQuestionBank.value) {
+  if (activeSection.value === 'questions' && !activeQuestionBank.value && !showGlobalQuestionList.value) {
     await loadQuestionBanks()
     return
   }
@@ -1237,7 +1322,7 @@ async function loadQuestions() {
 
 async function switchSection(section) {
   if (activeSection.value === section) {
-    if (section === 'questions' && activeQuestionBank.value) {
+    if (section === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value)) {
       await returnToQuestionBanks()
     }
     return
@@ -1251,11 +1336,13 @@ async function switchSection(section) {
   selectedIds.value = []
   if (section === 'review') {
     activeQuestionBank.value = null
+    showGlobalQuestionList.value = false
     filters.status = QUESTION_STATUS.PENDING_REVIEW
     await loadQuestionStats()
     await loadQuestions()
   } else if (section === 'questions') {
     activeQuestionBank.value = null
+    showGlobalQuestionList.value = false
     if (filters.status === QUESTION_STATUS.PENDING_REVIEW) filters.status = ''
     await loadQuestionBanks()
   } else if (section === 'dashboard') {
@@ -1269,7 +1356,7 @@ async function refreshCurrentSection() {
   try {
     if (activeSection.value === 'dashboard') {
       await Promise.all([loadDashboard(), loadQuestionStats()])
-    } else if (activeSection.value === 'questions' && !activeQuestionBank.value) {
+    } else if (activeSection.value === 'questions' && !activeQuestionBank.value && !showGlobalQuestionList.value) {
       await loadQuestionBanks()
     } else if (activeSection.value === 'questions' || activeSection.value === 'review') {
       await refreshQuestionData()
@@ -1383,9 +1470,11 @@ async function applySummaryFilter(status) {
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
     activeSection.value = 'review'
     activeQuestionBank.value = null
+    showGlobalQuestionList.value = false
     filters.status = status
   } else {
     activeSection.value = 'questions'
+    showGlobalQuestionList.value = !activeQuestionBank.value
     filters.status = status
   }
   currentPage.value = 1
@@ -1444,6 +1533,7 @@ async function openQuestionBank(bank) {
   if (!bank?.id) return
   activeSection.value = 'questions'
   activeQuestionBank.value = bank
+  showGlobalQuestionList.value = false
   currentPage.value = 1
   selectedIds.value = []
   clearFiltersForQuestionBank()
@@ -1454,6 +1544,7 @@ async function returnToQuestionBanks() {
   if (saving.value) return
   drawerVisible.value = false
   activeQuestionBank.value = null
+  showGlobalQuestionList.value = false
   currentPage.value = 1
   selectedIds.value = []
   clearFiltersForQuestionBank()
@@ -1506,8 +1597,9 @@ function toggleSelectPage() {
 async function bulkChangeStatus(status) {
   if (!selectedIds.value.length) return
   const actionText = status === QUESTION_STATUS.ACTIVE ? '发布' : '下架'
+  const isBulk = selectedIds.value.length > 1
   const confirmed = await confirmAction(
-    `确认批量${actionText}？`,
+    `确认${isBulk ? '批量' : ''}${actionText}？`,
     `将对已选择的 ${selectedIds.value.length} 道题执行${actionText}。`,
     actionText
   )
@@ -1518,15 +1610,36 @@ async function bulkChangeStatus(status) {
       ids: selectedIds.value
     })
     uni.showToast({ title: `已${actionText} ${response?.updated_count || 0} 道`, icon: 'success' })
+    selectedIds.value = []
     await refreshQuestionData()
   } catch (error) {
     uni.showToast({ title: `批量${actionText}失败`, icon: 'none' })
   }
 }
 
+async function deleteSelectedQuestions() {
+  if (!selectedIds.value.length) return
+  const confirmed = await confirmAction(
+    '确认删除题目？',
+    `将删除已选择的 ${selectedIds.value.length} 道题。删除后不可恢复，请确认。`,
+    '删除'
+  )
+  if (!confirmed) return
+  try {
+    const response = await deleteAdminQuestions({ ids: selectedIds.value })
+    uni.showToast({ title: `已删除 ${response?.deleted_count || 0} 道`, icon: 'success' })
+    selectedIds.value = []
+    await refreshQuestionData()
+  } catch (error) {
+    uni.showToast({ title: '删除题目失败', icon: 'none' })
+  }
+}
+
 async function openPublishQuestionBankDialog() {
   if (publishingQuestions.value) return
   publishQuestionBankId.value = ''
+  publishPendingPreview.value = null
+  publishPendingPreviewError.value = false
   publishQuestionBankDialogVisible.value = true
   await loadQuestionBanks()
 }
@@ -1535,25 +1648,62 @@ function closePublishQuestionBankDialog(force = false) {
   if (publishingQuestions.value && !force) return
   publishQuestionBankDialogVisible.value = false
   publishQuestionBankId.value = ''
+  publishPendingPreview.value = null
+  publishPendingPreviewError.value = false
+}
+
+async function selectPublishQuestionBank(bank) {
+  if (!bank?.id || publishingQuestions.value) return
+  publishQuestionBankId.value = bank.id
+  await loadPublishPendingPreview()
+}
+
+async function loadPublishPendingPreview() {
+  if (!publishQuestionBankId.value) return
+  const targetBankId = publishQuestionBankId.value
+  publishPendingPreview.value = null
+  publishPendingPreviewError.value = false
+  publishPendingPreviewLoading.value = true
+  try {
+    const preview = await fetchAdminQuestionBankPendingPublishPreview(targetBankId)
+    if (publishQuestionBankId.value === targetBankId) {
+      publishPendingPreview.value = preview || null
+    }
+  } catch (error) {
+    if (publishQuestionBankId.value === targetBankId) {
+      publishPendingPreviewError.value = true
+    }
+  } finally {
+    if (publishQuestionBankId.value === targetBankId) {
+      publishPendingPreviewLoading.value = false
+    }
+  }
 }
 
 async function publishPendingQuestionsToBank() {
-  if (publishingQuestions.value || !publishQuestionBankId.value) return
+  if (publishingQuestions.value || !publishQuestionBankId.value || !publishPendingPreview.value) return
   const targetBank = questionBanks.value.find((bank) => bank.id === publishQuestionBankId.value)
   if (!targetBank) {
     uni.showToast({ title: '请选择题库文件', icon: 'none' })
     return
   }
 
+  const pendingCount = Number(publishPendingPreview.value.pending_count || 0)
+  if (pendingCount <= 0) {
+    uni.showToast({ title: '该题库暂无待审核题目', icon: 'none' })
+    return
+  }
+  const confirmed = await confirmAction(
+    '确认发布待审核题目？',
+    `题库“${targetBank.name}”将发布 ${pendingCount} 道待审核题目，发布后用户将立即可见。`,
+    '确认发布'
+  )
+  if (!confirmed) return
+
   publishingQuestions.value = true
   try {
-    const response = await bulkUpdateAdminQuestionStatus({
-      status: QUESTION_STATUS.ACTIVE,
-      ids: [],
-      filters: {
-        question_bank_id: targetBank.id,
-        review_status: 'pending'
-      }
+    const response = await publishAdminQuestionBankPendingQuestions(targetBank.id, {
+      expected_pending_count: pendingCount
     })
     const updatedCount = Number(response?.updated_count || 0)
     closePublishQuestionBankDialog(true)
@@ -1563,7 +1713,8 @@ async function publishPendingQuestionsToBank() {
     })
     await refreshQuestionData()
   } catch (error) {
-    uni.showToast({ title: '题目发布失败', icon: 'none' })
+    await loadPublishPendingPreview()
+    uni.showToast({ title: '题目数量可能已变化，请重新确认', icon: 'none' })
   } finally {
     publishingQuestions.value = false
   }
@@ -1935,10 +2086,6 @@ function loadDevPreviewDashboard() {
 function optionIndex(options, value) {
   const index = options.findIndex((item) => item.value === value)
   return index >= 0 ? index : 0
-}
-
-function settledCount(result) {
-  return result.status === 'fulfilled' ? Number(result.value?.count || 0) : 0
 }
 
 function questionDisplayStatus(question) {
@@ -3290,17 +3437,36 @@ button {
   font-weight: 800;
 }
 
+.bulk-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
 .bulk-button,
-.bulk-cancel {
-  width: auto;
-  height: 29px;
+.bulk-cancel,
+.bulk-delete {
+  min-width: 72px;
+  height: 32px;
   margin: 0;
-  padding: 0 10px;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 7px;
+  box-sizing: border-box;
   color: #267b69;
   background: #d8f3ec;
-  font-size: 9px;
+  font-size: 10px;
+  font-weight: 700;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.bulk-button.publish {
+  color: #167361;
+  background: #d8f3ec;
 }
 
 .bulk-button.danger {
@@ -3309,8 +3475,15 @@ button {
 }
 
 .bulk-cancel {
+  border: 1px solid #d9e5e8;
   color: #7d8998;
-  background: transparent;
+  background: #fff;
+}
+
+.bulk-delete {
+  border: 1px solid #efc3be;
+  color: #a24e48;
+  background: #fff1ef;
 }
 
 .question-table-wrap {
@@ -3812,6 +3985,47 @@ button {
   color: #b2605b;
 }
 
+.publish-preview {
+  min-height: 42px;
+  margin-top: 14px;
+  padding: 11px 13px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid #cde8e1;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #3d7168;
+  background: #f2fbf8;
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.publish-preview.error {
+  border-color: #f0d1cf;
+  color: #a65e5a;
+  background: #fff7f6;
+}
+
+.publish-preview-count {
+  margin: 0 2px;
+  color: #167765;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.publish-preview-retry {
+  min-width: auto;
+  height: 24px;
+  margin: 0 0 0 auto;
+  padding: 0 8px;
+  border: 1px solid currentColor;
+  border-radius: 5px;
+  color: inherit;
+  background: transparent;
+  font-size: 9px;
+}
+
 .bank-dialog-kicker {
   color: #4ba993;
   font-size: 8px;
@@ -4237,6 +4451,17 @@ button {
   margin-top: 6px;
   color: #929daa;
   font-size: 9px;
+}
+
+.portal-access-error .state-title {
+  color: #9d665d;
+}
+
+.portal-retry-button {
+  min-width: 84px;
+  height: 32px;
+  margin-top: 18px;
+  font-size: 10px;
 }
 
 @media (max-width: 1180px) {

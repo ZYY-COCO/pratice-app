@@ -1,4 +1,4 @@
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class AdminMeResponse(BaseModel):
@@ -109,26 +109,25 @@ class AdminQuestionReviewRequest(BaseModel):
     publish: bool = False
 
 
-class AdminQuestionBulkFilters(BaseModel):
-    question_bank_id: str | None = Field(default=None, max_length=80)
-    exam_code: str | None = Field(default=None, max_length=20)
-    subject: str | None = Field(default=None, max_length=40)
-    module: str | None = Field(default=None, max_length=80)
-    status: str | None = Field(default=None, max_length=20)
-    review_status: str | None = Field(default=None, max_length=20)
-    exclude_review_status: str | None = Field(default=None, max_length=20)
-    search: str | None = Field(default=None, max_length=80)
-    difficulty: int | None = Field(default=None, ge=1, le=5)
-
-
 class AdminQuestionBulkStatusRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
     status: str = Field(pattern="^(active|archived)$")
-    ids: list[str] = Field(default_factory=list, max_length=20000)
-    filters: AdminQuestionBulkFilters | None = None
+    ids: list[str] = Field(min_length=1, max_length=20000)
 
 
 class AdminQuestionBulkStatusResponse(BaseModel):
     updated_count: int
+
+
+class AdminQuestionBulkDeleteRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[str] = Field(min_length=1, max_length=20000)
+
+
+class AdminQuestionBulkDeleteResponse(BaseModel):
+    deleted_count: int
 
 
 class AdminQuestionImageImportItem(BaseModel):
@@ -197,6 +196,12 @@ class AdminQuestionListResponse(BaseModel):
     count: int
 
 
+class AdminQuestionStatsResponse(BaseModel):
+    active: int
+    archived: int
+    pending_review: int
+
+
 class QuestionBankItem(BaseModel):
     id: str
     name: str
@@ -215,6 +220,20 @@ class QuestionBankCreateRequest(BaseModel):
 
 class QuestionBankRenameRequest(BaseModel):
     name: str = Field(min_length=1, max_length=80)
+
+
+class QuestionBankPendingPublishPreviewResponse(BaseModel):
+    question_bank_id: str
+    question_bank_name: str
+    pending_count: int
+
+
+class QuestionBankPublishPendingRequest(BaseModel):
+    expected_pending_count: int = Field(ge=1, le=20000)
+
+
+class QuestionBankPublishPendingResponse(BaseModel):
+    updated_count: int
 
 
 class QuestionAdminPortalMeResponse(BaseModel):
