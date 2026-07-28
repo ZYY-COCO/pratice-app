@@ -92,7 +92,7 @@ def _require_question_portal_access(profile: dict) -> dict:
     return profile
 
 
-def require_question_portal_user(
+def require_question_admin_portal_user(
     profile: Annotated[dict, Depends(get_current_user_profile)],
 ) -> dict:
     """Allow only users explicitly enabled in the question portal access table."""
