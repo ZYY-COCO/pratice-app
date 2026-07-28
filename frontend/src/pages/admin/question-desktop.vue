@@ -44,9 +44,19 @@
 
     <main class="portal-main">
       <header class="portal-header">
-        <view>
-          <view class="header-breadcrumb">港研通 / {{ currentNavLabel }}</view>
-          <view class="header-title">{{ pageTitle }}</view>
+        <view class="header-left">
+          <button
+            v-if="activeSection === 'questions' && activeQuestionBank"
+            class="header-back-button"
+            :disabled="saving"
+            @tap="returnToQuestionBanks"
+          >
+            <text class="header-back-symbol">←</text>
+          </button>
+          <view class="header-title-group">
+            <view class="header-breadcrumb">港研通 / {{ currentNavLabel }}</view>
+            <view class="header-title">{{ pageTitle }}</view>
+          </view>
         </view>
         <view class="header-actions">
           <button class="header-refresh" :disabled="refreshing" @tap="refreshCurrentSection">
@@ -287,7 +297,7 @@
           v-if="(activeSection === 'questions' && activeQuestionBank) || activeSection === 'review'"
           class="content-section question-section"
         >
-          <view class="question-summary">
+          <view v-if="activeSection !== 'review'" class="question-summary">
             <button
               v-for="item in summaryCards"
               :key="item.key"
@@ -305,14 +315,9 @@
             </button>
           </view>
 
-          <view class="question-workspace">
+          <view class="question-workspace" :class="{ compact: activeSection === 'review' }">
             <view class="workspace-heading">
               <view>
-                <view v-if="activeSection === 'questions' && activeQuestionBank" class="question-bank-crumb">
-                  <button @tap="returnToQuestionBanks">← 题库文件</button>
-                  <text>/</text>
-                  <text>{{ activeQuestionBank.name }}</text>
-                </view>
                 <view class="panel-title">
                   {{ activeSection === 'review' ? '审核队列' : `${activeQuestionBank?.name || ''} · 题目列表` }}
                 </view>
@@ -322,18 +327,10 @@
                     : '搜索、筛选、编辑并维护当前题库。' }}
                 </view>
               </view>
-              <view class="workspace-actions">
-                <button
-                  v-if="activeSection === 'review'"
-                  class="primary-button publish-question-button"
-                  @tap="openPublishQuestionBankDialog"
-                >
+              <view v-if="activeSection === 'review'" class="workspace-actions">
+                <button class="primary-button publish-question-button" @tap="openPublishQuestionBankDialog">
                   发布题目
                 </button>
-                <template v-else>
-                  <button class="secondary-button" @tap="openImportWorkspace">批量导入</button>
-                  <button class="primary-button" @tap="openCreateDrawer">＋ 新增题目</button>
-                </template>
               </view>
             </view>
 
@@ -409,9 +406,7 @@
                   <button @tap="loadQuestions">重新加载</button>
                 </view>
                 <view v-else-if="questions.length === 0" class="table-state">
-                  <view class="empty-icon small">□</view>
                   <view>当前条件下没有题目</view>
-                  <button v-if="hasFilters" @tap="clearFilters">清空筛选</button>
                 </view>
                 <button
                   v-for="item in questions"
@@ -2252,6 +2247,45 @@ button {
   background: rgba(248, 251, 252, 0.92);
 }
 
+.header-left {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.header-title-group {
+  min-width: 0;
+}
+
+.header-back-button {
+  width: 32px;
+  height: 32px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b8e9f6;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #1d8fb6;
+  background: #f8fdff;
+  font-size: 18px;
+  font-weight: 800;
+  line-height: 1;
+  box-shadow: 0 7px 16px rgba(31, 132, 172, 0.08);
+}
+
+.header-back-button[disabled] {
+  opacity: 0.55;
+}
+
+.header-back-symbol {
+  line-height: 1;
+}
+
 .header-breadcrumb {
   color: #8995a5;
   font-size: 10px;
@@ -2731,6 +2765,10 @@ button {
   box-shadow: 0 9px 26px rgba(31, 50, 71, 0.03);
 }
 
+.question-workspace.compact {
+  margin-top: 0;
+}
+
 .panel-heading,
 .workspace-heading {
   min-height: 78px;
@@ -2740,26 +2778,6 @@ button {
   justify-content: space-between;
   border-bottom: 1px solid #e8eef1;
   box-sizing: border-box;
-}
-
-.question-bank-crumb {
-  margin-bottom: 5px;
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  color: #99a6b1;
-  font-size: 8px;
-}
-
-.question-bank-crumb button {
-  width: auto;
-  height: auto;
-  margin: 0;
-  padding: 0;
-  color: #4caa96;
-  background: transparent;
-  font-size: 8px;
-  line-height: 1.2;
 }
 
 .dashboard-panel .panel-heading {
@@ -3215,14 +3233,19 @@ button {
 }
 
 .clear-filter-button {
-  width: auto;
-  height: 32px;
-  margin: 0;
-  padding: 0 8px;
-  color: #7a8797;
-  background: transparent;
-  font-size: 9px;
+  width: 92px;
+  height: 37px;
+  margin: 0 7px 0 auto;
+  padding: 0;
+  border: 1px solid #d7e4ea;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #607188;
+  background: #fff;
+  font-size: 10px;
+  font-weight: 700;
   line-height: 1;
+  box-shadow: 0 7px 16px rgba(24, 48, 76, 0.04);
 }
 
 .bulk-toolbar {
@@ -3381,16 +3404,22 @@ button {
 }
 
 .row-action {
-  width: auto;
+  width: 58px;
   height: 27px;
   margin: 0;
-  padding: 0 9px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #d7e4e1;
   border-radius: 7px;
+  box-sizing: border-box;
   color: #2a8a76;
   background: #f5fbf9;
   font-size: 8px;
+  font-weight: 700;
   line-height: 1;
+  text-align: center;
 }
 
 .table-state.error {
@@ -4085,27 +4114,33 @@ button {
 }
 
 .drawer-footer {
-  min-height: 67px;
-  padding: 11px 18px;
+  min-height: 74px;
+  padding: 14px 24px 16px;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: flex-end;
-  gap: 9px;
+  gap: 10px;
   border-top: 1px solid #dfe7eb;
   box-sizing: border-box;
   background: #fff;
 }
 
 .footer-button {
-  width: auto;
-  height: 37px;
+  width: 94px;
+  height: 40px;
   margin: 0;
-  padding: 0 15px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
+  box-sizing: border-box;
   font-size: 10px;
   font-weight: 700;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .footer-button.primary {
@@ -4125,8 +4160,13 @@ button {
 }
 
 .footer-button.danger {
+  border: 1px solid #f0c7c3;
   color: #a95650;
   background: #fae4e2;
+}
+
+.footer-button[disabled] {
+  opacity: 0.58;
 }
 
 .page-state {
