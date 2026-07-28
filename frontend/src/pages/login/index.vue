@@ -315,7 +315,7 @@ import {
   replaceCurrentH5Url
 } from '../../platform/runtime'
 import { fetchQuestionAdminPortalMe } from '../../api/admin'
-import { clearAuthSession, isLoggedIn, saveAuthSession } from '../../utils/auth'
+import { isLoggedIn, saveAuthSession } from '../../utils/auth'
 import { redirectIfAlreadyAuthed } from '../../utils/routeGuard'
 import { EXAM_OPTIONS } from '../../utils/exam'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
@@ -335,6 +335,11 @@ const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
 const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
+const HOME_PAGE = '/pages/home/index'
+const QUESTION_PORTAL_PAGE_PREFIXES = [
+  '/pages/admin/question-desktop',
+  '/pages/admin/question-image-import'
+]
 const PHONE_AUTH_ENABLED = false
 let WECHAT_AUTH_ENABLED = false
 // #ifdef MP-WEIXIN
@@ -784,44 +789,48 @@ async function saveSessionAndRedirect(response, successText) {
     user: response.user
   })
 
-  if (!(await ensureQuestionPortalAccess())) return
+  const canEnterQuestionPortal = await ensureQuestionPortalAccess()
 
   tipType.value = 'success'
   tipText.value = successText
   uni.showToast({ title: successText, icon: 'success' })
 
   setTimeout(() => {
-    uni.reLaunch({ url: redirect.value })
+    uni.reLaunch({ url: canEnterQuestionPortal ? '/pages/admin/question-desktop' : resolveRegularRedirect() })
   }, 200)
 }
 
 async function redirectPortalSessionIfNeeded() {
-  if (portalLogin.value && isLoggedIn()) {
-    submitting.value = true
-    const allowed = await ensureQuestionPortalAccess()
-    submitting.value = false
-    if (!allowed) return
+  if (!isLoggedIn()) return
+
+  submitting.value = true
+  const canEnterQuestionPortal = await ensureQuestionPortalAccess()
+  submitting.value = false
+
+  if (canEnterQuestionPortal) {
+    redirectIfAlreadyAuthed('/pages/admin/question-desktop')
+    return
   }
+
+  if (portalLogin.value) return
   redirectIfAlreadyAuthed(redirect.value)
 }
 
 async function ensureQuestionPortalAccess() {
-  if (!portalLogin.value) return true
-
   try {
     await fetchQuestionAdminPortalMe()
     return true
-  } catch (error) {
-    clearAuthSession()
-    const detail = String(error?.detail || '')
-    const message = detail.includes('not configured')
-      ? '题库管理权限尚未配置，请联系系统维护人员'
-      : '该账号尚未加入题库管理权限名单'
-    tipType.value = 'warning'
-    tipText.value = message
-    uni.showToast({ title: message, icon: 'none' })
+  } catch {
     return false
   }
+}
+
+function resolveRegularRedirect() {
+  const path = String(redirect.value || '').split('?')[0]
+  if (QUESTION_PORTAL_PAGE_PREFIXES.some((prefix) => path === prefix)) {
+    return HOME_PAGE
+  }
+  return redirect.value
 }
 
 async function submitPhoneLogin(form) {
@@ -839,7 +848,7 @@ async function submitPhoneLogin(form) {
       phone: form.phone,
       verification_code: form.code
     })
-    saveSessionAndRedirect(response, '登录成功')
+    await saveSessionAndRedirect(response, '登录成功')
   } catch (error) {
     const message = normalizeUiError(error, '手机号登录失败')
     tipType.value = 'warning'
@@ -867,7 +876,7 @@ async function submitPhoneRegister() {
       nickname: registerForm.nickname || null,
       exam_target: phoneRegisterForm.examTarget
     })
-    saveSessionAndRedirect(response, '注册成功')
+    await saveSessionAndRedirect(response, '注册成功')
   } catch (error) {
     const message = normalizeUiError(error, '手机号注册失败')
     tipType.value = 'warning'
@@ -901,14 +910,14 @@ async function submitLogin() {
       user: response.user
     })
 
-    if (!(await ensureQuestionPortalAccess())) return
+    const canEnterQuestionPortal = await ensureQuestionPortalAccess()
 
     tipType.value = 'success'
     tipText.value = '登录成功，已保存登录状态。'
     uni.showToast({ title: '登录成功', icon: 'success' })
 
     setTimeout(() => {
-      uni.reLaunch({ url: redirect.value })
+      uni.reLaunch({ url: canEnterQuestionPortal ? '/pages/admin/question-desktop' : resolveRegularRedirect() })
     }, 200)
   } catch (error) {
     const message = normalizeUiError(error, '登录失败，请检查邮箱和密码')
@@ -1033,7 +1042,7 @@ async function handleWechatLogin() {
       code,
       platform: 'miniprogram'
     })
-    saveSessionAndRedirect(response, '微信登录成功')
+    await saveSessionAndRedirect(response, '微信登录成功')
     return
     // #endif
 
@@ -1071,7 +1080,7 @@ async function handleWechatCodeLogin(params) {
       state: params.state || null
     })
     cleanupWechatUrl()
-    saveSessionAndRedirect(response, '微信登录成功')
+    await saveSessionAndRedirect(response, '微信登录成功')
   } catch (error) {
     cleanupWechatUrl()
     const message = normalizeUiError(error, '微信登录失败')
