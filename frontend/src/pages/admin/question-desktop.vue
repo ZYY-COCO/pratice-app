@@ -408,12 +408,11 @@
                 <view v-else-if="questions.length === 0" class="table-state">
                   <view>当前条件下没有题目</view>
                 </view>
-                <button
+                <view
                   v-for="item in questions"
                   v-else
                   :key="item.id"
                   class="question-grid question-row"
-                  @tap="openEditDrawer(item, activeSection === 'review')"
                 >
                   <view class="check-cell">
                     <button
@@ -454,7 +453,7 @@
                       {{ activeSection === 'review' ? '审核' : '编辑' }}
                     </button>
                   </view>
-                </button>
+                </view>
               </view>
             </view>
 
@@ -584,6 +583,15 @@
         <view class="drawer-footer">
           <button v-if="drawerMode === 'review'" class="footer-button warning" :disabled="saving" @tap="markNeedsChanges">
             需要修改
+          </button>
+          <button
+            v-if="drawerMode === 'edit' && form.id"
+            class="footer-button select"
+            :class="{ active: isSelected(form.id) }"
+            :disabled="saving"
+            @tap="toggleCurrentQuestionSelection"
+          >
+            {{ isSelected(form.id) ? '已选中' : '选中' }}
           </button>
           <button v-if="drawerMode !== 'create'" class="footer-button secondary" :disabled="saving" @tap="saveQuestionEdits">
             保存修改
@@ -1476,6 +1484,11 @@ function toggleSelection(id) {
   selectedIds.value = isSelected(id)
     ? selectedIds.value.filter((item) => item !== id)
     : [...selectedIds.value, id]
+}
+
+function toggleCurrentQuestionSelection() {
+  if (!form.id) return
+  toggleSelection(form.id)
 }
 
 function toggleSelectPage() {
@@ -2486,17 +2499,24 @@ button {
 }
 
 .bank-rename-button {
-  width: auto;
-  height: 25px;
+  width: 56px;
+  height: 28px;
   margin: 0;
-  padding: 0 7px;
+  padding: 0;
   flex: 0 0 auto;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #dce8e6;
   border-radius: 6px;
+  box-sizing: border-box;
   color: #5d827b;
   background: #f7fbfa;
   font-size: 8px;
+  font-weight: 700;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .bank-file-date {
@@ -3840,13 +3860,20 @@ button {
 
 .bank-dialog-cancel,
 .bank-dialog-confirm {
-  width: auto;
-  height: 34px;
+  min-width: 76px;
+  height: 36px;
   margin: 0;
-  padding: 0 15px;
+  padding: 0 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 8px;
+  box-sizing: border-box;
   font-size: 10px;
+  font-weight: 700;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .bank-dialog-cancel {
@@ -4152,6 +4179,18 @@ button {
   border: 1px solid #d8e2e7;
   color: #617087;
   background: #fff;
+}
+
+.footer-button.select {
+  border: 1px solid #cfe5df;
+  color: #3d7c70;
+  background: #f7fbfa;
+}
+
+.footer-button.select.active {
+  border-color: #73d8c1;
+  color: #155e52;
+  background: #dcf6ef;
 }
 
 .footer-button.warning {
