@@ -323,8 +323,17 @@
                 </view>
               </view>
               <view class="workspace-actions">
-                <button class="secondary-button" @tap="openImportWorkspace">批量导入</button>
-                <button class="primary-button" @tap="openCreateDrawer">＋ 新增题目</button>
+                <button
+                  v-if="activeSection === 'review'"
+                  class="primary-button publish-question-button"
+                  @tap="openPublishQuestionBankDialog"
+                >
+                  发布题目
+                </button>
+                <template v-else>
+                  <button class="secondary-button" @tap="openImportWorkspace">批量导入</button>
+                  <button class="primary-button" @tap="openCreateDrawer">＋ 新增题目</button>
+                </template>
               </view>
             </view>
 
@@ -606,6 +615,68 @@
       </view>
     </view>
 
+    <view
+      v-if="publishQuestionBankDialogVisible"
+      class="bank-dialog-backdrop"
+      @tap="closePublishQuestionBankDialog"
+    >
+      <view class="bank-dialog publish-question-dialog" @tap.stop>
+        <view class="bank-dialog-kicker">PUBLISH QUESTIONS</view>
+        <view class="bank-dialog-title">选择发布题库</view>
+        <view class="bank-dialog-copy">
+          选择一个题库文件。确认后，该题库内全部待审核题目将立即发布。
+        </view>
+
+        <view v-if="questionBanksLoading" class="publish-bank-state">
+          <view class="state-spinner"></view>
+          <text>正在加载题库文件…</text>
+        </view>
+        <view v-else-if="questionBanksError" class="publish-bank-state error">
+          <text>题库文件加载失败，请稍后重试。</text>
+          <button class="secondary-button" @tap="loadQuestionBanks">重新加载</button>
+        </view>
+        <view v-else-if="questionBanks.length === 0" class="publish-bank-state">
+          <text>暂无可发布的题库，请先在题目管理中新建题库。</text>
+        </view>
+        <view v-else class="publish-bank-grid">
+          <button
+            v-for="bank in questionBanks"
+            :key="bank.id"
+            class="publish-bank-option"
+            :class="{ selected: publishQuestionBankId === bank.id }"
+            @tap="publishQuestionBankId = bank.id"
+          >
+            <view class="publish-bank-folder" aria-hidden="true">
+              <view class="publish-bank-folder-tab"></view>
+              <text>题</text>
+            </view>
+            <view class="publish-bank-meta">
+              <view class="publish-bank-name">{{ bank.name }}</view>
+              <view class="publish-bank-date">最近修改：{{ formatDateTime(bank.updated_at) }}</view>
+            </view>
+            <view class="publish-bank-check">{{ publishQuestionBankId === bank.id ? '✓' : '' }}</view>
+          </button>
+        </view>
+
+        <view class="bank-dialog-actions">
+          <button
+            class="bank-dialog-cancel"
+            :disabled="publishingQuestions"
+            @tap="closePublishQuestionBankDialog"
+          >
+            取消
+          </button>
+          <button
+            class="bank-dialog-confirm"
+            :disabled="publishingQuestions || !publishQuestionBankId"
+            @tap="publishPendingQuestionsToBank"
+          >
+            {{ publishingQuestions ? '发布中…' : '确认发布' }}
+          </button>
+        </view>
+      </view>
+    </view>
+
     <view v-if="questionBankDialogVisible" class="bank-dialog-backdrop" @tap="closeQuestionBankDialog">
       <view class="bank-dialog" @tap.stop>
         <view class="bank-dialog-kicker">
@@ -705,6 +776,9 @@ const questionBankDialogMode = ref('create')
 const questionBankNameDraft = ref('')
 const questionBankTarget = ref(null)
 const questionBankSaving = ref(false)
+const publishQuestionBankDialogVisible = ref(false)
+const publishQuestionBankId = ref('')
+const publishingQuestions = ref(false)
 const requestedQuestionBankId = ref('')
 const questions = ref([])
 const questionCount = ref(0)
@@ -1439,6 +1513,51 @@ async function bulkChangeStatus(status) {
     await refreshQuestionData()
   } catch (error) {
     uni.showToast({ title: `批量${actionText}失败`, icon: 'none' })
+  }
+}
+
+async function openPublishQuestionBankDialog() {
+  if (publishingQuestions.value) return
+  publishQuestionBankId.value = ''
+  publishQuestionBankDialogVisible.value = true
+  await loadQuestionBanks()
+}
+
+function closePublishQuestionBankDialog(force = false) {
+  if (publishingQuestions.value && !force) return
+  publishQuestionBankDialogVisible.value = false
+  publishQuestionBankId.value = ''
+}
+
+async function publishPendingQuestionsToBank() {
+  if (publishingQuestions.value || !publishQuestionBankId.value) return
+  const targetBank = questionBanks.value.find((bank) => bank.id === publishQuestionBankId.value)
+  if (!targetBank) {
+    uni.showToast({ title: '请选择题库文件', icon: 'none' })
+    return
+  }
+
+  publishingQuestions.value = true
+  try {
+    const response = await bulkUpdateAdminQuestionStatus({
+      status: QUESTION_STATUS.ACTIVE,
+      ids: [],
+      filters: {
+        question_bank_id: targetBank.id,
+        review_status: 'pending'
+      }
+    })
+    const updatedCount = Number(response?.updated_count || 0)
+    closePublishQuestionBankDialog(true)
+    uni.showToast({
+      title: updatedCount > 0 ? `已发布 ${updatedCount} 道题` : '该题库暂无待审核题目',
+      icon: updatedCount > 0 ? 'success' : 'none'
+    })
+    await refreshQuestionData()
+  } catch (error) {
+    uni.showToast({ title: '题目发布失败', icon: 'none' })
+  } finally {
+    publishingQuestions.value = false
   }
 }
 
@@ -2999,6 +3118,10 @@ button {
   background: linear-gradient(135deg, #69ddc4, #4ccaae);
 }
 
+.publish-question-button {
+  min-width: 92px;
+}
+
 .secondary-button {
   border: 1px solid #d9e3e8;
   color: #617086;
@@ -3519,6 +3642,127 @@ button {
   box-shadow: 0 22px 64px rgba(19, 35, 52, 0.2);
 }
 
+.publish-question-dialog {
+  width: min(620px, 100%);
+}
+
+.publish-bank-grid {
+  max-height: min(390px, 48vh);
+  margin-top: 20px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  overflow-y: auto;
+}
+
+.publish-bank-option {
+  min-height: 105px;
+  margin: 0;
+  padding: 17px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  border: 1px solid #dfe8eb;
+  border-radius: 13px;
+  text-align: left;
+  background: #fbfcfc;
+  transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+}
+
+.publish-bank-option:hover,
+.publish-bank-option.selected {
+  border-color: #69cfb8;
+  background: #f3fbf8;
+  box-shadow: 0 8px 22px rgba(52, 135, 118, 0.1);
+}
+
+.publish-bank-folder {
+  width: 48px;
+  height: 43px;
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #8bd9c8;
+  border-radius: 8px 8px 10px 10px;
+  color: #248f7b;
+  background: linear-gradient(145deg, #ddf8f1, #bcecdf);
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.publish-bank-folder-tab {
+  width: 22px;
+  height: 8px;
+  position: absolute;
+  top: -6px;
+  left: 5px;
+  border-radius: 6px 6px 0 0;
+  background: #a5e5d6;
+}
+
+.publish-bank-meta {
+  min-width: 0;
+  flex: 1;
+}
+
+.publish-bank-name {
+  overflow: hidden;
+  color: #27374c;
+  font-size: 13px;
+  font-weight: 760;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-bank-date {
+  margin-top: 8px;
+  color: #93a0ad;
+  font-size: 9px;
+  line-height: 1.4;
+}
+
+.publish-bank-check {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #d8e3e6;
+  border-radius: 50%;
+  color: #fff;
+  background: #fff;
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.publish-bank-option.selected .publish-bank-check {
+  border-color: #53c6ad;
+  background: #53c6ad;
+}
+
+.publish-bank-state {
+  min-height: 150px;
+  margin-top: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-direction: column;
+  gap: 12px;
+  border: 1px dashed #d9e5e7;
+  border-radius: 13px;
+  color: #8493a2;
+  background: #fbfcfc;
+  font-size: 10px;
+}
+
+.publish-bank-state.error {
+  color: #b2605b;
+}
+
 .bank-dialog-kicker {
   color: #4ba993;
   font-size: 8px;
@@ -3590,6 +3834,12 @@ button {
 .bank-dialog-confirm[disabled],
 .bank-dialog-cancel[disabled] {
   opacity: 0.58;
+}
+
+@media (max-width: 680px) {
+  .publish-bank-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 .drawer-backdrop {
