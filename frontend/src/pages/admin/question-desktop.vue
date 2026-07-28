@@ -271,7 +271,6 @@
               v-for="bank in questionBanks"
               :key="bank.id"
               class="bank-file-card"
-              @dblclick="openQuestionBank(bank)"
             >
               <view class="bank-file-icon" aria-hidden="true">
                 <view class="bank-file-tab"></view>
@@ -288,7 +287,9 @@
                 </view>
                 <view class="bank-file-date">最近修改：{{ formatDateTime(bank.updated_at) }}</view>
               </view>
-              <view class="bank-file-enter">双击进入 <text>→</text></view>
+              <button class="bank-file-enter" @tap="openQuestionBank(bank)">
+                进入题库 <text>→</text>
+              </button>
             </view>
 
             <button class="bank-file-card bank-file-create-card" @tap="openQuestionBankDialog('create')">
@@ -742,7 +743,7 @@
 </template>
 
 <script setup>
-import { computed, reactive, ref } from 'vue'
+import { computed, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import {
   bulkUpdateAdminQuestionStatus,
@@ -1142,6 +1143,10 @@ onLoad(async (options = {}) => {
     return
   }
   await bootstrap()
+})
+
+onUnmounted(() => {
+  if (searchTimer) clearTimeout(searchTimer)
 })
 
 async function bootstrap() {
@@ -2576,7 +2581,7 @@ button {
   border: 1px solid #e0e8ec;
   border-radius: 14px;
   box-sizing: border-box;
-  cursor: pointer;
+  cursor: default;
   background: #fff;
   box-shadow: 0 9px 24px rgba(31, 50, 71, 0.025);
   transition: transform 0.18s ease, border-color 0.18s ease, box-shadow 0.18s ease;
@@ -2676,8 +2681,22 @@ button {
   position: absolute;
   right: 20px;
   bottom: 17px;
+  display: inline-flex;
+  align-items: center;
+  width: auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
   color: #5b9c8f;
+  background: transparent;
+  cursor: pointer;
   font-size: 8px;
+  line-height: 1.3;
+}
+
+.bank-file-enter::after {
+  border: 0;
 }
 
 .bank-file-enter text {
@@ -2700,6 +2719,7 @@ button {
   border-color: #b8dbd4;
   color: #66817c;
   background: rgba(255, 255, 255, 0.6);
+  cursor: pointer;
 }
 
 .bank-file-create-card:hover {

@@ -32,13 +32,13 @@ function dispatchRequest(options, token, retried) {
           return
         }
 
-        if (response.statusCode === 401 && token && options.authRedirect !== false && !retried) {
+        if (response.statusCode === 401 && token && !retried) {
           try {
             await refreshAuthSession()
             resolve(dispatchRequest(options, getAccessToken(), true))
             return
           } catch (error) {
-            if (shouldClearAuthSession(error)) {
+            if (options.authRedirect !== false && shouldClearAuthSession(error)) {
               handleAuthFailure()
             }
             reject(error)
@@ -48,7 +48,7 @@ function dispatchRequest(options, token, retried) {
           handleAuthFailure()
         }
 
-        reject(response.data || { detail: '请求失败' })
+        reject(createHttpError(response.data, response.statusCode))
       },
       fail(error) {
         const message = error?.errMsg || ''
@@ -89,7 +89,7 @@ export async function getRequestAccessToken(options = {}) {
   } catch (error) {
     // A short network failure must not be converted into a forced logout. The
     // existing access token can still be accepted until it actually expires.
-    if (shouldClearAuthSession(error)) {
+    if (options.authRedirect !== false && shouldClearAuthSession(error)) {
       handleAuthFailure()
       throw error
     }
@@ -98,9 +98,19 @@ export async function getRequestAccessToken(options = {}) {
 }
 
 function shouldRefreshBeforeRequest(options, token) {
-  if (!token || options.authRedirect === false) return false
+  if (!token) return false
   if (options.header?.Authorization === '') return false
   return Boolean(getRefreshToken() && isAccessTokenExpiring(token))
+}
+
+function createHttpError(data, statusCode) {
+  if (data && typeof data === 'object' && !Array.isArray(data)) {
+    return { ...data, statusCode }
+  }
+  return {
+    detail: typeof data === 'string' && data ? data : '请求失败',
+    statusCode
+  }
 }
 
 function shouldClearAuthSession(error) {

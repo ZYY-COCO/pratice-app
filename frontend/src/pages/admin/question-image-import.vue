@@ -217,6 +217,7 @@ import {
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
+import { QUESTION_CATALOG } from './question-admin-catalog'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const props = defineProps({
@@ -263,41 +264,7 @@ landingSteps.forEach((step, index) => {
   step.iconSrc = landingStepIconPaths[index]
 })
 
-const importCatalog = {
-  中华文化: {
-    exam_code: 'COMMON',
-    modules: {
-      中国哲学常识: ['儒家', '道家', '墨家', '法家', '名家', '纵横家', '后代学派流变', '古代宗教流变'],
-      中国历史学常识: ['古代职官与科举', '古代礼俗与称谓', '古代衣食住行', '古代军事战争', '古代经济发展', '古代图书文物', '近现代史学常识'],
-      中国文学常识: ['文体流变', '代表作家及作品', '创作群体及文学流派', '文学总集', '民族史诗'],
-      中国艺术常识: ['书法', '绘画', '雕塑', '建筑', '音乐', '戏剧', '民俗', '陶瓷'],
-      中国古代科技常识: ['天文历法与算学', '地理舆图', '农业水利', '医学', '科技发明']
-    }
-  },
-  英语运用: {
-    exam_code: 'COMMON',
-    modules: {
-      语言知识: ['词汇', '语法', '语用']
-    }
-  },
-  数学基础: {
-    exam_code: 'Z002',
-    modules: {
-      一元函数微分学: ['极限', '连续', '导数', '微分', '高阶导数', '洛必达法则', '单调性', '极值与最值', '凹凸性', '拐点', '渐近线'],
-      一元函数积分学: ['原函数', '定积分', '变限积分', '牛顿-莱布尼茨公式', '换元积分', '分部积分', '几何应用', '物理应用'],
-      多元函数微分学: ['偏导数', '全微分', '二阶偏导', '链导法则', '隐函数求导', '二元函数极值']
-    }
-  },
-  逻辑推理: {
-    exam_code: 'Z001',
-    modules: {
-      概念判断: ['概念种类', '概念关系', '定义', '划分'],
-      论证: ['加强', '削弱', '解释', '谬误识别'],
-      削弱加强: ['加强', '削弱'],
-      推理规则: ['演绎推理', '归纳推理', '类比推理', '综合推理']
-    }
-  }
-}
+const importCatalog = QUESTION_CATALOG
 
 const importDefaults = reactive({
   subject: '英语运用',
