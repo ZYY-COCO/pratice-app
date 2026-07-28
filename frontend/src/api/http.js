@@ -238,16 +238,33 @@ function uploadFileWithToken(options, token) {
       }
     })
 
+    const controller = typeof AbortController !== 'undefined' ? new AbortController() : null
+    const timeoutMs = Number(options.timeout || 60000)
+    const timeoutId = controller && timeoutMs > 0
+      ? setTimeout(() => controller.abort(), timeoutMs)
+      : null
+
     return fetch(url, {
       method: 'POST',
       headers: buildRequestHeaders(options, token),
-      body: formData
+      body: formData,
+      ...(controller ? { signal: controller.signal } : {})
     }).then(async (response) => {
       const data = await response.json().catch(() => ({}))
       if (response.ok) {
         return data
       }
       return Promise.reject(data || { detail: '上传失败' })
+    }).catch((error) => {
+      if (error?.name === 'AbortError') {
+        return Promise.reject({ detail: '上传超时，请重新选择文件后再试', code: 'NETWORK_TIMEOUT' })
+      }
+      return Promise.reject({
+        detail: error?.detail || error?.message || '上传失败，请检查网络后重试',
+        code: error?.code || 'NETWORK_ERROR'
+      })
+    }).finally(() => {
+      if (timeoutId) clearTimeout(timeoutId)
     })
   }
 

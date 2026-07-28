@@ -17,14 +17,11 @@
           v-for="item in navItems"
           :key="item.key"
           class="nav-item"
-          :class="{ active: activeSection === item.key }"
+          :class="{ active: navItemActive(item.key) }"
           @tap="switchSection(item.key)"
         >
           <text class="nav-glyph">{{ item.icon }}</text>
           <text class="nav-label">{{ item.label }}</text>
-          <text v-if="item.key === 'review' && globalQuestionStats.pendingReview" class="nav-count">
-            {{ compactCount(globalQuestionStats.pendingReview) }}
-          </text>
         </button>
       </view>
 
@@ -337,7 +334,7 @@
                 </view>
               </view>
               <view v-if="activeSection === 'review'" class="workspace-actions">
-                <button class="primary-button publish-question-button" @tap="openPublishQuestionBankDialog">
+                <button class="primary-button publish-question-button" @tap="confirmPublishReviewQueue">
                   发布题目
                 </button>
               </view>
@@ -807,6 +804,7 @@ const questionStats = reactive({
 })
 const questionBanks = ref([])
 const activeQuestionBank = ref(null)
+const reviewQuestionBank = ref(null)
 const showGlobalQuestionList = ref(false)
 const importQuestionBankId = ref('')
 const importQuestionBankName = ref('')
@@ -864,7 +862,6 @@ const form = reactive({
 const navItems = [
   { key: 'dashboard', label: '仪表盘', icon: '⌂' },
   { key: 'questions', label: '题目管理', icon: '≡' },
-  { key: 'review', label: '审核队列', icon: '✓' },
   { key: 'import', label: '批量导入', icon: '⇧' }
 ]
 
@@ -972,6 +969,11 @@ const previewQuestions = [
 ]
 
 const currentNavLabel = computed(() => {
+  if (activeSection.value === 'review') {
+    return reviewQuestionBank.value
+      ? `题目管理 / ${reviewQuestionBank.value.name} / 待审核`
+      : '题目管理 / 待审核'
+  }
   const label = navItems.find((item) => item.key === activeSection.value)?.label || '题库中台'
   return activeSection.value === 'questions' && activeQuestionBank.value
     ? `${label} / ${activeQuestionBank.value.name}`
@@ -1133,7 +1135,7 @@ const drawerTitle = computed(() => (
 ))
 
 onLoad(async (options = {}) => {
-  if (['dashboard', 'questions', 'review', 'import'].includes(options.section)) {
+  if (['dashboard', 'questions', 'import'].includes(options.section)) {
     activeSection.value = options.section
   }
   requestedQuestionBankId.value = String(options.question_bank_id || '')
@@ -1166,8 +1168,6 @@ async function bootstrap() {
       await loadQuestionBanks()
       const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
       if (requestedBank) await openQuestionBank(requestedBank)
-    } else if (activeSection.value === 'review') {
-      await loadQuestions()
     }
   } catch (error) {
     if (isPortalAuthenticationError(error)) {
@@ -1326,12 +1326,14 @@ async function loadQuestions() {
 }
 
 async function switchSection(section) {
+  if (section === 'review') return
   if (activeSection.value === section) {
     if (section === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value)) {
       await returnToQuestionBanks()
     }
     return
   }
+  reviewQuestionBank.value = null
   if (section === 'import') {
     importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
     importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
@@ -1339,13 +1341,7 @@ async function switchSection(section) {
   activeSection.value = section
   currentPage.value = 1
   selectedIds.value = []
-  if (section === 'review') {
-    activeQuestionBank.value = null
-    showGlobalQuestionList.value = false
-    filters.status = QUESTION_STATUS.PENDING_REVIEW
-    await loadQuestionStats()
-    await loadQuestions()
-  } else if (section === 'questions') {
+  if (section === 'questions') {
     activeQuestionBank.value = null
     showGlobalQuestionList.value = false
     if (filters.status === QUESTION_STATUS.PENDING_REVIEW) filters.status = ''
@@ -1374,7 +1370,11 @@ async function refreshCurrentSection() {
 }
 
 async function refreshQuestionData() {
-  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+  const questionBankId = activeSection.value === 'questions'
+    ? activeQuestionBank.value?.id || ''
+    : activeSection.value === 'review'
+      ? reviewQuestionBank.value?.id || ''
+      : ''
   const tasks = [loadQuestionStats(questionBankId), loadQuestions()]
   if (questionBankId) tasks.push(loadQuestionStats())
   await Promise.all(tasks)
@@ -1384,6 +1384,8 @@ function buildQuestionParams() {
   const params = {}
   if (activeSection.value === 'questions' && activeQuestionBank.value?.id) {
     params.question_bank_id = activeQuestionBank.value.id
+  } else if (activeSection.value === 'review' && reviewQuestionBank.value?.id) {
+    params.question_bank_id = reviewQuestionBank.value.id
   }
   if (filters.subject) params.subject = filters.subject
   if (filters.module) params.module = filters.module
@@ -1473,18 +1475,28 @@ async function handleDashboardMinAttemptsChange(event) {
 
 async function applySummaryFilter(status) {
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
+    reviewQuestionBank.value = activeQuestionBank.value || null
     activeSection.value = 'review'
     activeQuestionBank.value = null
     showGlobalQuestionList.value = false
     filters.status = status
   } else {
+    reviewQuestionBank.value = null
     activeSection.value = 'questions'
     showGlobalQuestionList.value = !activeQuestionBank.value
     filters.status = status
   }
   currentPage.value = 1
-  const questionBankId = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
+  const questionBankId = activeSection.value === 'questions'
+    ? activeQuestionBank.value?.id || ''
+    : activeSection.value === 'review'
+      ? reviewQuestionBank.value?.id || ''
+      : ''
   await Promise.all([loadQuestionStats(questionBankId), loadQuestions()])
+}
+
+function navItemActive(key) {
+  return key === activeSection.value || (key === 'questions' && activeSection.value === 'review')
 }
 
 function summaryCardActive(status) {
@@ -1538,6 +1550,7 @@ async function openQuestionBank(bank) {
   if (!bank?.id) return
   activeSection.value = 'questions'
   activeQuestionBank.value = bank
+  reviewQuestionBank.value = null
   showGlobalQuestionList.value = false
   currentPage.value = 1
   selectedIds.value = []
@@ -1549,6 +1562,7 @@ async function returnToQuestionBanks() {
   if (saving.value) return
   drawerVisible.value = false
   activeQuestionBank.value = null
+  reviewQuestionBank.value = null
   showGlobalQuestionList.value = false
   currentPage.value = 1
   selectedIds.value = []
@@ -1647,6 +1661,78 @@ async function openPublishQuestionBankDialog() {
   publishPendingPreviewError.value = false
   publishQuestionBankDialogVisible.value = true
   await loadQuestionBanks()
+}
+
+async function confirmPublishReviewQueue() {
+  if (publishingQuestions.value || activeSection.value !== 'review') return
+
+  const targetBank = reviewQuestionBank.value
+  if (targetBank?.id) {
+    publishingQuestions.value = true
+    try {
+      const preview = await fetchAdminQuestionBankPendingPublishPreview(targetBank.id)
+      const pendingCount = Number(preview?.pending_count || 0)
+      if (pendingCount <= 0) {
+        uni.showToast({ title: '当前题库暂无待审核题目', icon: 'none' })
+        await refreshQuestionData()
+        return
+      }
+      const confirmed = await confirmAction(
+        '是否确认发布？',
+        `将发布题库“${targetBank.name}”中的 ${pendingCount} 道待审核题目，发布后用户将立即可见。`,
+        '确认发布'
+      )
+      if (!confirmed) return
+
+      const response = await publishAdminQuestionBankPendingQuestions(targetBank.id, {
+        expected_pending_count: pendingCount
+      })
+      const updatedCount = Number(response?.updated_count || 0)
+      uni.showToast({
+        title: updatedCount > 0 ? `已发布 ${updatedCount} 道题` : '当前题库暂无待审核题目',
+        icon: updatedCount > 0 ? 'success' : 'none'
+      })
+      await refreshQuestionData()
+    } catch (error) {
+      uni.showToast({ title: '发布失败，请刷新后重试', icon: 'none' })
+    } finally {
+      publishingQuestions.value = false
+    }
+    return
+  }
+
+  const reviewIds = questions.value
+    .filter((item) => questionDisplayStatus(item) === QUESTION_STATUS.PENDING_REVIEW)
+    .map((item) => item.id)
+    .filter(Boolean)
+  if (!reviewIds.length) {
+    uni.showToast({ title: '当前没有待审核题目', icon: 'none' })
+    return
+  }
+  const confirmed = await confirmAction(
+    '是否确认发布？',
+    `将发布当前列表中的 ${reviewIds.length} 道待审核题目，发布后用户将立即可见。`,
+    '确认发布'
+  )
+  if (!confirmed) return
+
+  publishingQuestions.value = true
+  try {
+    const response = await bulkUpdateAdminQuestionStatus({
+      status: QUESTION_STATUS.ACTIVE,
+      ids: reviewIds
+    })
+    const updatedCount = Number(response?.updated_count || 0)
+    uni.showToast({
+      title: updatedCount > 0 ? `已发布 ${updatedCount} 道题` : '当前没有待审核题目',
+      icon: updatedCount > 0 ? 'success' : 'none'
+    })
+    await refreshQuestionData()
+  } catch (error) {
+    uni.showToast({ title: '发布失败，请刷新后重试', icon: 'none' })
+  } finally {
+    publishingQuestions.value = false
+  }
 }
 
 function closePublishQuestionBankDialog(force = false) {
@@ -3064,7 +3150,7 @@ button {
   min-height: 41px;
   color: #8a96a5;
   background: #f8fafb;
-  font-size: 9px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -3112,7 +3198,7 @@ button {
 .table-stem {
   overflow: hidden;
   color: #26364a;
-  font-size: 10px;
+  font-size: 12px;
   font-weight: 600;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -3122,7 +3208,7 @@ button {
 .table-answer {
   margin-top: 6px;
   color: #9aa4b0;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .category-cell,
@@ -3135,14 +3221,14 @@ button {
 .category-primary,
 .table-subject {
   color: #4a596d;
-  font-size: 9px;
+  font-size: 11px;
   font-weight: 700;
 }
 
 .category-secondary,
 .table-module {
   color: #939eab;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .number-cell {
@@ -3530,7 +3616,7 @@ button {
 }
 
 .question-row {
-  min-height: 69px;
+  min-height: 74px;
   margin: 0;
   border-top: 1px solid #edf1f3;
   border-radius: 0;
@@ -3563,7 +3649,7 @@ button {
 .mono {
   color: #718094;
   font-family: "SFMono-Regular", Consolas, monospace;
-  font-size: 8px;
+  font-size: 9px;
   letter-spacing: 0.03em;
 }
 
@@ -3591,14 +3677,14 @@ button {
 
 .difficulty-copy {
   color: #7b8796;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .status-pill {
   padding: 5px 8px;
   display: inline-flex;
   border-radius: 10px;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
 }
 
@@ -3619,7 +3705,7 @@ button {
 
 .date-cell {
   color: #8793a2;
-  font-size: 8px;
+  font-size: 10px;
 }
 
 .row-action {
@@ -3635,7 +3721,7 @@ button {
   box-sizing: border-box;
   color: #2a8a76;
   background: #f5fbf9;
-  font-size: 8px;
+  font-size: 10px;
   font-weight: 700;
   line-height: 1;
   text-align: center;

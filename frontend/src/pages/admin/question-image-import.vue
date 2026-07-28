@@ -74,107 +74,177 @@
       </view>
     </view>
 
-    <view v-else class="import-content">
-      <view class="editor-toolbar">
-        <button class="editor-back-btn" @tap="returnToFileSelection">重新选择文件</button>
-        <view class="editor-progress">
-          <text>{{ imageItems.length }} 个 Excel 文件</text>
-          <text>{{ drafts.length }} 道草稿</text>
+    <view v-else class="import-content preview-workbench">
+      <view class="preview-status-panel">
+        <view class="preview-status-copy">
+          <view class="status-kicker">IMPORT PREVIEW</view>
+          <view class="status-title">读取结果确认</view>
+          <view class="status-subtitle">错误题已自动置顶，逐行修正后重新校验，再保存为待审核题目。</view>
+        </view>
+        <view class="status-metrics">
+          <view class="status-metric">
+            <text class="status-number">{{ totalDraftCount }}</text>
+            <text class="status-label">已读取</text>
+          </view>
+          <view class="status-metric warning">
+            <text class="status-number">{{ reviewIssueCount }}</text>
+            <text class="status-label">错误</text>
+          </view>
+          <view class="status-metric success">
+            <text class="status-number">{{ importableDraftCount }}</text>
+            <text class="status-label">可导入</text>
+          </view>
+        </view>
+        <view class="preview-top-actions">
+          <button class="preview-action-btn ghost" @tap="returnToFileSelection">重新上传</button>
+          <button class="preview-action-btn" @tap="openQuestionBankPicker">
+            {{ selectedImportBankName ? '更换题库' : '选择题库' }}
+          </button>
         </view>
       </view>
 
-      <view class="import-panel">
-        <view class="panel-head">
-          <view>
-            <view class="panel-title">默认分类</view>
-            <view class="panel-subtitle">识别出的题目会先套用这里的分类，之后可逐题修改。</view>
-          </view>
-          <button class="mini-btn" @tap="applyDefaultsToDrafts">应用全部</button>
+      <view class="target-bank-strip" :class="{ missing: !selectedImportBankName }">
+        <view class="target-bank-copy">
+          <view class="target-bank-label">导入题库</view>
+          <view class="target-bank-name">{{ selectedImportBankName || '请先选择要导入的题库文件' }}</view>
         </view>
-        <view class="picker-grid">
-          <picker :range="subjectLabels" :value="selectedSubjectIndex" @change="handleSubjectChange">
-            <view class="picker-pill">{{ importDefaults.subject }}<text>⌄</text></view>
-          </picker>
-          <picker :range="moduleLabels" :value="selectedModuleIndex" @change="handleModuleChange">
-            <view class="picker-pill">{{ importDefaults.module }}<text>⌄</text></view>
-          </picker>
-          <picker :range="submoduleLabels" :value="selectedSubmoduleIndex" @change="handleSubmoduleChange">
-            <view class="picker-pill">{{ importDefaults.submodule }}<text>⌄</text></view>
-          </picker>
-          <picker :range="difficultyLabels" :value="selectedDifficultyIndex" @change="handleDifficultyChange">
-            <view class="picker-pill">难度 {{ importDefaults.difficulty }}<text>⌄</text></view>
-          </picker>
-        </view>
+        <button class="target-bank-btn" @tap="openQuestionBankPicker">
+          {{ selectedImportBankName ? '切换' : '选择题库' }}
+        </button>
       </view>
 
-      <view class="import-panel">
-        <view class="panel-head">
-          <view>
-            <view class="panel-title">待导入预览</view>
-            <view class="panel-subtitle">逐行修正 Excel 数据后再校验；所有题目都会以“已下架 / 待审核”写入。</view>
+      <view class="preview-layout">
+        <view class="draft-list-panel">
+          <view class="list-panel-head">
+            <view>
+              <view class="panel-title">题目列表</view>
+              <view class="panel-subtitle">按 Excel 行号追踪，错误优先显示。</view>
+            </view>
+            <view class="sort-chip">错误优先</view>
           </view>
-          <view class="count-badge">{{ drafts.length }} 题</view>
+
+          <view v-if="draftPreviewEntries.length === 0" class="draft-empty">还没有解析出的题目</view>
+          <view v-else class="preview-table">
+            <button
+              v-for="entry in draftPreviewEntries"
+              :key="entry.draft.id"
+              class="preview-row"
+              :class="[entry.tone, { active: selectedDraftId === entry.draft.id }]"
+              @tap="selectDraft(entry.draft.id)"
+            >
+              <view class="row-main">
+                <view class="row-title">
+                  <text class="row-index">{{ excelRowLabel(entry.draft, entry.index) }}</text>
+                  <text class="row-stem">{{ compactStem(entry.draft.stem) }}</text>
+                </view>
+                <view class="row-meta">
+                  <text>{{ entry.draft.subject || '未填科目' }}</text>
+                  <text>{{ entry.draft.module || '未填模块' }}</text>
+                  <text>{{ entry.draft.submodule || '未填考点' }}</text>
+                </view>
+              </view>
+              <view class="row-status">{{ entry.status }}</view>
+            </button>
+          </view>
         </view>
 
-        <view v-if="drafts.length === 0" class="draft-empty">还没有解析出的题目</view>
-
-        <view v-else class="draft-list">
-          <view v-for="(draft, index) in drafts" :key="draft.id" class="draft-card" :class="draftTone(draft, index)">
-            <view class="draft-head">
-              <view>
-                <view class="draft-title">题目 {{ index + 1 }}</view>
-                <view class="draft-source">{{ excelRowLabel(draft, index) }} · {{ draft.image_name || 'Excel 导入' }}</view>
-              </view>
-              <view class="draft-status">{{ draftStatusText(draft, index) }}</view>
+        <view v-if="selectedDraftEntry" class="draft-detail-panel">
+          <view class="detail-head">
+            <view>
+              <view class="detail-kicker">{{ excelRowLabel(selectedDraftEntry.draft, selectedDraftEntry.index) }}</view>
+              <view class="detail-title">题目详情编辑</view>
+              <view class="detail-source">{{ selectedDraftEntry.draft.image_name || 'Excel 导入' }}</view>
             </view>
+            <view class="detail-status" :class="selectedDraftEntry.tone">{{ selectedDraftEntry.status }}</view>
+          </view>
 
-            <view class="draft-picker-grid">
-              <picker :range="subjectLabels" :value="draftSubjectIndex(draft)" @change="handleDraftSubjectChange(draft, $event)">
-                <view class="draft-picker">{{ draft.subject }}<text>⌄</text></view>
-              </picker>
-              <picker :range="draftModuleLabels(draft)" :value="draftModuleIndex(draft)" @change="handleDraftModuleChange(draft, $event)">
-                <view class="draft-picker">{{ draft.module }}<text>⌄</text></view>
-              </picker>
-              <picker :range="draftSubmoduleLabels(draft)" :value="draftSubmoduleIndex(draft)" @change="handleDraftSubmoduleChange(draft, $event)">
-                <view class="draft-picker">{{ draft.submodule }}<text>⌄</text></view>
-              </picker>
-              <picker :range="difficultyLabels" :value="difficultyIndex(draft.difficulty)" @change="handleDraftDifficultyChange(draft, $event)">
-                <view class="draft-picker">难度 {{ draft.difficulty }}<text>⌄</text></view>
-              </picker>
-            </view>
+          <view class="detail-grid">
+            <picker :range="subjectLabels" :value="draftSubjectIndex(selectedDraftEntry.draft)" @change="handleDraftSubjectChange(selectedDraftEntry.draft, $event)">
+              <view class="draft-picker">科目：{{ selectedDraftEntry.draft.subject }}<text>⌄</text></view>
+            </picker>
+            <picker :range="draftModuleLabels(selectedDraftEntry.draft)" :value="draftModuleIndex(selectedDraftEntry.draft)" @change="handleDraftModuleChange(selectedDraftEntry.draft, $event)">
+              <view class="draft-picker">模块：{{ selectedDraftEntry.draft.module }}<text>⌄</text></view>
+            </picker>
+            <picker :range="draftSubmoduleLabels(selectedDraftEntry.draft)" :value="draftSubmoduleIndex(selectedDraftEntry.draft)" @change="handleDraftSubmoduleChange(selectedDraftEntry.draft, $event)">
+              <view class="draft-picker">考点：{{ selectedDraftEntry.draft.submodule }}<text>⌄</text></view>
+            </picker>
+            <picker :range="difficultyLabels" :value="difficultyIndex(selectedDraftEntry.draft.difficulty)" @change="handleDraftDifficultyChange(selectedDraftEntry.draft, $event)">
+              <view class="draft-picker">难度 {{ selectedDraftEntry.draft.difficulty }}<text>⌄</text></view>
+            </picker>
+          </view>
 
-            <view class="draft-meta-grid">
-              <input v-model="draft.exam_code" class="draft-meta-input" placeholder="考试代码：COMMON / Z001 / Z002" @input="markDryRunDirty" />
-              <picker :range="sourceTypeLabels" :value="sourceTypeIndex(draft.source_type)" @change="handleDraftSourceTypeChange(draft, $event)">
-                <view class="draft-picker">{{ sourceTypeLabel(draft.source_type) }}<text>⌄</text></view>
-              </picker>
-              <input v-model="draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
-            </view>
+          <view class="draft-meta-grid">
+            <input v-model="selectedDraftEntry.draft.exam_code" class="draft-meta-input" placeholder="考试代码：COMMON / Z001 / Z002" @input="markDryRunDirty" />
+            <picker :range="sourceTypeLabels" :value="sourceTypeIndex(selectedDraftEntry.draft.source_type)" @change="handleDraftSourceTypeChange(selectedDraftEntry.draft, $event)">
+              <view class="draft-picker">{{ sourceTypeLabel(selectedDraftEntry.draft.source_type) }}<text>⌄</text></view>
+            </picker>
+            <input v-model="selectedDraftEntry.draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
+          </view>
 
-            <textarea v-model="draft.stem" class="draft-textarea stem" placeholder="题干" @input="markDryRunDirty" />
-            <view class="option-editor">
-              <view v-for="option in answerOptions" :key="option" class="option-row" :class="{ selected: draft.answer === option }">
-                <button class="answer-dot" @tap="setDraftAnswer(draft, option)">{{ draft.answer === option ? '●' : '○' }}</button>
-                <text class="option-label">{{ option }}.</text>
-                <input
-                  :value="draftOptionValue(draft, option)"
-                  class="option-input"
-                  :placeholder="`${option} 选项`"
-                  @input="handleDraftOptionInput(draft, option, $event)"
-                />
-              </view>
-            </view>
-            <textarea v-model="draft.explanation" class="draft-textarea explanation" placeholder="解析 / 答案理由" @input="markDryRunDirty" />
+          <view class="detail-field-label">题干</view>
+          <textarea v-model="selectedDraftEntry.draft.stem" class="draft-textarea stem" placeholder="题干" @input="markDryRunDirty" />
 
-            <view v-if="draftErrors(draft, index).length" class="error-list">
-              <view v-for="error in draftErrors(draft, index)" :key="error" class="error-item">{{ error }}</view>
-            </view>
-
-            <view class="draft-actions">
-              <button class="line-btn" @tap="duplicateDraft(draft)">复制</button>
-              <button class="danger-line-btn" @tap="removeDraft(draft.id)">删除</button>
+          <view class="detail-field-label">选项与答案</view>
+          <view class="option-editor">
+            <view v-for="option in answerOptions" :key="option" class="option-row" :class="{ selected: selectedDraftEntry.draft.answer === option }">
+              <button class="answer-dot" @tap="setDraftAnswer(selectedDraftEntry.draft, option)">{{ selectedDraftEntry.draft.answer === option ? '●' : '○' }}</button>
+              <text class="option-label">{{ option }}.</text>
+              <input
+                :value="draftOptionValue(selectedDraftEntry.draft, option)"
+                class="option-input"
+                :placeholder="`${option} 选项`"
+                @input="handleDraftOptionInput(selectedDraftEntry.draft, option, $event)"
+              />
             </view>
           </view>
+
+          <view class="detail-field-label">解析</view>
+          <textarea v-model="selectedDraftEntry.draft.explanation" class="draft-textarea explanation" placeholder="解析 / 答案理由" @input="markDryRunDirty" />
+
+          <view v-if="selectedDraftEntry.errors.length" class="error-list">
+            <view v-for="error in selectedDraftEntry.errors" :key="error" class="error-item">{{ error }}</view>
+          </view>
+
+          <view class="draft-actions">
+            <button class="line-btn" @tap="duplicateDraft(selectedDraftEntry.draft)">复制题目</button>
+            <button class="danger-line-btn" @tap="removeDraft(selectedDraftEntry.draft.id)">删除题目</button>
+          </view>
+        </view>
+        <view v-else class="draft-detail-panel empty-detail">
+          <view class="draft-empty">请选择左侧题目查看详情</view>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="questionBankPickerVisible" class="bank-picker-mask" @tap="closeQuestionBankPicker">
+      <view class="bank-picker-dialog" @tap.stop>
+        <view class="bank-picker-head">
+          <view>
+            <view class="status-kicker">QUESTION BANK</view>
+            <view class="bank-picker-title">选择导入题库</view>
+            <view class="panel-subtitle">导入成功后，题目会进入所选题库的待审核状态。</view>
+          </view>
+          <button class="bank-picker-close" @tap="closeQuestionBankPicker">×</button>
+        </view>
+        <view v-if="questionBanksLoading" class="bank-picker-state">正在读取题库文件...</view>
+        <view v-else-if="questionBankPickerError" class="bank-picker-state">
+          题库文件读取失败，请刷新后重试
+        </view>
+        <view v-else class="bank-picker-list">
+          <button
+            v-for="bank in questionBanks"
+            :key="bank.id"
+            class="bank-picker-card"
+            :class="{ selected: questionBankId === bank.id }"
+            @tap="selectImportQuestionBank(bank)"
+          >
+            <view class="bank-folder-icon">题</view>
+            <view class="bank-picker-main">
+              <view class="bank-picker-name">{{ bank.name }}</view>
+              <view class="bank-picker-date">最近修改：{{ formatBankDate(bank.updated_at) }}</view>
+            </view>
+            <view class="bank-radio">{{ questionBankId === bank.id ? '●' : '○' }}</view>
+          </button>
         </view>
       </view>
     </view>
@@ -187,18 +257,21 @@
       <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${drafts.length} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
     </view>
 
-    <view v-if="allowed && editorVisible" class="import-bottom-bar">
+    <view v-if="allowed && editorVisible" class="import-bottom-bar preview-bottom-bar">
       <view class="bottom-summary">
-        <text>草稿 {{ drafts.length }}</text>
-        <text>有效 {{ dryRunResult?.valid_count || 0 }}</text>
-        <text>问题 {{ (dryRunResult?.invalid_count || 0) + (dryRunResult?.duplicate_count || 0) }}</text>
+        <text>已读取 {{ totalDraftCount }}</text>
+        <text>错误 {{ reviewIssueCount }}</text>
+        <text>题库：{{ selectedImportBankName || '未选择' }}</text>
       </view>
       <view class="bottom-actions">
-        <button class="bottom-btn outline" :disabled="dryRunLoading || importSaving || drafts.length === 0" @tap="runDryCheck">
-          {{ dryRunLoading ? '校验中' : 'Dry-run 校验' }}
+        <button class="bottom-btn ghost" :disabled="dryRunLoading || importSaving" @tap="returnToFileSelection">
+          返回上传
         </button>
-        <button class="bottom-btn primary" :disabled="!canCommit || importSaving" @tap="commitImport">
-          {{ importSaving ? '导入中' : '导入待审核' }}
+        <button class="bottom-btn outline" :disabled="dryRunLoading || importSaving || drafts.length === 0" @tap="runDryCheck">
+          {{ dryRunLoading ? '校验中' : '重新校验' }}
+        </button>
+        <button class="bottom-btn primary" :disabled="importSaving || dryRunLoading || drafts.length === 0" @tap="commitImport">
+          {{ importSaving ? '保存中' : '保存为待审核' }}
         </button>
       </view>
     </view>
@@ -211,6 +284,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import {
   commitAdminQuestionImageImport,
   dryRunAdminQuestionImageImport,
+  fetchAdminQuestionBanks,
   fetchQuestionAdminPortalMe,
   recognizeAdminQuestionImportFile
 } from '../../api/admin'
@@ -237,9 +311,14 @@ const allowed = ref(false)
 const portalEntry = ref(false)
 const questionBankId = ref('')
 const questionBankName = ref('')
+const questionBanks = ref([])
+const questionBanksLoading = ref(false)
+const questionBankPickerVisible = ref(false)
+const questionBankPickerError = ref(false)
 const editorVisible = ref(false)
 const imageItems = ref([])
 const drafts = ref([])
+const selectedDraftId = ref('')
 const dryRunResult = ref(null)
 const dryRunLoading = ref(false)
 const importSaving = ref(false)
@@ -285,7 +364,40 @@ const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, impo
 const selectedSubmoduleIndex = computed(() => optionIndex(submoduleOptions.value, importDefaults.submodule))
 const selectedDifficultyIndex = computed(() => difficultyIndex(importDefaults.difficulty))
 const recognizingCount = computed(() => imageItems.value.filter((item) => item.recognizing).length)
+const draftPreviewEntries = computed(() => {
+  return drafts.value
+    .map((draft, index) => {
+      const errors = draftErrors(draft, index)
+      const status = draftStatusText(draft, index)
+      const tone = draftTone(draft, index)
+      return { draft, index, errors, status, tone }
+    })
+    .sort((left, right) => {
+      const leftError = left.errors.length ? 0 : 1
+      const rightError = right.errors.length ? 0 : 1
+      return leftError - rightError || left.index - right.index
+    })
+})
+const selectedDraftEntry = computed(() => (
+  draftPreviewEntries.value.find((entry) => entry.draft.id === selectedDraftId.value) ||
+  draftPreviewEntries.value[0] ||
+  null
+))
+const totalDraftCount = computed(() => drafts.value.length)
+const localIssueCount = computed(() => draftPreviewEntries.value.filter((entry) => entry.errors.length > 0).length)
+const reviewIssueCount = computed(() => (
+  localIssueCount.value + Number(dryRunResult.value?.duplicate_count || 0)
+))
+const importableDraftCount = computed(() => {
+  if (dryRunResult.value) return Number(dryRunResult.value.valid_count || 0)
+  return Math.max(0, totalDraftCount.value - localIssueCount.value)
+})
+const selectedImportBankName = computed(() => {
+  if (questionBankName.value) return questionBankName.value
+  return questionBanks.value.find((bank) => bank.id === questionBankId.value)?.name || ''
+})
 const canCommit = computed(() => (
+  Boolean(questionBankId.value) &&
   Boolean(dryRunResult.value) &&
   Number(dryRunResult.value.valid_count || 0) > 0 &&
   Number(dryRunResult.value.invalid_count || 0) === 0 &&
@@ -423,7 +535,8 @@ function appendNativeFiles(files) {
 }
 
 function normalizeImportFile(file = {}, index = 0, paths = []) {
-  const nativeFile = file?.file || (typeof File !== 'undefined' && file instanceof File ? file : null)
+  const nativeCandidate = file?.file || file?.raw || file?.originFileObj || file?.tempFile || file
+  const nativeFile = isNativeBlob(nativeCandidate) ? nativeCandidate : null
   const path = file?.path || paths[index] || ''
   const name = file?.name || nativeFile?.name || imageNameFromPath(path, index + 1)
   return {
@@ -434,6 +547,10 @@ function normalizeImportFile(file = {}, index = 0, paths = []) {
     size: file?.size || nativeFile?.size || 0,
     type: file?.type || nativeFile?.type || ''
   }
+}
+
+function isNativeBlob(value) {
+  return typeof Blob !== 'undefined' && value instanceof Blob
 }
 
 function appendImportFiles(files) {
@@ -461,6 +578,7 @@ function appendImportFiles(files) {
   })
   imageItems.value = nextItems
   drafts.value = []
+  selectedDraftId.value = ''
   nextItems.forEach(recognizeImportItem)
   markDryRunDirty()
 }
@@ -497,9 +615,10 @@ async function recognizeImportItem(item) {
   markDryRunDirty()
 
   try {
+    const uploadFile = await resolveBrowserUploadFile(item)
     const result = await recognizeAdminQuestionImportFile({
-      file: item.file || null,
-      filePath: item.path || '',
+      file: uploadFile,
+      filePath: uploadFile ? '' : (item.path || ''),
       fileName: item.name || 'upload'
     })
     if (!imageItems.value.some((current) => current.id === item.id)) return
@@ -517,6 +636,24 @@ async function recognizeImportItem(item) {
     item.recognizing = false
     markDryRunDirty()
   }
+}
+
+async function resolveBrowserUploadFile(item) {
+  if (isNativeBlob(item?.file)) return item.file
+  const path = String(item?.path || '')
+  if (!path || typeof fetch !== 'function') return null
+  if (!path.startsWith('blob:') && !path.startsWith('data:')) return null
+  const response = await fetch(path)
+  if (!response.ok) {
+    throw new Error('无法读取浏览器临时 Excel 文件，请重新选择文件')
+  }
+  const blob = await response.blob()
+  if (typeof File === 'function') {
+    return new File([blob], item?.name || 'upload.xlsx', {
+      type: blob.type || item?.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+  }
+  return blob
 }
 
 function errorDetail(error) {
@@ -540,6 +677,20 @@ function formatSize(size) {
   if (!bytes) return '未知大小'
   if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
   return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatBankDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date)
 }
 
 function previewImage(item) {
@@ -573,6 +724,10 @@ function startRecognition() {
   const total = readableItems.reduce((sum, item) => sum + parseExcelItem(item), 0)
   uni.showToast({ title: `已读取 ${total} 题，请逐行预览确认`, icon: 'success' })
   editorVisible.value = true
+  ensureSelectedDraft()
+  if (!questionBankId.value) {
+    void loadQuestionBankOptions()
+  }
   markDryRunDirty()
   setTimeout(() => {
     void runDryCheck(true)
@@ -581,6 +736,60 @@ function startRecognition() {
 
 function returnToFileSelection() {
   editorVisible.value = false
+  selectedDraftId.value = ''
+}
+
+function selectDraft(id) {
+  selectedDraftId.value = id
+}
+
+function ensureSelectedDraft() {
+  if (selectedDraftId.value && drafts.value.some((draft) => draft.id === selectedDraftId.value)) return
+  selectedDraftId.value = draftPreviewEntries.value[0]?.draft?.id || drafts.value[0]?.id || ''
+}
+
+function compactStem(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) return '未填写题干'
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text
+}
+
+async function openQuestionBankPicker() {
+  questionBankPickerVisible.value = true
+  if (!questionBanks.value.length) {
+    await loadQuestionBankOptions()
+  }
+}
+
+function closeQuestionBankPicker() {
+  if (questionBanksLoading.value) return
+  questionBankPickerVisible.value = false
+}
+
+async function loadQuestionBankOptions() {
+  questionBanksLoading.value = true
+  questionBankPickerError.value = false
+  try {
+    const response = await fetchAdminQuestionBanks()
+    questionBanks.value = Array.isArray(response?.items) ? response.items : []
+    if (questionBankId.value && !questionBankName.value) {
+      questionBankName.value = questionBanks.value.find((bank) => bank.id === questionBankId.value)?.name || ''
+    }
+  } catch (error) {
+    questionBanks.value = []
+    questionBankPickerError.value = true
+  } finally {
+    questionBanksLoading.value = false
+  }
+}
+
+function selectImportQuestionBank(bank) {
+  if (!bank?.id) return
+  questionBankId.value = bank.id
+  questionBankName.value = bank.name || ''
+  questionBankPickerVisible.value = false
+  markDryRunDirty()
+  uni.showToast({ title: '已选择题库，请重新校验', icon: 'none' })
 }
 
 function showImportHistory() {
@@ -970,20 +1179,25 @@ function applyDefaultsToDrafts() {
 }
 
 function duplicateDraft(draft) {
+  const duplicated = {
+    ...draft,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    image_name: `${draft.image_name || '手动新增'} 副本`,
+    check: null
+  }
   drafts.value = [
     ...drafts.value,
-    {
-      ...draft,
-      id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
-      image_name: `${draft.image_name || '手动新增'} 副本`,
-      check: null
-    }
+    duplicated
   ]
+  selectedDraftId.value = duplicated.id
   markDryRunDirty()
 }
 
 function removeDraft(id) {
   drafts.value = drafts.value.filter((draft) => draft.id !== id)
+  if (selectedDraftId.value === id) {
+    ensureSelectedDraft()
+  }
   markDryRunDirty()
 }
 
@@ -1101,6 +1315,11 @@ async function runDryCheck(silent = false) {
 }
 
 async function commitImport() {
+  if (!questionBankId.value) {
+    uni.showToast({ title: '请先选择导入题库', icon: 'none' })
+    await openQuestionBankPicker()
+    return
+  }
   if (!canCommit.value) {
     uni.showToast({ title: '请先通过 dry-run 校验', icon: 'none' })
     return
@@ -1201,6 +1420,10 @@ function returnFromImport() {
 .file-delete-btn::after,
 .editor-back-btn::after,
 .recognize-btn::after,
+.preview-action-btn::after,
+.target-bank-btn::after,
+.bank-picker-close::after,
+.bank-picker-card::after,
 .mini-btn::after,
 .primary-mini-btn::after,
 .remove-btn::after,
@@ -1675,6 +1898,493 @@ function returnFromImport() {
   color: #657695;
   font-size: 21rpx;
   font-weight: 800;
+}
+
+.preview-workbench {
+  gap: 18rpx;
+}
+
+.preview-status-panel {
+  padding: 26rpx;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 22rpx;
+  border: 1rpx solid #dbe7e5;
+  border-radius: 24rpx;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(80, 211, 184, 0.22), transparent 32%),
+    #ffffff;
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.06);
+  box-sizing: border-box;
+}
+
+.status-kicker {
+  color: #40b59b;
+  font-size: 20rpx;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.status-title {
+  margin-top: 8rpx;
+  color: #102033;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.status-subtitle {
+  margin-top: 8rpx;
+  color: #637289;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.status-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.status-metric {
+  min-height: 92rpx;
+  padding: 14rpx 16rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1rpx solid #dde8f1;
+  border-radius: 18rpx;
+  background: rgba(248, 251, 253, 0.92);
+  box-sizing: border-box;
+}
+
+.status-number {
+  color: #0f172a;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.status-label {
+  margin-top: 10rpx;
+  color: #728096;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.status-metric.warning .status-number {
+  color: #e65f2b;
+}
+
+.status-metric.success .status-number {
+  color: #17987f;
+}
+
+.preview-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.preview-action-btn,
+.target-bank-btn {
+  height: 64rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 18rpx;
+  color: #123c36;
+  background: linear-gradient(135deg, #73dec9, #4bcaae);
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.preview-action-btn.ghost {
+  border: 1rpx solid #d8e3ec;
+  color: #53647a;
+  background: #ffffff;
+}
+
+.target-bank-strip {
+  min-height: 82rpx;
+  padding: 16rpx 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  border: 1rpx solid #b9eee2;
+  border-radius: 20rpx;
+  background: #effcf9;
+  box-sizing: border-box;
+}
+
+.target-bank-strip.missing {
+  border-color: #ffd1a8;
+  background: #fff8ef;
+}
+
+.target-bank-copy {
+  min-width: 0;
+}
+
+.target-bank-label {
+  color: #5f748b;
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.target-bank-name {
+  margin-top: 5rpx;
+  overflow: hidden;
+  color: #102033;
+  font-size: 25rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-bank-strip.missing .target-bank-name {
+  color: #bd5d16;
+}
+
+.preview-layout {
+  display: grid;
+  grid-template-columns: minmax(360rpx, 0.92fr) minmax(0, 1.4fr);
+  gap: 18rpx;
+  align-items: start;
+}
+
+.draft-list-panel,
+.draft-detail-panel {
+  min-height: 640rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.05);
+  box-sizing: border-box;
+}
+
+.draft-list-panel {
+  overflow: hidden;
+}
+
+.list-panel-head {
+  padding: 22rpx 22rpx 18rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+  border-bottom: 1rpx solid #edf1f5;
+}
+
+.sort-chip {
+  flex: 0 0 auto;
+  padding: 9rpx 14rpx;
+  border-radius: 999rpx;
+  color: #198b78;
+  background: #def8f1;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.preview-table {
+  max-height: 700rpx;
+  overflow-y: auto;
+}
+
+.preview-row {
+  width: 100%;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 16rpx 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  border: 0;
+  border-bottom: 1rpx solid #edf1f5;
+  border-radius: 0;
+  background: #ffffff;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.preview-row.active {
+  background: #eefcf9;
+}
+
+.preview-row.invalid {
+  background: #fffaf5;
+}
+
+.preview-row.invalid.active {
+  background: #fff4e8;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.row-index {
+  flex: 0 0 auto;
+  color: #6e8098;
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.row-stem {
+  flex: 1;
+  overflow: hidden;
+  color: #102033;
+  font-size: 24rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-meta {
+  margin-top: 10rpx;
+  display: flex;
+  gap: 10rpx;
+  color: #7b8aa0;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.row-meta text {
+  max-width: 150rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-status,
+.detail-status {
+  flex: 0 0 auto;
+  min-width: 82rpx;
+  height: 44rpx;
+  padding: 0 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 20rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.row-status.invalid,
+.detail-status.invalid,
+.preview-row.invalid .row-status {
+  color: #d9651f;
+  background: #fff0df;
+}
+
+.row-status.valid,
+.detail-status.valid,
+.preview-row.valid .row-status {
+  color: #12866e;
+  background: #dff8f1;
+}
+
+.draft-detail-panel {
+  padding: 24rpx;
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.detail-kicker,
+.detail-source,
+.detail-field-label {
+  color: #6f8096;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.detail-title {
+  margin-top: 5rpx;
+  color: #102033;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.detail-source {
+  margin-top: 6rpx;
+  font-weight: 700;
+}
+
+.detail-grid {
+  margin-bottom: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.detail-field-label {
+  margin: 16rpx 0 10rpx;
+  color: #253a53;
+}
+
+.empty-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bank-picker-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx;
+  background: rgba(16, 28, 41, 0.42);
+  box-sizing: border-box;
+}
+
+.bank-picker-dialog {
+  width: min(980rpx, 100%);
+  max-height: 78vh;
+  overflow: hidden;
+  padding: 34rpx;
+  border-radius: 30rpx;
+  background: #ffffff;
+  box-shadow: 0 40rpx 100rpx rgba(15, 23, 42, 0.22);
+  box-sizing: border-box;
+}
+
+.bank-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 24rpx;
+}
+
+.bank-picker-title {
+  margin-top: 8rpx;
+  color: #102033;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.bank-picker-close {
+  flex: 0 0 62rpx;
+  width: 62rpx;
+  height: 62rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 18rpx;
+  color: #64748b;
+  background: #f2f6f8;
+  font-size: 36rpx;
+  line-height: 1;
+}
+
+.bank-picker-state {
+  padding: 60rpx 0;
+  color: #64748b;
+  text-align: center;
+  font-size: 24rpx;
+}
+
+.bank-picker-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.bank-picker-card {
+  min-height: 130rpx;
+  margin: 0;
+  padding: 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  border: 1rpx solid #dbe4ec;
+  border-radius: 22rpx;
+  background: #ffffff;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.bank-picker-card.selected {
+  border-color: #62d6c0;
+  background: #effcf9;
+}
+
+.bank-folder-icon {
+  flex: 0 0 76rpx;
+  width: 76rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #8be2d2;
+  border-radius: 17rpx;
+  color: #168c78;
+  background: #c8f4e9;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.bank-picker-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bank-picker-name {
+  overflow: hidden;
+  color: #102033;
+  font-size: 26rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bank-picker-date {
+  margin-top: 10rpx;
+  color: #7b8aa0;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.bank-radio {
+  flex: 0 0 auto;
+  color: #47bea7;
+  font-size: 34rpx;
+  font-weight: 900;
 }
 
 .step-strip {
@@ -2262,7 +2972,7 @@ function returnFromImport() {
 
 .bottom-actions {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 14rpx;
 }
 
@@ -2285,6 +2995,12 @@ function returnFromImport() {
 .bottom-btn.outline {
   border: 1rpx solid #1769ff;
   color: #1769ff;
+  background: #ffffff;
+}
+
+.bottom-btn.ghost {
+  border: 1rpx solid #d5dee8;
+  color: #53647a;
   background: #ffffff;
 }
 
@@ -2437,6 +3153,166 @@ function returnFromImport() {
     padding: 0 4px;
   }
 
+  .preview-workbench {
+    gap: 12px;
+  }
+
+  .preview-status-panel {
+    padding: 18px 20px;
+    grid-template-columns: minmax(0, 1.1fr) 360px auto;
+    gap: 18px;
+    border-radius: 14px;
+  }
+
+  .status-kicker {
+    font-size: 10px;
+  }
+
+  .status-title {
+    margin-top: 5px;
+    font-size: 23px;
+  }
+
+  .status-subtitle {
+    margin-top: 5px;
+    font-size: 12px;
+  }
+
+  .status-metrics {
+    gap: 10px;
+  }
+
+  .status-metric {
+    min-height: 72px;
+    padding: 12px;
+    border-radius: 11px;
+  }
+
+  .status-number {
+    font-size: 24px;
+  }
+
+  .status-label {
+    margin-top: 7px;
+    font-size: 11px;
+  }
+
+  .preview-top-actions {
+    gap: 8px;
+  }
+
+  .preview-action-btn,
+  .target-bank-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .target-bank-strip {
+    min-height: 58px;
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+
+  .target-bank-label {
+    font-size: 10px;
+  }
+
+  .target-bank-name {
+    margin-top: 3px;
+    font-size: 15px;
+  }
+
+  .preview-layout {
+    grid-template-columns: 430px minmax(0, 1fr);
+    gap: 14px;
+  }
+
+  .draft-list-panel,
+  .draft-detail-panel {
+    min-height: 610px;
+    border-radius: 14px;
+  }
+
+  .list-panel-head {
+    padding: 16px 18px 12px;
+  }
+
+  .sort-chip {
+    padding: 5px 9px;
+    font-size: 10px;
+  }
+
+  .preview-table {
+    max-height: 544px;
+  }
+
+  .preview-row {
+    min-height: 72px;
+    padding: 11px 14px;
+    gap: 10px;
+  }
+
+  .row-title {
+    gap: 7px;
+  }
+
+  .row-index {
+    font-size: 10px;
+  }
+
+  .row-stem {
+    font-size: 13px;
+  }
+
+  .row-meta {
+    margin-top: 7px;
+    gap: 7px;
+    font-size: 10px;
+  }
+
+  .row-meta text {
+    max-width: 92px;
+  }
+
+  .row-status,
+  .detail-status {
+    min-width: 56px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
+
+  .draft-detail-panel {
+    padding: 18px;
+  }
+
+  .detail-head {
+    margin-bottom: 14px;
+  }
+
+  .detail-kicker,
+  .detail-source,
+  .detail-field-label {
+    font-size: 10px;
+  }
+
+  .detail-title {
+    margin-top: 3px;
+    font-size: 20px;
+  }
+
+  .detail-grid {
+    margin-bottom: 10px;
+    gap: 9px;
+  }
+
+  .detail-field-label {
+    margin: 11px 0 7px;
+  }
+
   .picker-grid,
   .draft-picker-grid {
     gap: 9px;
@@ -2457,19 +3333,72 @@ function returnFromImport() {
   .draft-picker {
     min-height: 38px;
     border-radius: 8px;
-    font-size: 10px;
+    font-size: 12px;
   }
 
-  .draft-list {
-    display: grid;
-    grid-template-columns: repeat(2, minmax(0, 1fr));
-    gap: 13px;
+  .draft-textarea {
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.48;
   }
 
-  .draft-card {
-    margin: 0;
-    padding: 17px;
-    border-radius: 12px;
+  .draft-textarea.stem {
+    min-height: 110px;
+    margin-bottom: 10px;
+  }
+
+  .draft-textarea.explanation {
+    min-height: 112px;
+    margin-top: 0;
+  }
+
+  .option-editor {
+    gap: 8px;
+  }
+
+  .option-row {
+    min-height: 40px;
+    padding: 0 10px;
+    border-radius: 10px;
+    gap: 8px;
+  }
+
+  .answer-dot {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+
+  .option-label {
+    width: 24px;
+    font-size: 13px;
+  }
+
+  .option-input {
+    height: 38px;
+    font-size: 13px;
+  }
+
+  .error-list {
+    margin-top: 12px;
+    padding: 10px;
+    border-radius: 10px;
+  }
+
+  .error-item {
+    font-size: 11px;
+  }
+
+  .draft-actions {
+    margin-top: 12px;
+  }
+
+  .line-btn,
+  .danger-line-btn {
+    height: 38px;
+    border-radius: 10px;
+    font-size: 12px;
   }
 
   .recognize-bottom-bar,
@@ -2505,9 +3434,65 @@ function returnFromImport() {
     color: #238873;
   }
 
+  .bottom-btn.ghost {
+    border-color: #d7e0e8;
+    color: #53647a;
+  }
+
   .bottom-summary,
   .recognize-hint {
     font-size: 9px;
+  }
+
+  .bank-picker-dialog {
+    width: min(760px, calc(100vw - 120px));
+    padding: 26px;
+    border-radius: 20px;
+  }
+
+  .bank-picker-title {
+    margin-top: 5px;
+    font-size: 20px;
+  }
+
+  .bank-picker-close {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+    border-radius: 10px;
+    font-size: 22px;
+  }
+
+  .bank-picker-list {
+    gap: 12px;
+  }
+
+  .bank-picker-card {
+    min-height: 92px;
+    padding: 14px;
+    gap: 12px;
+    border-radius: 13px;
+  }
+
+  .bank-folder-icon {
+    width: 52px;
+    height: 50px;
+    flex-basis: 52px;
+    border-radius: 11px;
+    font-size: 16px;
+  }
+
+  .bank-picker-name {
+    font-size: 15px;
+  }
+
+  .bank-picker-date {
+    margin-top: 6px;
+    font-size: 10px;
+  }
+
+  .bank-radio {
+    font-size: 20px;
   }
 }
 </style>
