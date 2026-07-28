@@ -67,19 +67,7 @@ def require_admin_user(profile: Annotated[dict, Depends(get_current_user_profile
     return profile
 
 
-def require_question_admin_user(
-    profile: Annotated[dict, Depends(get_current_user_profile)],
-) -> dict:
-    """Allow existing admins or users explicitly enabled for the question portal."""
-
-    if profile.get("disabled_at"):
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
-
-    # Keep the existing mobile admin flow working without requiring a migration
-    # to be applied before deployment.
-    if is_admin_profile(profile):
-        return profile
-
+def _require_question_portal_access(profile: dict) -> dict:
     supabase = get_supabase_admin()
     try:
         response = (
@@ -102,3 +90,29 @@ def require_question_admin_user(
             detail="Question portal permission required",
         )
     return profile
+
+
+def require_question_portal_user(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow only users explicitly enabled in the question portal access table."""
+
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+    return _require_question_portal_access(profile)
+
+
+def require_question_admin_user(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow existing admins or users explicitly enabled for the question portal."""
+
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+
+    # Keep the existing mobile admin flow working without requiring a migration
+    # to be applied before deployment.
+    if is_admin_profile(profile):
+        return profile
+
+    return _require_question_portal_access(profile)

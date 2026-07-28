@@ -5,7 +5,12 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from pydantic import ValidationError
 
 from app.db import get_supabase_admin
-from app.dependencies import is_admin_profile, require_admin_user, require_question_admin_user
+from app.dependencies import (
+    is_admin_profile,
+    require_admin_user,
+    require_question_admin_portal_user,
+    require_question_admin_user,
+)
 from app.schemas.admin import (
     AdminFeedbackListResponse,
     AdminFeedbackStatusRequest,
@@ -1024,7 +1029,7 @@ def admin_update_feedback_status(
 
 @router.get("/question-portal/me", response_model=QuestionAdminPortalMeResponse)
 def question_admin_portal_me(
-    profile: dict = Depends(require_question_admin_user),
+    profile: dict = Depends(require_question_admin_portal_user),
 ) -> QuestionAdminPortalMeResponse:
     return QuestionAdminPortalMeResponse(allowed=True, profile=profile)
 
@@ -1035,7 +1040,7 @@ def question_admin_portal_dashboard(
     sort_by: str = Query(default="wrong_count", max_length=30),
     min_attempts: int = Query(default=QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS, ge=1, le=10000),
     period_days: int = Query(default=0, ge=0, le=365),
-    _: dict = Depends(require_question_admin_user),
+    _: dict = Depends(require_question_admin_portal_user),
 ) -> QuestionAdminDashboardResponse:
     normalized_subject = subject.strip() if subject else None
     if normalized_subject and normalized_subject not in QUESTION_ADMIN_DASHBOARD_SUBJECTS:
