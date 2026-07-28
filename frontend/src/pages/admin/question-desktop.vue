@@ -3324,7 +3324,10 @@ button {
 }
 
 .publish-question-button {
-  min-width: 92px;
+  min-width: 104px;
+  font-size: 13px;
+  font-weight: 900;
+  letter-spacing: 0.01em;
 }
 
 .secondary-button {
@@ -3424,6 +3427,9 @@ button {
   height: 37px;
   margin: 0 7px 0 auto;
   padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border: 1px solid #d7e4ea;
   border-radius: 8px;
   box-sizing: border-box;
