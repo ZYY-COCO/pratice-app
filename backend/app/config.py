@@ -9,7 +9,9 @@ class Settings(BaseSettings):
     supabase_url: str
     supabase_anon_key: str
     supabase_service_role_key: str
-    api_cors_origins: str = "*"
+    # Production must only trust the deployed H5 origins. Local development
+    # can opt in explicitly through API_CORS_ORIGINS in its local .env file.
+    api_cors_origins: str = "https://www.gangyantong.com,https://gangyantong.com"
     smtp_host: str | None = None
     smtp_port: int = 465
     smtp_username: str | None = None

@@ -41,7 +41,7 @@ if [ ! -f "${BACKEND_ENV}" ]; then
 SUPABASE_URL=
 SUPABASE_ANON_KEY=
 SUPABASE_SERVICE_ROLE_KEY=
-API_CORS_ORIGINS=*
+API_CORS_ORIGINS=https://www.gangyantong.com,https://gangyantong.com
 SMTP_HOST=
 SMTP_PORT=465
 SMTP_USERNAME=

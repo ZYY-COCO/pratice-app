@@ -242,7 +242,7 @@ def _auth_response_from_profile(profile: dict, password: str) -> AuthResponse:
         logger.exception("Phone auth sign in failed for user_id=%s: %s", profile.get("id"), error_summary)
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Phone login failed: {error_summary}",
+            detail="Phone login failed",
         ) from exc
 
     session = auth_response.session
@@ -478,7 +478,7 @@ def send_register_code(payload: SendEmailCodeRequest) -> MessageResponse:
         logger.exception("Send register code failed for email=%s: %s", normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Send register code failed: {error_summary}",
+            detail="Unable to send verification code, please try again",
         ) from exc
 
     return MessageResponse(detail="Verification code sent")
@@ -499,7 +499,7 @@ def send_reset_code(payload: SendEmailCodeRequest) -> MessageResponse:
         logger.exception("Send reset code failed for email=%s: %s", normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Send reset code failed: {error_summary}",
+            detail="Unable to send verification code, please try again",
         ) from exc
 
     return MessageResponse(detail="Reset code sent")
@@ -523,7 +523,7 @@ def send_phone_code(payload: SendPhoneCodeRequest) -> PhoneCodeResponse:
         logger.exception("Send phone code failed for phone=%s: %s", normalized_phone, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Send phone code failed: {error_summary}",
+            detail="Unable to send verification code, please try again",
         ) from exc
 
     return PhoneCodeResponse(detail="Phone verification code sent", debug_code=debug_code)
@@ -560,7 +560,7 @@ def send_change_email_code(
         logger.exception("Send change email code failed for user_id=%s email=%s: %s", user_id, normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Send change email code failed: {error_summary}",
+            detail="Unable to send verification code, please try again",
         ) from exc
 
     return MessageResponse(detail="Change email code sent")
@@ -782,7 +782,7 @@ def phone_register(payload: PhoneRegisterRequest) -> AuthResponse:
         logger.exception("Phone register failed for phone=%s: %s", normalized_phone, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Phone register failed: {error_summary}",
+            detail="Phone registration failed, please try again",
         ) from exc
 
     user = create_response.user
@@ -838,7 +838,7 @@ def phone_login(payload: PhoneLoginRequest) -> AuthResponse:
         logger.exception("Phone login password refresh failed for phone=%s: %s", normalized_phone, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Phone login failed: {error_summary}",
+            detail="Phone login failed, please try again",
         ) from exc
 
     return _auth_response_from_profile(profile, phone_password)
@@ -906,7 +906,7 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
         logger.exception("WeChat register failed for openid=%s: %s", openid, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"WeChat login failed: {error_summary}",
+            detail="WeChat login failed, please try again",
         ) from exc
 
     user = create_response.user
@@ -960,7 +960,7 @@ def register(payload: RegisterRequest) -> AuthResponse:
         logger.exception("Register failed for email=%s: %s", normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Register failed: {error_summary}",
+            detail="Registration failed, please try again",
         ) from exc
 
     user = create_response.user
@@ -1022,7 +1022,7 @@ def reset_password(payload: ResetPasswordRequest) -> MessageResponse:
         logger.exception("Reset password failed for email=%s: %s", normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Reset password failed: {error_summary}",
+            detail="Password reset failed, please try again",
         ) from exc
 
     return MessageResponse(detail="Password reset successful")
@@ -1090,7 +1090,7 @@ def update_profile(
         logger.exception("Update profile failed for user_id=%s: %s", user_id, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Update profile failed: {error_summary}",
+            detail="Profile update failed, please try again",
         ) from exc
 
     previous_path = _get_avatar_storage_path(previous_avatar_url)
@@ -1186,7 +1186,7 @@ async def upload_avatar(
         logger.exception("Avatar upload failed for user_id=%s: %s", user_id, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Avatar upload failed: {error_summary}",
+            detail="Avatar upload failed, please try again",
         ) from exc
 
     previous_path = _get_avatar_storage_path(previous_profile.get("avatar_url"))
@@ -1218,7 +1218,7 @@ def delete_account(user_id: str = Depends(get_current_user_id)) -> MessageRespon
         logger.exception("Delete auth account failed for user_id=%s: %s", user_id, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Delete account failed: {error_summary}",
+            detail="Account deletion failed, please try again",
         ) from exc
 
     try:
@@ -1284,7 +1284,7 @@ def change_email(
         logger.exception("Change email failed for user_id=%s email=%s: %s", user_id, normalized_email, error_summary)
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Change email failed: {error_summary}",
+            detail="Email change failed, please try again",
         ) from exc
 
     return AuthUser(**updated_response.data[0])

@@ -1391,10 +1391,7 @@ async function fetchRealQuestionCandidates(moduleInfos) {
     })
 
     const data = await request({
-      url: `/questions?${query}`,
-      header: {
-        Authorization: `Bearer ${accessToken.value}`
-      }
+      url: `/questions?${query}`
     })
 
     const items = (data.items || []).map((item) =>
@@ -1421,10 +1418,7 @@ async function fetchRealQuestionCandidates(moduleInfos) {
       })
 
       return request({
-        url: `/questions/by-module?${query}`,
-        header: {
-          Authorization: `Bearer ${accessToken.value}`
-        }
+        url: `/questions/by-module?${query}`
       }).then((data) => ({
         ok: true,
         meta,
@@ -1452,10 +1446,7 @@ async function fetchSubjectSupplement(existingKeys) {
   })
 
   const data = await request({
-    url: `/questions?${query}`,
-    header: {
-      Authorization: `Bearer ${accessToken.value}`
-    }
+    url: `/questions?${query}`
   })
 
   return (data.items || [])
@@ -1477,10 +1468,7 @@ async function fetchMockExamSectionPool(section, usedKeys) {
   })
 
   const data = await request({
-    url: `/questions?${query}`,
-    header: {
-      Authorization: `Bearer ${accessToken.value}`
-    }
+    url: `/questions?${query}`
   })
 
   const items = (data.items || [])
@@ -2038,9 +2026,6 @@ async function submitComprehensiveBatch(entries) {
       url: '/answers/submit-batch',
       method: 'POST',
       timeout: 25000,
-      header: {
-        Authorization: `Bearer ${accessToken.value}`
-      },
       data: {
         exam_code: examCode.value,
         answers: entries.map(({ question, selected }) => ({
@@ -2071,9 +2056,6 @@ async function submitComprehensiveSingle({ question, selected }, batchError) {
       url: '/answers/submit',
       method: 'POST',
       timeout: 20000,
-      header: {
-        Authorization: `Bearer ${accessToken.value}`
-      },
       data: {
         question_id: question.questionId,
         selected_answer: selected,
@@ -2103,9 +2085,6 @@ async function submitAnswer() {
         url: '/answers/submit',
         method: 'POST',
         timeout: 25000,
-        header: {
-          Authorization: `Bearer ${accessToken.value}`
-        },
         data: {
           question_id: questionMeta.value.questionId,
           selected_answer: selectedOption.value,

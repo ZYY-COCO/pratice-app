@@ -12,18 +12,7 @@ let refreshPromise = null
 let authRedirectPending = false
 
 export async function request(options) {
-  let token = getAccessToken()
-
-  if (shouldRefreshBeforeRequest(options, token)) {
-    try {
-      await refreshAuthSession()
-      token = getAccessToken()
-    } catch (error) {
-      handleAuthFailure()
-      return Promise.reject(error)
-    }
-  }
-
+  const token = await getRequestAccessToken(options)
   return dispatchRequest(options, token, false)
 }
 
@@ -36,11 +25,7 @@ function dispatchRequest(options, token, retried) {
       method: options.method || 'GET',
       timeout: options.timeout || 12000,
       data,
-      header: {
-        'Content-Type': 'application/json',
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.header || {})
-      },
+      header: buildRequestHeaders(options, token, 'application/json'),
       async success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve(response.data)
@@ -53,7 +38,11 @@ function dispatchRequest(options, token, retried) {
             resolve(dispatchRequest(options, getAccessToken(), true))
             return
           } catch (error) {
-            handleAuthFailure()
+            if (shouldClearAuthSession(error)) {
+              handleAuthFailure()
+            }
+            reject(error)
+            return
           }
         } else if (response.statusCode === 401 && token && options.authRedirect !== false) {
           handleAuthFailure()
@@ -63,16 +52,49 @@ function dispatchRequest(options, token, retried) {
       },
       fail(error) {
         const message = error?.errMsg || ''
+        const normalizedMessage = message.toLowerCase()
 
-        if (message.includes('timeout')) {
-          reject({ detail: '请求超时，请检查后端服务或网络连接' })
+        if (
+          normalizedMessage.includes('timeout') ||
+          normalizedMessage.includes('timed out') ||
+          normalizedMessage.includes('-1001')
+        ) {
+          reject({
+            detail: '请求超时，请检查网络连接后重试',
+            code: 'NETWORK_TIMEOUT',
+            retryable: true
+          })
           return
         }
 
-        reject({ detail: message || '网络请求失败，请稍后重试' })
+        reject({
+          detail: message || '网络请求失败，请稍后重试',
+          code: 'NETWORK_ERROR',
+          retryable: true
+        })
       }
     })
   })
+}
+
+export async function getRequestAccessToken(options = {}) {
+  const token = getAccessToken()
+  if (!shouldRefreshBeforeRequest(options, token)) {
+    return token
+  }
+
+  try {
+    await refreshAuthSession()
+    return getAccessToken()
+  } catch (error) {
+    // A short network failure must not be converted into a forced logout. The
+    // existing access token can still be accepted until it actually expires.
+    if (shouldClearAuthSession(error)) {
+      handleAuthFailure()
+      throw error
+    }
+    return token
+  }
 }
 
 function shouldRefreshBeforeRequest(options, token) {
@@ -81,12 +103,16 @@ function shouldRefreshBeforeRequest(options, token) {
   return Boolean(getRefreshToken() && isAccessTokenExpiring(token))
 }
 
+function shouldClearAuthSession(error) {
+  return error?.code === 'AUTH_REFRESH_REJECTED' || error?.code === 'AUTH_REFRESH_UNAVAILABLE'
+}
+
 function refreshAuthSession() {
   if (refreshPromise) return refreshPromise
 
   const refreshToken = getRefreshToken()
   if (!refreshToken) {
-    return Promise.reject({ detail: '登录已过期，请重新登录' })
+    return Promise.reject({ detail: '登录已过期，请重新登录', code: 'AUTH_REFRESH_UNAVAILABLE' })
   }
 
   refreshPromise = new Promise((resolve, reject) => {
@@ -106,10 +132,20 @@ function refreshAuthSession() {
           resolve(response.data)
           return
         }
-        reject(response.data || { detail: '登录已过期，请重新登录' })
+        const rejectedByAuthServer = response.statusCode === 401 || response.statusCode === 403
+        reject({
+          ...(response.data || {}),
+          detail: response.data?.detail || '登录状态刷新失败，请稍后重试',
+          code: rejectedByAuthServer ? 'AUTH_REFRESH_REJECTED' : 'AUTH_REFRESH_FAILED',
+          retryable: !rejectedByAuthServer
+        })
       },
       fail(error) {
-        reject({ detail: error?.errMsg || '登录状态刷新失败' })
+        reject({
+          detail: error?.errMsg || '登录状态刷新失败，请检查网络后重试',
+          code: 'NETWORK_ERROR',
+          retryable: true
+        })
       }
     })
   }).finally(() => {
@@ -139,7 +175,10 @@ function handleAuthFailure() {
 }
 
 export function uploadFileRequest(options) {
-  const token = getAccessToken()
+  return getRequestAccessToken(options).then((token) => uploadFileWithToken(options, token))
+}
+
+function uploadFileWithToken(options, token) {
   const url = `${API_BASE_URL}${options.url}`
 
   if (options.file && typeof FormData !== 'undefined' && typeof fetch !== 'undefined') {
@@ -153,10 +192,7 @@ export function uploadFileRequest(options) {
 
     return fetch(url, {
       method: 'POST',
-      headers: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.header || {})
-      },
+      headers: buildRequestHeaders(options, token),
       body: formData
     }).then(async (response) => {
       const data = await response.json().catch(() => ({}))
@@ -174,10 +210,7 @@ export function uploadFileRequest(options) {
       name: options.name || 'file',
       formData: options.formData || {},
       timeout: options.timeout || 60000,
-      header: {
-        ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        ...(options.header || {})
-      },
+      header: buildRequestHeaders(options, token),
       success(response) {
         let data = response.data
         try {
@@ -196,6 +229,17 @@ export function uploadFileRequest(options) {
       }
     })
   })
+}
+
+function buildRequestHeaders(options, token, contentType = '') {
+  const { Authorization: requestedAuthorization, ...customHeaders } = options.header || {}
+  const isAnonymousRequest = requestedAuthorization === ''
+
+  return {
+    ...(contentType ? { 'Content-Type': contentType } : {}),
+    ...customHeaders,
+    ...(!isAnonymousRequest && token ? { Authorization: `Bearer ${token}` } : {})
+  }
 }
 
 function cleanRequestData(data) {

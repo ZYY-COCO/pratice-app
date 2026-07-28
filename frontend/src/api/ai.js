@@ -1,6 +1,5 @@
 import { API_BASE_URL } from './config'
-import { request } from './http'
-import { getAccessToken } from '../utils/auth'
+import { getRequestAccessToken, request } from './http'
 
 function normalizeAiRequestError(error) {
   const message = error?.errMsg || ''
@@ -17,28 +16,46 @@ function normalizeAiRequestError(error) {
 }
 
 export function createAiTrainingRequestTask(data, handlers = {}) {
-  const token = getAccessToken()
+  let innerTask = null
+  let aborted = false
 
-  return uni.request({
-    url: `${API_BASE_URL}/ai/training/generate`,
-    method: 'POST',
-    timeout: 90000,
-    data,
-    header: {
-      'Content-Type': 'application/json',
-      ...(token ? { Authorization: `Bearer ${token}` } : {})
-    },
-    success(response) {
-      if (response.statusCode >= 200 && response.statusCode < 300) {
-        handlers.success?.(response.data)
-        return
-      }
-      handlers.fail?.(response.data || { detail: 'AI 训练生成失败' })
-    },
-    fail(error) {
-      handlers.fail?.(normalizeAiRequestError(error))
+  // Preserve the existing abortable API while refreshing a nearly expired
+  // token before this long-running request is dispatched.
+  getRequestAccessToken()
+    .then((token) => {
+      if (aborted) return
+
+      innerTask = uni.request({
+        url: `${API_BASE_URL}/ai/training/generate`,
+        method: 'POST',
+        timeout: 90000,
+        data,
+        header: {
+          'Content-Type': 'application/json',
+          ...(token ? { Authorization: `Bearer ${token}` } : {})
+        },
+        success(response) {
+          if (response.statusCode >= 200 && response.statusCode < 300) {
+            handlers.success?.(response.data)
+            return
+          }
+          handlers.fail?.(response.data || { detail: 'AI 训练生成失败' })
+        },
+        fail(error) {
+          handlers.fail?.(normalizeAiRequestError(error))
+        }
+      })
+    })
+    .catch((error) => {
+      if (!aborted) handlers.fail?.(error)
+    })
+
+  return {
+    abort() {
+      aborted = true
+      innerTask?.abort?.()
     }
-  })
+  }
 }
 
 export function generateAiTraining(data) {
