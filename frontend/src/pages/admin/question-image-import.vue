@@ -409,11 +409,7 @@ async function chooseImportFiles() {
 function appendSelectedFiles(response) {
   const paths = response.tempFilePaths || []
   const files = response.tempFiles || response.tempFilePaths?.map((path) => ({ path })) || []
-  const normalizedFiles = files.map((file, index) => {
-    const path = file.path || paths[index] || ''
-    return { ...file, path, file: file.file || null }
-  })
-  appendImportFiles(normalizedFiles)
+  appendImportFiles(files.map((file, index) => normalizeImportFile(file, index, paths)))
 }
 
 function handleDropFiles(event) {
@@ -423,11 +419,25 @@ function handleDropFiles(event) {
 }
 
 function appendNativeFiles(files) {
-  appendImportFiles(files.map((file) => ({ ...file, path: '', file })))
+  appendImportFiles(files.map((file, index) => normalizeImportFile(file, index)))
+}
+
+function normalizeImportFile(file = {}, index = 0, paths = []) {
+  const nativeFile = file?.file || (typeof File !== 'undefined' && file instanceof File ? file : null)
+  const path = file?.path || paths[index] || ''
+  const name = file?.name || nativeFile?.name || imageNameFromPath(path, index + 1)
+  return {
+    ...file,
+    path,
+    file: nativeFile,
+    name,
+    size: file?.size || nativeFile?.size || 0,
+    type: file?.type || nativeFile?.type || ''
+  }
 }
 
 function appendImportFiles(files) {
-  const excelFiles = files.filter((file) => fileExtension(file.name || file.path) === 'xlsx')
+  const excelFiles = files.filter((file) => fileExtension(file.name || file.path || file.file?.name) === 'xlsx')
   if (!excelFiles.length) {
     uni.showToast({ title: '仅支持 .xlsx Excel 题库模板文件', icon: 'none' })
     return
