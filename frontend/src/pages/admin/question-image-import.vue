@@ -56,7 +56,6 @@
           <view class="recognition-tag green">答案与解析</view>
           <view class="recognition-tag purple">分类与来源</view>
         </view>
-        <view class="recognition-copy">系统会按 Excel 行逐题读取，校验结果会在预览页面显示对应行号，不会直接发布。</view>
       </view>
 
       <view class="flow-card">
@@ -135,7 +134,7 @@
               <view class="row-main">
                 <view class="row-title">
                   <text class="row-index">{{ excelRowLabel(entry.draft, entry.index) }}</text>
-                  <text class="row-stem">{{ compactStem(entry.draft.stem) }}</text>
+                  <MathText class="row-stem" :value="entry.draft.stem || '未填写题干'" />
                 </view>
                 <view class="row-meta">
                   <text>{{ entry.draft.subject || '未填科目' }}</text>
@@ -180,6 +179,18 @@
             </picker>
             <input v-model="selectedDraftEntry.draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
           </view>
+
+          <MathQuestionPaperPreview
+            v-if="selectedDraftEntry.draft.subject === '数学基础'"
+            class="import-math-preview"
+            :stem="selectedDraftEntry.draft.stem"
+            :option-a="selectedDraftEntry.draft.option_a"
+            :option-b="selectedDraftEntry.draft.option_b"
+            :option-c="selectedDraftEntry.draft.option_c"
+            :option-d="selectedDraftEntry.draft.option_d"
+            :answer="selectedDraftEntry.draft.answer"
+            :explanation="selectedDraftEntry.draft.explanation"
+          />
 
           <view class="detail-field-label">题干</view>
           <textarea v-model="selectedDraftEntry.draft.stem" class="draft-textarea stem" placeholder="题干" @input="markDryRunDirty" />
@@ -280,6 +291,8 @@
 <script setup>
 import { computed, onMounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
+import MathText from '../../components/MathText.vue'
 import {
   commitAdminQuestionImageImport,
   dryRunAdminQuestionImageImport,
@@ -1812,13 +1825,6 @@ function returnFromImport() {
   background: #f1eefe;
 }
 
-.recognition-copy {
-  margin-top: 18rpx;
-  color: #53647f;
-  font-size: 22rpx;
-  line-height: 1.55;
-}
-
 .flow-card {
   padding: 24rpx 18rpx 18rpx;
 }
@@ -2863,6 +2869,10 @@ function returnFromImport() {
   margin-top: 14rpx;
 }
 
+.import-math-preview {
+  margin-bottom: 20rpx;
+}
+
 .option-editor {
   display: flex;
   flex-direction: column;
@@ -3152,7 +3162,6 @@ function returnFromImport() {
   .drop-action,
   .drop-formats,
   .drop-limit,
-  .recognition-copy,
   .panel-subtitle,
   .flow-note {
     font-size: 10px;

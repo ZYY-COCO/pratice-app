@@ -139,7 +139,6 @@
             <view class="panel-heading">
               <view>
                 <view class="panel-title">刷题数据 · 高频错题</view>
-                <view class="panel-subtitle">{{ dashboardInsightSubtitle }}</view>
               </view>
               <view class="dashboard-filter-bar">
                 <view class="dashboard-filter-control">
@@ -167,18 +166,6 @@
                   </picker>
                 </view>
                 <view class="dashboard-filter-control">
-                  <text class="dashboard-filter-label">最少作答</text>
-                  <picker
-                    :range="dashboardMinAttemptsLabels"
-                    :value="selectedDashboardMinAttemptsIndex"
-                    @change="handleDashboardMinAttemptsChange"
-                  >
-                    <view class="dashboard-select attempts">
-                      <text>{{ selectedDashboardMinAttemptsLabel }}</text><text class="select-arrow">⌄</text>
-                    </view>
-                  </picker>
-                </view>
-                <view class="dashboard-filter-control">
                   <text class="dashboard-filter-label">排序</text>
                   <picker
                     :range="dashboardSortLabels"
@@ -190,10 +177,6 @@
                     </view>
                   </picker>
                 </view>
-              </view>
-              <view class="panel-legend">
-                <text class="legend-dot"></text>
-                {{ dashboardLegendText }}
               </view>
             </view>
 
@@ -222,7 +205,7 @@
                   <text class="rank-badge" :class="{ top: index < 3 }">{{ index + 1 }}</text>
                 </view>
                 <view class="stem-cell">
-                  <view class="stem-primary">{{ item.stem }}</view>
+                  <MathText class="stem-primary" :value="item.stem" />
                   <view class="stem-id">ID {{ shortId(item.question_id) }}</view>
                 </view>
                 <view class="category-cell">
@@ -292,7 +275,6 @@
             <button class="bank-file-card bank-file-create-card" @tap="openQuestionBankDialog('create')">
               <view class="bank-file-create-icon">＋</view>
               <view class="bank-file-create-title">新建题库</view>
-              <view class="bank-file-create-copy">创建一个新的题库文件</view>
             </button>
           </view>
         </section>
@@ -453,7 +435,7 @@
                   </view>
                   <view class="id-cell mono">{{ shortId(item.id) }}</view>
                   <view class="question-stem-cell">
-                    <view class="table-stem">{{ item.stem || '未填写题干' }}</view>
+                    <MathText class="table-stem" :value="item.stem || '未填写题干'" />
                     <view class="table-answer">答案 {{ item.answer || '-' }} · {{ item.submodule || '未设置考点' }}</view>
                   </view>
                   <view class="question-category-cell">
@@ -562,6 +544,18 @@
                 </view>
               </view>
             </view>
+
+            <MathQuestionPaperPreview
+              v-if="form.subject === '数学基础'"
+              class="drawer-math-preview"
+              :stem="form.stem"
+              :option-a="form.option_a"
+              :option-b="form.option_b"
+              :option-c="form.option_c"
+              :option-d="form.option_d"
+              :answer="form.answer"
+              :explanation="form.explanation"
+            />
 
             <view class="form-field full">
               <view class="form-heading">
@@ -735,9 +729,6 @@
         <view class="bank-dialog-title">
           {{ questionBankDialogMode === 'create' ? '新建题库' : '重命名题库' }}
         </view>
-        <view v-if="questionBankDialogMode === 'create'" class="bank-dialog-copy">
-          创建后可双击进入，并在其中维护独立题目。
-        </view>
         <input
           v-model.trim="questionBankNameDraft"
           class="bank-dialog-input"
@@ -778,6 +769,8 @@ import {
   updateAdminQuestionReview,
   updateAdminQuestionStatus
 } from '../../api/admin'
+import MathText from '../../components/MathText.vue'
+import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
 import QuestionImageImport from './question-image-import.vue'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
@@ -902,13 +895,6 @@ const dashboardTimeRangeOptions = [
   { label: '全部时间', value: 0 },
   { label: '近 7 天', value: 7 },
   { label: '近 30 天', value: 30 }
-]
-const dashboardMinAttemptsOptions = [
-  { label: '全部作答', value: 1 },
-  { label: '至少 3 次', value: 3 },
-  { label: '至少 5 次', value: 5 },
-  { label: '至少 10 次', value: 10 },
-  { label: '至少 20 次', value: 20 }
 ]
 const answerOptions = ['A', 'B', 'C', 'D']
 const previewQuestions = [
@@ -1063,7 +1049,6 @@ const dashboardSubjectOptions = computed(() => [
 const dashboardSubjectLabels = computed(() => dashboardSubjectOptions.value.map((item) => item.label))
 const dashboardSortLabels = computed(() => dashboardSortOptions.map((item) => item.label))
 const dashboardTimeRangeLabels = computed(() => dashboardTimeRangeOptions.map((item) => item.label))
-const dashboardMinAttemptsLabels = computed(() => dashboardMinAttemptsOptions.map((item) => item.label))
 const moduleLabels = computed(() => moduleOptions.value.map((item) => item.label))
 const difficultyLabels = computed(() => difficultyOptions.map((item) => item.label))
 const statusLabels = computed(() => statusOptions.map((item) => item.label))
@@ -1080,10 +1065,6 @@ const selectedDashboardTimeRangeIndex = computed(() => optionIndex(
   dashboardTimeRangeOptions,
   Number(dashboardFilters.period_days || 0)
 ))
-const selectedDashboardMinAttemptsIndex = computed(() => optionIndex(
-  dashboardMinAttemptsOptions,
-  Number(dashboardFilters.min_attempts || 1)
-))
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, filters.module))
 const selectedDifficultyIndex = computed(() => optionIndex(difficultyOptions, filters.difficulty))
 const selectedStatusIndex = computed(() => optionIndex(statusOptions, filters.status))
@@ -1097,20 +1078,9 @@ const selectedDashboardSortLabel = computed(() => (
 const selectedDashboardTimeRangeLabel = computed(() => (
   dashboardTimeRangeOptions[selectedDashboardTimeRangeIndex.value]?.label || '全部时间'
 ))
-const selectedDashboardMinAttemptsLabel = computed(() => (
-  dashboardMinAttemptsOptions[selectedDashboardMinAttemptsIndex.value]?.label || '至少 5 次'
-))
 const selectedModuleLabel = computed(() => moduleOptions.value[selectedModuleIndex.value]?.label || '全部模块')
 const selectedDifficultyLabel = computed(() => difficultyOptions[selectedDifficultyIndex.value]?.label || '全部难度')
 const selectedStatusLabel = computed(() => statusOptions[selectedStatusIndex.value]?.label || '全部状态')
-const dashboardInsightSubtitle = computed(() => (
-  `${selectedDashboardSubjectLabel.value} · ${selectedDashboardTimeRangeLabel.value} · ${selectedDashboardMinAttemptsLabel.value} · ${selectedDashboardSortLabel.value}`
-))
-const dashboardLegendText = computed(() => {
-  if (dashboardFilters.sort_by === 'accuracy') return '正确率越低越需要关注'
-  if (dashboardFilters.sort_by === 'attempt_count') return '作答次数越高，覆盖越广'
-  return '答错次数越高越需要关注'
-})
 const hasFilters = computed(() => Boolean(
   filters.subject || filters.module || filters.difficulty || filters.status || filters.search
 ))
@@ -1487,13 +1457,6 @@ async function handleDashboardSortChange(event) {
 async function handleDashboardTimeRangeChange(event) {
   dashboardFilters.period_days = Number(
     dashboardTimeRangeOptions[Number(event?.detail?.value || 0)]?.value || 0
-  )
-  await loadDashboard()
-}
-
-async function handleDashboardMinAttemptsChange(event) {
-  dashboardFilters.min_attempts = Number(
-    dashboardMinAttemptsOptions[Number(event?.detail?.value || 0)]?.value || 5
   )
   await loadDashboard()
 }
@@ -2924,11 +2887,6 @@ button {
   font-weight: 750;
 }
 
-.bank-file-create-copy {
-  color: #95a6a3;
-  font-size: 8px;
-}
-
 .welcome-row {
   display: flex;
   align-items: flex-end;
@@ -2969,8 +2927,7 @@ button {
 }
 
 .badge-dot,
-.live-indicator text,
-.legend-dot {
+.live-indicator text {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -3160,14 +3117,6 @@ button {
   font-size: 9px;
 }
 
-.panel-legend {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-  color: #8c97a5;
-  font-size: 9px;
-}
-
 .dashboard-filter-bar {
   margin-left: auto;
   display: flex;
@@ -3209,14 +3158,6 @@ button {
 
 .dashboard-select.compact {
   width: 104px;
-}
-
-.dashboard-select.attempts {
-  width: 112px;
-}
-
-.legend-dot {
-  background: #ea9c78;
 }
 
 .data-table {
@@ -4578,6 +4519,10 @@ button {
 .form-textarea.explanation { min-height: 120px; }
 .form-textarea.note { min-height: 76px; }
 
+.drawer-math-preview {
+  margin-bottom: 18px;
+}
+
 .option-editor {
   margin-top: 8px;
   display: flex;
@@ -4862,8 +4807,5 @@ button {
     flex-wrap: wrap;
   }
 
-  .panel-legend {
-    margin-left: 0;
-  }
 }
 </style>

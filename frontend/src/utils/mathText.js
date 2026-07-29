@@ -587,8 +587,29 @@ function normalizeMathSource(value) {
   return String(value ?? '').replace(/\r?\n/g, ' ').trim()
 }
 
-function normalizeKatexLatex(value) {
+const PLAIN_KATEX_ATOM = String.raw`(?:\([^()]+\)|(?:\\[A-Za-z]+|[A-Za-z0-9π]+)(?:\^(?:\{[-+A-Za-z0-9]+\}|[-+]?[A-Za-z0-9]))?)`
+const PLAIN_KATEX_FRACTION_PATTERN = new RegExp(`(${PLAIN_KATEX_ATOM})\\s*\\/\\s*(${PLAIN_KATEX_ATOM})`, 'g')
+const PLAIN_KATEX_FRACTION_SIGNAL_PATTERN = new RegExp(`${PLAIN_KATEX_ATOM}\\s*\\/\\s*${PLAIN_KATEX_ATOM}`)
+const MATH_FUNCTION_NAMES = 'arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min'
+const PLAIN_MATH_FUNCTION_SIGNAL_PATTERN = new RegExp(MATH_FUNCTION_NAMES, 'i')
+const LEADING_MATH_FUNCTION_PATTERN = new RegExp(`(^|[^A-Za-z\\\\])(${MATH_FUNCTION_NAMES})(?=\\s*[A-Za-z0-9(])`, 'g')
+const INFIX_MATH_FUNCTION_PATTERN = new RegExp(`([A-Za-z0-9)\\]])(${MATH_FUNCTION_NAMES})(?=\\s*[A-Za-z0-9(])`, 'g')
+
+function normalizePlainFractions(value) {
+  return String(value ?? '').replace(
+    PLAIN_KATEX_FRACTION_PATTERN,
+    (_, numerator, denominator) => `\\frac{${numerator}}{${denominator}}`
+  )
+}
+
+function normalizePlainMathFunctions(value) {
   return String(value ?? '')
+    .replace(INFIX_MATH_FUNCTION_PATTERN, (_, prefix, name) => `${prefix}\\${name} `)
+    .replace(LEADING_MATH_FUNCTION_PATTERN, (_, prefix, name) => `${prefix}\\${name} `)
+}
+
+function normalizeKatexLatex(value) {
+  return normalizePlainMathFunctions(normalizePlainFractions(value))
     .replace(/\u222b/g, '\\int')
     .replace(/\u03c0/g, '\\pi')
     .replace(/\u2264/g, '\\le')
@@ -736,8 +757,20 @@ function hasUsefulPlainMathSignal(value) {
     'infty',
     'pi'
   ])
-  if (words.some((word) => !allowedMathWords.has(word))) return false
+  const allowedVariableLetters = /^[xyzabcefnm]+$/
+  const containsUnsupportedWord = words.some((word) => {
+    const normalizedWord = word.toLowerCase()
+    if (allowedMathWords.has(normalizedWord)) return false
+    const withoutMathFunctions = normalizedWord.replace(
+      /arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min/g,
+      ''
+    )
+    return !withoutMathFunctions || !allowedVariableLetters.test(withoutMathFunctions)
+  })
+  if (containsUnsupportedWord) return false
   if (/[=^_\u222b\u221a\u221e\u2192\u03c0]/.test(text)) return true
+  if (PLAIN_KATEX_FRACTION_SIGNAL_PATTERN.test(text)) return true
+  if (PLAIN_MATH_FUNCTION_SIGNAL_PATTERN.test(text)) return true
   return /^[([-]?\d+(?:\.\d+)?\s*\/\s*[-+]?\d+(?:\.\d+)?[\])]?$/.test(text)
 }
 
