@@ -1,6 +1,6 @@
 <template>
   <view class="image-import-page" :class="{ embedded: props.embedded }" :style="themeInlineStyle">
-    <view class="import-hero">
+    <view v-if="!editorVisible" class="import-hero">
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
         <view class="hero-subtitle">上传标准 Excel 模板，逐行校验题目内容</view>

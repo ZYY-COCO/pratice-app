@@ -43,12 +43,12 @@
       <header class="portal-header">
         <view class="header-left">
           <button
-          v-if="activeSection === 'questions' && (activeQuestionBank || showGlobalQuestionList)"
+            v-if="showHeaderBackButton"
             class="header-back-button"
-            :disabled="saving"
-            @tap="returnToQuestionBanks"
+            :disabled="headerBackDisabled"
+            @tap="handleHeaderBack"
           >
-            <text class="header-back-symbol">←</text>
+            <image class="header-back-icon" src="/static/admin-icons/admin-back.svg" mode="aspectFit" />
           </button>
           <view class="header-title-group">
             <view class="header-breadcrumb">港研通 / {{ currentNavLabel }}</view>
@@ -306,8 +306,8 @@
               v-for="item in summaryCards"
               :key="item.key"
               class="summary-card"
-              :class="{ active: summaryCardActive(item.key) }"
-              @tap="applySummaryFilter(item.key)"
+              :class="{ active: summaryCardActive(item.key), static: !item.interactive, interactive: item.interactive }"
+              @tap="handleSummaryCardTap(item)"
             >
               <view class="summary-top">
                 <view class="summary-icon summary-icon-asset" :class="item.tone">
@@ -342,7 +342,9 @@
 
             <view class="filter-toolbar">
               <view class="search-shell">
-                <text class="search-icon">⌕</text>
+                <view class="search-icon">
+                  <image class="search-icon-image" src="/static/admin-icons/admin-search.svg" mode="aspectFit" />
+                </view>
                 <input
                   v-model.trim="filters.search"
                   class="search-input"
@@ -979,6 +981,14 @@ const currentNavLabel = computed(() => {
     ? `${label} / ${activeQuestionBank.value.name}`
     : label
 })
+const showHeaderBackButton = computed(() => (
+  activeSection.value === 'import' ||
+  activeSection.value === 'review' ||
+  (activeSection.value === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value))
+))
+const headerBackDisabled = computed(() => (
+  activeSection.value === 'questions' && saving.value
+))
 const pageTitle = computed(() => {
   const titles = {
     dashboard: '题库仪表盘',
@@ -1018,10 +1028,10 @@ const activeQuestionBankCount = computed(() => (
   Number(currentQuestionStats.value.pendingReview || 0)
 ))
 const summaryCards = computed(() => [
-  { key: '', label: '全部题目', value: activeQuestionBankCount.value, iconSrc: '/static/admin-icons/question-count.svg', tone: 'blue' },
-  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: currentQuestionStats.value.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange' },
-  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: currentQuestionStats.value.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint' },
-  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: currentQuestionStats.value.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate' }
+  { key: '', label: '全部题目', value: activeQuestionBankCount.value, iconSrc: '/static/admin-icons/question-count.svg', tone: 'blue', interactive: true },
+  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: currentQuestionStats.value.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange', interactive: true },
+  { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: currentQuestionStats.value.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint', interactive: false },
+  { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: currentQuestionStats.value.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate', interactive: false }
 ])
 const moduleOptions = computed(() => [
   { label: '全部模块', value: '' },
@@ -1474,6 +1484,7 @@ async function handleDashboardMinAttemptsChange(event) {
 }
 
 async function applySummaryFilter(status) {
+  if (status === QUESTION_STATUS.ACTIVE || status === QUESTION_STATUS.ARCHIVED) return
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
     reviewQuestionBank.value = activeQuestionBank.value || null
     activeSection.value = 'review'
@@ -1495,11 +1506,17 @@ async function applySummaryFilter(status) {
   await Promise.all([loadQuestionStats(questionBankId), loadQuestions()])
 }
 
+function handleSummaryCardTap(item) {
+  if (!item?.interactive) return
+  applySummaryFilter(item.key)
+}
+
 function navItemActive(key) {
   return key === activeSection.value || (key === 'questions' && activeSection.value === 'review')
 }
 
 function summaryCardActive(status) {
+  if (status === QUESTION_STATUS.ACTIVE || status === QUESTION_STATUS.ARCHIVED) return false
   if (activeSection.value === 'review') return status === QUESTION_STATUS.PENDING_REVIEW
   return activeSection.value === 'questions' && filters.status === status
 }
@@ -1569,6 +1586,57 @@ async function returnToQuestionBanks() {
   clearFiltersForQuestionBank()
   Object.assign(questionStats, globalQuestionStats)
   await loadQuestionBanks()
+}
+
+async function returnFromImportSection() {
+  if (importQuestionBankId.value) {
+    activeSection.value = 'questions'
+    const bank = questionBanks.value.find((item) => item.id === importQuestionBankId.value) || {
+      id: importQuestionBankId.value,
+      name: importQuestionBankName.value || '题库'
+    }
+    activeQuestionBank.value = bank
+    reviewQuestionBank.value = null
+    showGlobalQuestionList.value = false
+    currentPage.value = 1
+    selectedIds.value = []
+    clearFiltersForQuestionBank()
+    await Promise.all([loadQuestionStats(bank.id), loadQuestions()])
+    return
+  }
+  activeSection.value = 'questions'
+  await returnToQuestionBanks()
+}
+
+async function returnFromReviewSection() {
+  const bank = reviewQuestionBank.value
+  activeSection.value = 'questions'
+  reviewQuestionBank.value = null
+  currentPage.value = 1
+  selectedIds.value = []
+  clearFiltersForQuestionBank()
+  if (bank?.id) {
+    activeQuestionBank.value = bank
+    showGlobalQuestionList.value = false
+    await Promise.all([loadQuestionStats(bank.id), loadQuestions()])
+    return
+  }
+  activeQuestionBank.value = null
+  showGlobalQuestionList.value = false
+  Object.assign(questionStats, globalQuestionStats)
+  await loadQuestionBanks()
+}
+
+async function handleHeaderBack() {
+  if (activeSection.value === 'import') {
+    await returnFromImportSection()
+    return
+  }
+  if (activeSection.value === 'review') {
+    await returnFromReviewSection()
+    return
+  }
+  await returnToQuestionBanks()
 }
 
 function clearFiltersForQuestionBank() {
@@ -2533,8 +2601,10 @@ button {
   opacity: 0.55;
 }
 
-.header-back-symbol {
-  line-height: 1;
+.header-back-icon {
+  width: 18px;
+  height: 18px;
+  display: block;
 }
 
 .header-breadcrumb {
@@ -3341,6 +3411,14 @@ button {
   box-shadow: 0 7px 22px rgba(31, 50, 71, 0.025);
 }
 
+.summary-card.interactive {
+  cursor: pointer;
+}
+
+.summary-card.static {
+  cursor: default;
+}
+
 .summary-card.active {
   border-color: #72d7c0;
   box-shadow: 0 0 0 3px rgba(79, 205, 176, 0.08);
@@ -3356,6 +3434,8 @@ button {
   width: 31px;
   height: 31px;
   border-radius: 9px;
+  border: 1px solid transparent;
+  box-sizing: border-box;
   font-size: 10px;
 }
 
@@ -3368,6 +3448,42 @@ button {
   width: 100%;
   height: 100%;
   display: block;
+}
+
+.summary-icon.blue {
+  border-color: #d5e7fb;
+  background: #eef6ff;
+}
+
+.summary-icon.blue .summary-icon-image {
+  filter: brightness(0) saturate(100%) invert(39%) sepia(89%) saturate(923%) hue-rotate(184deg) brightness(94%) contrast(94%);
+}
+
+.summary-icon.orange {
+  border-color: #fde5c5;
+  background: #fff7ed;
+}
+
+.summary-icon.orange .summary-icon-image {
+  filter: brightness(0) saturate(100%) invert(55%) sepia(68%) saturate(956%) hue-rotate(359deg) brightness(97%) contrast(94%);
+}
+
+.summary-icon.mint {
+  border-color: #ccece7;
+  background: #ecfdf8;
+}
+
+.summary-icon.mint .summary-icon-image {
+  filter: brightness(0) saturate(100%) invert(33%) sepia(30%) saturate(1581%) hue-rotate(131deg) brightness(93%) contrast(92%);
+}
+
+.summary-icon.slate {
+  border-color: #dce4ec;
+  background: #f3f6f8;
+}
+
+.summary-icon.slate .summary-icon-image {
+  filter: brightness(0) saturate(100%) invert(39%) sepia(14%) saturate(751%) hue-rotate(176deg) brightness(89%) contrast(90%);
 }
 
 .summary-label {
@@ -3460,8 +3576,18 @@ button {
 
 .search-icon {
   width: 23px;
-  color: #92a0ae;
-  font-size: 16px;
+  height: 35px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  flex: 0 0 auto;
+}
+
+.search-icon-image {
+  width: 15px;
+  height: 15px;
+  display: block;
+  opacity: 0.52;
 }
 
 .search-input {
