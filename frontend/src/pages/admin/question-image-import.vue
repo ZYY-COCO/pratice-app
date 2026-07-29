@@ -254,7 +254,7 @@
         <text class="recognize-icon">⌁</text>
         <text>{{ recognizingCount > 0 ? `正在读取 ${recognizingCount}` : '进入预览' }}</text>
       </button>
-      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${drafts.length} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
+      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${recognizedQuestionCount} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
     </view>
 
     <view v-if="allowed && editorVisible" class="import-bottom-bar preview-bottom-bar">
@@ -367,6 +367,9 @@ const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, impo
 const selectedSubmoduleIndex = computed(() => optionIndex(submoduleOptions.value, importDefaults.submodule))
 const selectedDifficultyIndex = computed(() => difficultyIndex(importDefaults.difficulty))
 const recognizingCount = computed(() => imageItems.value.filter((item) => item.recognizing).length)
+const recognizedQuestionCount = computed(() => imageItems.value.reduce((total, item) => (
+  total + (Array.isArray(item.recognizedQuestions) ? item.recognizedQuestions.length : 0)
+), 0))
 const draftPreviewEntries = computed(() => {
   return drafts.value
     .map((draft, index) => {
