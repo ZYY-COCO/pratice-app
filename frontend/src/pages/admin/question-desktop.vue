@@ -306,7 +306,7 @@
               v-for="item in summaryCards"
               :key="item.key"
               class="summary-card"
-              :class="{ active: summaryCardActive(item.key), static: !item.interactive, interactive: item.interactive }"
+              :class="{ static: !item.interactive, interactive: item.interactive }"
               @tap="handleSummaryCardTap(item)"
             >
               <view class="summary-top">
@@ -334,6 +334,13 @@
                 </view>
               </view>
               <view v-if="activeSection === 'review'" class="workspace-actions">
+                <button
+                  class="secondary-button publish-question-button review-start-button"
+                  :disabled="questionsLoading || questionCount <= 0"
+                  @tap="startReviewQueue"
+                >
+                  开始审核
+                </button>
                 <button class="primary-button publish-question-button" @tap="confirmPublishReviewQueue">
                   发布题目
                 </button>
@@ -381,10 +388,14 @@
                   <text>{{ selectedStatusLabel }}</text><text class="select-arrow">⌄</text>
                 </view>
               </picker>
-              <button v-if="hasFilters" class="clear-filter-button" @tap="clearFilters">清空</button>
+              <button
+                v-if="activeSection !== 'review' && hasFilters"
+                class="clear-filter-button"
+                @tap="clearFilters"
+              >清空</button>
             </view>
 
-            <view v-if="selectedIds.length" class="bulk-toolbar">
+            <view v-if="activeSection !== 'review' && selectedIds.length" class="bulk-toolbar">
               <view class="bulk-copy">已选择 <text>{{ selectedIds.length }}</text> 道题</view>
               <view class="bulk-actions">
                 <button
@@ -499,8 +510,13 @@
       </template>
     </main>
 
-    <view v-if="drawerVisible" class="drawer-backdrop" @tap="requestCloseDrawer">
-      <view class="question-drawer" @tap.stop>
+    <view
+      v-if="drawerVisible"
+      class="drawer-backdrop"
+      :class="{ 'review-modal-backdrop': drawerMode === 'review' }"
+      @tap="requestCloseDrawer"
+    >
+      <view class="question-drawer" :class="{ 'review-modal': drawerMode === 'review' }" @tap.stop>
         <view class="drawer-header">
           <view>
             <view class="drawer-kicker">{{ drawerKicker }}</view>
@@ -982,7 +998,6 @@ const currentNavLabel = computed(() => {
     : label
 })
 const showHeaderBackButton = computed(() => (
-  activeSection.value === 'import' ||
   activeSection.value === 'review' ||
   (activeSection.value === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value))
 ))
@@ -1511,14 +1526,20 @@ function handleSummaryCardTap(item) {
   applySummaryFilter(item.key)
 }
 
-function navItemActive(key) {
-  return key === activeSection.value || (key === 'questions' && activeSection.value === 'review')
+async function startReviewQueue() {
+  if (questionsLoading.value || drawerLoading.value) return
+  const firstPendingQuestion = questions.value.find((item) => (
+    questionDisplayStatus(item) === QUESTION_STATUS.PENDING_REVIEW
+  ))
+  if (!firstPendingQuestion) {
+    uni.showToast({ title: '当前没有待审核题目', icon: 'none' })
+    return
+  }
+  await openEditDrawer(firstPendingQuestion, true)
 }
 
-function summaryCardActive(status) {
-  if (status === QUESTION_STATUS.ACTIVE || status === QUESTION_STATUS.ARCHIVED) return false
-  if (activeSection.value === 'review') return status === QUESTION_STATUS.PENDING_REVIEW
-  return activeSection.value === 'questions' && filters.status === status
+function navItemActive(key) {
+  return key === activeSection.value || (key === 'questions' && activeSection.value === 'review')
 }
 
 function openQuestionBankDialog(mode, bank = null) {
@@ -3409,19 +3430,25 @@ button {
   background: #fff;
   text-align: left;
   box-shadow: 0 7px 22px rgba(31, 50, 71, 0.025);
+  transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
 }
 
 .summary-card.interactive {
   cursor: pointer;
 }
 
-.summary-card.static {
-  cursor: default;
+.summary-card.interactive:hover {
+  border-color: #72d7c0;
+  box-shadow: 0 0 0 3px rgba(79, 205, 176, 0.08), 0 12px 30px rgba(50, 148, 128, 0.1);
+  transform: translateY(-1px);
 }
 
-.summary-card.active {
-  border-color: #72d7c0;
-  box-shadow: 0 0 0 3px rgba(79, 205, 176, 0.08);
+.summary-card.interactive:active {
+  transform: translateY(0);
+}
+
+.summary-card.static {
+  cursor: default;
 }
 
 .summary-top {
@@ -3530,6 +3557,17 @@ button {
   font-size: 13px;
   font-weight: 900;
   letter-spacing: 0.01em;
+}
+
+.review-start-button {
+  border-color: #8ddfcd;
+  color: #176b5d;
+  background: #f4fcfa;
+}
+
+.review-start-button:hover:not([disabled]) {
+  border-color: #5fcdb5;
+  background: #e7f8f3;
 }
 
 .secondary-button {
@@ -4360,6 +4398,13 @@ button {
   backdrop-filter: blur(2px);
 }
 
+.drawer-backdrop.review-modal-backdrop {
+  padding: 40px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
 .question-drawer {
   width: min(630px, calc(100vw - 90px));
   height: 100vh;
@@ -4367,6 +4412,15 @@ button {
   flex-direction: column;
   background: #f8fafb;
   box-shadow: -20px 0 50px rgba(22, 37, 53, 0.15);
+}
+
+.question-drawer.review-modal {
+  width: min(920px, calc(100vw - 120px));
+  height: min(820px, calc(100vh - 80px));
+  overflow: hidden;
+  border: 1px solid rgba(216, 229, 232, 0.95);
+  border-radius: 18px;
+  box-shadow: 0 28px 80px rgba(20, 36, 52, 0.24);
 }
 
 .drawer-header {

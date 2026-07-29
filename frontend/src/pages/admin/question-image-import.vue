@@ -251,7 +251,6 @@
 
     <view v-if="allowed && !editorVisible" class="recognize-bottom-bar">
       <button class="recognize-btn" :disabled="imageItems.length === 0 || recognizingCount > 0" @tap="startRecognition">
-        <text class="recognize-icon">⌁</text>
         <text>{{ recognizingCount > 0 ? `正在读取 ${recognizingCount}` : '进入预览' }}</text>
       </button>
       <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${recognizedQuestionCount} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
@@ -2088,9 +2087,9 @@ function returnFromImport() {
 
 .preview-layout {
   display: grid;
-  grid-template-columns: minmax(360rpx, 0.92fr) minmax(0, 1.4fr);
+  grid-template-columns: minmax(480rpx, 1.05fr) minmax(0, 1.48fr);
   gap: 18rpx;
-  align-items: start;
+  align-items: stretch;
 }
 
 .draft-list-panel,
@@ -2104,6 +2103,8 @@ function returnFromImport() {
 }
 
 .draft-list-panel {
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
 }
 
@@ -2127,7 +2128,9 @@ function returnFromImport() {
 }
 
 .preview-table {
-  max-height: 700rpx;
+  flex: 1;
+  min-height: 0;
+  max-height: none;
   overflow-y: auto;
 }
 
@@ -2979,11 +2982,6 @@ function returnFromImport() {
   box-shadow: none;
 }
 
-.recognize-icon {
-  font-size: 38rpx;
-  line-height: 1;
-}
-
 .recognize-hint {
   margin-top: 18rpx;
   color: #657695;
@@ -3257,8 +3255,9 @@ function returnFromImport() {
   }
 
   .preview-layout {
-    grid-template-columns: 430px minmax(0, 1fr);
+    grid-template-columns: minmax(520px, 0.92fr) minmax(0, 1.08fr);
     gap: 14px;
+    align-items: stretch;
   }
 
   .draft-list-panel,
@@ -3277,7 +3276,9 @@ function returnFromImport() {
   }
 
   .preview-table {
-    max-height: 544px;
+    flex: 1;
+    min-height: 0;
+    max-height: none;
   }
 
   .preview-row {
