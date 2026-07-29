@@ -582,7 +582,10 @@ function appendImportFiles(files) {
   imageItems.value = nextItems
   drafts.value = []
   selectedDraftId.value = ''
-  nextItems.forEach(recognizeImportItem)
+  // Read the items back through the Vue ref so async mutations happen on the
+  // reactive proxies. Mutating `nextItems` directly leaves the rendered status
+  // stuck at "识别中" even after Excel parsing has already finished.
+  imageItems.value.forEach(recognizeImportItem)
   markDryRunDirty()
 }
 
