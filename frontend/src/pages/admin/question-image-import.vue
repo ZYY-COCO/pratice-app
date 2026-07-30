@@ -162,25 +162,49 @@
           </view>
 
           <view class="detail-grid">
-            <picker :range="subjectLabels" :value="draftSubjectIndex(selectedDraftEntry.draft)" @change="handleDraftSubjectChange(selectedDraftEntry.draft, $event)">
-              <view class="draft-picker">科目：{{ selectedDraftEntry.draft.subject }}<text>⌄</text></view>
-            </picker>
-            <picker :range="draftModuleLabels(selectedDraftEntry.draft)" :value="draftModuleIndex(selectedDraftEntry.draft)" @change="handleDraftModuleChange(selectedDraftEntry.draft, $event)">
-              <view class="draft-picker">模块：{{ selectedDraftEntry.draft.module }}<text>⌄</text></view>
-            </picker>
-            <picker :range="draftSubmoduleLabels(selectedDraftEntry.draft)" :value="draftSubmoduleIndex(selectedDraftEntry.draft)" @change="handleDraftSubmoduleChange(selectedDraftEntry.draft, $event)">
-              <view class="draft-picker">考点：{{ selectedDraftEntry.draft.submodule }}<text>⌄</text></view>
-            </picker>
-            <picker :range="difficultyLabels" :value="difficultyIndex(selectedDraftEntry.draft.difficulty)" @change="handleDraftDifficultyChange(selectedDraftEntry.draft, $event)">
-              <view class="draft-picker">难度 {{ selectedDraftEntry.draft.difficulty }}<text>⌄</text></view>
-            </picker>
+            <AdminSelect
+              class="draft-admin-select"
+              :options="subjectLabels"
+              :value-index="draftSubjectIndex(selectedDraftEntry.draft)"
+              prefix="科目："
+              aria-label="科目"
+              @change="handleDraftSubjectChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="draftModuleLabels(selectedDraftEntry.draft)"
+              :value-index="draftModuleIndex(selectedDraftEntry.draft)"
+              prefix="模块："
+              aria-label="模块"
+              @change="handleDraftModuleChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="draftSubmoduleLabels(selectedDraftEntry.draft)"
+              :value-index="draftSubmoduleIndex(selectedDraftEntry.draft)"
+              prefix="考点："
+              aria-label="考点"
+              @change="handleDraftSubmoduleChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="difficultyLabels"
+              :value-index="difficultyIndex(selectedDraftEntry.draft.difficulty)"
+              prefix="难度 "
+              aria-label="难度"
+              @change="handleDraftDifficultyChange(selectedDraftEntry.draft, $event)"
+            />
           </view>
 
           <view class="draft-meta-grid">
             <input v-model="selectedDraftEntry.draft.exam_code" class="draft-meta-input" placeholder="考试代码：COMMON / Z001 / Z002" @input="markDryRunDirty" />
-            <picker :range="sourceTypeLabels" :value="sourceTypeIndex(selectedDraftEntry.draft.source_type)" @change="handleDraftSourceTypeChange(selectedDraftEntry.draft, $event)">
-              <view class="draft-picker">{{ sourceTypeLabel(selectedDraftEntry.draft.source_type) }}<text>⌄</text></view>
-            </picker>
+            <AdminSelect
+              class="draft-admin-select"
+              :options="sourceTypeLabels"
+              :value-index="sourceTypeIndex(selectedDraftEntry.draft.source_type)"
+              aria-label="来源类型"
+              @change="handleDraftSourceTypeChange(selectedDraftEntry.draft, $event)"
+            />
             <input v-model="selectedDraftEntry.draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
           </view>
 
@@ -295,6 +319,7 @@
 <script setup>
 import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AdminSelect from '../../components/AdminSelect.vue'
 import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
 import MathText from '../../components/MathText.vue'
 import {
@@ -1200,10 +1225,6 @@ function handleDraftDifficultyChange(draft, event) {
 function sourceTypeIndex(value) {
   const index = sourceTypeOptions.findIndex((item) => item === value)
   return index >= 0 ? index : 0
-}
-
-function sourceTypeLabel(value) {
-  return sourceTypeLabels[sourceTypeIndex(value)] || '手工录入'
 }
 
 function handleDraftSourceTypeChange(draft, event) {
@@ -2584,20 +2605,15 @@ defineExpose({
 }
 
 .picker-pill,
-.draft-picker {
+.draft-admin-select {
   min-height: 74rpx;
-  padding: 0 22rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12rpx;
-  border: 1rpx solid #dbe3ef;
-  border-radius: 18rpx;
-  background: #ffffff;
-  color: #263449;
-  font-size: 26rpx;
-  font-weight: 700;
-  box-sizing: border-box;
+}
+
+.draft-admin-select {
+  --admin-select-height: 66rpx;
+  --admin-select-radius: 16rpx;
+  --admin-select-font-size: 23rpx;
+  --admin-select-font-weight: 700;
 }
 
 .upload-empty {
@@ -2864,9 +2880,8 @@ defineExpose({
   box-sizing: border-box;
 }
 
-.draft-picker {
+.draft-admin-select {
   min-height: 66rpx;
-  font-size: 23rpx;
 }
 
 .draft-textarea {
@@ -3415,8 +3430,18 @@ defineExpose({
   }
 
   .picker-pill,
-  .draft-picker {
+  .draft-admin-select {
     min-height: 38px;
+  }
+
+  .draft-admin-select {
+    --admin-select-height: 38px;
+    --admin-select-radius: 8px;
+    --admin-select-font-size: 12px;
+    --admin-select-menu-min-width: 100%;
+  }
+
+  .picker-pill {
     border-radius: 8px;
     font-size: 12px;
   }

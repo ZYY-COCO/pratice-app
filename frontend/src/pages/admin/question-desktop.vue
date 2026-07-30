@@ -168,11 +168,6 @@
           </view>
 
           <view class="dashboard-panel">
-            <view
-              v-if="dashboardSortOpen"
-              class="dashboard-select-backdrop"
-              @tap="closeDashboardSortDropdown"
-            ></view>
             <view class="panel-heading">
               <view>
                 <view class="panel-title">刷题数据 · 高频错题</view>
@@ -180,66 +175,36 @@
               <view class="dashboard-filter-bar">
                 <view class="dashboard-filter-control">
                   <text class="dashboard-filter-label">题目类型</text>
-                  <picker
-                    :range="dashboardSubjectLabels"
-                    :value="selectedDashboardSubjectIndex"
+                  <AdminSelect
+                    class="dashboard-admin-select"
+                    :options="dashboardSubjectLabels"
+                    :value-index="selectedDashboardSubjectIndex"
+                    menu-align="right"
+                    aria-label="题目类型"
                     @change="handleDashboardSubjectChange"
-                  >
-                    <view class="dashboard-select">
-                      <text>{{ selectedDashboardSubjectLabel }}</text><text class="select-arrow">⌄</text>
-                    </view>
-                  </picker>
+                  />
                 </view>
                 <view class="dashboard-filter-control">
                   <text class="dashboard-filter-label">时间范围</text>
-                  <picker
-                    :range="dashboardTimeRangeLabels"
-                    :value="selectedDashboardTimeRangeIndex"
+                  <AdminSelect
+                    class="dashboard-admin-select compact"
+                    :options="dashboardTimeRangeLabels"
+                    :value-index="selectedDashboardTimeRangeIndex"
+                    menu-align="right"
+                    aria-label="时间范围"
                     @change="handleDashboardTimeRangeChange"
-                  >
-                    <view class="dashboard-select compact">
-                      <text>{{ selectedDashboardTimeRangeLabel }}</text><text class="select-arrow">⌄</text>
-                    </view>
-                  </picker>
+                  />
                 </view>
-                <view
-                  class="dashboard-filter-control dashboard-sort-control"
-                  :class="{ open: dashboardSortOpen }"
-                >
+                <view class="dashboard-filter-control">
                   <text class="dashboard-filter-label">排序</text>
-                  <button
-                    class="dashboard-select sort dashboard-sort-trigger"
-                    :class="{ open: dashboardSortOpen }"
-                    :aria-expanded="dashboardSortOpen"
-                    aria-haspopup="listbox"
-                    @tap.stop="toggleDashboardSortDropdown"
-                    @keydown.esc.stop.prevent="closeDashboardSortDropdown"
-                  >
-                    <text class="dashboard-sort-trigger-label">{{ selectedDashboardSortLabel }}</text>
-                    <text class="select-arrow" :class="{ open: dashboardSortOpen }">⌄</text>
-                  </button>
-                  <view
-                    v-if="dashboardSortOpen"
-                    class="dashboard-sort-menu"
-                    role="listbox"
-                    @tap.stop
-                  >
-                    <button
-                      v-for="option in dashboardSortOptions"
-                      :key="option.value"
-                      class="dashboard-sort-option"
-                      :class="{ selected: dashboardFilters.sort_by === option.value }"
-                      role="option"
-                      :aria-selected="dashboardFilters.sort_by === option.value"
-                      @tap.stop="selectDashboardSort(option.value)"
-                    >
-                      <text>{{ option.label }}</text>
-                      <text
-                        class="dashboard-sort-check"
-                        :class="{ visible: dashboardFilters.sort_by === option.value }"
-                      >✓</text>
-                    </button>
-                  </view>
+                  <AdminSelect
+                    class="dashboard-admin-select sort"
+                    :options="dashboardSortOptions"
+                    :value-index="selectedDashboardSortIndex"
+                    menu-align="right"
+                    aria-label="排序"
+                    @change="handleDashboardSortChange"
+                  />
                 </view>
               </view>
             </view>
@@ -409,31 +374,35 @@
                 <button v-if="filters.search" class="search-clear" @tap="clearSearch">×</button>
               </view>
 
-              <picker :range="subjectLabels" :value="selectedSubjectIndex" @change="handleSubjectChange">
-                <view class="filter-select">
-                  <text>{{ selectedSubjectLabel }}</text><text class="select-arrow">⌄</text>
-                </view>
-              </picker>
-              <picker :range="moduleLabels" :value="selectedModuleIndex" @change="handleModuleChange">
-                <view class="filter-select">
-                  <text>{{ selectedModuleLabel }}</text><text class="select-arrow">⌄</text>
-                </view>
-              </picker>
-              <picker :range="difficultyLabels" :value="selectedDifficultyIndex" @change="handleDifficultyChange">
-                <view class="filter-select narrow">
-                  <text>{{ selectedDifficultyLabel }}</text><text class="select-arrow">⌄</text>
-                </view>
-              </picker>
-              <picker
+              <AdminSelect
+                class="question-admin-select"
+                :options="subjectLabels"
+                :value-index="selectedSubjectIndex"
+                aria-label="科目筛选"
+                @change="handleSubjectChange"
+              />
+              <AdminSelect
+                class="question-admin-select"
+                :options="moduleLabels"
+                :value-index="selectedModuleIndex"
+                aria-label="模块筛选"
+                @change="handleModuleChange"
+              />
+              <AdminSelect
+                class="question-admin-select narrow"
+                :options="difficultyLabels"
+                :value-index="selectedDifficultyIndex"
+                aria-label="难度筛选"
+                @change="handleDifficultyChange"
+              />
+              <AdminSelect
                 v-if="activeSection !== 'review'"
-                :range="statusLabels"
-                :value="selectedStatusIndex"
+                class="question-admin-select narrow"
+                :options="statusLabels"
+                :value-index="selectedStatusIndex"
+                aria-label="状态筛选"
                 @change="handleStatusChange"
-              >
-                <view class="filter-select narrow">
-                  <text>{{ selectedStatusLabel }}</text><text class="select-arrow">⌄</text>
-                </view>
-              </picker>
+              />
               <button
                 v-if="activeSection !== 'review' && hasFilters"
                 class="clear-filter-button"
@@ -580,24 +549,36 @@
             <view class="drawer-meta-grid">
               <view class="form-field">
                 <view class="form-label">科目</view>
-                <picker :range="editorSubjectLabels" :value="editorSubjectIndex" @change="handleEditorSubjectChange">
-                  <view class="form-picker">{{ form.subject }}<text>⌄</text></view>
-                </picker>
+                <AdminSelect
+                  class="form-admin-select"
+                  :options="editorSubjectLabels"
+                  :value-index="editorSubjectIndex"
+                  aria-label="科目"
+                  @change="handleEditorSubjectChange"
+                />
               </view>
               <view class="form-field">
                 <view class="form-label">模块</view>
-                <picker :range="editorModuleLabels" :value="editorModuleIndex" @change="handleEditorModuleChange">
-                  <view class="form-picker">{{ form.module }}<text>⌄</text></view>
-                </picker>
+                <AdminSelect
+                  class="form-admin-select"
+                  :options="editorModuleLabels"
+                  :value-index="editorModuleIndex"
+                  aria-label="模块"
+                  @change="handleEditorModuleChange"
+                />
               </view>
             </view>
 
             <view class="drawer-meta-grid">
               <view class="form-field">
                 <view class="form-label">考点</view>
-                <picker :range="editorSubmoduleLabels" :value="editorSubmoduleIndex" @change="handleEditorSubmoduleChange">
-                  <view class="form-picker">{{ form.submodule }}<text>⌄</text></view>
-                </picker>
+                <AdminSelect
+                  class="form-admin-select"
+                  :options="editorSubmoduleLabels"
+                  :value-index="editorSubmoduleIndex"
+                  aria-label="考点"
+                  @change="handleEditorSubmoduleChange"
+                />
               </view>
               <view class="form-field">
                 <view class="form-label">难度</view>
@@ -818,6 +799,7 @@
 <script setup>
 import { computed, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AdminSelect from '../../components/AdminSelect.vue'
 import {
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
@@ -858,7 +840,6 @@ const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
 const sidebarCollapsed = ref(false)
-const dashboardSortOpen = ref(false)
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
   today_practicing_users: 0,
@@ -1136,19 +1117,6 @@ const selectedDashboardTimeRangeIndex = computed(() => optionIndex(
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, filters.module))
 const selectedDifficultyIndex = computed(() => optionIndex(difficultyOptions, filters.difficulty))
 const selectedStatusIndex = computed(() => optionIndex(statusOptions, filters.status))
-const selectedSubjectLabel = computed(() => QUESTION_SUBJECTS[selectedSubjectIndex.value]?.label || '全部科目')
-const selectedDashboardSubjectLabel = computed(() => (
-  dashboardSubjectOptions.value[selectedDashboardSubjectIndex.value]?.label || '全部类型'
-))
-const selectedDashboardSortLabel = computed(() => (
-  dashboardSortOptions[selectedDashboardSortIndex.value]?.label || '答错次数：从高到低'
-))
-const selectedDashboardTimeRangeLabel = computed(() => (
-  dashboardTimeRangeOptions[selectedDashboardTimeRangeIndex.value]?.label || '全部时间'
-))
-const selectedModuleLabel = computed(() => moduleOptions.value[selectedModuleIndex.value]?.label || '全部模块')
-const selectedDifficultyLabel = computed(() => difficultyOptions[selectedDifficultyIndex.value]?.label || '全部难度')
-const selectedStatusLabel = computed(() => statusOptions[selectedStatusIndex.value]?.label || '全部状态')
 const hasFilters = computed(() => Boolean(
   filters.subject || filters.module || filters.difficulty || filters.status || filters.search
 ))
@@ -1396,7 +1364,6 @@ async function switchSection(section) {
     return
   }
   reviewQuestionBank.value = null
-  dashboardSortOpen.value = false
   if (section === 'import') {
     importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
     importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
@@ -1529,18 +1496,10 @@ async function handleDashboardSubjectChange(event) {
   await loadDashboard()
 }
 
-function toggleDashboardSortDropdown() {
-  dashboardSortOpen.value = !dashboardSortOpen.value
-}
-
-function closeDashboardSortDropdown() {
-  dashboardSortOpen.value = false
-}
-
-async function selectDashboardSort(value) {
-  dashboardSortOpen.value = false
+async function handleDashboardSortChange(event) {
+  const value = dashboardSortOptions[Number(event?.detail?.value || 0)]?.value || 'wrong_count'
   if (dashboardFilters.sort_by === value) return
-  dashboardFilters.sort_by = value || 'wrong_count'
+  dashboardFilters.sort_by = value
   await loadDashboard()
 }
 
@@ -3403,14 +3362,6 @@ button {
   gap: 7px;
 }
 
-.dashboard-sort-control {
-  position: relative;
-}
-
-.dashboard-sort-control.open {
-  z-index: 82;
-}
-
 .dashboard-filter-label {
   color: #8693a3;
   font-size: 9px;
@@ -3418,147 +3369,21 @@ button {
   white-space: nowrap;
 }
 
-.dashboard-select {
+.dashboard-admin-select {
   width: 126px;
-  height: 34px;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid #dbe4e8;
-  border-radius: 8px;
-  box-sizing: border-box;
-  color: #657389;
-  background: #fff;
-  font-size: 9px;
+  --admin-select-height: 34px;
+  --admin-select-font-size: 11px;
+  --admin-select-menu-min-width: 126px;
 }
 
-.dashboard-select.sort {
+.dashboard-admin-select.sort {
   width: 174px;
+  --admin-select-menu-min-width: 174px;
 }
 
-.dashboard-select.compact {
+.dashboard-admin-select.compact {
   width: 104px;
-}
-
-.dashboard-select-backdrop {
-  position: fixed;
-  z-index: 80;
-  inset: 0;
-  background: transparent;
-}
-
-.dashboard-sort-trigger {
-  margin: 0;
-  padding: 0 11px;
-  cursor: pointer;
-  line-height: 1;
-  text-align: left;
-  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
-}
-
-.dashboard-sort-trigger:hover,
-.dashboard-sort-trigger.open {
-  border-color: #8edecd;
-  color: #315e58;
-  background: #fbfefd;
-  box-shadow: 0 0 0 3px rgba(80, 208, 180, 0.09);
-}
-
-.dashboard-sort-trigger-label {
-  min-width: 0;
-  overflow: hidden;
-  color: inherit;
-  font-size: 11px;
-  font-weight: 650;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.dashboard-sort-trigger .select-arrow {
-  flex: 0 0 auto;
-  font-size: 12px;
-  transform-origin: center;
-  transition: transform 0.16s ease, color 0.16s ease;
-}
-
-.dashboard-sort-trigger .select-arrow.open {
-  color: #2aaa90;
-  transform: rotate(180deg);
-}
-
-.dashboard-sort-menu {
-  width: 174px;
-  padding: 6px;
-  position: absolute;
-  z-index: 83;
-  top: calc(100% + 7px);
-  right: 0;
-  border: 1px solid #dce7e8;
-  border-radius: 10px;
-  box-sizing: border-box;
-  background: #ffffff;
-  box-shadow: 0 16px 38px rgba(35, 55, 74, 0.16), 0 3px 10px rgba(35, 55, 74, 0.07);
-  transform-origin: top right;
-  animation: dashboard-dropdown-in 0.15s ease-out;
-}
-
-.dashboard-sort-option {
-  width: 100%;
-  height: 40px;
-  margin: 0;
-  padding: 0 10px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border-radius: 7px;
-  box-sizing: border-box;
-  color: #506075;
-  background: transparent;
-  cursor: pointer;
-  font-size: 12px;
-  font-weight: 550;
-  line-height: 1;
-  text-align: left;
-  transition: color 0.14s ease, background 0.14s ease;
-}
-
-.dashboard-sort-option + .dashboard-sort-option {
-  margin-top: 2px;
-}
-
-.dashboard-sort-option:hover {
-  color: #294c49;
-  background: #f1f6f7;
-}
-
-.dashboard-sort-option.selected {
-  color: #16826e;
-  background: #eaf9f5;
-  font-weight: 750;
-}
-
-.dashboard-sort-check {
-  margin-left: 8px;
-  color: #22aa8f;
-  font-size: 12px;
-  font-weight: 900;
-  opacity: 0;
-}
-
-.dashboard-sort-check.visible {
-  opacity: 1;
-}
-
-@keyframes dashboard-dropdown-in {
-  from {
-    opacity: 0;
-    transform: translateY(-4px) scale(0.98);
-  }
-  to {
-    opacity: 1;
-    transform: translateY(0) scale(1);
-  }
+  --admin-select-menu-min-width: 126px;
 }
 
 .data-table {
@@ -3990,28 +3815,17 @@ button {
   line-height: 22px;
 }
 
-.filter-select {
+.question-admin-select {
   width: 132px;
-  height: 37px;
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid #dbe4e8;
-  border-radius: 8px;
-  box-sizing: border-box;
-  color: #657389;
-  background: #fff;
-  font-size: 9px;
+  flex: 0 0 auto;
+  --admin-select-height: 37px;
+  --admin-select-font-size: 10px;
+  --admin-select-menu-min-width: 132px;
 }
 
-.filter-select.narrow {
+.question-admin-select.narrow {
   width: 104px;
-}
-
-.select-arrow {
-  color: #9aa5b1;
-  font-size: 11px;
+  --admin-select-menu-min-width: 118px;
 }
 
 .clear-filter-button {
@@ -4829,23 +4643,11 @@ button {
   font-weight: 700;
 }
 
-.form-picker {
-  height: 38px;
+.form-admin-select {
   margin-top: 8px;
-  padding: 0 11px;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  border: 1px solid #dbe4e8;
-  border-radius: 8px;
-  box-sizing: border-box;
-  color: #536277;
-  background: #fff;
-  font-size: 10px;
-}
-
-.form-picker text {
-  color: #9aa4b0;
+  --admin-select-height: 38px;
+  --admin-select-font-size: 11px;
+  --admin-select-menu-min-width: 100%;
 }
 
 .difficulty-picker {
