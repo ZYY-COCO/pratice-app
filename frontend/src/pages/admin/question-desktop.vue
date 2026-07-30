@@ -1,5 +1,11 @@
 <template>
-  <view class="portal-shell">
+  <view
+    class="portal-shell"
+    :class="{
+      'sidebar-collapsed': sidebarCollapsed,
+      'dashboard-focus-mode': sidebarCollapsed && activeSection === 'dashboard'
+    }"
+  >
     <aside class="portal-sidebar">
       <view class="sidebar-brand">
         <view class="brand-mark">
@@ -9,6 +15,13 @@
           <view class="brand-name">港研通</view>
           <view class="brand-caption">题库中台</view>
         </view>
+        <button
+          class="sidebar-focus-toggle"
+          :title="activeSection === 'dashboard' ? '收起导航并进入数据专注模式' : '收起导航并扩大工作区'"
+          @tap.stop="toggleSidebarCollapsed"
+        >
+          <text>‹</text>
+        </button>
       </view>
 
       <view class="sidebar-section-label">工作台</view>
@@ -39,6 +52,16 @@
       </button>
     </aside>
 
+    <button
+      v-if="sidebarCollapsed"
+      class="dashboard-focus-restore"
+      :title="activeSection === 'dashboard' ? '退出数据专注模式' : '展开导航'"
+      @tap.stop="toggleSidebarCollapsed"
+    >
+      <text class="dashboard-focus-restore-icon">›</text>
+      <text class="dashboard-focus-restore-label">展开导航</text>
+    </button>
+
     <main class="portal-main">
       <header class="portal-header">
         <view class="header-left">
@@ -56,6 +79,15 @@
           </view>
         </view>
         <view class="header-actions">
+          <view v-if="activeSection === 'import'" class="header-import-actions">
+            <button class="header-import-button template" @tap="downloadQuestionImportTemplate">
+              下载模板
+            </button>
+            <button class="header-import-button history" @tap="showQuestionImportHistory">
+              <text class="header-import-history-icon">◷</text>
+              <text>导入记录</text>
+            </button>
+          </view>
           <button class="header-refresh" :disabled="refreshing" @tap="refreshCurrentSection">
             <text class="refresh-symbol" :class="{ spinning: refreshing }">↻</text>
             <text>{{ refreshing ? '刷新中' : '刷新数据' }}</text>
@@ -483,7 +515,10 @@
 
         <section v-if="activeSection === 'import'" class="content-section import-section">
           <QuestionImageImport
+            ref="questionImageImportRef"
             embedded
+            :sidebar-collapsed="sidebarCollapsed"
+            :dev-preview="devPreviewMode"
             :portal-entry="true"
             :question-bank-id="importQuestionBankId"
             :question-bank-name="importQuestionBankName"
@@ -790,6 +825,7 @@ const questionLoadError = ref(false)
 const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
+const sidebarCollapsed = ref(false)
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
   today_practicing_users: 0,
@@ -800,7 +836,6 @@ const dashboard = reactive({
 const dashboardFilters = reactive({
   subject: '',
   sort_by: 'wrong_count',
-  min_attempts: 5,
   period_days: 0
 })
 const globalQuestionStats = reactive({
@@ -819,6 +854,7 @@ const reviewQuestionBank = ref(null)
 const showGlobalQuestionList = ref(false)
 const importQuestionBankId = ref('')
 const importQuestionBankName = ref('')
+const questionImageImportRef = ref(null)
 const questionBankDialogVisible = ref(false)
 const questionBankDialogMode = ref('create')
 const questionBankNameDraft = ref('')
@@ -1210,7 +1246,6 @@ async function loadDashboard() {
     const response = await fetchQuestionAdminDashboard({
       subject: dashboardFilters.subject,
       sort_by: dashboardFilters.sort_by,
-      min_attempts: dashboardFilters.min_attempts,
       period_days: dashboardFilters.period_days
     })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
@@ -1346,6 +1381,10 @@ async function switchSection(section) {
   }
 }
 
+function toggleSidebarCollapsed() {
+  sidebarCollapsed.value = !sidebarCollapsed.value
+}
+
 async function refreshCurrentSection() {
   if (refreshing.value) return
   refreshing.value = true
@@ -1362,6 +1401,14 @@ async function refreshCurrentSection() {
   } finally {
     refreshing.value = false
   }
+}
+
+function downloadQuestionImportTemplate() {
+  questionImageImportRef.value?.downloadImportTemplate?.()
+}
+
+function showQuestionImportHistory() {
+  questionImageImportRef.value?.showImportHistory?.()
 }
 
 async function refreshQuestionData() {
@@ -2210,7 +2257,6 @@ function loadDevPreviewDashboard() {
   const periodStart = periodDays ? Date.now() - periodDays * 24 * 60 * 60 * 1000 : 0
   const filteredItems = previewItems.filter((item) => {
     if (dashboardFilters.subject && item.subject !== dashboardFilters.subject) return false
-    if (item.attempt_count < Number(dashboardFilters.min_attempts || 1)) return false
     if (periodStart && new Date(item.latest_answered_at).getTime() < periodStart) return false
     return true
   })
@@ -2374,13 +2420,91 @@ button {
     radial-gradient(circle at 10% 0%, rgba(89, 211, 184, 0.14), transparent 26%),
     linear-gradient(180deg, var(--sidebar), var(--sidebar-deep));
   color: #fff;
+  transition: transform 0.28s ease, opacity 0.22s ease;
 }
 
 .sidebar-brand {
+  position: relative;
   display: flex;
   align-items: center;
   gap: 12px;
   padding: 0 10px;
+}
+
+.sidebar-focus-toggle {
+  width: 30px;
+  height: 30px;
+  min-height: 30px;
+  margin: 0;
+  padding: 0 0 2px;
+  position: absolute;
+  top: 7px;
+  right: -4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid rgba(119, 226, 202, 0.38);
+  border-radius: 9px;
+  box-sizing: border-box;
+  color: #89ead4;
+  background: rgba(255, 255, 255, 0.07);
+  box-shadow: 0 8px 20px rgba(9, 25, 42, 0.18);
+  cursor: pointer;
+  font-size: 25px;
+  font-weight: 500;
+  line-height: 1;
+  transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.sidebar-focus-toggle:hover {
+  transform: translateX(-2px);
+  border-color: rgba(119, 226, 202, 0.72);
+  background: rgba(80, 208, 180, 0.14);
+}
+
+.dashboard-focus-restore {
+  width: auto;
+  min-width: 38px;
+  height: 38px;
+  margin: 0;
+  padding: 0 11px 0 8px;
+  position: fixed;
+  z-index: 60;
+  left: 0;
+  top: 18px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  border: 1px solid #bfe8df;
+  border-left: 0;
+  border-radius: 0 11px 11px 0;
+  box-sizing: border-box;
+  color: #247e6d;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 9px 24px rgba(29, 75, 68, 0.13);
+  cursor: pointer;
+  line-height: 1;
+}
+
+.dashboard-focus-restore-icon {
+  font-size: 25px;
+  line-height: 1;
+}
+
+.dashboard-focus-restore-label {
+  max-width: 0;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 700;
+  white-space: nowrap;
+  opacity: 0;
+  transition: max-width 0.2s ease, opacity 0.2s ease;
+}
+
+.dashboard-focus-restore:hover .dashboard-focus-restore-label {
+  max-width: 58px;
+  opacity: 1;
 }
 
 .brand-mark {
@@ -2537,6 +2661,7 @@ button {
 .portal-main {
   min-height: 100vh;
   margin-left: 238px;
+  transition: margin-left 0.28s ease;
 }
 
 .portal-header {
@@ -2548,6 +2673,8 @@ button {
   border-bottom: 1px solid #e1e8ec;
   box-sizing: border-box;
   background: rgba(248, 251, 252, 0.92);
+  overflow: hidden;
+  transition: height 0.24s ease, padding 0.24s ease, opacity 0.18s ease;
 }
 
 .header-left {
@@ -2608,6 +2735,45 @@ button {
   display: flex;
   align-items: center;
   gap: 18px;
+}
+
+.header-import-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.header-import-button {
+  width: auto;
+  height: 36px;
+  margin: 0;
+  padding: 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 9px;
+  box-sizing: border-box;
+  font-size: 11px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.header-import-button.template {
+  border: 1px solid #9be3d4;
+  color: #087c6d;
+  background: #effcf8;
+}
+
+.header-import-button.history {
+  border: 1px solid #bdcce1;
+  color: #50647d;
+  background: #ffffff;
+}
+
+.header-import-history-icon {
+  font-size: 13px;
+  line-height: 1;
 }
 
 .header-refresh {
@@ -2676,6 +2842,7 @@ button {
 .content-section {
   padding: 30px 34px 44px;
   box-sizing: border-box;
+  transition: padding 0.26s ease;
 }
 
 .import-section {
@@ -2888,9 +3055,13 @@ button {
 }
 
 .welcome-row {
+  max-height: 110px;
+  overflow: hidden;
   display: flex;
   align-items: flex-end;
   justify-content: space-between;
+  opacity: 1;
+  transition: max-height 0.22s ease, opacity 0.16s ease, transform 0.22s ease;
 }
 
 .welcome-kicker {
@@ -2939,6 +3110,65 @@ button {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 16px;
+  transition: margin-top 0.22s ease;
+}
+
+.sidebar-collapsed .portal-sidebar {
+  transform: translateX(-100%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.sidebar-collapsed .portal-main {
+  margin-left: 0;
+}
+
+.sidebar-collapsed:not(.dashboard-focus-mode) .portal-header {
+  padding-left: 58px;
+  padding-right: 22px;
+}
+
+.sidebar-collapsed .question-bank-section {
+  max-width: none;
+  padding: 22px 22px 36px;
+}
+
+.sidebar-collapsed .bank-file-grid {
+  grid-template-columns: repeat(auto-fill, minmax(280px, 320px));
+  gap: 14px;
+}
+
+.dashboard-focus-mode .portal-header {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.dashboard-focus-mode .dashboard-section {
+  min-height: 100vh;
+  padding: 16px 18px 30px;
+}
+
+.dashboard-focus-mode .welcome-row {
+  max-height: 0;
+  opacity: 0;
+  transform: translateY(-12px);
+  pointer-events: none;
+}
+
+.dashboard-focus-mode .dashboard-metrics {
+  margin-top: 0;
+}
+
+.dashboard-focus-mode .metric-card {
+  min-height: 126px;
+}
+
+.dashboard-focus-mode .dashboard-panel {
+  margin-top: 14px;
 }
 
 .metric-card {
@@ -4702,6 +4932,10 @@ button {
 }
 
 @media (max-width: 1180px) {
+  .sidebar-focus-toggle {
+    display: none;
+  }
+
   .portal-sidebar {
     width: 82px;
     padding-left: 12px;

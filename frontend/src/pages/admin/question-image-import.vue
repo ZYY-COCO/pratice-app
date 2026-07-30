@@ -1,6 +1,10 @@
 <template>
-  <view class="image-import-page" :class="{ embedded: props.embedded }" :style="themeInlineStyle">
-    <view v-if="!editorVisible" class="import-hero">
+  <view
+    class="image-import-page"
+    :class="{ embedded: props.embedded, 'sidebar-collapsed': props.sidebarCollapsed }"
+    :style="themeInlineStyle"
+  >
+    <view v-if="!editorVisible && !props.embedded" class="import-hero">
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
         <view class="hero-subtitle">上传标准 Excel 模板，逐行校验题目内容</view>
@@ -289,7 +293,7 @@
 </template>
 
 <script setup>
-import { computed, onMounted, reactive, ref } from 'vue'
+import { computed, onMounted, reactive, ref, watch } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
 import MathText from '../../components/MathText.vue'
@@ -309,6 +313,8 @@ import { QUESTION_CATALOG } from './question-admin-catalog'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const props = defineProps({
   embedded: Boolean,
+  sidebarCollapsed: Boolean,
+  devPreview: Boolean,
   portalEntry: Boolean,
   questionBankId: {
     type: String,
@@ -422,6 +428,12 @@ const canCommit = computed(() => (
   Number(dryRunResult.value.duplicate_count || 0) === 0
 ))
 
+watch(() => props.devPreview, (enabled) => {
+  if (!import.meta.env.DEV || !props.embedded || !enabled) return
+  allowed.value = true
+  loading.value = false
+}, { immediate: true })
+
 onLoad((options = {}) => {
   void initializeWorkspace(options)
 })
@@ -439,6 +451,11 @@ async function initializeWorkspace(options = {}) {
   portalEntry.value = props.embedded ? Boolean(props.portalEntry) : options.portal === '1'
   questionBankId.value = String(props.embedded ? props.questionBankId : (options.question_bank_id || ''))
   questionBankName.value = String(props.embedded ? props.questionBankName : (options.question_bank_name || ''))
+  if (import.meta.env.DEV && props.embedded && (props.devPreview || options.preview === '1')) {
+    allowed.value = true
+    loading.value = false
+    return
+  }
   if (!isLoggedIn()) {
     const loginTarget = portalEntry.value
       ? `/pages/login/index?portal=1&redirect=${encodeURIComponent('/pages/admin/question-desktop?section=questions')}`
@@ -1420,6 +1437,11 @@ function returnFromImport() {
     }
   })
 }
+
+defineExpose({
+  downloadImportTemplate,
+  showImportHistory
+})
 </script>
 
 <style scoped>
@@ -3066,7 +3088,12 @@ function returnFromImport() {
   .image-import-page.embedded {
     position: relative;
     min-height: calc(100vh - 86px);
-    padding: 18px 32px 120px;
+    padding: 10px 32px 112px;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed {
+    padding-left: 20px;
+    padding-right: 20px;
   }
 
   .image-import-page.embedded .recognize-bottom-bar {
@@ -3086,6 +3113,13 @@ function returnFromImport() {
     margin-left: auto;
     margin-right: auto;
     box-sizing: border-box;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed .landing-content,
+  .image-import-page.embedded.sidebar-collapsed .import-content,
+  .image-import-page.embedded.sidebar-collapsed .screen-state {
+    width: 100%;
+    max-width: none;
   }
 
   .import-hero {
@@ -3137,6 +3171,15 @@ function returnFromImport() {
   .landing-content,
   .import-content {
     margin-top: 15px;
+  }
+
+  .image-import-page.embedded .landing-content,
+  .image-import-page.embedded .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed .recognize-bottom-bar {
+    width: min(900px, calc(100% - 40px));
   }
 
   .file-drop-zone,
