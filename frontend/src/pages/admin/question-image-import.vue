@@ -155,6 +155,26 @@
             <view class="detail-status" :class="selectedDraftEntry.tone">{{ selectedDraftEntry.status }}</view>
           </view>
 
+          <view v-if="selectedDraftEntry.errors.length" class="detail-issue-panel">
+            <view class="issue-panel-head">
+              <view>
+                <view class="issue-kicker">CHECK DETAIL</view>
+                <view class="issue-title">{{ excelRowLabel(selectedDraftEntry.draft, selectedDraftEntry.index) }}：字段需检查</view>
+              </view>
+              <view class="issue-count">{{ selectedDraftEntry.errors.length }} 项</view>
+            </view>
+            <view class="issue-list">
+              <view
+                v-for="(error, errorIndex) in selectedDraftEntry.errors"
+                :key="`${selectedDraftEntry.draft.id}-issue-${errorIndex}`"
+                class="issue-item"
+              >
+                <text class="issue-dot"></text>
+                <text>{{ formatDraftIssue(error, selectedDraftEntry) }}</text>
+              </view>
+            </view>
+          </view>
+
           <view class="detail-grid">
             <AdminSelect
               class="draft-admin-select"
@@ -234,10 +254,6 @@
           <view class="detail-field-label">解析</view>
           <textarea v-model="selectedDraftEntry.draft.explanation" class="draft-textarea explanation" placeholder="解析 / 答案理由" @input="markDryRunDirty" />
 
-          <view v-if="selectedDraftEntry.errors.length" class="error-list">
-            <view v-for="error in selectedDraftEntry.errors" :key="error" class="error-item">{{ error }}</view>
-          </view>
-
           <view class="draft-actions">
             <button class="line-btn" @tap="duplicateDraft(selectedDraftEntry.draft)">复制题目</button>
             <button class="danger-line-btn" @tap="removeDraft(selectedDraftEntry.draft.id)">删除题目</button>
@@ -290,11 +306,6 @@
     </view>
 
     <view v-if="allowed && editorVisible" class="import-bottom-bar preview-bottom-bar">
-      <view class="bottom-summary">
-        <text>已读取 {{ totalDraftCount }}</text>
-        <text>待入审 {{ importableDraftCount }}</text>
-        <text>题库：{{ selectedImportBankName || '未选择' }}</text>
-      </view>
       <view class="bottom-actions">
         <button class="bottom-btn ghost" :disabled="dryRunLoading || importSaving" @tap="returnToFileSelection">
           返回上传
@@ -1331,9 +1342,17 @@ function draftTone(draft, index) {
 
 function draftStatusText(draft, index) {
   const errors = draftErrors(draft, index)
-  if (errors.length) return '待入审'
+  if (errors.length) return '需检查'
   const check = dryRunResult.value?.items?.find((item) => item.index === index)
   return check?.valid ? '可入审' : '待入审'
+}
+
+function formatDraftIssue(error, entry) {
+  const rowLabel = excelRowLabel(entry?.draft, entry?.index || 0)
+  const text = String(error || '').trim()
+  const prefix = `${rowLabel}：`
+  if (text.startsWith(prefix)) return text.slice(prefix.length)
+  return text || '请检查该行字段'
 }
 
 function buildImportPayload() {
@@ -2326,6 +2345,79 @@ defineExpose({
   font-weight: 700;
 }
 
+.detail-issue-panel {
+  margin: -4rpx 0 20rpx;
+  padding: 18rpx 20rpx;
+  border: 1rpx solid #fed7aa;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #fff7ed 0%, #fffaf3 100%);
+  box-shadow: inset 4rpx 0 0 #fb923c;
+  box-sizing: border-box;
+}
+
+.issue-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.issue-kicker {
+  color: #ea580c;
+  font-size: 18rpx;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.issue-title {
+  margin-top: 6rpx;
+  color: #9a3412;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.issue-count {
+  flex: 0 0 auto;
+  min-width: 58rpx;
+  height: 42rpx;
+  padding: 0 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  color: #c2410c;
+  background: #ffedd5;
+  font-size: 20rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.issue-list {
+  margin-top: 14rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  color: #9a3412;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.issue-dot {
+  flex: 0 0 10rpx;
+  width: 10rpx;
+  height: 10rpx;
+  margin-top: 11rpx;
+  border-radius: 999rpx;
+  background: #fb923c;
+}
+
 .detail-grid {
   margin-bottom: 16rpx;
   display: grid;
@@ -2967,30 +3059,17 @@ defineExpose({
   color: #0f172a;
 }
 
-.error-list {
-  margin-top: 16rpx;
-  padding: 16rpx;
-  border-radius: 16rpx;
-  background: #fff7ed;
-}
-
-.error-item {
-  font-size: 22rpx;
-  line-height: 1.45;
-  color: #c2410c;
-}
-
 .import-bottom-bar {
   position: fixed;
   left: 24rpx;
   right: 24rpx;
   bottom: calc(env(safe-area-inset-bottom) + 20rpx);
   z-index: 20;
-  min-height: 150rpx;
-  padding: 16rpx;
+  min-height: 112rpx;
+  padding: 18rpx;
   display: flex;
-  flex-direction: column;
-  gap: 12rpx;
+  align-items: center;
+  justify-content: center;
   border: 1rpx solid rgba(226, 232, 240, 0.92);
   border-radius: 26rpx;
   background: #ffffff;
@@ -3055,21 +3134,22 @@ defineExpose({
 
 .bottom-actions {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 14rpx;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  width: 100%;
 }
 
 .bottom-btn {
-  height: 76rpx;
+  height: 82rpx;
   min-width: 0;
   margin: 0;
   padding: 0 18rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  border-radius: 20rpx;
-  font-size: 25rpx;
-  font-weight: 800;
+  border-radius: 22rpx;
+  font-size: 26rpx;
+  font-weight: 900;
   line-height: 1;
   white-space: nowrap;
   box-sizing: border-box;
@@ -3410,6 +3490,46 @@ defineExpose({
     font-size: 20px;
   }
 
+  .detail-issue-panel {
+    margin: -2px 0 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    box-shadow: inset 3px 0 0 #fb923c;
+  }
+
+  .issue-kicker {
+    font-size: 9px;
+  }
+
+  .issue-title {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .issue-count {
+    min-width: 42px;
+    height: 26px;
+    padding: 0 9px;
+    font-size: 11px;
+  }
+
+  .issue-list {
+    margin-top: 9px;
+    gap: 7px;
+  }
+
+  .issue-item {
+    gap: 7px;
+    font-size: 12px;
+  }
+
+  .issue-dot {
+    flex-basis: 6px;
+    width: 6px;
+    height: 6px;
+    margin-top: 6px;
+  }
+
   .detail-grid {
     margin-bottom: 10px;
     gap: 9px;
@@ -3496,16 +3616,6 @@ defineExpose({
     font-size: 13px;
   }
 
-  .error-list {
-    margin-top: 12px;
-    padding: 10px;
-    border-radius: 10px;
-  }
-
-  .error-item {
-    font-size: 11px;
-  }
-
   .draft-actions {
     margin-top: 12px;
   }
@@ -3531,11 +3641,22 @@ defineExpose({
     box-shadow: 0 18px 42px rgba(24, 47, 65, 0.14);
   }
 
+  .import-bottom-bar.preview-bottom-bar {
+    width: min(680px, calc(100vw - 96px));
+    min-height: 78px;
+    padding: 14px 16px;
+  }
+
+  .preview-bottom-bar .bottom-actions {
+    gap: 12px;
+  }
+
   .recognize-btn,
   .bottom-btn {
-    height: 42px;
-    border-radius: 9px;
-    font-size: 11px;
+    height: 48px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 900;
   }
 
   .recognize-btn,
@@ -3677,6 +3798,7 @@ defineExpose({
 
   .image-import-page.embedded.preview-mode.sidebar-collapsed .import-bottom-bar {
     bottom: 12px;
+    width: min(680px, calc(100vw - 72px));
   }
 
   .bank-picker-dialog {

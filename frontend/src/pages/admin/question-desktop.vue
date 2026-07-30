@@ -825,6 +825,7 @@ import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.
 import QuestionImageImport from './question-image-import.vue'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
+import { downloadReturnedQuestionsWorkbook } from '../../utils/xlsxQuestionExport.mjs'
 import {
   QUESTION_CATALOG,
   QUESTION_MODULES,
@@ -894,6 +895,8 @@ const drawerLoading = ref(false)
 const drawerMode = ref('edit')
 const saving = ref(false)
 const devPreviewMode = ref(false)
+const returnedReviewQuestions = ref([])
+const returnedReviewBatchExported = ref(false)
 let searchTimer = null
 
 const filters = reactive({
@@ -920,7 +923,10 @@ const form = reactive({
   difficulty: 2,
   status: 'archived',
   review_status: 'pending',
-  review_note: ''
+  review_note: '',
+  source_type: 'manual',
+  source_year: '',
+  original_review_note: ''
 })
 
 const navItems = [
@@ -1529,6 +1535,7 @@ async function handleDashboardTimeRangeChange(event) {
 async function applySummaryFilter(status) {
   if (status === QUESTION_STATUS.ACTIVE || status === QUESTION_STATUS.ARCHIVED) return
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
+    resetReturnedReviewExportBatch()
     reviewQuestionBank.value = activeQuestionBank.value || null
     activeSection.value = 'review'
     activeQuestionBank.value = null
@@ -1815,6 +1822,7 @@ async function confirmPublishReviewQueue() {
         icon: updatedCount > 0 ? 'success' : 'none'
       })
       await refreshQuestionData()
+      maybeExportReturnedReviewBatch()
     } catch (error) {
       uni.showToast({ title: '发布失败，请刷新后重试', icon: 'none' })
     } finally {
@@ -1850,6 +1858,7 @@ async function confirmPublishReviewQueue() {
       icon: updatedCount > 0 ? 'success' : 'none'
     })
     await refreshQuestionData()
+    maybeExportReturnedReviewBatch()
   } catch (error) {
     uni.showToast({ title: '发布失败，请刷新后重试', icon: 'none' })
   } finally {
@@ -1983,6 +1992,9 @@ function resetForm(seed = {}) {
   form.status = 'archived'
   form.review_status = 'pending'
   form.review_note = ''
+  form.source_type = 'manual'
+  form.source_year = ''
+  form.original_review_note = ''
   syncEditorClassification()
 }
 
@@ -2003,6 +2015,9 @@ function fillForm(question) {
   form.status = String(question?.status || 'archived')
   form.review_status = String(question?.review_status || 'pending')
   form.review_note = String(question?.review_note || '')
+  form.source_type = String(question?.source_type || 'manual')
+  form.source_year = question?.source_year == null ? '' : String(question.source_year)
+  form.original_review_note = String(question?.review_note || '')
 }
 
 function syncEditorClassification() {
@@ -2140,14 +2155,96 @@ async function markNeedsChanges() {
       review_note: form.review_note,
       publish: false
     })
+    rememberReturnedReviewQuestion({
+      ...form,
+      return_reason: form.review_note,
+      import_note: form.original_review_note
+    })
     uni.showToast({ title: '已标记为需要修改', icon: 'success' })
     drawerVisible.value = false
     await refreshQuestionData()
+    maybeExportReturnedReviewBatch()
   } catch (error) {
     uni.showToast({ title: '审核操作失败', icon: 'none' })
   } finally {
     saving.value = false
   }
+}
+
+function resetReturnedReviewExportBatch() {
+  returnedReviewQuestions.value = []
+  returnedReviewBatchExported.value = false
+}
+
+function rememberReturnedReviewQuestion(question) {
+  const item = normalizeReturnedReviewQuestion(question)
+  const key = item.question_id || `${item.stem}-${item.return_reason}`
+  returnedReviewQuestions.value = [
+    ...returnedReviewQuestions.value.filter((existing) => (
+      (existing.question_id || `${existing.stem}-${existing.return_reason}`) !== key
+    )),
+    item
+  ]
+  returnedReviewBatchExported.value = false
+}
+
+function normalizeReturnedReviewQuestion(question) {
+  const subject = String(question?.subject || '').trim()
+  const catalog = QUESTION_CATALOG[subject] || {}
+  return {
+    question_id: String(question?.id || question?.question_id || ''),
+    exam_code: String(question?.exam_code || catalog.exam_code || '').trim(),
+    subject,
+    module: String(question?.module || '').trim(),
+    submodule: String(question?.submodule || '').trim(),
+    stem: String(question?.stem || '').trim(),
+    option_a: String(question?.option_a || '').trim(),
+    option_b: String(question?.option_b || '').trim(),
+    option_c: String(question?.option_c || '').trim(),
+    option_d: String(question?.option_d || '').trim(),
+    answer: String(question?.answer || '').trim().toUpperCase(),
+    explanation: String(question?.explanation || '').trim(),
+    difficulty: String(question?.difficulty || '').trim(),
+    source_type: String(question?.source_type || 'manual').trim() || 'manual',
+    source_year: question?.source_year == null ? '' : String(question.source_year).trim(),
+    return_reason: String(question?.return_reason || question?.review_note || '需要修改').trim(),
+    reviewer: profileName,
+    reviewed_at: formatExportDateTime(new Date()),
+    question_bank_name: reviewQuestionBank.value?.name || activeQuestionBank.value?.name || '',
+    import_note: String(question?.import_note || question?.original_review_note || '').trim()
+  }
+}
+
+function maybeExportReturnedReviewBatch(force = false) {
+  if (!returnedReviewQuestions.value.length || returnedReviewBatchExported.value) return
+  if (!force && Number(questionCount.value || 0) > 0) return
+
+  try {
+    downloadReturnedQuestionsWorkbook(returnedReviewQuestions.value, {
+      bankName: reviewQuestionBank.value?.name || activeQuestionBank.value?.name || '题库',
+      reviewer: profileName,
+      reviewedAt: formatExportDateTime(new Date())
+    })
+    returnedReviewBatchExported.value = true
+    uni.showToast({
+      title: `已导出 ${returnedReviewQuestions.value.length} 道退回题`,
+      icon: 'success'
+    })
+  } catch (error) {
+    uni.showToast({ title: '退回 Excel 导出失败', icon: 'none' })
+  }
+}
+
+function formatExportDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value)
+  if (Number.isNaN(date.getTime())) return ''
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(date)
 }
 
 async function toggleCurrentQuestionStatus() {
