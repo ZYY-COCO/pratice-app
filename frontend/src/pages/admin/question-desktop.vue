@@ -168,6 +168,11 @@
           </view>
 
           <view class="dashboard-panel">
+            <view
+              v-if="dashboardSortOpen"
+              class="dashboard-select-backdrop"
+              @tap="closeDashboardSortDropdown"
+            ></view>
             <view class="panel-heading">
               <view>
                 <view class="panel-title">刷题数据 · 高频错题</view>
@@ -197,17 +202,44 @@
                     </view>
                   </picker>
                 </view>
-                <view class="dashboard-filter-control">
+                <view
+                  class="dashboard-filter-control dashboard-sort-control"
+                  :class="{ open: dashboardSortOpen }"
+                >
                   <text class="dashboard-filter-label">排序</text>
-                  <picker
-                    :range="dashboardSortLabels"
-                    :value="selectedDashboardSortIndex"
-                    @change="handleDashboardSortChange"
+                  <button
+                    class="dashboard-select sort dashboard-sort-trigger"
+                    :class="{ open: dashboardSortOpen }"
+                    :aria-expanded="dashboardSortOpen"
+                    aria-haspopup="listbox"
+                    @tap.stop="toggleDashboardSortDropdown"
+                    @keydown.esc.stop.prevent="closeDashboardSortDropdown"
                   >
-                    <view class="dashboard-select sort">
-                      <text>{{ selectedDashboardSortLabel }}</text><text class="select-arrow">⌄</text>
-                    </view>
-                  </picker>
+                    <text class="dashboard-sort-trigger-label">{{ selectedDashboardSortLabel }}</text>
+                    <text class="select-arrow" :class="{ open: dashboardSortOpen }">⌄</text>
+                  </button>
+                  <view
+                    v-if="dashboardSortOpen"
+                    class="dashboard-sort-menu"
+                    role="listbox"
+                    @tap.stop
+                  >
+                    <button
+                      v-for="option in dashboardSortOptions"
+                      :key="option.value"
+                      class="dashboard-sort-option"
+                      :class="{ selected: dashboardFilters.sort_by === option.value }"
+                      role="option"
+                      :aria-selected="dashboardFilters.sort_by === option.value"
+                      @tap.stop="selectDashboardSort(option.value)"
+                    >
+                      <text>{{ option.label }}</text>
+                      <text
+                        class="dashboard-sort-check"
+                        :class="{ visible: dashboardFilters.sort_by === option.value }"
+                      >✓</text>
+                    </button>
+                  </view>
                 </view>
               </view>
             </view>
@@ -826,6 +858,7 @@ const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
 const sidebarCollapsed = ref(false)
+const dashboardSortOpen = ref(false)
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
   today_practicing_users: 0,
@@ -923,9 +956,9 @@ const statusOptions = [
   { label: '已下架', value: QUESTION_STATUS.ARCHIVED }
 ]
 const dashboardSortOptions = [
-  { label: '答错次数排序', value: 'wrong_count' },
-  { label: '正确率排序', value: 'accuracy' },
-  { label: '作答次数排序', value: 'attempt_count' }
+  { label: '答错次数：从高到低', value: 'wrong_count' },
+  { label: '正确率：从低到高', value: 'accuracy' },
+  { label: '作答次数：从高到低', value: 'attempt_count' }
 ]
 const dashboardTimeRangeOptions = [
   { label: '全部时间', value: 0 },
@@ -1083,7 +1116,6 @@ const dashboardSubjectOptions = computed(() => [
   { label: '数学基础', value: '数学基础' }
 ])
 const dashboardSubjectLabels = computed(() => dashboardSubjectOptions.value.map((item) => item.label))
-const dashboardSortLabels = computed(() => dashboardSortOptions.map((item) => item.label))
 const dashboardTimeRangeLabels = computed(() => dashboardTimeRangeOptions.map((item) => item.label))
 const moduleLabels = computed(() => moduleOptions.value.map((item) => item.label))
 const difficultyLabels = computed(() => difficultyOptions.map((item) => item.label))
@@ -1109,7 +1141,7 @@ const selectedDashboardSubjectLabel = computed(() => (
   dashboardSubjectOptions.value[selectedDashboardSubjectIndex.value]?.label || '全部类型'
 ))
 const selectedDashboardSortLabel = computed(() => (
-  dashboardSortOptions[selectedDashboardSortIndex.value]?.label || '答错次数排序'
+  dashboardSortOptions[selectedDashboardSortIndex.value]?.label || '答错次数：从高到低'
 ))
 const selectedDashboardTimeRangeLabel = computed(() => (
   dashboardTimeRangeOptions[selectedDashboardTimeRangeIndex.value]?.label || '全部时间'
@@ -1364,6 +1396,7 @@ async function switchSection(section) {
     return
   }
   reviewQuestionBank.value = null
+  dashboardSortOpen.value = false
   if (section === 'import') {
     importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
     importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
@@ -1496,8 +1529,18 @@ async function handleDashboardSubjectChange(event) {
   await loadDashboard()
 }
 
-async function handleDashboardSortChange(event) {
-  dashboardFilters.sort_by = dashboardSortOptions[Number(event?.detail?.value || 0)]?.value || 'wrong_count'
+function toggleDashboardSortDropdown() {
+  dashboardSortOpen.value = !dashboardSortOpen.value
+}
+
+function closeDashboardSortDropdown() {
+  dashboardSortOpen.value = false
+}
+
+async function selectDashboardSort(value) {
+  dashboardSortOpen.value = false
+  if (dashboardFilters.sort_by === value) return
+  dashboardFilters.sort_by = value || 'wrong_count'
   await loadDashboard()
 }
 
@@ -3360,6 +3403,14 @@ button {
   gap: 7px;
 }
 
+.dashboard-sort-control {
+  position: relative;
+}
+
+.dashboard-sort-control.open {
+  z-index: 82;
+}
+
 .dashboard-filter-label {
   color: #8693a3;
   font-size: 9px;
@@ -3383,11 +3434,131 @@ button {
 }
 
 .dashboard-select.sort {
-  width: 142px;
+  width: 174px;
 }
 
 .dashboard-select.compact {
   width: 104px;
+}
+
+.dashboard-select-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  background: transparent;
+}
+
+.dashboard-sort-trigger {
+  margin: 0;
+  padding: 0 11px;
+  cursor: pointer;
+  line-height: 1;
+  text-align: left;
+  transition: border-color 0.16s ease, background 0.16s ease, box-shadow 0.16s ease;
+}
+
+.dashboard-sort-trigger:hover,
+.dashboard-sort-trigger.open {
+  border-color: #8edecd;
+  color: #315e58;
+  background: #fbfefd;
+  box-shadow: 0 0 0 3px rgba(80, 208, 180, 0.09);
+}
+
+.dashboard-sort-trigger-label {
+  min-width: 0;
+  overflow: hidden;
+  color: inherit;
+  font-size: 11px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dashboard-sort-trigger .select-arrow {
+  flex: 0 0 auto;
+  font-size: 12px;
+  transform-origin: center;
+  transition: transform 0.16s ease, color 0.16s ease;
+}
+
+.dashboard-sort-trigger .select-arrow.open {
+  color: #2aaa90;
+  transform: rotate(180deg);
+}
+
+.dashboard-sort-menu {
+  width: 174px;
+  padding: 6px;
+  position: absolute;
+  z-index: 83;
+  top: calc(100% + 7px);
+  right: 0;
+  border: 1px solid #dce7e8;
+  border-radius: 10px;
+  box-sizing: border-box;
+  background: #ffffff;
+  box-shadow: 0 16px 38px rgba(35, 55, 74, 0.16), 0 3px 10px rgba(35, 55, 74, 0.07);
+  transform-origin: top right;
+  animation: dashboard-dropdown-in 0.15s ease-out;
+}
+
+.dashboard-sort-option {
+  width: 100%;
+  height: 40px;
+  margin: 0;
+  padding: 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #506075;
+  background: transparent;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 550;
+  line-height: 1;
+  text-align: left;
+  transition: color 0.14s ease, background 0.14s ease;
+}
+
+.dashboard-sort-option + .dashboard-sort-option {
+  margin-top: 2px;
+}
+
+.dashboard-sort-option:hover {
+  color: #294c49;
+  background: #f1f6f7;
+}
+
+.dashboard-sort-option.selected {
+  color: #16826e;
+  background: #eaf9f5;
+  font-weight: 750;
+}
+
+.dashboard-sort-check {
+  margin-left: 8px;
+  color: #22aa8f;
+  font-size: 12px;
+  font-weight: 900;
+  opacity: 0;
+}
+
+.dashboard-sort-check.visible {
+  opacity: 1;
+}
+
+@keyframes dashboard-dropdown-in {
+  from {
+    opacity: 0;
+    transform: translateY(-4px) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
 }
 
 .data-table {
