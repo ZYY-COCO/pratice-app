@@ -3,7 +3,8 @@
     class="portal-shell"
     :class="{
       'sidebar-collapsed': sidebarCollapsed,
-      'dashboard-focus-mode': sidebarCollapsed && activeSection === 'dashboard'
+      'dashboard-focus-mode': sidebarCollapsed && activeSection === 'dashboard',
+      'import-preview-focus-mode': sidebarCollapsed && activeSection === 'import' && importPreviewVisible
     }"
   >
     <aside class="portal-sidebar">
@@ -170,7 +171,7 @@
           <view class="dashboard-panel">
             <view class="panel-heading">
               <view>
-                <view class="panel-title">刷题数据 · 高频错题</view>
+                <view class="panel-title">高频错题</view>
               </view>
               <view class="dashboard-filter-bar">
                 <view class="dashboard-filter-control">
@@ -523,6 +524,7 @@
             :portal-entry="true"
             :question-bank-id="importQuestionBankId"
             :question-bank-name="importQuestionBankName"
+            @preview-mode-change="handleImportPreviewModeChange"
           />
         </section>
       </template>
@@ -869,6 +871,7 @@ const showGlobalQuestionList = ref(false)
 const importQuestionBankId = ref('')
 const importQuestionBankName = ref('')
 const questionImageImportRef = ref(null)
+const importPreviewVisible = ref(false)
 const questionBankDialogVisible = ref(false)
 const questionBankDialogMode = ref('create')
 const questionBankNameDraft = ref('')
@@ -1023,6 +1026,9 @@ const previewQuestions = [
 ]
 
 const currentNavLabel = computed(() => {
+  if (activeSection.value === 'import' && importPreviewVisible.value) {
+    return '批量导入 / 导入预览'
+  }
   if (activeSection.value === 'review') {
     return reviewQuestionBank.value
       ? `题目管理 / ${reviewQuestionBank.value.name} / 待审核`
@@ -1035,12 +1041,16 @@ const currentNavLabel = computed(() => {
 })
 const showHeaderBackButton = computed(() => (
   activeSection.value === 'review' ||
+  (activeSection.value === 'import' && importPreviewVisible.value) ||
   (activeSection.value === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value))
 ))
 const headerBackDisabled = computed(() => (
   activeSection.value === 'questions' && saving.value
 ))
 const pageTitle = computed(() => {
+  if (activeSection.value === 'import' && importPreviewVisible.value) {
+    return '导入预览'
+  }
   const titles = {
     dashboard: '题库仪表盘',
     questions: '题目管理',
@@ -1367,6 +1377,8 @@ async function switchSection(section) {
   if (section === 'import') {
     importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
     importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
+  } else {
+    importPreviewVisible.value = false
   }
   activeSection.value = section
   currentPage.value = 1
@@ -1409,6 +1421,10 @@ function downloadQuestionImportTemplate() {
 
 function showQuestionImportHistory() {
   questionImageImportRef.value?.showImportHistory?.()
+}
+
+function handleImportPreviewModeChange(visible) {
+  importPreviewVisible.value = !!visible
 }
 
 async function refreshQuestionData() {
@@ -1622,6 +1638,11 @@ async function returnToQuestionBanks() {
 }
 
 async function returnFromImportSection() {
+  if (importPreviewVisible.value && questionImageImportRef.value?.returnToFileSelection) {
+    questionImageImportRef.value.returnToFileSelection()
+    importPreviewVisible.value = false
+    return
+  }
   if (importQuestionBankId.value) {
     activeSection.value = 'questions'
     const bank = questionBanks.value.find((item) => item.id === importQuestionBankId.value) || {
@@ -2164,6 +2185,7 @@ function requestCloseDrawer() {
 function openImportWorkspace() {
   importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
   importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
+  importPreviewVisible.value = false
   activeSection.value = 'import'
 }
 
@@ -3125,7 +3147,7 @@ button {
   margin-left: 0;
 }
 
-.sidebar-collapsed:not(.dashboard-focus-mode) .portal-header {
+.sidebar-collapsed:not(.dashboard-focus-mode):not(.import-preview-focus-mode) .portal-header {
   padding-left: 58px;
   padding-right: 22px;
 }
@@ -3171,6 +3193,20 @@ button {
 
 .dashboard-focus-mode .dashboard-panel {
   margin-top: 14px;
+}
+
+.import-preview-focus-mode .portal-header {
+  height: 0;
+  padding-top: 0;
+  padding-bottom: 0;
+  border-bottom-color: transparent;
+  opacity: 0;
+  pointer-events: none;
+}
+
+.import-preview-focus-mode .import-section {
+  min-height: 100vh;
+  padding: 0;
 }
 
 .metric-card {

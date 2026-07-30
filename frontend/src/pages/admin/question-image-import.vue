@@ -1,7 +1,7 @@
 <template>
   <view
     class="image-import-page"
-    :class="{ embedded: props.embedded, 'sidebar-collapsed': props.sidebarCollapsed }"
+    :class="{ embedded: props.embedded, 'sidebar-collapsed': props.sidebarCollapsed, 'preview-mode': editorVisible }"
     :style="themeInlineStyle"
   >
     <view v-if="!editorVisible && !props.embedded" class="import-hero">
@@ -97,12 +97,6 @@
             <text class="status-number">{{ importableDraftCount }}</text>
             <text class="status-label">可导入</text>
           </view>
-        </view>
-        <view class="preview-top-actions">
-          <button class="preview-action-btn ghost" @tap="returnToFileSelection">重新上传</button>
-          <button class="preview-action-btn" @tap="openQuestionBankPicker">
-            {{ selectedImportBankName ? '更换题库' : '选择题库' }}
-          </button>
         </view>
       </view>
 
@@ -350,6 +344,7 @@ const props = defineProps({
     default: ''
   }
 })
+const emit = defineEmits(['preview-mode-change'])
 const loading = ref(true)
 const allowed = ref(false)
 const portalEntry = ref(false)
@@ -368,6 +363,12 @@ const dryRunLoading = ref(false)
 const importSaving = ref(false)
 const answerOptions = ['A', 'B', 'C', 'D']
 const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
+
+watch(editorVisible, (visible) => {
+  if (props.embedded) {
+    emit('preview-mode-change', visible)
+  }
+}, { immediate: true })
 const LOCAL_RECOGNITION_TIMEOUT_MS = 15000
 const REMOTE_RECOGNITION_TIMEOUT_MS = 30000
 const landingSteps = [
@@ -1461,7 +1462,8 @@ function returnFromImport() {
 
 defineExpose({
   downloadImportTemplate,
-  showImportHistory
+  showImportHistory,
+  returnToFileSelection
 })
 </script>
 
@@ -1987,7 +1989,7 @@ defineExpose({
 .preview-status-panel {
   padding: 26rpx;
   display: grid;
-  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) auto;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
   align-items: center;
   gap: 22rpx;
   border: 1rpx solid #dbe7e5;
@@ -3256,7 +3258,7 @@ defineExpose({
 
   .preview-status-panel {
     padding: 18px 20px;
-    grid-template-columns: minmax(0, 1.1fr) 360px auto;
+    grid-template-columns: minmax(0, 1.1fr) 360px;
     gap: 18px;
     border-radius: 14px;
   }
@@ -3552,6 +3554,125 @@ defineExpose({
   .bottom-summary,
   .recognize-hint {
     font-size: 9px;
+  }
+
+  .image-import-page.embedded.preview-mode {
+    height: calc(100vh - 86px);
+    min-height: calc(100vh - 86px);
+    overflow: hidden;
+    padding: 12px 32px 96px;
+  }
+
+  .image-import-page.embedded.preview-mode .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-workbench {
+    height: calc(100vh - 194px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-status-panel,
+  .image-import-page.embedded.preview-mode .target-bank-strip {
+    flex: 0 0 auto;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .draft-list-panel,
+  .image-import-page.embedded.preview-mode .draft-detail-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .draft-detail-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed {
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+    padding: 12px 18px 96px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-workbench {
+    height: calc(100vh - 108px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-status-panel {
+    flex: 0 0 auto;
+    padding: 13px 18px;
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 14px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-title {
+    margin-top: 3px;
+    font-size: 21px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-subtitle {
+    display: none;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-metric {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-number {
+    font-size: 21px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-label {
+    margin-top: 5px;
+    font-size: 10px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .target-bank-strip {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 8px 12px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(560px, 0.95fr) minmax(0, 1.05fr);
+    gap: 12px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-list-panel,
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-detail-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-detail-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .import-bottom-bar {
+    bottom: 12px;
   }
 
   .bank-picker-dialog {
