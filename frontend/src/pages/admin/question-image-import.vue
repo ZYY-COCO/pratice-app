@@ -7,7 +7,7 @@
     <view v-if="!editorVisible && !props.embedded" class="import-hero">
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
-        <view class="hero-subtitle">上传标准 Excel 模板，逐行校验题目内容</view>
+        <view class="hero-subtitle">上传标准 Excel 模板，确认后进入待审核</view>
         <view v-if="questionBankName" class="target-bank-chip">导入至：{{ questionBankName }}</view>
       </view>
       <view class="hero-actions">
@@ -81,8 +81,8 @@
       <view class="preview-status-panel">
         <view class="preview-status-copy">
           <view class="status-kicker">IMPORT PREVIEW</view>
-          <view class="status-title">读取结果确认</view>
-          <view class="status-subtitle">错误题已自动置顶，逐行修正后重新校验，再保存为待审核题目。</view>
+          <view class="status-title">确认待审核</view>
+          <view class="status-subtitle">读取完成后选择题库，确认无误即可提交到待审核区域。</view>
         </view>
         <view class="status-metrics">
           <view class="status-metric">
@@ -91,11 +91,11 @@
           </view>
           <view class="status-metric warning">
             <text class="status-number">{{ reviewIssueCount }}</text>
-            <text class="status-label">错误</text>
+            <text class="status-label">需检查</text>
           </view>
           <view class="status-metric success">
             <text class="status-number">{{ importableDraftCount }}</text>
-            <text class="status-label">可导入</text>
+            <text class="status-label">可入审</text>
           </view>
         </view>
       </view>
@@ -115,9 +115,9 @@
           <view class="list-panel-head">
             <view>
               <view class="panel-title">题目列表</view>
-              <view class="panel-subtitle">按 Excel 行号追踪，错误优先显示。</view>
+              <view class="panel-subtitle">按 Excel 行号追踪，确认后统一提交待审核。</view>
             </view>
-            <view class="sort-chip">错误优先</view>
+            <view class="sort-chip">待入审</view>
           </view>
 
           <view v-if="draftPreviewEntries.length === 0" class="draft-empty">还没有解析出的题目</view>
@@ -286,24 +286,21 @@
       <button class="recognize-btn" :disabled="imageItems.length === 0 || recognizingCount > 0" @tap="startRecognition">
         <text>{{ recognizingCount > 0 ? `正在读取 ${recognizingCount}` : '进入预览' }}</text>
       </button>
-      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${recognizedQuestionCount} 道题，可进入预览校验` : '请先下载模板并选择 .xlsx 文件') }}</view>
+      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${recognizedQuestionCount} 道题，可进入确认待审核` : '请先下载模板并选择 .xlsx 文件') }}</view>
     </view>
 
     <view v-if="allowed && editorVisible" class="import-bottom-bar preview-bottom-bar">
       <view class="bottom-summary">
         <text>已读取 {{ totalDraftCount }}</text>
-        <text>错误 {{ reviewIssueCount }}</text>
+        <text>待入审 {{ importableDraftCount }}</text>
         <text>题库：{{ selectedImportBankName || '未选择' }}</text>
       </view>
       <view class="bottom-actions">
         <button class="bottom-btn ghost" :disabled="dryRunLoading || importSaving" @tap="returnToFileSelection">
           返回上传
         </button>
-        <button class="bottom-btn outline" :disabled="dryRunLoading || importSaving || drafts.length === 0" @tap="runDryCheck">
-          {{ dryRunLoading ? '校验中' : '重新校验' }}
-        </button>
         <button class="bottom-btn primary" :disabled="importSaving || dryRunLoading || drafts.length === 0" @tap="commitImport">
-          {{ importSaving ? '保存中' : '保存为待审核' }}
+          {{ importSaving || dryRunLoading ? '提交中' : '提交待审核' }}
         </button>
       </view>
     </view>
@@ -876,7 +873,7 @@ function selectImportQuestionBank(bank) {
   questionBankName.value = bank.name || ''
   questionBankPickerVisible.value = false
   markDryRunDirty()
-  uni.showToast({ title: '已选择题库，请重新校验', icon: 'none' })
+  uni.showToast({ title: '已选择题库', icon: 'none' })
 }
 
 function showImportHistory() {
@@ -1334,9 +1331,9 @@ function draftTone(draft, index) {
 
 function draftStatusText(draft, index) {
   const errors = draftErrors(draft, index)
-  if (errors.length) return '需修正'
+  if (errors.length) return '待入审'
   const check = dryRunResult.value?.items?.find((item) => item.index === index)
-  return check?.valid ? '可导入' : '待校验'
+  return check?.valid ? '可入审' : '待入审'
 }
 
 function buildImportPayload() {
@@ -1378,7 +1375,7 @@ async function runDryCheck(silent = false) {
   }
   const localInvalidCount = drafts.value.filter((draft, index) => draftErrors(draft, index).length > 0).length
   if (localInvalidCount > 0 && !dryRunResult.value) {
-    if (!silent) uni.showToast({ title: '请先修正 Excel 行错误', icon: 'none' })
+    if (!silent) uni.showToast({ title: '请检查 Excel 行字段', icon: 'none' })
     return
   }
   dryRunLoading.value = true
@@ -1386,15 +1383,21 @@ async function runDryCheck(silent = false) {
     const response = await dryRunAdminQuestionImageImport(buildImportPayload())
     dryRunResult.value = response
     if (response.invalid_count || response.duplicate_count) {
-      if (!silent) uni.showToast({ title: '校验发现问题，请逐行修正', icon: 'none' })
+      if (!silent) uni.showToast({ title: '提交检查发现问题', icon: 'none' })
       return
     }
-    if (!silent) uni.showToast({ title: `校验通过 ${response.valid_count} 题`, icon: 'success' })
+    if (!silent) uni.showToast({ title: `可提交 ${response.valid_count} 题`, icon: 'success' })
   } catch (error) {
-    if (!silent) uni.showToast({ title: 'dry-run 校验失败', icon: 'none' })
+    if (!silent) uni.showToast({ title: '提交前检查失败', icon: 'none' })
   } finally {
     dryRunLoading.value = false
   }
+}
+
+async function ensureCommitReady() {
+  if (canCommit.value) return true
+  await runDryCheck(true)
+  return canCommit.value
 }
 
 async function commitImport() {
@@ -1403,15 +1406,16 @@ async function commitImport() {
     await openQuestionBankPicker()
     return
   }
-  if (!canCommit.value) {
-    uni.showToast({ title: '请先通过 dry-run 校验', icon: 'none' })
+  const ready = await ensureCommitReady()
+  if (!ready) {
+    uni.showToast({ title: '请检查 Excel 字段后再提交', icon: 'none' })
     return
   }
   const confirmed = await new Promise((resolve) => {
     uni.showModal({
-      title: '确认导入待审核？',
-      content: `将 ${dryRunResult.value.valid_count} 道题写入题库，并保持下架状态进入审核队列。`,
-      confirmText: '导入',
+      title: '确认提交待审核？',
+      content: `将 ${dryRunResult.value.valid_count} 道题提交到「待审核」区域，审核老师确认后再发布。`,
+      confirmText: '提交',
       confirmColor: '#1769ff',
       success: (result) => resolve(Boolean(result.confirm)),
       fail: () => resolve(false)
@@ -1430,7 +1434,7 @@ async function commitImport() {
       },
       ...(Array.isArray(history) ? history : [])
     ].slice(0, 20))
-    uni.showToast({ title: `已导入 ${response.inserted_count || 0} 题`, icon: 'success' })
+    uni.showToast({ title: `已提交 ${response.inserted_count || 0} 题`, icon: 'success' })
     setTimeout(() => {
       returnFromImport()
     }, 500)
@@ -1439,7 +1443,7 @@ async function commitImport() {
     if (dryRun) {
       dryRunResult.value = dryRun
     }
-    uni.showToast({ title: '导入失败，请重新校验', icon: 'none' })
+    uni.showToast({ title: '提交失败，请检查后重试', icon: 'none' })
   } finally {
     importSaving.value = false
   }
