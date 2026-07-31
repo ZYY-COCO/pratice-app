@@ -2,10 +2,10 @@
 -- Run this in Supabase SQL Editor after deploying the dashboard filter update.
 
 create or replace function public.question_admin_dashboard_snapshot(
-  p_limit integer default 8,
+  p_limit integer default 20,
   p_subject text default null,
   p_sort_by text default 'wrong_count',
-  p_min_attempts integer default 5,
+  p_min_attempts integer default 1,
   p_period_days integer default 0
 )
 returns jsonb
@@ -59,7 +59,7 @@ as $$
         or ua.created_at >= now() - make_interval(days => p_period_days)
       )
     group by ua.question_id
-    having count(*) >= greatest(1, least(coalesce(p_min_attempts, 5), 10000))
+    having count(*) >= greatest(1, least(coalesce(p_min_attempts, 1), 10000))
     order by
       case when p_sort_by = 'accuracy' then
         count(*) filter (where ua.is_correct = true)::numeric / nullif(count(*), 0)
@@ -70,7 +70,7 @@ as $$
       end desc,
       count(*) filter (where ua.is_correct = false) desc,
       count(*) desc
-    limit greatest(1, least(coalesce(p_limit, 8), 20))
+    limit greatest(1, least(coalesce(p_limit, 20), 20))
   ),
   difficult_questions as (
     select coalesce(

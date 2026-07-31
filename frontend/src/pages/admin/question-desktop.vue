@@ -1262,6 +1262,7 @@ async function loadDashboard() {
     const response = await fetchQuestionAdminDashboard({
       subject: dashboardFilters.subject,
       sort_by: dashboardFilters.sort_by,
+      min_attempts: 1,
       period_days: dashboardFilters.period_days
     })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
