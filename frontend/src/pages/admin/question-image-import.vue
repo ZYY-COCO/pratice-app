@@ -12,6 +12,7 @@
       </view>
       <view class="hero-actions">
         <button class="template-btn" @tap="downloadImportTemplate">下载模板</button>
+        <button class="template-guide-btn" @tap="downloadImportGuide">填写说明</button>
         <button class="history-btn" @tap="showImportHistory">
           <text class="history-icon">◷</text>
           <text>导入记录</text>
@@ -901,17 +902,24 @@ function showImportHistory() {
 }
 
 function downloadImportTemplate() {
-  const templateUrl = '/static/templates/港澳台考研题库导入模板.xlsx'
+  downloadStaticFile('/static/templates/港澳台考研题库导入模板.xlsx', '港澳台考研题库导入模板.xlsx')
+}
+
+function downloadImportGuide() {
+  downloadStaticFile('/static/templates/港澳台考研题库导入填写说明.txt', '港澳台考研题库导入填写说明.txt')
+}
+
+function downloadStaticFile(fileUrl, fileName) {
   if (typeof document !== 'undefined') {
     const link = document.createElement('a')
-    link.href = templateUrl
-    link.download = '港澳台考研题库导入模板.xlsx'
+    link.href = fileUrl
+    link.download = fileName
     document.body.appendChild(link)
     link.click()
     document.body.removeChild(link)
     return
   }
-  uni.showToast({ title: '请在网页端下载 Excel 模板', icon: 'none' })
+  uni.showToast({ title: '请在网页端下载文件', icon: 'none' })
 }
 
 function parseExcelItem(item) {
@@ -1485,6 +1493,7 @@ function returnFromImport() {
 
 defineExpose({
   downloadImportTemplate,
+  downloadImportGuide,
   showImportHistory,
   returnToFileSelection
 })
@@ -1529,6 +1538,7 @@ defineExpose({
 }
 
 .history-btn::after,
+.template-guide-btn::after,
 .file-delete-btn::after,
 .editor-back-btn::after,
 .recognize-btn::after,
@@ -1624,6 +1634,23 @@ defineExpose({
 
 .template-btn::after {
   border: 0;
+}
+
+.template-guide-btn {
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #b7cae7;
+  border-radius: 22rpx;
+  color: #315d9b;
+  background: #f7faff;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
 }
 
 .history-icon {
@@ -3246,7 +3273,8 @@ defineExpose({
   }
 
   .history-btn,
-  .template-btn {
+  .template-btn,
+  .template-guide-btn {
     min-width: 38px;
     height: 38px;
     border-radius: 10px;
@@ -3265,6 +3293,11 @@ defineExpose({
   }
 
   .template-btn {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .template-guide-btn {
     padding: 0 12px;
     font-size: 12px;
   }

@@ -84,6 +84,9 @@
             <button class="header-import-button template" @tap="downloadQuestionImportTemplate">
               下载模板
             </button>
+            <button class="header-import-button guide" @tap="downloadQuestionImportGuide">
+              填写说明
+            </button>
             <button class="header-import-button history" @tap="showQuestionImportHistory">
               <text class="header-import-history-icon">◷</text>
               <text>导入记录</text>
@@ -1424,6 +1427,10 @@ async function refreshCurrentSection() {
 
 function downloadQuestionImportTemplate() {
   questionImageImportRef.value?.downloadImportTemplate?.()
+}
+
+function downloadQuestionImportGuide() {
+  questionImageImportRef.value?.downloadImportGuide?.()
 }
 
 function showQuestionImportHistory() {
@@ -2885,6 +2892,12 @@ button {
   border: 1px solid #9be3d4;
   color: #087c6d;
   background: #effcf8;
+}
+
+.header-import-button.guide {
+  border: 1px solid #c5d6ed;
+  color: #395f9b;
+  background: #f7faff;
 }
 
 .header-import-button.history {
