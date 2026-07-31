@@ -17,6 +17,40 @@ def get_question_or_404(supabase: Client, question_id: str) -> dict:
     return response.data[0]
 
 
+def get_submission_question_or_404(supabase: Client, question_id: str) -> dict:
+    """Fetch only the fields needed to grade and explain one submitted answer."""
+    response = (
+        supabase.table("questions")
+        .select("id, exam_code, subject, module, submodule, source_type, answer, explanation")
+        .eq("id", question_id)
+        .limit(1)
+        .execute()
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
+    return response.data[0]
+
+
+def has_answer_submission(supabase: Client, user_id: str, question_id: str) -> bool:
+    response = (
+        supabase.table("user_answers")
+        .select("id")
+        .eq("user_id", user_id)
+        .eq("question_id", question_id)
+        .limit(1)
+        .execute()
+    )
+    return bool(response.data)
+
+
+def require_answer_disclosure_allowed(supabase: Client, user_id: str, question_id: str) -> None:
+    if not has_answer_submission(supabase, user_id, question_id):
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="Submit this question before viewing the answer explanation",
+        )
+
+
 def resolve_stats_exam_code(
     supabase: Client,
     user_id: str,
@@ -164,12 +198,13 @@ def submit_answer(
     selected_answer: str,
     used_time: int,
     requested_exam_code: str | None = None,
+    include_ability_accuracy: bool = True,
 ) -> dict:
-    question = get_question_or_404(supabase, question_id)
+    question = get_submission_question_or_404(supabase, question_id)
     stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
     stats_question = {**question, "exam_code": stats_exam_code}
     is_correct = selected_answer == question["answer"]
-    current_ability = get_current_ability_stats(supabase, user_id, stats_question)
+    current_ability = get_current_ability_stats(supabase, user_id, stats_question) if include_ability_accuracy else None
 
     return {
         "question_id": question_id,
@@ -183,7 +218,7 @@ def submit_answer(
         "is_correct": is_correct,
         "explanation": question["explanation"],
         "added_to_wrong_questions": not is_correct and not is_ai_generated_question(question),
-        "ability_accuracy": calculate_next_accuracy(current_ability, is_correct),
+        "ability_accuracy": calculate_next_accuracy(current_ability, is_correct) if include_ability_accuracy else None,
     }
 
 

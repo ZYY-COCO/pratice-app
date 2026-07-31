@@ -3,6 +3,7 @@ from fastapi import APIRouter, BackgroundTasks, Depends, Query
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
 from app.schemas.answers import (
+    AbilityAccuracyResponse,
     AnswerHistoryResponse,
     MarkUnfamiliarRequest,
     SubmitAnswerRequest,
@@ -10,9 +11,36 @@ from app.schemas.answers import (
     SubmitBatchAnswerRequest,
     SubmitBatchAnswerResponse,
 )
-from app.services.answers import list_answer_history, mark_unfamiliar_answer, persist_answer_submission, submit_answer
+from app.services.answers import (
+    get_current_ability_stats,
+    get_submission_question_or_404,
+    list_answer_history,
+    mark_unfamiliar_answer,
+    persist_answer_submission,
+    resolve_stats_exam_code,
+    submit_answer,
+)
 
 router = APIRouter(prefix="/answers", tags=["作答"])
+
+
+@router.get("/ability-accuracy", response_model=AbilityAccuracyResponse)
+def ability_accuracy(
+    question_id: str,
+    exam_code: str | None = Query(default=None, pattern="^(Z001|Z002)$"),
+    user_id: str = Depends(get_current_user_id),
+) -> AbilityAccuracyResponse:
+    supabase = get_supabase_admin()
+    question = get_submission_question_or_404(supabase, question_id)
+    stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, exam_code)
+    current_ability = get_current_ability_stats(
+        supabase,
+        user_id,
+        {**question, "exam_code": stats_exam_code},
+    )
+    return AbilityAccuracyResponse(
+        ability_accuracy=float(current_ability["accuracy"]) if current_ability else None,
+    )
 
 
 @router.get("/history", response_model=AnswerHistoryResponse)
@@ -49,6 +77,7 @@ def submit(
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,
         requested_exam_code=payload.exam_code,
+        include_ability_accuracy=False,
     )
     background_tasks.add_task(
         persist_answer_submission,
@@ -85,6 +114,7 @@ def submit_batch(
             selected_answer=item.selected_answer,
             used_time=item.used_time,
             requested_exam_code=payload.exam_code,
+            include_ability_accuracy=False,
         )
         background_tasks.add_task(
             persist_answer_submission,

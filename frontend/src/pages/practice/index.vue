@@ -123,6 +123,7 @@
     </template>
 
     <template v-else>
+      <!-- #ifndef MP-WEIXIN -->
       <template v-if="aiSummaryMode">
         <view class="summary-card ai-summary-card">
           <view class="summary-kicker">AI 训练总结</view>
@@ -157,8 +158,14 @@
           <button class="ghost-button back-tags" @tap="resetToTags">返回刷题范围</button>
         </view>
       </template>
+      <!-- #endif -->
 
+      <!-- #ifndef MP-WEIXIN -->
       <template v-else-if="summaryMode">
+      <!-- #endif -->
+      <!-- #ifdef MP-WEIXIN -->
+      <template v-if="summaryMode">
+      <!-- #endif -->
         <view class="summary-card" :class="{ 'mock-summary-card': mockExamMode }">
           <view class="summary-kicker">{{ mockExamMode ? '模拟测试成绩' : '综合刷题结果' }}</view>
           <view class="summary-score">{{ mockExamMode ? `${mockExamScore} / ${mockExamTotalScore}` : `${correctCount} / ${reviewResults.length}` }}</view>
@@ -246,8 +253,8 @@
           :is-math="normalizedCurrentQuestion.isMath"
           :selected="selectedOption === option.key"
           :submitted="optionSubmitted"
-          :correct="option.key === correctAnswer"
-          :wrong="option.key === selectedOption && selectedOption !== correctAnswer"
+          :correct="submitted && option.key === correctAnswer"
+          :wrong="submitted && option.key === selectedOption && selectedOption !== correctAnswer"
           @select="selectOption"
         />
       </view>
@@ -326,6 +333,7 @@
       </template>
     </template>
 
+    <!-- #ifndef MP-WEIXIN -->
     <AiQuestionAssistant
       v-if="showQuestionAssistant"
       :question-id="assistantQuestionId"
@@ -336,6 +344,7 @@
       :selected-answer="selectedOption"
       :correct-answer="correctAnswer"
     />
+    <!-- #endif -->
 
     <view v-if="showAnswerSheet" class="answer-sheet-mask" @tap="closeAnswerSheet">
       <view class="answer-sheet" @tap.stop>
@@ -379,12 +388,14 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
-import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
+import { fetchAnswerHistory, fetchQuestionAbilityAccuracy, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
 import { readLegacyH5Storage } from '../../platform/runtime'
+// #ifndef MP-WEIXIN
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
+// #endif
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -479,6 +490,33 @@ const showAnswerSheet = ref(false)
 const questionCache = new Map()
 let timerId = null
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => setTimeout(resolve, milliseconds))
+}
+
+async function refreshAbilityAccuracy(questionId) {
+  if (!hasAccessToken.value || !questionId) return
+
+  for (const delayMs of [350, 650]) {
+    await sleep(delayMs)
+    try {
+      const result = await fetchQuestionAbilityAccuracy({
+        question_id: questionId,
+        exam_code: examCode.value
+      })
+      const value = Number(result?.ability_accuracy)
+      if (!Number.isFinite(value)) continue
+
+      if (questionMeta.value.questionId === questionId) {
+        abilityAccuracy.value = value
+      }
+      return
+    } catch {
+      // The result is supplementary; answer feedback has already been displayed.
+    }
+  }
+}
+
 const subjectTree = computed(() => getSubjectTree(subject.value))
 const openMap = ref(buildOpenMap(subjectTree.value))
 const hasAccessToken = computed(() => Boolean(accessToken.value))
@@ -518,7 +556,8 @@ const canFavoriteCurrent = computed(() => {
   const questionId = questionMeta.value.questionId
   return Boolean(questionId) && !String(questionId).startsWith('mock-')
 })
-const optionSubmitted = computed(() => reviewMode.value || submitted.value || (submitting.value && practiceMode.value === 'special'))
+// Keep the selected option neutral until the server returns the graded result.
+const optionSubmitted = computed(() => reviewMode.value || submitted.value)
 const canMarkCurrentUnfamiliar = computed(() =>
   isCultureSubject.value &&
   practiceMode.value === 'special' &&
@@ -702,9 +741,19 @@ onLoad((options) => {
     selectedTags.value = [submodule]
   }
   if (options?.ai_session_id) {
+    // #ifdef MP-WEIXIN
+    uni.showToast({ title: '该功能暂未在小程序开放', icon: 'none' })
+    setTimeout(() => {
+      uni.reLaunch({ url: '/pages/home/index' })
+    }, 500)
+    return
+    // #endif
+
+    // #ifndef MP-WEIXIN
     aiSessionId.value = decodeRouteValue(options.ai_session_id)
     loadAiTrainingSession(aiSessionId.value)
     return
+    // #endif
   }
   loadCultureProgress()
 })
@@ -810,7 +859,10 @@ function buildApiQuestion(apiQuestion, meta) {
     { key: 'C', text: apiQuestion.option_c },
     { key: 'D', text: apiQuestion.option_d }
   ]
-  const sourceLabel = apiQuestion.source_type === 'ai_deepseek' ? 'AI专项出题' : '真实题库'
+  let sourceLabel = '真实题库'
+  // #ifndef MP-WEIXIN
+  sourceLabel = apiQuestion.source_type === 'ai_deepseek' ? 'AI专项出题' : '真实题库'
+  // #endif
 
   return {
     id: apiQuestion.id,
@@ -2081,6 +2133,7 @@ async function submitAnswer() {
   try {
     let answerResult = null
     if (hasAccessToken.value && isRealQuestion()) {
+      const submittedQuestionId = questionMeta.value.questionId
       const result = await request({
         url: '/answers/submit',
         method: 'POST',
@@ -2098,7 +2151,8 @@ async function submitAnswer() {
       resultTag.value = result.added_to_wrong_questions
         ? `已写入错题本：${subject.value} / ${questionMeta.value.module} / ${questionMeta.value.submodule}`
         : '本题答对，当前知识点继续保持。'
-      abilityAccuracy.value = result.ability_accuracy
+      abilityAccuracy.value = result.ability_accuracy ?? null
+      void refreshAbilityAccuracy(submittedQuestionId)
       answerResult = {
         question: currentQuestion.value,
         selectedAnswer: selectedOption.value,

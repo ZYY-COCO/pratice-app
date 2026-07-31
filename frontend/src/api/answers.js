@@ -14,6 +14,13 @@ export function fetchAnswerHistory(params = {}) {
   })
 }
 
+export function fetchQuestionAbilityAccuracy(params = {}) {
+  const query = buildQuery(params)
+  return request({
+    url: query ? `/answers/ability-accuracy?${query}` : '/answers/ability-accuracy'
+  })
+}
+
 export function markQuestionUnfamiliar(payload) {
   return request({
     url: '/answers/mark-unfamiliar',

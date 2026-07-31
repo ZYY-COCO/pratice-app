@@ -32,11 +32,15 @@ class SubmitAnswerResponse(BaseModel):
     is_correct: bool
     explanation: str
     added_to_wrong_questions: bool
-    ability_accuracy: float
+    ability_accuracy: float | None = None
 
 
 class SubmitBatchAnswerResponse(BaseModel):
     items: list[SubmitAnswerResponse]
+
+
+class AbilityAccuracyResponse(BaseModel):
+    ability_accuracy: float | None = None
 
 
 class AnswerHistoryQuestion(BaseModel):
