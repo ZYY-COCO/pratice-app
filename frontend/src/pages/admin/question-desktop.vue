@@ -44,19 +44,12 @@
           :class="{ active: navItemActive(item.key) }"
           @tap="switchSection(item.key)"
         >
-          <text class="nav-glyph">{{ item.icon }}</text>
+          <view class="nav-icon" :style="{ '--nav-icon-url': `url(${item.icon})` }"></view>
           <text class="nav-label">{{ item.label }}</text>
         </button>
       </view>
 
       <view class="sidebar-spacer"></view>
-      <view class="sidebar-security">
-        <view class="security-icon">✓</view>
-        <view class="security-copy">
-          <view class="security-title">内部安全访问</view>
-          <view class="security-text">权限由数据库白名单控制</view>
-        </view>
-      </view>
       <button class="logout-button" @tap="logout">
         <text class="nav-glyph">↗</text>
         <text class="nav-label">退出登录</text>
@@ -934,9 +927,9 @@ const form = reactive({
 })
 
 const navItems = [
-  { key: 'dashboard', label: '仪表盘', icon: '⌂' },
-  { key: 'questions', label: '题目管理', icon: '≡' },
-  { key: 'import', label: '批量导入', icon: '⇧' }
+  { key: 'dashboard', label: '仪表盘', icon: '/static/admin-icons/nav-dashboard.svg' },
+  { key: 'questions', label: '题目管理', icon: '/static/admin-icons/nav-question-management.svg' },
+  { key: 'import', label: '批量导入', icon: '/static/admin-icons/nav-batch-import.svg' }
 ]
 
 const difficultyOptions = [
@@ -2521,6 +2514,7 @@ button {
 .portal-shell {
   --sidebar: #21354b;
   --sidebar-deep: #1a2b3f;
+  --sidebar-control-size: 43px;
   --ink: #182438;
   --muted: #748195;
   --line: #dde6eb;
@@ -2564,20 +2558,20 @@ button {
 }
 
 .sidebar-focus-toggle {
-  width: 30px;
-  height: 30px;
-  min-height: 30px;
+  width: var(--sidebar-control-size);
+  height: var(--sidebar-control-size);
+  min-height: var(--sidebar-control-size);
   margin: 0;
-  padding: 0 0 2px;
+  padding: 0;
   position: absolute;
-  top: 7px;
-  right: -4px;
+  top: 0;
+  right: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   overflow: hidden;
   border: 1px solid rgba(119, 226, 202, 0.38);
-  border-radius: 9px;
+  border-radius: 13px;
   box-sizing: border-box;
   color: #89ead4;
   background: rgba(255, 255, 255, 0.07);
@@ -2592,14 +2586,13 @@ button {
 }
 
 .sidebar-focus-toggle:hover {
-  transform: translateX(-2px);
   border-color: rgba(119, 226, 202, 0.72);
   background: rgba(80, 208, 180, 0.14);
 }
 
 .sidebar-toggle-icon {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   position: absolute;
   inset: 50% auto auto 50%;
   transform: translate(-50%, -50%);
@@ -2622,8 +2615,8 @@ button {
 }
 
 .brand-mark {
-  width: 43px;
-  height: 43px;
+  width: var(--sidebar-control-size);
+  height: var(--sidebar-control-size);
   flex: 0 0 auto;
   overflow: hidden;
   border-radius: 13px;
@@ -2647,8 +2640,7 @@ button {
 
 .brand-copy,
 .sidebar-section-label,
-.nav-label,
-.security-copy {
+.nav-label {
   transition: opacity 0.18s ease, max-width 0.22s ease;
 }
 
@@ -2712,6 +2704,17 @@ button {
   transition: width 0.2s ease, transform 0.18s ease;
 }
 
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  background: currentColor;
+  -webkit-mask: var(--nav-icon-url) center / contain no-repeat;
+  mask: var(--nav-icon-url) center / contain no-repeat;
+  opacity: 0.95;
+  transition: width 0.2s ease, height 0.2s ease, transform 0.18s ease, opacity 0.18s ease;
+}
+
 .nav-label {
   flex: 1;
 }
@@ -2738,43 +2741,6 @@ button {
 
 .sidebar-spacer {
   flex: 1;
-}
-
-.sidebar-security {
-  margin: 0 3px 13px;
-  padding: 13px;
-  display: flex;
-  gap: 10px;
-  border: 1px solid rgba(255, 255, 255, 0.07);
-  border-radius: 11px;
-  background: rgba(255, 255, 255, 0.035);
-}
-
-.security-icon {
-  width: 23px;
-  height: 23px;
-  flex: 0 0 auto;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  color: #74dfc8;
-  background: rgba(87, 210, 183, 0.12);
-  font-size: 11px;
-  font-weight: 700;
-}
-
-.security-title {
-  color: rgba(255, 255, 255, 0.72);
-  font-size: 10px;
-  font-weight: 700;
-}
-
-.security-text {
-  margin-top: 4px;
-  color: rgba(255, 255, 255, 0.32);
-  font-size: 9px;
-  line-height: 1.45;
 }
 
 .logout-button {
@@ -3266,8 +3232,7 @@ button {
 
 .sidebar-collapsed .brand-copy,
 .sidebar-collapsed .sidebar-section-label,
-.sidebar-collapsed .nav-label,
-.sidebar-collapsed .security-copy {
+.sidebar-collapsed .nav-label {
   max-width: 0;
   opacity: 0;
   overflow: hidden;
@@ -3281,9 +3246,9 @@ button {
 }
 
 .sidebar-collapsed .sidebar-focus-toggle {
-  width: 43px;
-  height: 43px;
-  min-height: 43px;
+  width: var(--sidebar-control-size);
+  height: var(--sidebar-control-size);
+  min-height: var(--sidebar-control-size);
   top: 0;
   right: auto;
   left: 50%;
@@ -3326,24 +3291,20 @@ button {
   gap: 0;
 }
 
-.sidebar-collapsed .nav-glyph {
+.sidebar-collapsed .nav-glyph,
+.sidebar-collapsed .nav-icon {
   width: auto;
   transform: scale(1.08);
+}
+
+.sidebar-collapsed .nav-icon {
+  width: 20px;
+  height: 20px;
 }
 
 .sidebar-collapsed .nav-count {
   position: absolute;
   margin: -25px 0 0 25px;
-}
-
-.sidebar-collapsed .sidebar-security {
-  width: 44px;
-  min-height: 44px;
-  margin: 0 auto 12px;
-  padding: 0;
-  align-items: center;
-  justify-content: center;
-  border-radius: 12px;
 }
 
 .sidebar-collapsed .question-bank-section {
@@ -5152,7 +5113,6 @@ button {
   .brand-copy,
   .sidebar-section-label,
   .nav-label,
-  .sidebar-security,
   .profile-copy {
     display: none;
   }
@@ -5168,8 +5128,14 @@ button {
     padding: 0;
   }
 
-  .nav-glyph {
+  .nav-glyph,
+  .nav-icon {
     width: auto;
+  }
+
+  .nav-icon {
+    width: 20px;
+    height: 20px;
   }
 
   .nav-count {
