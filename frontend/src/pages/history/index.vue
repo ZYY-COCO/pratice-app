@@ -82,7 +82,6 @@
         <view class="sheet-head">
           <view>
             <view class="sheet-title">筛选练习记录</view>
-            <view class="sheet-sub">按结果、科目、模块和时间快速定位题目</view>
           </view>
           <view class="sheet-close" aria-label="关闭" @tap="closeFilterPanel"><CloseIcon /></view>
         </view>
@@ -818,10 +817,10 @@ function goBack() {
 
 .sheet-head {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 18rpx;
-  margin-bottom: 24rpx;
+  margin-bottom: 18rpx;
 }
 
 .sheet-title {
@@ -830,18 +829,11 @@ function goBack() {
   font-weight: 900;
 }
 
-.sheet-sub {
-  margin-top: 8rpx;
-  color: #8a95a8;
-  font-size: 22rpx;
-  line-height: 1.45;
-}
-
 .sheet-close {
   width: 58rpx;
   height: 58rpx;
-  border-radius: 20rpx;
-  background: #f2f4f7;
+  border-radius: 0;
+  background: transparent;
   color: #667085;
   display: flex;
   align-items: center;
@@ -849,6 +841,7 @@ function goBack() {
   flex-shrink: 0;
   font-size: 34rpx;
   font-weight: 900;
+  box-shadow: none;
 }
 
 .filter-section {

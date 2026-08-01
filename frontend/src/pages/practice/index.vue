@@ -231,7 +231,7 @@
               :aria-label="currentFavorited ? '取消收藏' : '收藏题目'"
               @tap.stop="toggleCurrentFavorite"
             >
-              <FavoriteIcon />
+              <view class="practice-favorite-icon" aria-hidden="true"></view>
             </button>
           </view>
           <QuestionStem class="question-title" :question="normalizedCurrentQuestion" />
@@ -397,7 +397,6 @@ import { readLegacyH5Storage } from '../../platform/runtime'
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
 // #endif
 import ExplanationPanel from '../../components/ExplanationPanel.vue'
-import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import OptionCard from '../../components/OptionCard.vue'
 import QuestionStem from '../../components/QuestionStem.vue'
@@ -2959,19 +2958,31 @@ function scrollToResultSection() {
   margin: 0;
   padding: 0;
   border: 0;
-  border-radius: 22rpx;
-  background: #f3f6fb;
+  border-radius: 0;
+  background: transparent;
   color: #98a2b3;
   font-size: 34rpx;
   font-weight: 900;
-  line-height: 64rpx;
+  line-height: 1;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: none;
+}
+
+.favorite-btn::after {
+  border: 0;
+}
+
+.practice-favorite-icon {
+  width: 1em;
+  height: 1em;
+  background-color: currentColor;
+  -webkit-mask: url('/static/ui-icons/favorite-outline.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/favorite-outline.svg') center / contain no-repeat;
 }
 
 .favorite-btn.active {
-  background: #fff8d9;
   color: #f5b700;
 }
 
@@ -3027,12 +3038,18 @@ function scrollToResultSection() {
 .submit-btn {
   width: 100%;
   min-height: 104rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 28rpx;
   background: var(--gyt-primary);
   color: #ffffff;
   font-size: 30rpx;
   font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
 }
 
@@ -3233,12 +3250,18 @@ function scrollToResultSection() {
   min-height: 104rpx;
   margin: 0;
   padding: 0 18rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 28rpx;
   border: 2rpx solid var(--gyt-primary-border);
   background: #ffffff;
   color: var(--gyt-primary);
   font-size: 28rpx;
   font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
   box-shadow: 0 10rpx 22rpx rgba(20, 31, 66, 0.06);
 }
 
@@ -3253,12 +3276,18 @@ function scrollToResultSection() {
   min-height: 88rpx;
   margin-top: 16rpx;
   padding: 0 24rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 26rpx;
   border: 2rpx solid #fed7aa;
   background: #fff7ed;
   color: #c2410c;
   font-size: 27rpx;
   font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
   box-shadow: none;
 }
 

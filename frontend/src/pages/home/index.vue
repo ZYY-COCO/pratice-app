@@ -136,7 +136,7 @@
 
         <view v-else-if="retestLoading" class="state-box">正在加载本题...</view>
 
-        <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`" subtitle="作答后立即查看本题解析。">
+        <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`">
           <view class="wrong-detail retest-detail">
             <MathText class="wrong-stem" :value="retestDetail.question.stem" />
             <view class="wrong-options">
@@ -151,8 +151,6 @@
                 <MathText class="option-text" :value="option.text" />
               </button>
             </view>
-            <view v-if="!retestResultText" class="review-hint">请选择一个答案后提交，本题会立即显示正误和解析。</view>
-            <view v-if="retestResultText" class="state-box" :class="{ mastered: retestMastered }">{{ retestResultText }}</view>
             <view v-if="retestResultText" class="answer-line">正确答案：{{ retestDetail.question.answer }}</view>
             <MathText v-if="retestResultText" class="explain-text" :value="retestDetail.question.explanation" />
             <view class="detail-actions">
@@ -836,7 +834,6 @@ const retestDetail = ref(null)
 const retestAnswer = ref('')
 const retestSubmitting = ref(false)
 const retestResultText = ref('')
-const retestMastered = ref(false)
 const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
@@ -2218,7 +2215,6 @@ async function loadRetestQuestion() {
   retestDetail.value = null
   retestAnswer.value = ''
   retestResultText.value = ''
-  retestMastered.value = false
   try {
     retestDetail.value = await fetchWrongQuestionDetail(item.id)
   } catch (error) {
@@ -2257,7 +2253,6 @@ async function submitRetestAnswer() {
     })
     const isCorrect = Boolean(result.is_correct)
     const correctAnswer = result.correct_answer || retestDetail.value?.question?.answer || ''
-    retestMastered.value = isCorrect
     retestResultText.value = isCorrect ? '本题答对，继续保持。' : `本题答错，正确答案是 ${correctAnswer}。`
     retestResults.value[retestIndex.value] = {
       question_id: getDetailQuestionId(retestDetail.value),
@@ -2302,7 +2297,6 @@ function exitWrongRetest() {
   retestDetail.value = null
   retestAnswer.value = ''
   retestResultText.value = ''
-  retestMastered.value = false
   retestResults.value = []
   retestLoading.value = false
   retestCompleted.value = false
