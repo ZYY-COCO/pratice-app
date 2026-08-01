@@ -3240,9 +3240,11 @@ button {
   visibility: hidden;
 }
 
-.sidebar-collapsed .sidebar-brand:hover .brand-mark {
+.sidebar-collapsed .brand-mark {
   opacity: 0;
   transform: scale(0.86);
+  pointer-events: none;
+  visibility: hidden;
 }
 
 .sidebar-collapsed .sidebar-focus-toggle {
@@ -3254,14 +3256,13 @@ button {
   left: 50%;
   padding: 0;
   border-radius: 13px;
-  border-color: rgba(119, 226, 202, 0);
-  background: rgba(255, 255, 255, 0.04);
-  box-shadow: none;
-  opacity: 0;
+  border-color: rgba(119, 226, 202, 0.54);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 18px rgba(9, 25, 42, 0.16);
+  opacity: 1;
   transform: translateX(-50%);
 }
 
-.sidebar-collapsed .sidebar-brand:hover .sidebar-focus-toggle,
 .sidebar-collapsed .sidebar-focus-toggle:focus {
   border-color: rgba(119, 226, 202, 0.54);
   background: rgba(255, 255, 255, 0.1);
