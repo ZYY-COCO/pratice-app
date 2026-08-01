@@ -18,10 +18,20 @@
         </view>
         <button
           class="sidebar-focus-toggle"
-          :title="activeSection === 'dashboard' ? '收起导航并进入数据专注模式' : '收起导航并扩大工作区'"
+          :title="sidebarToggleTitle"
+          :aria-label="sidebarToggleTitle"
           @tap.stop="toggleSidebarCollapsed"
         >
-          <text>‹</text>
+          <image
+            class="sidebar-toggle-icon sidebar-toggle-icon-default"
+            :src="sidebarCollapsed ? '/static/admin-icons/sidebar-panel-open.svg' : '/static/admin-icons/sidebar-panel.svg'"
+            mode="aspectFit"
+          />
+          <image
+            class="sidebar-toggle-icon sidebar-toggle-icon-hover"
+            :src="sidebarCollapsed ? '/static/admin-icons/sidebar-panel-open.svg' : '/static/admin-icons/sidebar-panel-close.svg'"
+            mode="aspectFit"
+          />
         </button>
       </view>
 
@@ -52,16 +62,6 @@
         <text class="nav-label">退出登录</text>
       </button>
     </aside>
-
-    <button
-      v-if="sidebarCollapsed"
-      class="dashboard-focus-restore"
-      :title="activeSection === 'dashboard' ? '退出数据专注模式' : '展开导航'"
-      @tap.stop="toggleSidebarCollapsed"
-    >
-      <text class="dashboard-focus-restore-icon">›</text>
-      <text class="dashboard-focus-restore-label">展开导航</text>
-    </button>
 
     <main class="portal-main">
       <header class="portal-header">
@@ -846,6 +846,7 @@ const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
 const sidebarCollapsed = ref(false)
+const sidebarToggleTitle = computed(() => (sidebarCollapsed.value ? '打开边栏' : '关闭边栏'))
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
   today_practicing_users: 0,
@@ -2549,7 +2550,7 @@ button {
     radial-gradient(circle at 10% 0%, rgba(89, 211, 184, 0.14), transparent 26%),
     linear-gradient(180deg, var(--sidebar), var(--sidebar-deep));
   color: #fff;
-  transition: transform 0.28s ease, opacity 0.22s ease;
+  transition: width 0.28s ease, padding 0.28s ease, transform 0.28s ease, opacity 0.22s ease;
 }
 
 .sidebar-brand {
@@ -2557,7 +2558,9 @@ button {
   display: flex;
   align-items: center;
   gap: 12px;
+  min-height: 43px;
   padding: 0 10px;
+  transition: padding 0.24s ease, justify-content 0.24s ease;
 }
 
 .sidebar-focus-toggle {
@@ -2572,6 +2575,7 @@ button {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   border: 1px solid rgba(119, 226, 202, 0.38);
   border-radius: 9px;
   box-sizing: border-box;
@@ -2579,10 +2583,12 @@ button {
   background: rgba(255, 255, 255, 0.07);
   box-shadow: 0 8px 20px rgba(9, 25, 42, 0.18);
   cursor: pointer;
-  font-size: 25px;
-  font-weight: 500;
   line-height: 1;
   transition: border-color 0.18s ease, background 0.18s ease, transform 0.18s ease;
+}
+
+.sidebar-focus-toggle::after {
+  border: 0;
 }
 
 .sidebar-focus-toggle:hover {
@@ -2591,49 +2597,28 @@ button {
   background: rgba(80, 208, 180, 0.14);
 }
 
-.dashboard-focus-restore {
-  width: auto;
-  min-width: 38px;
-  height: 38px;
-  margin: 0;
-  padding: 0 11px 0 8px;
-  position: fixed;
-  z-index: 60;
-  left: 0;
-  top: 18px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 4px;
-  border: 1px solid #bfe8df;
-  border-left: 0;
-  border-radius: 0 11px 11px 0;
-  box-sizing: border-box;
-  color: #247e6d;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 9px 24px rgba(29, 75, 68, 0.13);
-  cursor: pointer;
-  line-height: 1;
+.sidebar-toggle-icon {
+  width: 20px;
+  height: 20px;
+  position: absolute;
+  inset: 50% auto auto 50%;
+  transform: translate(-50%, -50%);
+  transition: opacity 0.16s ease, transform 0.16s ease;
 }
 
-.dashboard-focus-restore-icon {
-  font-size: 25px;
-  line-height: 1;
-}
-
-.dashboard-focus-restore-label {
-  max-width: 0;
-  overflow: hidden;
-  font-size: 10px;
-  font-weight: 700;
-  white-space: nowrap;
+.sidebar-toggle-icon-hover {
   opacity: 0;
-  transition: max-width 0.2s ease, opacity 0.2s ease;
+  transform: translate(-50%, -50%) scale(0.9);
 }
 
-.dashboard-focus-restore:hover .dashboard-focus-restore-label {
-  max-width: 58px;
+.sidebar-focus-toggle:hover .sidebar-toggle-icon-default {
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(0.9);
+}
+
+.sidebar-focus-toggle:hover .sidebar-toggle-icon-hover {
   opacity: 1;
+  transform: translate(-50%, -50%) scale(1);
 }
 
 .brand-mark {
@@ -2644,6 +2629,7 @@ button {
   border-radius: 13px;
   background: #ffffff;
   box-shadow: 0 10px 22px rgba(20, 40, 65, 0.2);
+  transition: opacity 0.18s ease, transform 0.18s ease;
 }
 
 .brand-logo {
@@ -2657,6 +2643,13 @@ button {
   line-height: 1.2;
   font-weight: 700;
   letter-spacing: 0.05em;
+}
+
+.brand-copy,
+.sidebar-section-label,
+.nav-label,
+.security-copy {
+  transition: opacity 0.18s ease, max-width 0.22s ease;
 }
 
 .brand-caption {
@@ -2716,6 +2709,7 @@ button {
   flex: 0 0 auto;
   font-size: 17px;
   text-align: center;
+  transition: width 0.2s ease, transform 0.18s ease;
 }
 
 .nav-label {
@@ -3249,18 +3243,107 @@ button {
 }
 
 .sidebar-collapsed .portal-sidebar {
-  transform: translateX(-100%);
-  opacity: 0;
-  pointer-events: none;
+  width: 72px;
+  padding: 28px 10px 20px;
+  transform: none;
+  opacity: 1;
+  pointer-events: auto;
 }
 
 .sidebar-collapsed .portal-main {
-  margin-left: 0;
+  margin-left: 72px;
 }
 
 .sidebar-collapsed:not(.dashboard-focus-mode):not(.import-preview-focus-mode) .portal-header {
-  padding-left: 58px;
+  padding-left: 24px;
   padding-right: 22px;
+}
+
+.sidebar-collapsed .sidebar-brand {
+  justify-content: center;
+  padding: 0;
+}
+
+.sidebar-collapsed .brand-copy,
+.sidebar-collapsed .sidebar-section-label,
+.sidebar-collapsed .nav-label,
+.sidebar-collapsed .security-copy {
+  max-width: 0;
+  opacity: 0;
+  overflow: hidden;
+  pointer-events: none;
+  visibility: hidden;
+}
+
+.sidebar-collapsed .sidebar-brand:hover .brand-mark {
+  opacity: 0;
+  transform: scale(0.86);
+}
+
+.sidebar-collapsed .sidebar-focus-toggle {
+  width: 43px;
+  height: 43px;
+  min-height: 43px;
+  top: 0;
+  right: auto;
+  left: 50%;
+  padding: 0;
+  border-radius: 13px;
+  border-color: rgba(119, 226, 202, 0);
+  background: rgba(255, 255, 255, 0.04);
+  box-shadow: none;
+  opacity: 0;
+  transform: translateX(-50%);
+}
+
+.sidebar-collapsed .sidebar-brand:hover .sidebar-focus-toggle,
+.sidebar-collapsed .sidebar-focus-toggle:focus {
+  border-color: rgba(119, 226, 202, 0.54);
+  background: rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 18px rgba(9, 25, 42, 0.16);
+  opacity: 1;
+}
+
+.sidebar-collapsed .sidebar-focus-toggle:hover {
+  transform: translateX(-50%);
+}
+
+.sidebar-collapsed .sidebar-section-label {
+  margin: 28px 0 10px;
+}
+
+.sidebar-collapsed .sidebar-nav {
+  align-items: center;
+  gap: 8px;
+}
+
+.sidebar-collapsed .nav-item,
+.sidebar-collapsed .logout-button {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  justify-content: center;
+  gap: 0;
+}
+
+.sidebar-collapsed .nav-glyph {
+  width: auto;
+  transform: scale(1.08);
+}
+
+.sidebar-collapsed .nav-count {
+  position: absolute;
+  margin: -25px 0 0 25px;
+}
+
+.sidebar-collapsed .sidebar-security {
+  width: 44px;
+  min-height: 44px;
+  margin: 0 auto 12px;
+  padding: 0;
+  align-items: center;
+  justify-content: center;
+  border-radius: 12px;
 }
 
 .sidebar-collapsed .question-bank-section {
@@ -5053,7 +5136,7 @@ button {
 
 @media (max-width: 1180px) {
   .sidebar-focus-toggle {
-    display: none;
+    display: flex;
   }
 
   .portal-sidebar {
@@ -5092,6 +5175,16 @@ button {
   .nav-count {
     position: absolute;
     margin: -27px 0 0 26px;
+  }
+
+  .sidebar-collapsed .portal-sidebar {
+    width: 72px;
+    padding-left: 10px;
+    padding-right: 10px;
+  }
+
+  .sidebar-collapsed .portal-main {
+    margin-left: 72px;
   }
 
   .dashboard-metrics {
