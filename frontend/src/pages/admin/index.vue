@@ -1,6 +1,6 @@
 <template>
   <view class="admin-page" :class="{ 'question-mode': activeTab === 'questions' }" :style="themeInlineStyle">
-    <view class="admin-hero">
+    <view class="admin-hero" :style="adminHeaderStyle">
       <button class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </button>
@@ -12,6 +12,7 @@
         {{ questionCreateMode ? '⋮' : '↻' }}
       </button>
     </view>
+    <view class="admin-hero-spacer"></view>
 
     <view v-if="loading" class="state-card">正在读取后台数据...</view>
     <view v-else-if="bootstrapError" class="state-card unavailable">
@@ -568,7 +569,7 @@
 
 <script setup>
 import { computed, reactive, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onPageScroll } from '@dcloudio/uni-app'
 import CloseIcon from '../../components/CloseIcon.vue'
 import {
   cancelAdminMembership,
@@ -595,6 +596,14 @@ import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const headerScrollTop = ref(0)
+const adminHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
+  return {
+    '--admin-header-opacity': String(0.2 + progress * 0.78),
+    '--admin-header-shadow-opacity': String(progress * 0.11)
+  }
+})
 const loading = ref(true)
 const allowed = ref(false)
 const bootstrapError = ref('')
@@ -971,6 +980,10 @@ onLoad(async (options = {}) => {
     questionEntryMode.value = true
   }
   await bootstrap()
+})
+
+onPageScroll(({ scrollTop }) => {
+  headerScrollTop.value = Number(scrollTop) || 0
 })
 
 async function bootstrap() {
@@ -2162,19 +2175,34 @@ function goBack() {
 }
 
 .admin-hero {
-  position: relative;
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 24;
   display: flex;
   align-items: center;
   justify-content: center;
-  min-height: 100rpx;
-  padding: 2rpx 96rpx 12rpx;
-  margin-bottom: 12rpx;
+  min-height: 112rpx;
+  padding: 14rpx 120rpx;
+  margin: 0;
   box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--admin-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--admin-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.admin-hero-spacer {
+  width: 100%;
+  height: 112rpx;
+  flex: 0 0 112rpx;
 }
 
 .back-btn {
   position: absolute;
-  left: 0;
+  left: 24rpx;
   top: 50%;
   display: flex;
   align-items: center;
@@ -2217,7 +2245,7 @@ function goBack() {
 
 .hero-refresh-btn {
   position: absolute;
-  right: 0;
+  right: 24rpx;
   top: 50%;
   display: flex;
   align-items: center;

@@ -1,5 +1,14 @@
 <template>
   <view class="page about-page" :style="themeInlineStyle">
+    <view class="about-topbar" :style="aboutHeaderStyle">
+      <button class="about-back-btn" @tap="goBack">
+        <image class="about-back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+      </button>
+      <view class="about-top-title">关于我们</view>
+      <view class="about-top-placeholder"></view>
+    </view>
+    <view class="about-topbar-spacer"></view>
+
     <view class="about-hero">
       <view class="app-mark">港</view>
       <view class="hero-copy">
@@ -14,7 +23,12 @@
         <view class="status-kicker">当前版本</view>
         <view class="status-title">免费开放学习权益</view>
         <view class="status-desc">
+          <!-- #ifdef MP-WEIXIN -->
+          当前微信小程序为免费内测版，不提供付费购买、会员订阅或外部支付入口。现阶段所有用户均可免费使用已开放的学习功能。
+          <!-- #endif -->
+          <!-- #ifndef MP-WEIXIN -->
           当前 App Store 版本不提供付费数字内容、订阅、App 内购买或外部付费购买入口。现阶段所有用户均可免费使用学习权益。
+          <!-- #endif -->
         </view>
       </view>
       <view class="status-pill">免费</view>
@@ -50,7 +64,12 @@
 
     <view class="section-card">
       <view class="section-title">支持与隐私</view>
+      <!-- #ifdef MP-WEIXIN -->
+      <view class="section-desc">用户支持和隐私说明集中放在这里，方便随时查看和反馈问题。</view>
+      <!-- #endif -->
+      <!-- #ifndef MP-WEIXIN -->
       <view class="section-desc">审核、用户支持和隐私说明集中放在这里，方便用户和 App Review 快速找到。</view>
+      <!-- #endif -->
       <view class="action-list">
         <button class="link-row" @tap="openSupportPage">
           <view class="link-icon support">?</view>
@@ -101,6 +120,8 @@
 </template>
 
 <script setup>
+import { computed, ref } from 'vue'
+import { onPageScroll } from '@dcloudio/uni-app'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import { openExternalUrl } from '../../platform/runtime'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
@@ -109,6 +130,19 @@ const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const supportEmail = '2982326925@qq.com'
 const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
+const headerScrollTop = ref(0)
+
+const aboutHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
+  return {
+    '--about-header-opacity': String(0.2 + progress * 0.78),
+    '--about-header-shadow-opacity': String(progress * 0.11)
+  }
+})
+
+onPageScroll(({ scrollTop }) => {
+  headerScrollTop.value = Number(scrollTop) || 0
+})
 
 const features = [
   {
@@ -136,14 +170,44 @@ function openSupportPage() {
 }
 
 function openPrivacyPage() {
+  // #ifdef MP-WEIXIN
+  if (typeof wx !== 'undefined' && typeof wx.openPrivacyContract === 'function') {
+    wx.openPrivacyContract({
+      fail() {
+        uni.showToast({ title: '请在小程序资料中查看隐私保护指引', icon: 'none' })
+      }
+    })
+    return
+  }
+  // #endif
   openExternalUrl(privacyUrl)
 }
 
 function copyEmail() {
+  // #ifdef MP-WEIXIN
+  uni.showModal({
+    title: '联系邮箱',
+    content: supportEmail,
+    showCancel: false,
+    confirmText: '我知道了'
+  })
+  return
+  // #endif
+
+  // #ifndef MP-WEIXIN
   uni.setClipboardData({
     data: supportEmail,
     success() {
       uni.showToast({ title: '邮箱已复制', icon: 'none' })
+    }
+  })
+  // #endif
+}
+
+function goBack() {
+  uni.navigateBack({
+    fail() {
+      uni.redirectTo({ url: '/pages/home/index?tab=profile' })
     }
   })
 }
@@ -156,6 +220,68 @@ function copyEmail() {
   background:
     radial-gradient(circle at 92% 0%, rgba(52, 120, 246, 0.12), transparent 30%),
     linear-gradient(180deg, #f7faff 0%, #f4f7fb 100%);
+}
+
+.about-topbar {
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 24;
+  min-height: 100rpx;
+  display: grid;
+  grid-template-columns: 72rpx 1fr 72rpx;
+  align-items: center;
+  gap: 12rpx;
+  padding: 14rpx 24rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--about-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--about-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.about-topbar-spacer {
+  width: 100%;
+  height: 98rpx;
+  flex: 0 0 98rpx;
+}
+
+.about-back-btn,
+.about-top-placeholder {
+  width: 72rpx;
+  height: 72rpx;
+}
+
+.about-back-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
+}
+
+.about-back-btn::after {
+  border: 0;
+}
+
+.about-back-icon {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
+}
+
+.about-top-title {
+  text-align: center;
+  color: #101828;
+  font-size: 34rpx;
+  line-height: 1.3;
+  font-weight: 950;
 }
 
 .about-hero {

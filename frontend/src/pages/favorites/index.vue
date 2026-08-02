@@ -9,6 +9,7 @@
       </view>
       <view class="top-placeholder"></view>
     </view>
+    <view class="favorites-topbar-spacer"></view>
 
     <view class="search-card">
       <text class="search-icon">⌕</text>
@@ -286,11 +287,13 @@ function goBack() {
 }
 
 .favorites-topbar {
-  position: sticky;
-  top: env(safe-area-inset-top);
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
   z-index: 24;
   min-height: 96rpx;
-  margin: -18rpx -24rpx 24rpx;
+  margin: 0;
   padding: 18rpx 24rpx;
   box-sizing: border-box;
   background: rgba(248, 250, 255, var(--favorites-header-opacity, 0.2));
@@ -298,6 +301,12 @@ function goBack() {
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
   transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.favorites-topbar-spacer {
+  width: 100%;
+  height: 102rpx;
+  flex: 0 0 102rpx;
 }
 
 .favorites-title-copy {
@@ -331,6 +340,15 @@ function goBack() {
 
 .topbar {
   min-height: var(--mp-page-header-height, 40px);
+}
+
+.favorites-topbar {
+  top: var(--mp-page-content-top, 96px);
+}
+
+.favorites-topbar-spacer {
+  height: calc(var(--mp-page-header-height, 40px) + 24rpx);
+  flex-basis: calc(var(--mp-page-header-height, 40px) + 24rpx);
 }
 /* #endif */
 

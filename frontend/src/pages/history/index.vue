@@ -1,6 +1,6 @@
 <template>
   <view class="page history-page" :style="pageInlineStyle">
-    <view class="history-topbar">
+    <view class="history-topbar" :style="historyHeaderStyle">
       <view class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </view>
@@ -15,6 +15,7 @@
         </view>
       </view>
     </view>
+    <view class="history-topbar-spacer"></view>
 
     <view v-if="searchVisible" class="search-card">
       <text class="search-symbol">⌕</text>
@@ -183,7 +184,6 @@
         </view>
       </view>
     </view>
-
     <!-- #ifdef H5 -->
     <IcpFooter />
     <!-- #endif -->
@@ -192,7 +192,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onPageScroll, onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -218,10 +218,19 @@ const selectedItem = ref(null)
 const searchVisible = ref(false)
 const searchKeyword = ref('')
 const filterPanelVisible = ref(false)
+const headerScrollTop = ref(0)
 const advancedFilters = ref({
   subject: 'all',
   module: 'all',
   timeRange: 'all'
+})
+
+const historyHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
+  return {
+    '--history-header-opacity': String(0.2 + progress * 0.78),
+    '--history-header-shadow-opacity': String(progress * 0.11)
+  }
 })
 
 const timeOptions = [
@@ -285,6 +294,10 @@ const filteredItems = computed(() => {
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
   loadHistory()
+})
+
+onPageScroll(({ scrollTop }) => {
+  headerScrollTop.value = Number(scrollTop) || 0
 })
 
 function changeFilter(key) {
@@ -458,11 +471,29 @@ function goBack() {
 }
 
 .history-topbar {
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 24;
   display: grid;
   grid-template-columns: 1fr auto 1fr;
   align-items: center;
-  min-height: 72rpx;
-  margin-bottom: 22rpx;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 16rpx 22rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--history-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--history-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.history-topbar-spacer {
+  width: 100%;
+  height: 94rpx;
+  flex: 0 0 94rpx;
 }
 
 .back-btn,
@@ -489,6 +520,12 @@ function goBack() {
 
 .history-topbar {
   min-height: var(--mp-page-header-height, 40px);
+  top: var(--mp-page-content-top, 96px);
+}
+
+.history-topbar-spacer {
+  height: calc(var(--mp-page-header-height, 40px) + 22rpx);
+  flex-basis: calc(var(--mp-page-header-height, 40px) + 22rpx);
 }
 /* #endif */
 

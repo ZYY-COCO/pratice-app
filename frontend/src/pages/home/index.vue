@@ -111,6 +111,7 @@
           {{ retestButtonText }}
         </button>
       </view>
+      <view v-if="!retestMode" class="mistake-list-head-spacer"></view>
 
       <template v-if="retestMode">
         <SectionCard v-if="retestCompleted" title="重测完成" subtitle="本轮错题复盘结果">
@@ -277,13 +278,14 @@
 
     <template v-else-if="activeTab === 'report'">
       <view class="report-dashboard">
-        <view class="report-topbar">
+        <view class="report-topbar" :style="reportHeaderStyle">
           <button class="icon-back-btn" @tap="activeTab = 'profile'">
             <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
           </button>
           <view class="report-top-title">学习报告</view>
           <view class="report-top-spacer"></view>
         </view>
+        <view class="report-header-spacer"></view>
 
         <view v-if="reportLoading" class="state-box">正在生成真实学习报告...</view>
         <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
@@ -1086,6 +1088,13 @@ const mistakeHeaderStyle = computed(() => {
   return {
     '--mistake-header-opacity': String(0.2 + progress * 0.78),
     '--mistake-header-shadow-opacity': String(progress * 0.11)
+  }
+})
+const reportHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, mistakeHeaderScrollTop.value / 220))
+  return {
+    '--report-header-opacity': String(0.2 + progress * 0.78),
+    '--report-header-shadow-opacity': String(progress * 0.11)
   }
 })
 
@@ -2822,10 +2831,28 @@ function formatDateTime(value) {
 }
 
 .report-topbar {
-  min-height: 68rpx;
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 24;
+  min-height: 100rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
+  padding: 14rpx 22rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--report-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--report-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.report-header-spacer {
+  width: 100%;
+  height: 78rpx;
+  flex: 0 0 78rpx;
 }
 
 .report-top-title {
@@ -4335,12 +4362,15 @@ function formatDateTime(value) {
 }
 
 .mistake-list-head {
-  position: sticky;
-  top: env(safe-area-inset-top);
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
   z-index: 24;
   width: auto;
   max-width: none;
-  margin: -16rpx -22rpx 22rpx;
+  min-height: 124rpx;
+  margin: 0;
   padding: 16rpx 22rpx;
   box-sizing: border-box;
   background: rgba(248, 250, 255, var(--mistake-header-opacity, 0.2));
@@ -4348,6 +4378,12 @@ function formatDateTime(value) {
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
   transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.mistake-list-head-spacer {
+  width: 100%;
+  height: 130rpx;
+  flex: 0 0 130rpx;
 }
 
 .mistake-list-head .head-title {
@@ -5518,6 +5554,21 @@ function formatDateTime(value) {
   border-radius: 34rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.1);
+}
+
+.mistake-list-head,
+.report-topbar {
+  top: var(--mp-page-content-top, 96px);
+}
+
+.mistake-list-head-spacer {
+  height: calc(var(--mp-page-header-height, 40px) + 38rpx);
+  flex-basis: calc(var(--mp-page-header-height, 40px) + 38rpx);
+}
+
+.report-header-spacer {
+  height: calc(var(--mp-page-header-height, 40px) + 22rpx);
+  flex-basis: calc(var(--mp-page-header-height, 40px) + 22rpx);
 }
 /* #endif */
 </style>

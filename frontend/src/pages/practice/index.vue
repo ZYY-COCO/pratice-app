@@ -13,6 +13,7 @@
         <view v-if="topSubtitle" class="top-sub">{{ topSubtitle }}</view>
       </view>
     </view>
+    <view v-if="mode === 'tags'" class="scope-top-nav-spacer"></view>
 
     <template v-if="mode === 'tags'">
       <view v-if="showCultureProgress" class="culture-progress-card">
@@ -2531,17 +2532,25 @@ function scrollToResultSection() {
 }
 
 .scope-top-nav {
-  position: sticky;
-  top: env(safe-area-inset-top);
+  position: fixed;
+  top: var(--status-bar-height, 0px);
+  right: 0;
+  left: 0;
   z-index: 24;
   min-height: 108rpx;
-  margin: -16rpx -28rpx 22rpx;
+  margin: 0;
   padding: 16rpx 28rpx;
   box-sizing: border-box;
   background: rgba(248, 250, 255, var(--scope-header-opacity, 0.18));
   box-shadow: 0 14rpx 30rpx rgba(20, 31, 66, var(--scope-header-shadow-opacity, 0));
   backdrop-filter: blur(14rpx);
   transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.scope-top-nav-spacer {
+  width: 100%;
+  height: 114rpx;
+  flex: 0 0 114rpx;
 }
 
 .back-btn {
@@ -2577,7 +2586,7 @@ function scrollToResultSection() {
 
 .scope-top-copy {
   min-height: 76rpx;
-  margin-top: 44rpx;
+  margin-top: 0;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -2590,9 +2599,18 @@ function scrollToResultSection() {
 }
 
 .scope-top-copy .top-title {
-  width: 100%;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: max-content;
+  max-width: calc(100% - 220rpx);
+  overflow: hidden;
   text-align: center;
   line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
 }
 
 .top-sub {
