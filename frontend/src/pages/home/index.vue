@@ -474,7 +474,6 @@
                   <text class="menu-title">{{ item.label }}</text>
                   <text v-if="item.locked" class="pro-lock-badge">登录</text>
                 </view>
-                <view class="menu-subtitle">{{ item.desc }}</view>
               </view>
               <view class="menu-arrow">›</view>
             </view>
@@ -506,7 +505,6 @@
               </view>
               <view class="menu-copy">
                 <view class="menu-title">{{ item.label }}</view>
-                <view class="menu-subtitle">{{ item.desc }}</view>
               </view>
               <view class="menu-arrow">›</view>
             </view>
@@ -5282,7 +5280,8 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   gap: 18rpx;
-  padding: 22rpx 0;
+  min-height: 96rpx;
+  padding: 18rpx 0;
   border-bottom: 2rpx solid #edf2fb;
 }
 
@@ -5344,8 +5343,11 @@ function formatDateTime(value) {
 }
 
 .menu-copy {
+  display: flex;
+  align-items: center;
   flex: 1;
   min-width: 0;
+  min-height: 58rpx;
 }
 
 .menu-title-row {
@@ -5356,8 +5358,8 @@ function formatDateTime(value) {
 
 .menu-title {
   color: #101828;
-  font-size: 27rpx;
-  line-height: 1.3;
+  font-size: 30rpx;
+  line-height: 1.35;
   font-weight: 900;
 }
 
@@ -5371,13 +5373,6 @@ function formatDateTime(value) {
   font-weight: 900;
 }
 
-.menu-subtitle {
-  margin-top: 8rpx;
-  color: #8a95a8;
-  font-size: 22rpx;
-  line-height: 1.35;
-  font-weight: 600;
-}
 
 .logout-card {
   min-height: 84rpx;
