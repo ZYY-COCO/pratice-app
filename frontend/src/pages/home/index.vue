@@ -90,7 +90,11 @@
     </template>
 
     <template v-else-if="activeTab === 'mistakes'">
-      <view class="mistake-page-head">
+      <view
+        class="mistake-page-head"
+        :class="{ 'mistake-list-head': !retestMode }"
+        :style="!retestMode ? mistakeHeaderStyle : undefined"
+      >
         <button class="icon-back-btn" @tap="handleMistakeBack">
           <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
         </button>
@@ -365,9 +369,11 @@
           <button v-if="isAuthed" class="advice-detail-btn" @tap="openStudyAdviceDetail">
             查看详细建议
           </button>
+          <!-- #ifndef MP-WEIXIN -->
           <button v-if="dailyPlan.length" class="report-action-btn" @tap="openRecommendedTrainingSheet">
             开始推荐训练
           </button>
+          <!-- #endif -->
         </view>
       </view>
     </template>
@@ -515,6 +521,7 @@
       </view>
     </template>
 
+    <!-- #ifndef MP-WEIXIN -->
     <view v-if="showTrainingSheet" class="training-sheet-mask" @tap="closeRecommendedTrainingSheet">
       <view class="training-sheet" @tap.stop>
         <view class="sheet-handle"></view>
@@ -646,6 +653,7 @@
         <button class="generating-cancel-btn" @tap="cancelGenerateTraining">取消生成</button>
       </view>
     </view>
+    <!-- #endif -->
 
     <view v-if="showStudyAdviceDetail" class="advice-detail-mask" @tap="closeStudyAdviceDetail">
       <view class="advice-detail-sheet" @tap.stop>
@@ -692,7 +700,9 @@
             </view>
           </view>
         </scroll-view>
+        <!-- #ifndef MP-WEIXIN -->
         <button class="advice-detail-action" @tap="openRecommendedTrainingSheet">按建议生成训练</button>
+        <!-- #endif -->
       </view>
     </view>
 
@@ -762,7 +772,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { onLoad, onReachBottom, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -835,6 +845,7 @@ const retestResultText = ref('')
 const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
+const mistakeHeaderScrollTop = ref(0)
 const showTrainingSheet = ref(false)
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
@@ -914,13 +925,23 @@ const profileBenefits = [
   { label: '无限存储', icon: '∞' },
   { label: '错题本', icon: '', iconSrc: '/static/ui-icons/wrong-book.svg' },
   { label: '学习报告', icon: '', iconSrc: '/static/ui-icons/report.svg' },
+  // #ifdef MP-WEIXIN
+  { label: '练习历史', icon: '', iconSrc: '/static/ui-icons/history.svg' }
+  // #endif
+  // #ifndef MP-WEIXIN
   { label: 'AI生题及解析', icon: 'AI' }
+  // #endif
 ]
 
 const isAuthed = computed(() => authed.value)
 const memberCardSubtitle = computed(() => {
   if (!isAuthed.value) {
+    // #ifdef MP-WEIXIN
+    return '登录后即可免费使用刷题记录、错题本、练习历史和学习报告。'
+    // #endif
+    // #ifndef MP-WEIXIN
     return '登录后即可免费使用刷题记录、错题本、学习报告和 AI 生题功能。'
+    // #endif
   }
   return '当前版本所有学习功能均免费开放，不提供付费购买、订阅或外部支付入口。'
 })
@@ -1021,7 +1042,7 @@ const wrongSummaryCount = computed(() => {
 const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.items?.length ? '已生成' : '未生成'))
 const practiceTools = computed(() => {
   const proLocked = false
-  return [
+  const items = [
     { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '', iconSrc: '/static/ui-icons/favorite.svg', tone: 'blue', action: 'favorites' },
     { label: '练习历史', desc: '回顾我的练习记录', icon: '', iconSrc: '/static/ui-icons/history.svg', tone: 'green', action: 'history' },
     {
@@ -1041,22 +1062,32 @@ const practiceTools = computed(() => {
       tone: proLocked ? 'locked' : 'purple',
       action: 'report',
       locked: proLocked
-    },
-    {
-      label: 'AI 专项出题',
-      desc: '按知识点生成专项练习',
-      icon: 'AI',
-      tone: proLocked ? 'locked' : 'green',
-      action: 'ai-generator',
-      locked: proLocked
     }
   ]
+  // #ifndef MP-WEIXIN
+  items.push({
+    label: 'AI 专项出题',
+    desc: '按知识点生成专项练习',
+    icon: 'AI',
+    tone: proLocked ? 'locked' : 'green',
+    action: 'ai-generator',
+    locked: proLocked
+  })
+  // #endif
+  return items
 })
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const mpLayoutStyle = ref('')
 const pageInlineStyle = computed(() => [themeInlineStyle.value, mpLayoutStyle.value].filter(Boolean).join(';'))
+const mistakeHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, mistakeHeaderScrollTop.value / 220))
+  return {
+    '--mistake-header-opacity': String(0.2 + progress * 0.78),
+    '--mistake-header-shadow-opacity': String(progress * 0.11)
+  }
+})
 
 // #ifdef MP-WEIXIN
 function syncMpSafeLayout() {
@@ -1158,15 +1189,7 @@ const retestButtonText = computed(() => {
   if (!isAuthed.value || !wrongFilterScopeParts.value.length) return '重测错题'
   return `重测${wrongFilters.value.subject ? '本科目' : '当前范围'}`
 })
-const mistakeSubtitle = computed(() => {
-  if (!isAuthed.value) {
-    return '登录后会读取你的真实错题记录；当前展示示例内容。'
-  }
-  if (examMistakes.value.length) {
-    return `已同步 ${examMistakes.value.length} 道真实错题，按最近错误时间排序。`
-  }
-  return '已连接真实错题接口，做错题后会自动归档到这里。'
-})
+const mistakeSubtitle = computed(() => `已同步 ${examMistakes.value.length} 道错题`)
 const report = computed(() => buildReportView())
 const dailyPlan = computed(() => report.value.tasks.slice(0, 3).map((item, index) => ({
   ...item,
@@ -1405,6 +1428,10 @@ onShow(() => {
   loadOfficialMessages(true)
 })
 
+onPageScroll(({ scrollTop }) => {
+  mistakeHeaderScrollTop.value = Number(scrollTop) || 0
+})
+
 onReachBottom(() => {
   if (activeTab.value === 'mistakes' && !retestMode.value) {
     loadMoreMistakes()
@@ -1526,6 +1553,11 @@ function selectTrainingSubject(subject) {
 }
 
 function openRecommendedTrainingSheet() {
+  // #ifdef MP-WEIXIN
+  uni.showToast({ title: '该功能暂未在小程序开放', icon: 'none' })
+  return
+  // #endif
+
   showStudyAdviceDetail.value = false
   smartMode.value = true
   manualDifficulty.value = '标准提升'
@@ -4302,6 +4334,48 @@ function formatDateTime(value) {
   max-width: 760rpx;
 }
 
+.mistake-list-head {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 24;
+  width: auto;
+  max-width: none;
+  margin: -16rpx -22rpx 22rpx;
+  padding: 16rpx 22rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--mistake-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--mistake-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.mistake-list-head .head-title {
+  position: absolute;
+  top: 20rpx;
+  left: 50%;
+  z-index: 1;
+  width: max-content;
+  max-width: calc(100% - 310rpx);
+  overflow: hidden;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  pointer-events: none;
+  transform: translateX(-50%);
+}
+
+.mistake-list-head .mistake-head-copy {
+  align-self: stretch;
+  display: flex;
+  align-items: flex-end;
+  padding-top: 62rpx;
+}
+
+.mistake-list-head .head-subtitle {
+  margin-top: 0;
+}
+
 .icon-back-btn {
   display: flex;
   align-items: center;
@@ -5372,7 +5446,6 @@ function formatDateTime(value) {
   line-height: 1.2;
   font-weight: 900;
 }
-
 
 .logout-card {
   min-height: 84rpx;

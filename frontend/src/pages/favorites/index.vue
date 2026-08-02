@@ -1,11 +1,10 @@
 <template>
   <view class="page favorites-page" :style="pageInlineStyle">
-    <view class="topbar">
+    <view class="topbar favorites-topbar" :style="favoritesHeaderStyle">
       <view class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </view>
-      <view>
-        <view class="app-name">港研通</view>
+      <view class="favorites-title-copy">
         <view class="page-title">收藏夹</view>
       </view>
       <view class="top-placeholder"></view>
@@ -118,7 +117,7 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onPageScroll, onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
 import CloseIcon from '../../components/CloseIcon.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
@@ -139,6 +138,15 @@ const favoriteRows = ref([])
 const loading = ref(false)
 const error = ref('')
 const toggling = ref(false)
+const headerScrollTop = ref(0)
+
+const favoritesHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
+  return {
+    '--favorites-header-opacity': String(0.2 + progress * 0.78),
+    '--favorites-header-shadow-opacity': String(progress * 0.11)
+  }
+})
 
 const subjects = ['全部', '中华文化', '英语运用', '逻辑推理', '数学基础']
 
@@ -195,6 +203,10 @@ const selectedOptions = computed(() => {
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
   loadFavorites()
+})
+
+onPageScroll(({ scrollTop }) => {
+  headerScrollTop.value = Number(scrollTop) || 0
 })
 
 async function loadFavorites() {
@@ -273,6 +285,28 @@ function goBack() {
   margin-bottom: 24rpx;
 }
 
+.favorites-topbar {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 24;
+  min-height: 96rpx;
+  margin: -18rpx -24rpx 24rpx;
+  padding: 18rpx 24rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--favorites-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--favorites-header-shadow-opacity, 0));
+  backdrop-filter: blur(18rpx);
+  -webkit-backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+.favorites-title-copy {
+  min-height: 60rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .back-btn,
 .top-placeholder,
 .close-btn,
@@ -306,19 +340,13 @@ function goBack() {
   display: block;
 }
 
-.app-name {
-  text-align: center;
-  color: #667085;
-  font-size: 22rpx;
-  font-weight: 700;
-}
-
 .page-title {
-  margin-top: 4rpx;
+  margin-top: 0;
+  width: 100%;
   text-align: center;
   color: #101828;
   font-size: 44rpx;
-  line-height: 1.15;
+  line-height: 1.35;
   font-weight: 900;
 }
 

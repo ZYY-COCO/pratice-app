@@ -1,12 +1,16 @@
 <template>
   <view class="page practice-page" :style="themeInlineStyle">
-    <view class="top-nav">
+    <view
+      class="top-nav"
+      :class="{ 'scope-top-nav': mode === 'tags' }"
+      :style="mode === 'tags' ? scopeHeaderStyle : undefined"
+    >
       <button class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </button>
-      <view class="top-copy">
+      <view class="top-copy" :class="{ 'scope-top-copy': mode === 'tags' }">
         <view class="top-title">{{ pageTitle }}</view>
-        <view class="top-sub">{{ topSubtitle }}</view>
+        <view v-if="topSubtitle" class="top-sub">{{ topSubtitle }}</view>
       </view>
     </view>
 
@@ -386,7 +390,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
-import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
+import { onBackPress, onLoad, onPageScroll, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchAnswerHistory, fetchQuestionAbilityAccuracy, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
@@ -485,6 +489,7 @@ const aiSummary = ref(null)
 const aiReviewResults = ref([])
 const mockExamMode = ref(false)
 const showAnswerSheet = ref(false)
+const scopeHeaderScrollTop = ref(0)
 
 const questionCache = new Map()
 let timerId = null
@@ -578,11 +583,21 @@ const pageTitle = computed(() => {
     return 'AI 专项出题'
   }
   if (mode.value === 'tags') {
-    return '选择刷题范围'
+    return subject.value || '专题练习'
   }
   return practiceMode.value === 'comprehensive' ? '综合刷题' : '专项刷题'
 })
-const topSubtitle = computed(() => (mockExamMode.value ? `${examCode.value} / 105分轻量模拟` : `${examCode.value} / ${subject.value}`))
+const topSubtitle = computed(() => {
+  if (mode.value === 'tags') return ''
+  return mockExamMode.value ? `${examCode.value} / 105分轻量模拟` : `${examCode.value} / ${subject.value}`
+})
+const scopeHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, scopeHeaderScrollTop.value / 240))
+  return {
+    '--scope-header-opacity': String(0.18 + progress * 0.8),
+    '--scope-header-shadow-opacity': String(progress * 0.12)
+  }
+})
 const dataModeLabel = computed(() => (hasAccessToken.value ? '将使用真实题库' : '当前使用 mock 题目'))
 const selectedQuestionCount = computed(() => selectedTags.value.reduce((sum, tag) => sum + getCount(tag), 0))
 const stickyTitle = computed(() => {
@@ -760,6 +775,10 @@ onLoad((options) => {
 onShow(() => {
   syncAccessToken()
   loadCultureProgress()
+})
+
+onPageScroll(({ scrollTop }) => {
+  scopeHeaderScrollTop.value = Number(scrollTop) || 0
 })
 
 onUnload(() => {
@@ -2511,6 +2530,20 @@ function scrollToResultSection() {
   margin-bottom: 22rpx;
 }
 
+.scope-top-nav {
+  position: sticky;
+  top: env(safe-area-inset-top);
+  z-index: 24;
+  min-height: 108rpx;
+  margin: -16rpx -28rpx 22rpx;
+  padding: 16rpx 28rpx;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--scope-header-opacity, 0.18));
+  box-shadow: 0 14rpx 30rpx rgba(20, 31, 66, var(--scope-header-shadow-opacity, 0));
+  backdrop-filter: blur(14rpx);
+  transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
 .back-btn {
   width: 76rpx;
   height: 76rpx;
@@ -2542,10 +2575,24 @@ function scrollToResultSection() {
   flex: 1;
 }
 
+.scope-top-copy {
+  min-height: 76rpx;
+  margin-top: 44rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
 .top-title {
   color: #172033;
   font-size: 38rpx;
   font-weight: 900;
+}
+
+.scope-top-copy .top-title {
+  width: 100%;
+  text-align: center;
+  line-height: 1.35;
 }
 
 .top-sub {
