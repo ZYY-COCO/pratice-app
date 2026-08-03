@@ -1022,7 +1022,7 @@ function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCou
   const subject = String(structuredValue(question, ['subject', '科目'], importDefaults.subject))
   const catalog = importCatalog[subject] || importCatalog[importDefaults.subject]
   const module = String(structuredValue(question, ['module', '模块'], importDefaults.module))
-  const submodule = String(structuredValue(question, ['submodule', '考点', '分类'], importDefaults.submodule))
+  const submodule = String(structuredValue(question, ['submodule', '子模块', '考点', '分类'], importDefaults.submodule))
   const rawDifficulty = structuredValue(question, ['difficulty', '难度'], importDefaults.difficulty)
   const rawSourceYear = structuredValue(question, ['source_year', '来源年份'], '')
   return {
