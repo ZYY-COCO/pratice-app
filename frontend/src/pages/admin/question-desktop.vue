@@ -3915,13 +3915,39 @@ button {
   min-width: 104px;
   font-size: 13px;
   font-weight: 900;
-  letter-spacing: 0.01em;
+  letter-spacing: 0;
 }
 
 .review-start-button {
   border-color: #8ddfcd;
   color: #176b5d;
   background: #f4fcfa;
+}
+
+.workspace-actions .publish-question-button {
+  width: 124px;
+  min-width: 124px;
+  height: 46px;
+  min-height: 46px;
+  max-height: 46px;
+  padding: 0 18px;
+  border: 1px solid #d9e5e9;
+  border-radius: 10px;
+  box-sizing: border-box;
+  box-shadow: 0 10px 22px rgba(31, 50, 71, 0.06);
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.workspace-actions .primary-button.publish-question-button {
+  border-color: #4fcdb1;
+  color: #173f3a;
+  background: linear-gradient(135deg, #68dec5, #4fcdb1);
+}
+
+.workspace-actions .secondary-button.publish-question-button {
+  color: #40536a;
+  background: #fff;
 }
 
 .review-start-button:hover:not([disabled]) {
@@ -4135,6 +4161,26 @@ button {
   color: #536176;
   background: #fff;
   text-align: left;
+}
+
+.question-workspace.compact .question-row {
+  min-height: 82px;
+}
+
+.question-workspace.compact .table-stem {
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.question-workspace.compact .table-answer,
+.question-workspace.compact .table-module,
+.question-workspace.compact .date-cell,
+.question-workspace.compact .difficulty-copy {
+  font-size: 11px;
+}
+
+.question-workspace.compact .table-subject {
+  font-size: 12px;
 }
 
 .check-box {
@@ -4771,6 +4817,10 @@ button {
   box-shadow: 0 28px 80px rgba(20, 36, 52, 0.24);
 }
 
+.question-drawer.review-modal .drawer-content {
+  padding: 24px 28px 36px;
+}
+
 .drawer-header {
   height: 81px;
   padding: 0 25px;
@@ -4914,6 +4964,41 @@ button {
 .form-textarea.explanation { min-height: 120px; }
 .form-textarea.note { min-height: 76px; }
 
+.question-drawer.review-modal .form-label {
+  font-size: 12px;
+}
+
+.question-drawer.review-modal .form-admin-select {
+  --admin-select-height: 42px;
+  --admin-select-font-size: 13px;
+}
+
+.question-drawer.review-modal .difficulty-picker {
+  height: 42px;
+}
+
+.question-drawer.review-modal .difficulty-picker button {
+  height: 40px;
+  font-size: 12px;
+  line-height: 40px;
+}
+
+.question-drawer.review-modal .required-tag,
+.question-drawer.review-modal .form-hint {
+  font-size: 10px;
+}
+
+.question-drawer.review-modal .form-textarea {
+  padding: 15px 16px;
+  border-radius: 10px;
+  font-size: 14px;
+  line-height: 1.75;
+}
+
+.question-drawer.review-modal .form-textarea.stem { min-height: 140px; }
+.question-drawer.review-modal .form-textarea.explanation { min-height: 150px; }
+.question-drawer.review-modal .form-textarea.note { min-height: 92px; }
+
 .drawer-math-preview {
   margin-bottom: 18px;
 }
@@ -4966,6 +5051,30 @@ button {
   flex: 1;
   color: #3f4f64;
   font-size: 10px;
+}
+
+.question-drawer.review-modal .option-editor {
+  gap: 10px;
+}
+
+.question-drawer.review-modal .option-row {
+  min-height: 52px;
+  padding: 8px 13px 8px 8px;
+  border-radius: 10px;
+}
+
+.question-drawer.review-modal .answer-selector {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  font-size: 12px;
+  line-height: 36px;
+}
+
+.question-drawer.review-modal .option-input {
+  height: 36px;
+  font-size: 14px;
+  line-height: 1.5;
 }
 
 .review-note-field {
