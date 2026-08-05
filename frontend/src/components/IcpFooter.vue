@@ -1,6 +1,6 @@
 <template>
   <!-- #ifdef H5 -->
-  <view class="icp-footer" :class="{ compact }">
+  <view class="icp-footer" :class="{ compact, glass }">
     <view class="icp-footer-inner">
       <a
         class="icp-link"
@@ -30,6 +30,10 @@
 <script setup>
 defineProps({
   compact: {
+    type: Boolean,
+    default: false
+  },
+  glass: {
     type: Boolean,
     default: false
   }
@@ -63,6 +67,21 @@ defineProps({
 
 .icp-footer.compact {
   padding-bottom: calc(env(safe-area-inset-bottom) + 142rpx);
+}
+
+.icp-footer.glass {
+  margin-top: 8px;
+  padding: 10px 4px calc(env(safe-area-inset-bottom) + 84px);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  color: var(--circle-muted, #718096);
+  font-family: var(--circle-font, -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif);
+}
+
+.icp-footer.glass .icp-link {
+  color: var(--circle-muted, #718096);
 }
 
 .icp-link {

@@ -1,5 +1,12 @@
 <template>
-  <view class="page home-page" :class="{ 'no-tab-page': !showBottomTab }" :style="pageInlineStyle">
+  <view
+    class="page home-page"
+    :class="{
+      'no-tab-page': !showBottomTab,
+      'circle-glass-page': activeTab === 'circle'
+    }"
+    :style="pageInlineStyle"
+  >
     <template v-if="activeTab === 'home'">
       <view class="home-dashboard">
         <view class="home-header">
@@ -86,6 +93,252 @@
           <view class="mock-exam-arrow">›</view>
         </view>
 
+      </view>
+    </template>
+
+    <template v-else-if="activeTab === 'circle'">
+      <view class="circle-dashboard">
+        <view v-if="selectedCircleSection === 'overview'" class="circle-overview">
+          <swiper
+            class="circle-insight-swiper"
+            :current="circleInsightIndex"
+            :autoplay="true"
+            :interval="5000"
+            :duration="420"
+            circular
+            @change="handleCircleInsightChange"
+          >
+            <swiper-item>
+              <view class="circle-trend-card circle-glass-surface">
+                <view class="circle-trend-heading">
+                  <view class="circle-trend-title">近 7 天刷题人数</view>
+                  <view class="circle-trend-peak">
+                    <text>峰值 </text>
+                    <text class="circle-trend-peak-value">{{ circleTrendPeak }}</text>
+                    <text> 人</text>
+                  </view>
+                </view>
+                <view class="circle-trend-chart" aria-label="近 7 天刷题人数统计图">
+                  <view class="circle-trend-grid" aria-hidden="true">
+                    <view v-for="label in circleTrendAxis" :key="label" class="circle-trend-grid-line"></view>
+                  </view>
+                  <view class="circle-trend-axis" aria-hidden="true">
+                    <text v-for="label in circleTrendAxis" :key="label">{{ label }}</text>
+                  </view>
+                  <view class="circle-trend-bars">
+                    <view v-for="item in circlePracticeTrend" :key="item.day" class="circle-trend-column">
+                      <view class="circle-trend-bar-space">
+                        <view
+                          class="circle-trend-bar"
+                          :class="{ latest: item.latest }"
+                          :style="{ height: getCircleTrendHeight(item.count) }"
+                        >
+                          <text class="circle-trend-value">{{ item.count }}</text>
+                        </view>
+                      </view>
+                      <text class="circle-trend-day">{{ item.day }}</text>
+                    </view>
+                  </view>
+                </view>
+              </view>
+            </swiper-item>
+
+            <swiper-item>
+              <view class="circle-score-card circle-glass-surface">
+                <view class="circle-score-heading">
+                  <view>
+                    <view class="circle-score-title">{{ activeCircleScoreSchool.name }}</view>
+                    <view class="circle-score-subtitle">历年分数线</view>
+                  </view>
+                  <view class="circle-score-total">总分 <text>150</text></view>
+                </view>
+                <view class="circle-score-chart" :aria-label="`${activeCircleScoreSchool.name}历年分数线`">
+                  <view class="circle-score-axis" aria-hidden="true">
+                    <text v-for="label in circleScoreAxis" :key="label">{{ label }}</text>
+                  </view>
+                  <svg class="circle-score-svg" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
+                    <line v-for="y in circleScoreGridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
+                    <polyline :points="circleScoreLinePoints" class="circle-score-line" />
+                    <g v-for="(score, index) in activeCircleScoreSchool.scores" :key="circleScoreYears[index]">
+                      <circle :cx="circleScoreX[index]" :cy="getCircleScoreY(score)" r="4.5" class="circle-score-point" />
+                      <text :x="circleScoreX[index]" :y="getCircleScoreY(score) - 10" class="circle-score-value">{{ score }}</text>
+                    </g>
+                  </svg>
+                  <view class="circle-score-years" aria-hidden="true">
+                    <text v-for="year in circleScoreYears" :key="year">{{ year }}</text>
+                  </view>
+                </view>
+              </view>
+            </swiper-item>
+          </swiper>
+
+          <view class="circle-insight-pagination" aria-label="数据卡片轮播">
+            <button
+              v-for="index in 2"
+              :key="index"
+              class="circle-insight-dot"
+              :class="{ active: circleInsightIndex === index - 1 }"
+              :aria-label="`切换到第${index}张数据卡片`"
+              @tap="selectCircleInsight(index - 1)"
+            ></button>
+          </view>
+
+          <view class="circle-entry-list circle-glass-group">
+            <button
+              v-for="item in circleSections"
+              :key="item.key"
+              class="circle-entry"
+              :aria-label="`进入${item.label}`"
+              @tap="openCircleSection(item.key)"
+            >
+              <view class="circle-entry-icon">
+                <view class="circle-entry-icon-mask" :style="getThemeIconStyle(item.iconSrc)"></view>
+              </view>
+              <text class="circle-entry-label">{{ item.label }}</text>
+              <view class="circle-entry-arrow" aria-hidden="true">›</view>
+            </button>
+          </view>
+        </view>
+
+        <view v-else class="circle-detail-page">
+          <view class="circle-detail-header">
+            <button class="circle-back-button" aria-label="返回研圈首页" @tap="returnToCircleOverview">
+              <image src="/static/ui-icons/back.svg" mode="aspectFit" />
+            </button>
+            <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
+            <view class="circle-detail-header-spacer"></view>
+          </view>
+
+          <view v-if="selectedCircleSection === 'experience'" class="circle-section">
+            <view class="experience-search circle-glass-group">
+              <text class="experience-search-icon">⌕</text>
+              <input
+                v-model="experienceSearchKeyword"
+                class="experience-search-input"
+                placeholder="搜索经验贴"
+                placeholder-class="experience-search-placeholder"
+                confirm-type="search"
+              />
+              <button
+                v-if="experienceSearchKeyword"
+                class="experience-search-clear"
+                aria-label="清除搜索"
+                @tap.stop="clearExperienceSearch"
+              >
+                <CloseIcon />
+              </button>
+            </view>
+
+            <scroll-view scroll-x class="experience-filter-scroll">
+              <view class="experience-filter-row circle-glass-group">
+                <button
+                  v-for="item in circleExperienceCategories"
+                  :key="item"
+                  class="experience-filter-chip"
+                  :class="{ active: selectedExperienceCategory === item }"
+                  @tap="selectExperienceCategory(item)"
+                >
+                  {{ item }}
+                </button>
+              </view>
+            </scroll-view>
+
+            <view
+              v-for="post in filteredCircleExperiencePosts"
+              :key="post.id"
+              class="experience-card"
+              @tap="openCirclePost(post)"
+            >
+              <view class="experience-author-row">
+                <view class="experience-avatar">{{ post.avatar }}</view>
+                <view class="experience-author-main">
+                  <view class="experience-author-name">{{ post.author }}</view>
+                  <view class="experience-author-role">{{ post.authorRole }} · {{ post.publishDate }}</view>
+                </view>
+                <view class="experience-exam">{{ post.subject }}</view>
+              </view>
+              <view class="experience-title">{{ post.title }}</view>
+              <view class="experience-summary">{{ post.summary }}</view>
+              <view class="experience-points">
+                <text v-for="point in post.points" :key="point">{{ point }}</text>
+              </view>
+              <view class="experience-footer">
+                <view class="experience-stats">
+                  <text>{{ post.stats.views }} 阅读</text>
+                  <text>{{ post.stats.likes }} 赞</text>
+                  <text>{{ post.stats.saves }} 收藏</text>
+                </view>
+              </view>
+            </view>
+
+            <view v-if="filteredCircleExperiencePosts.length === 0" class="circle-empty-card">
+              <view class="circle-empty-title">暂无匹配的经验贴</view>
+              <view class="circle-empty-copy">换个关键词或分类试试</view>
+            </view>
+          </view>
+
+          <view v-else-if="selectedCircleSection === 'materials'" class="circle-section">
+            <view class="circle-section-head">
+              <view>
+                <view class="circle-section-title">推荐资料</view>
+                <view class="circle-section-subtitle">按科目归档，资料卡片预留网盘链接、提取码和更新记录。</view>
+              </view>
+              <view class="circle-section-count">{{ filteredCircleMaterials.length }} 份</view>
+            </view>
+
+            <scroll-view scroll-x class="material-subject-scroll">
+              <view class="material-subject-row circle-glass-group">
+                <button
+                  v-for="subject in circleMaterialSubjects"
+                  :key="subject"
+                  class="material-subject-chip"
+                  :class="{ active: selectedMaterialSubject === subject }"
+                  @tap="selectCircleMaterialSubject(subject)"
+                >
+                  {{ subject }}
+                </button>
+              </view>
+            </scroll-view>
+
+            <view class="material-subject-card">
+              <view>
+                <view class="material-subject-title">{{ selectedMaterialSubject }}</view>
+                <view class="material-subject-copy">{{ circleMaterialSubjectSummary }}</view>
+              </view>
+              <view class="material-subject-mark">网盘</view>
+            </view>
+
+            <view
+              v-for="item in filteredCircleMaterials"
+              :key="item.id"
+              class="material-card"
+            >
+              <view class="material-main">
+                <view class="material-title-row">
+                  <view class="material-title">{{ item.title }}</view>
+                  <view class="material-badge">{{ item.level }}</view>
+                </view>
+                <view class="material-desc">{{ item.desc }}</view>
+                <view class="material-tags">
+                  <text v-for="tag in item.tags" :key="tag">{{ tag }}</text>
+                </view>
+                <view class="material-share-line">
+                  <text>网盘链接：{{ item.shareUrl }}</text>
+                  <text>提取码：{{ item.shareCode }}</text>
+                </view>
+              </view>
+              <button class="material-action" @tap="copyMaterialShare(item)">复制</button>
+            </view>
+          </view>
+
+          <view v-else class="circle-empty-card">
+            <view class="circle-empty-icon">
+              <view class="circle-entry-icon-mask" :style="getThemeIconStyle(circlePlannedSection.iconSrc)"></view>
+            </view>
+            <view class="circle-empty-title">敬请期待</view>
+            <view class="circle-empty-copy">{{ circlePlannedSection.label }}正在整理中，后续会在这里开放。</view>
+          </view>
+        </view>
       </view>
     </template>
 
@@ -765,10 +1018,61 @@
       </view>
     </view>
 
+    <view v-if="selectedCirclePost" class="circle-post-mask" @tap="closeCirclePost">
+      <view class="circle-post-sheet" @tap.stop>
+        <view class="circle-post-handle"></view>
+        <button class="circle-post-close" aria-label="关闭" @tap="closeCirclePost"><CloseIcon /></button>
+        <view class="circle-post-tag">{{ selectedCirclePost.tag }}</view>
+        <view class="circle-post-title">{{ selectedCirclePost.title }}</view>
+        <view class="circle-post-author-row">
+          <view class="experience-avatar circle-post-avatar">{{ selectedCirclePost.avatar }}</view>
+          <view class="circle-post-author-main">
+            <view class="circle-post-author-name">{{ selectedCirclePost.author }}</view>
+            <view class="circle-post-meta">{{ selectedCirclePost.authorRole }} · {{ selectedCirclePost.examCode }} · {{ selectedCirclePost.readTime }}</view>
+          </view>
+        </view>
+        <view class="circle-post-stat-row">
+          <text>{{ selectedCirclePost.subject }}</text>
+          <text>{{ selectedCirclePost.publishDate }} 发布</text>
+          <text>{{ selectedCirclePost.stats.views }} 阅读</text>
+        </view>
+        <scroll-view scroll-y class="circle-post-scroll">
+          <view
+            v-for="section in selectedCirclePost.sections"
+            :key="section.heading"
+            class="circle-post-section"
+          >
+            <view class="circle-post-section-title">{{ section.heading }}</view>
+            <view class="circle-post-paragraph">{{ section.body }}</view>
+          </view>
+          <view class="circle-post-checklist">
+            <view v-for="point in selectedCirclePost.points" :key="point" class="circle-post-point">
+              <text>✓</text>
+              <text>{{ point }}</text>
+            </view>
+          </view>
+          <view class="circle-post-action-row">
+            <button @tap="handleCirclePostLocalAction('点赞')">点赞 {{ selectedCirclePost.stats.likes }}</button>
+            <button @tap="handleCirclePostLocalAction('收藏')">收藏 {{ selectedCirclePost.stats.saves }}</button>
+          </view>
+        </scroll-view>
+      </view>
+    </view>
+
     <!-- #ifdef H5 -->
-    <IcpFooter :compact="showBottomTab" />
+    <IcpFooter
+      :compact="showBottomTab"
+      :glass="activeTab === 'circle'"
+    />
     <!-- #endif -->
-    <BottomTabBar v-if="showBottomTab" v-model="activeTab" :items="tabs" />
+    <BottomTabBar
+      v-if="showBottomTab"
+      v-model="activeTab"
+      :items="tabs"
+      :glass="activeTab === 'circle'"
+      :collapsed="isCircleTabbarCollapsed"
+      @expand="expandCircleTabbar"
+    />
   </view>
 </template>
 
@@ -808,8 +1112,14 @@ const wordmarkSrc = '/static/gangyantong-wordmark.png'
 const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
 // #endif
 
+let IS_H5 = false
+// #ifdef H5
+IS_H5 = true
+// #endif
+
 const examOptions = EXAM_OPTIONS
 const themePresets = THEME_PRESETS
+const ENABLE_CIRCLE = Boolean(IS_H5)
 const initialAuthUser = getAuthUser()
 const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
 const activeTab = ref('home')
@@ -859,6 +1169,15 @@ const officialAutoShown = ref(false)
 const selectedThemeKey = ref(getStoredThemeKey())
 const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
+const selectedCircleSection = ref('overview')
+const selectedCirclePost = ref(null)
+const circleInsightIndex = ref(0)
+const circleScoreSchoolIndex = ref(Math.floor(Math.random() * 4))
+const selectedMaterialSubject = ref('中华文化')
+const selectedExperienceCategory = ref('全部')
+const experienceSearchKeyword = ref('')
+const circleTabCollapsed = ref(false)
+const circleLastScrollTop = ref(0)
 
 applyThemeByKey(selectedThemeKey.value)
 const smartMode = ref(true)
@@ -871,22 +1190,380 @@ const generateCountdown = ref(45)
 const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
-const tabs = computed(() => [
-  {
-    key: 'home',
-    label: '首页',
-    iconSrc: '/static/ui-icons/tab-home.svg',
-    mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
-  },
-  {
+const tabs = computed(() => {
+  const items = [
+    {
+      key: 'home',
+      label: '首页',
+      iconSrc: '/static/ui-icons/tab-home.svg',
+      mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
+    }
+  ]
+
+  if (ENABLE_CIRCLE) {
+    items.push({
+      key: 'circle',
+      label: '研圈',
+      iconSrc: '/static/ui-icons/tab-circle.svg'
+    })
+  }
+
+  items.push({
     key: 'profile',
     label: '我的',
     iconSrc: '/static/ui-icons/tab-profile.svg',
     mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-profile.svg')
-  }
-])
+  })
+
+  return items
+})
 const showBottomTab = computed(() => !retestMode.value && !['mistakes', 'report'].includes(activeTab.value))
+const isCircleTabbarCollapsed = computed(() =>
+  activeTab.value === 'circle' && selectedCircleSection.value !== 'overview' && circleTabCollapsed.value
+)
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
+const circleSections = [
+  {
+    key: 'experience',
+    label: '经验贴',
+    iconSrc: '/static/ui-icons/circle-experience.svg'
+  },
+  {
+    key: 'scores',
+    label: '历年分数线',
+    iconSrc: '/static/ui-icons/circle-scores.svg'
+  },
+  {
+    key: 'materials',
+    label: '推荐资料',
+    iconSrc: '/static/ui-icons/circle-materials.svg'
+  },
+  {
+    key: 'courses',
+    label: '精选课程',
+    iconSrc: '/static/ui-icons/circle-courses.svg'
+  }
+]
+const circlePracticeTrend = [
+  { day: '周一', count: 356 },
+  { day: '周二', count: 418 },
+  { day: '周三', count: 472 },
+  { day: '周四', count: 439 },
+  { day: '周五', count: 516 },
+  { day: '周六', count: 468 },
+  { day: '周日', count: 592, latest: true }
+]
+const circleScoreSchools = [
+  { name: '香港大学', scores: [103, 108, 112] },
+  { name: '香港中文大学', scores: [96, 101, 105] },
+  { name: '香港科技大学', scores: [98, 104, 106] },
+  { name: '香港城市大学', scores: [92, 95, 99] }
+]
+const circleScoreYears = ['2024', '2025', '2026']
+const circleScoreAxis = [150, 100, 50]
+const circleScoreGridY = [18, 54, 90]
+const circleScoreX = [58, 160, 262]
+const activeCircleScoreSchool = computed(() =>
+  circleScoreSchools[circleScoreSchoolIndex.value] || circleScoreSchools[0]
+)
+const circleScoreLinePoints = computed(() =>
+  activeCircleScoreSchool.value.scores
+    .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score)}`)
+    .join(' ')
+)
+const circleExperienceCategories = ['全部', '备考节奏', '中华文化', '数学基础', '英语运用', '逻辑推理']
+const circleExperiencePosts = [
+  {
+    id: 'exp-z001-pace',
+    category: '备考节奏',
+    tag: '备考节奏',
+    examCode: 'Z001',
+    subject: '综合备考',
+    title: '三科并行时，先把每天的固定题量跑顺',
+    summary: '适合刚开始准备 Z001 的同学，把中华文化、英语运用和逻辑推理拆成可执行的日计划。',
+    author: '研友 A',
+    authorRole: 'Z001 上岸经验',
+    avatar: 'A',
+    publishDate: '2026-08-03',
+    updatedDate: '2026-08-03',
+    readTime: '4 分钟',
+    stats: {
+      views: 1268,
+      likes: 86,
+      saves: 42
+    },
+    points: ['每天先做固定题量', '错题当天复盘', '周末做一次小结'],
+    sections: [
+      {
+        heading: '先固定动作',
+        body: '最容易拖慢进度的不是某个知识点，而是每天不知道先做什么。我的做法是把三科拆成固定动作：中华文化 20 题、英语语言知识 20 题、逻辑推理 15 题，先保证不断档。'
+      },
+      {
+        heading: '错题当天处理',
+        body: '错题不要堆到周末统一看。当天错的题，至少要把题干关键词、误选原因和正确选项理由写出来。第二天开始前先看昨天的错题，再进入新题。'
+      },
+      {
+        heading: '周末只看两个指标',
+        body: '周末复盘只看两件事：哪一科掉分最多，哪一种题型最拖时间。下一周就把这两个点放到每天第一组题里。'
+      }
+    ]
+  },
+  {
+    id: 'exp-culture-memory',
+    category: '中华文化',
+    tag: '中华文化',
+    examCode: 'COMMON',
+    subject: '中华文化',
+    title: '中华文化别死背，先按人物、作品、朝代建索引',
+    summary: '把文学、历史、艺术和科技常识放进同一张索引表，做题时更容易定位干扰项。',
+    author: '研友 B',
+    authorRole: '文化常识高分复盘',
+    avatar: '文',
+    publishDate: '2026-08-02',
+    updatedDate: '2026-08-03',
+    readTime: '5 分钟',
+    stats: {
+      views: 982,
+      likes: 73,
+      saves: 58
+    },
+    points: ['先归类再背诵', '干扰项找相近领域', '解析只记判断理由'],
+    sections: [
+      {
+        heading: '先把知识点放进位置',
+        body: '中华文化题看起来杂，但常见干扰项通常来自相近领域。比如人物和作品、朝代和制度、艺术门类和代表作，经常会互相混淆。'
+      },
+      {
+        heading: '用索引表补全连接',
+        body: '我会先建四列：人物、作品、朝代、关键词。刷题遇到新的知识点就补进去，不追求一次背完，但要求每次补充都能和旧知识发生连接。'
+      },
+      {
+        heading: '解析只留判断理由',
+        body: '解析不用抄长段材料，只保留判断理由。比如“这部作品属于某朝代”“这个概念对应某学派”，越短越容易复盘。'
+      }
+    ]
+  },
+  {
+    id: 'exp-math-check',
+    category: '数学基础',
+    tag: '数学基础',
+    examCode: 'Z002',
+    subject: '数学基础',
+    title: '数学基础的提分点，常常藏在计算检查里',
+    summary: '适合 Z002 用户，把极限、导数和积分题拆成公式选择、代入和验算三个动作。',
+    author: '研友 C',
+    authorRole: 'Z002 数学复盘',
+    avatar: '数',
+    publishDate: '2026-08-01',
+    updatedDate: '2026-08-03',
+    readTime: '3 分钟',
+    stats: {
+      views: 746,
+      likes: 51,
+      saves: 33
+    },
+    points: ['先写公式条件', '代入后再化简', '最后检查定义域'],
+    sections: [
+      {
+        heading: '条件比公式更先出现',
+        body: '数学基础不是只看会不会套公式。很多失分来自条件没看清，尤其是极限、导数和积分里的定义域、连续性和可导性。'
+      },
+      {
+        heading: '代入前先写公式',
+        body: '我的顺序是：先写本题对应公式，再把题目条件代进去，最后才做化简。这样能减少一上来就算偏的情况。'
+      },
+      {
+        heading: '最后检查问法',
+        body: '做完一定检查答案有没有违反定义域、端点条件或题干问法。这个步骤很短，但能救回不少分。'
+      }
+    ]
+  },
+  {
+    id: 'exp-english-language',
+    category: '英语运用',
+    tag: '英语运用',
+    examCode: 'COMMON',
+    subject: '英语运用',
+    title: '英语语言知识先抓固定搭配，再回头补语法',
+    summary: '把词汇、短语和语法分成两条线，先解决选择题里最容易反复错的搭配问题。',
+    author: '研友 D',
+    authorRole: '英语运用复盘',
+    avatar: '英',
+    publishDate: '2026-07-31',
+    updatedDate: '2026-08-03',
+    readTime: '4 分钟',
+    stats: {
+      views: 689,
+      likes: 48,
+      saves: 37
+    },
+    points: ['固定搭配优先', '错题按词性归类', '语法点只记触发条件'],
+    sections: [
+      {
+        heading: '先处理高频短语',
+        body: '英语运用的语言知识题，很多时候不是整句都看不懂，而是固定搭配和词义边界没记牢。先把高频短语和动词搭配过一轮，做题速度会明显稳定。'
+      },
+      {
+        heading: '错题按词性归档',
+        body: '我会把错题按名词、动词、形容词、副词和介词搭配归类。这样复盘时不是孤立背一个答案，而是知道自己经常在哪类词上犹豫。'
+      },
+      {
+        heading: '语法只抓触发条件',
+        body: '语法点不用写很长的定义，重点记触发条件。看到从句、非谓语、虚拟语气的标志，就能更快排除不合适的选项。'
+      }
+    ]
+  },
+  {
+    id: 'exp-logic-template',
+    category: '逻辑推理',
+    tag: '逻辑推理',
+    examCode: 'Z001',
+    subject: '逻辑推理',
+    title: '逻辑题别急着选，先把论点和论据圈出来',
+    summary: '适合论证类题反复错的同学，用固定拆题模板降低读题压力。',
+    author: '研友 E',
+    authorRole: '逻辑推理提分记录',
+    avatar: '逻',
+    publishDate: '2026-07-30',
+    updatedDate: '2026-08-03',
+    readTime: '4 分钟',
+    stats: {
+      views: 812,
+      likes: 67,
+      saves: 49
+    },
+    points: ['先找论点', '再看论据', '最后判断选项作用'],
+    sections: [
+      {
+        heading: '把题干拆成两层',
+        body: '论证题最怕一口气读完后直接看选项。我的做法是先圈论点，再划论据，确认题目是在问加强、削弱、假设还是解释。'
+      },
+      {
+        heading: '选项看作用而不是语气',
+        body: '很多选项语气很像正确答案，但它没有真正改变论点和论据之间的关系。判断时要问一句：这个选项到底让结论更稳，还是让结论更不稳。'
+      },
+      {
+        heading: '错题复盘保留结构',
+        body: '复盘时不要只写“看错了”。要写清楚原论点、原论据、自己误选的选项作用，以及正确选项为什么更贴合题目问法。'
+      }
+    ]
+  }
+]
+const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
+const circleMaterialSummaries = {
+  中华文化: '文学、历史、哲学、艺术和古代科技常识资料包。',
+  英语运用: '词汇、短语、语法和语用题型的基础资料包。',
+  数学基础: '极限、导数、积分和多元函数微分学资料包。',
+  逻辑推理: '判断、推理、论证和综合题型资料包。'
+}
+const circleMaterialResources = [
+  {
+    id: 'mat-culture-core',
+    subject: '中华文化',
+    title: '中华文化常识核心索引',
+    desc: '按人物、作品、朝代、学派和艺术门类整理，适合刷题前快速过一遍。',
+    tags: ['文学', '历史', '艺术'],
+    level: '基础',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-culture-mistake',
+    subject: '中华文化',
+    title: '中华文化易混点清单',
+    desc: '集中整理相近人物、相近作品和常见朝代误配，适合错题复盘。',
+    tags: ['易混点', '复盘'],
+    level: '提升',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-english-vocab',
+    subject: '英语运用',
+    title: '英语高频词汇与短语包',
+    desc: '覆盖语言知识常见词汇、短语和固定搭配，适合每日短时记忆。',
+    tags: ['词汇', '短语'],
+    level: '基础',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-english-grammar',
+    subject: '英语运用',
+    title: '英语语法错题归纳',
+    desc: '围绕时态、从句、非谓语和虚拟语气整理，适合配合错题本使用。',
+    tags: ['语法', '错题'],
+    level: '提升',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-math-calculus',
+    subject: '数学基础',
+    title: '微积分公式速查',
+    desc: '按一元函数微分学、积分学和多元函数微分学拆分常用公式。',
+    tags: ['公式', '微积分'],
+    level: '基础',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-math-errors',
+    subject: '数学基础',
+    title: '数学基础常见计算坑',
+    desc: '整理极限、导数、积分计算中容易忽略的条件和验算步骤。',
+    tags: ['验算', '易错'],
+    level: '提升',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-logic-judge',
+    subject: '逻辑推理',
+    title: '逻辑判断关系速记',
+    desc: '把充分、必要、逆否、削弱和加强等常见关系做成短表。',
+    tags: ['判断', '关系'],
+    level: '基础',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  },
+  {
+    id: 'mat-logic-argument',
+    subject: '逻辑推理',
+    title: '论证题型拆解模板',
+    desc: '按论点、论据、假设、削弱和加强步骤整理答题路径。',
+    tags: ['论证', '模板'],
+    level: '提升',
+    shareUrl: '待配置',
+    shareCode: '待配置'
+  }
+]
+const filteredCircleMaterials = computed(() =>
+  circleMaterialResources.filter((item) => item.subject === selectedMaterialSubject.value)
+)
+const filteredCircleExperiencePosts = computed(() => {
+  const keyword = experienceSearchKeyword.value.trim().toLowerCase()
+  return circleExperiencePosts.filter((item) => {
+    const matchesCategory = selectedExperienceCategory.value === '全部' || item.category === selectedExperienceCategory.value
+    if (!matchesCategory || !keyword) return matchesCategory
+    return [item.author, item.authorRole, item.title, item.summary, item.subject, item.tag, ...item.points]
+      .join(' ')
+      .toLowerCase()
+      .includes(keyword)
+  })
+})
+const circleTrendPeak = computed(() => Math.max(...circlePracticeTrend.map((item) => item.count)))
+const circleTrendScaleMax = computed(() => Math.ceil(circleTrendPeak.value / 100) * 100)
+const circleTrendAxis = computed(() => [circleTrendScaleMax.value, Math.round(circleTrendScaleMax.value / 2), 0])
+const selectedCircleSectionLabel = computed(() =>
+  circleSections.find((item) => item.key === selectedCircleSection.value)?.label || '研圈'
+)
+const circleMaterialSubjectSummary = computed(() =>
+  circleMaterialSummaries[selectedMaterialSubject.value] || '按科目整理资料包。'
+)
+const circlePlannedSection = computed(() =>
+  circleSections.find((item) => item.key === selectedCircleSection.value) || circleSections[0]
+)
 const fallbackSmartRecommendation = {
   subject: '逻辑推理',
   module: '判断',
@@ -1397,6 +2074,15 @@ watch(examCode, (value) => {
 })
 
 watch(activeTab, (value) => {
+  resetCircleTabbar()
+  if (value === 'circle' && !ENABLE_CIRCLE) {
+    activeTab.value = 'home'
+    return
+  }
+  if (value === 'circle') {
+    selectedCircleSection.value = 'overview'
+    selectedCirclePost.value = null
+  }
   if (value !== 'mistakes') {
     selectedWrongDetail.value = null
     if (retestMode.value) {
@@ -1407,6 +2093,9 @@ watch(activeTab, (value) => {
   }
   if (value === 'report') {
     loadStudyAdvice()
+  }
+  if (value !== 'circle') {
+    selectedCirclePost.value = null
   }
 })
 
@@ -1422,6 +2111,10 @@ onLoad((options) => {
   // #ifdef MP-WEIXIN
   syncMpSafeLayout()
   // #endif
+  if (options?.tab === 'circle' && ENABLE_CIRCLE) {
+    activeTab.value = 'circle'
+    return
+  }
   if (options?.tab === 'profile') {
     activeTab.value = 'profile'
   }
@@ -1438,7 +2131,9 @@ onShow(() => {
 })
 
 onPageScroll(({ scrollTop }) => {
-  mistakeHeaderScrollTop.value = Number(scrollTop) || 0
+  const nextScrollTop = Number(scrollTop) || 0
+  mistakeHeaderScrollTop.value = nextScrollTop
+  updateCircleTabbarOnScroll(nextScrollTop)
 })
 
 onReachBottom(() => {
@@ -1806,6 +2501,130 @@ async function closeOfficialMessages() {
   officialMessages.value = officialMessages.value.map((item) => ({ ...item, read: true }))
   officialUnreadCount.value = 0
   await Promise.allSettled(unreadItems.map((item) => markOfficialMessageRead(item.id)))
+}
+
+function openCircleSection(key) {
+  if (!circleSections.some((item) => item.key === key)) return
+  resetCircleTabbar()
+  selectedCircleSection.value = key
+  selectedCirclePost.value = null
+}
+
+function returnToCircleOverview() {
+  resetCircleTabbar()
+  selectedCircleSection.value = 'overview'
+  selectedCirclePost.value = null
+}
+
+function resetCircleTabbar() {
+  circleTabCollapsed.value = false
+  circleLastScrollTop.value = 0
+}
+
+function expandCircleTabbar() {
+  circleTabCollapsed.value = false
+}
+
+function updateCircleTabbarOnScroll(scrollTop) {
+  const currentScrollTop = Math.max(0, Number(scrollTop) || 0)
+  const shouldTrackCircleScroll = activeTab.value === 'circle'
+    && selectedCircleSection.value !== 'overview'
+    && !selectedCirclePost.value
+
+  if (!shouldTrackCircleScroll || currentScrollTop <= 32) {
+    circleTabCollapsed.value = false
+    circleLastScrollTop.value = currentScrollTop
+    return
+  }
+
+  const scrollDelta = currentScrollTop - circleLastScrollTop.value
+  circleLastScrollTop.value = currentScrollTop
+
+  if (scrollDelta > 8) {
+    circleTabCollapsed.value = true
+  } else if (scrollDelta < -8) {
+    circleTabCollapsed.value = false
+  }
+}
+
+function getCircleTrendHeight(count) {
+  const scaleMax = Math.max(1, Number(circleTrendScaleMax.value) || 1)
+  const ratio = (Number(count) || 0) / scaleMax
+  return `${Math.max(7, Math.round(ratio * 100))}%`
+}
+
+function getCircleScoreY(score) {
+  const safeScore = Math.min(150, Math.max(50, Number(score) || 50))
+  return 18 + ((150 - safeScore) / 100) * 72
+}
+
+function rotateCircleScoreSchool() {
+  if (circleScoreSchools.length < 2) return
+  let nextIndex = circleScoreSchoolIndex.value
+  while (nextIndex === circleScoreSchoolIndex.value) {
+    nextIndex = Math.floor(Math.random() * circleScoreSchools.length)
+  }
+  circleScoreSchoolIndex.value = nextIndex
+}
+
+function handleCircleInsightChange(event) {
+  const nextIndex = Number(event?.detail?.current)
+  if (!Number.isInteger(nextIndex) || nextIndex === circleInsightIndex.value) return
+  circleInsightIndex.value = nextIndex
+  if (nextIndex === 1) {
+    rotateCircleScoreSchool()
+  }
+}
+
+function selectCircleInsight(index) {
+  if (index !== 0 && index !== 1) return
+  if (circleInsightIndex.value === index) return
+  circleInsightIndex.value = index
+  if (index === 1) {
+    rotateCircleScoreSchool()
+  }
+}
+
+function openCirclePost(post) {
+  selectedCirclePost.value = post
+}
+
+function closeCirclePost() {
+  selectedCirclePost.value = null
+}
+
+function selectExperienceCategory(category) {
+  if (!circleExperienceCategories.includes(category)) return
+  selectedExperienceCategory.value = category
+  selectedCirclePost.value = null
+}
+
+function clearExperienceSearch() {
+  experienceSearchKeyword.value = ''
+}
+
+function handleCirclePostLocalAction(action) {
+  uni.showToast({ title: `${action}功能本地预览中`, icon: 'none' })
+}
+
+function selectCircleMaterialSubject(subject) {
+  if (!circleMaterialSubjects.includes(subject)) return
+  selectedMaterialSubject.value = subject
+}
+
+function copyMaterialShare(item) {
+  if (!item || !item.shareUrl || item.shareUrl === '待配置') {
+    uni.showToast({ title: '资料网盘链接待配置', icon: 'none' })
+    return
+  }
+
+  const shareText = `${item.title}\n网盘链接：${item.shareUrl}\n提取码：${item.shareCode || '无'}`
+  uni.setClipboardData({
+    data: shareText,
+    success() {
+      uni.showToast({ title: '已复制网盘信息', icon: 'none' })
+    }
+  })
 }
 
 function logout() {
@@ -2391,6 +3210,61 @@ function formatDateTime(value) {
   padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
 }
 
+.home-page.circle-glass-page {
+  --circle-bg: #e6eceb;
+  --circle-bg-muted: #dce6e7;
+  --circle-card: #fbfcfb;
+  --circle-card-muted: #f4f7f5;
+  --circle-card-border: rgba(255, 255, 255, 0.88);
+  --circle-line: rgba(49, 76, 84, 0.12);
+  --circle-text: #1c2423;
+  --circle-muted: #657473;
+  --circle-brand: #16786f;
+  --circle-brand-soft: rgba(22, 120, 111, 0.13);
+  --circle-mint: #3d9c90;
+  --circle-mint-soft: rgba(61, 156, 144, 0.13);
+  --circle-radius-card: 30px;
+  --circle-radius-control: 20px;
+  --circle-screen-gutter: 16px;
+  --circle-space: 12px;
+  --circle-shadow: 0 16px 38px rgba(30, 55, 56, 0.1);
+  --circle-glass-surface: rgba(250, 253, 252, 0.66);
+  --circle-glass-surface-strong: rgba(249, 252, 251, 0.82);
+  --circle-glass-border: rgba(255, 255, 255, 0.78);
+  --circle-glass-blur: 20px;
+  --circle-glass-press: 0.98;
+  --circle-insight-slide-gap: 8px;
+  --circle-insight-slide-offset: 4px;
+  --circle-tab-bg: rgba(247, 250, 249, 0.58);
+  --circle-tab-shadow: 0 14px 34px rgba(30, 55, 56, 0.16);
+  --circle-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  position: relative;
+  isolation: isolate;
+  overflow-x: clip;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px);
+  background: #416d6e;
+  color: var(--circle-text);
+  font-family: var(--circle-font);
+}
+
+.home-page.circle-glass-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(10, 41, 42, 0.22) 0%, rgba(18, 49, 49, 0.12) 48%, rgba(18, 43, 43, 0.32) 100%),
+    url('/static/circle-study-sky.jpg') center center / cover no-repeat;
+  filter: saturate(84%) contrast(90%);
+}
+
+.circle-glass-page .circle-dashboard,
+.circle-glass-page :deep(.icp-footer) {
+  position: relative;
+  z-index: 1;
+}
+
 .home-page.no-tab-page {
   padding-bottom: calc(env(safe-area-inset-bottom) + 36rpx);
 }
@@ -2411,6 +3285,1480 @@ function formatDateTime(value) {
 .home-dashboard button,
 .home-dashboard scroll-view {
   box-sizing: border-box;
+}
+
+.circle-dashboard {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 860rpx;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-x: hidden;
+}
+
+.circle-dashboard view,
+.circle-dashboard text,
+.circle-dashboard button,
+.circle-dashboard scroll-view {
+  box-sizing: border-box;
+}
+
+.circle-overview,
+.circle-detail-page {
+  display: flex;
+  flex-direction: column;
+  gap: var(--circle-space, 32rpx);
+}
+
+.circle-overview {
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 92px);
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 92px);
+}
+
+.circle-trend-card {
+  min-height: 176px;
+  padding: 16px 16px 14px;
+  border: 1px solid var(--circle-card-border, rgba(255, 255, 255, 0.62));
+  border-radius: var(--circle-radius-card, 24px);
+  background: var(--circle-card, rgba(255, 255, 255, 0.8));
+  box-shadow: var(--circle-shadow, 0 10px 28px rgba(45, 66, 93, 0.1));
+  flex-shrink: 0;
+}
+
+.circle-trend-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.circle-trend-title {
+  min-width: 0;
+  color: var(--circle-text, #1d1d1f);
+  font-size: 26px;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 0;
+  white-space: nowrap;
+}
+
+.circle-trend-peak {
+  display: inline-flex;
+  align-items: baseline;
+  color: var(--circle-muted, #718096);
+  font-size: 14px;
+  line-height: 1.35;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.circle-trend-peak-value {
+  margin: 0 2px;
+  color: var(--circle-brand, #5b8fdf);
+  font-weight: 700;
+}
+
+.circle-trend-chart {
+  position: relative;
+  height: 110px;
+  margin-top: 10px;
+}
+
+.circle-trend-grid,
+.circle-trend-axis {
+  position: absolute;
+  top: 9px;
+  bottom: 23px;
+}
+
+.circle-trend-grid {
+  left: 28px;
+  right: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.circle-trend-grid-line {
+  width: 100%;
+  border-top: 1px solid var(--circle-line, rgba(128, 147, 171, 0.16));
+}
+
+.circle-trend-axis {
+  left: 0;
+  width: 23px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: var(--circle-muted, #718096);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.circle-trend-axis text {
+  transform: translateY(-50%);
+}
+
+.circle-trend-axis text:last-child {
+  transform: translateY(50%);
+}
+
+.circle-trend-bars {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 28px;
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  column-gap: 5px;
+}
+
+.circle-trend-column {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.circle-trend-bar-space {
+  width: 100%;
+  flex: 1;
+  padding: 13px 0 14px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.circle-trend-bar {
+  position: relative;
+  width: 10px;
+  min-height: 6px;
+  border-radius: 999rpx;
+  background: linear-gradient(180deg, #9bd5c9 0%, var(--circle-mint, #74bdad) 100%);
+}
+
+.circle-trend-bar.latest {
+  background: linear-gradient(180deg, #b6e5dc 0%, #83cabc 100%);
+}
+
+.circle-trend-value {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% + 5px);
+  transform: translateX(-50%);
+  color: var(--circle-text, #1d1d1f);
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.circle-trend-day {
+  height: 12px;
+  color: var(--circle-muted, #718096);
+  font-size: 11px;
+  line-height: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.circle-entry-list {
+  min-height: 0;
+  flex: 0 0 auto;
+  display: grid;
+  grid-template-rows: repeat(4, 112px);
+  gap: var(--circle-space, 16px);
+}
+
+.circle-entry {
+  width: 100%;
+  min-height: 0;
+  height: 100%;
+  margin: 0;
+  padding: 12px 20px;
+  border: 1px solid var(--circle-card-border, rgba(255, 255, 255, 0.62));
+  border-radius: var(--circle-radius-card, 24px);
+  background: var(--circle-entry-bg, var(--circle-card, rgba(255, 255, 255, 0.8)));
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  box-shadow: var(--circle-shadow, 0 10px 28px rgba(45, 66, 93, 0.1));
+  text-align: left;
+}
+
+.circle-entry:nth-child(1) {
+  --circle-entry-bg: rgba(255, 255, 255, 0.82);
+  --circle-entry-icon-bg: rgba(91, 143, 223, 0.12);
+  --circle-entry-icon-color: #5b8fdf;
+}
+
+.circle-entry:nth-child(2) {
+  --circle-entry-bg: rgba(248, 251, 255, 0.82);
+  --circle-entry-icon-bg: rgba(115, 150, 204, 0.12);
+  --circle-entry-icon-color: #6e91bf;
+}
+
+.circle-entry:nth-child(3) {
+  --circle-entry-bg: rgba(250, 253, 253, 0.82);
+  --circle-entry-icon-bg: var(--circle-mint-soft, rgba(116, 189, 173, 0.14));
+  --circle-entry-icon-color: #69aa9c;
+}
+
+.circle-entry:nth-child(4) {
+  --circle-entry-bg: rgba(250, 252, 255, 0.82);
+  --circle-entry-icon-bg: rgba(127, 144, 179, 0.11);
+  --circle-entry-icon-color: #778db5;
+}
+
+.circle-entry::after,
+.experience-filter-chip::after,
+.material-subject-chip::after,
+.material-action::after,
+.circle-post-action-row button::after {
+  border: 0;
+}
+
+.circle-entry:active {
+  transform: scale(0.98);
+}
+
+.circle-entry-icon,
+.circle-empty-icon {
+  width: 54px;
+  height: 54px;
+  border-radius: 16px;
+  background: var(--circle-entry-icon-bg, var(--circle-brand-soft, rgba(91, 143, 223, 0.14)));
+  color: var(--circle-entry-icon-color, var(--circle-brand, #5b8fdf));
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+}
+
+.circle-entry-icon-mask {
+  width: 24px;
+  height: 24px;
+  background: currentColor;
+  -webkit-mask-position: center;
+  mask-position: center;
+  -webkit-mask-repeat: no-repeat;
+  mask-repeat: no-repeat;
+  -webkit-mask-size: contain;
+  mask-size: contain;
+}
+
+.circle-entry-label {
+  min-width: 0;
+  flex: 1;
+  color: var(--circle-text, #1d1d1f);
+  font-size: 22px;
+  line-height: 1.24;
+  font-weight: 600;
+}
+
+.circle-entry-arrow {
+  width: 36px;
+  height: 36px;
+  border-radius: 999rpx;
+  background: rgba(112, 133, 161, 0.08);
+  color: #788aa4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-family: var(--circle-font, Arial, sans-serif);
+  font-size: 20px;
+  line-height: 1;
+  font-weight: 400;
+  flex-shrink: 0;
+}
+
+.circle-glass-page .circle-trend-card {
+  -webkit-backdrop-filter: blur(18px) saturate(112%);
+  backdrop-filter: blur(18px) saturate(112%);
+  animation: circle-overview-enter 360ms ease-out both;
+}
+
+.circle-glass-page .circle-entry {
+  -webkit-backdrop-filter: blur(16px) saturate(108%);
+  backdrop-filter: blur(16px) saturate(108%);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+  animation: circle-overview-enter 400ms ease-out both;
+}
+
+.circle-glass-page .circle-entry:active {
+  transform: scale(0.98);
+}
+
+.circle-glass-page .circle-entry:nth-child(1) {
+  animation-delay: 60ms;
+}
+
+.circle-glass-page .circle-entry:nth-child(2) {
+  animation-delay: 110ms;
+}
+
+.circle-glass-page .circle-entry:nth-child(3) {
+  animation-delay: 160ms;
+}
+
+.circle-glass-page .circle-entry:nth-child(4) {
+  animation-delay: 210ms;
+}
+
+@keyframes circle-overview-enter {
+  from {
+    opacity: 0;
+    transform: translateY(12px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .circle-glass-page .circle-trend-card {
+    background: #ffffff;
+  }
+
+  .circle-glass-page .circle-entry {
+    background: #f9fbfd;
+  }
+}
+
+@media (max-width: 350px) {
+  .circle-trend-heading {
+    gap: 8px;
+  }
+
+  .circle-trend-title {
+    font-size: 22px;
+  }
+
+  .circle-trend-peak {
+    font-size: 11px;
+  }
+
+  .circle-entry {
+    padding-right: 14px;
+    padding-left: 14px;
+    gap: 10px;
+  }
+
+  .circle-entry-label {
+    font-size: 21px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circle-glass-page .circle-trend-card,
+  .circle-glass-page .circle-entry {
+    animation: none;
+    transition: none;
+  }
+}
+
+/* Content stays opaque; only navigation and compact controls use glass. */
+.circle-glass-page .circle-overview {
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  min-height: 0;
+  gap: 10px;
+}
+
+.circle-glass-page .circle-glass-group {
+  position: relative;
+  isolation: isolate;
+}
+
+.circle-insight-swiper {
+  width: calc(100% + var(--circle-insight-slide-gap));
+  height: 210px;
+  flex: 0 0 210px;
+  margin-left: calc(0px - var(--circle-insight-slide-offset));
+}
+
+.circle-insight-swiper swiper-item,
+.circle-insight-swiper .circle-glass-surface {
+  box-sizing: border-box;
+  height: 100%;
+  min-height: 0;
+}
+
+.circle-insight-swiper .circle-glass-surface {
+  width: calc(100% - var(--circle-insight-slide-gap));
+  margin: 0 var(--circle-insight-slide-offset);
+}
+
+.circle-insight-pagination {
+  height: 10px;
+  flex: 0 0 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+}
+
+.circle-insight-dot {
+  width: 7px;
+  height: 7px;
+  min-width: 7px;
+  min-height: 7px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.56);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.56);
+  transition: width 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.circle-insight-dot::after {
+  border: 0;
+}
+
+.circle-insight-dot.active {
+  width: 20px;
+  background: rgba(18, 111, 103, 0.82);
+}
+
+.circle-insight-dot:active {
+  transform: scale(0.92);
+}
+
+.circle-glass-page .circle-trend-card {
+  padding: 18px 18px 14px;
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
+  border-radius: 30px;
+  background: var(--circle-glass-surface-strong, rgba(249, 252, 251, 0.82));
+  box-shadow: 0 18px 40px rgba(30, 55, 56, 0.1);
+  -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
+  backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
+}
+
+.circle-glass-page .circle-trend-title {
+  color: #1c2423;
+  font-size: 25px;
+  font-weight: 650;
+}
+
+.circle-glass-page .circle-trend-peak {
+  color: #657473;
+  font-size: 13px;
+}
+
+.circle-glass-page .circle-trend-peak-value {
+  color: #16786f;
+}
+
+.circle-glass-page .circle-trend-chart {
+  height: 116px;
+  margin-top: 8px;
+}
+
+.circle-glass-page .circle-trend-grid,
+.circle-glass-page .circle-trend-bars {
+  left: 30px;
+}
+
+.circle-glass-page .circle-trend-grid-line {
+  border-color: rgba(49, 76, 84, 0.12);
+}
+
+.circle-glass-page .circle-trend-axis {
+  width: 25px;
+  color: #768482;
+  font-size: 10px;
+}
+
+.circle-glass-page .circle-trend-bars {
+  column-gap: 6px;
+}
+
+.circle-glass-page .circle-trend-bar-space {
+  padding: 16px 0;
+}
+
+.circle-glass-page .circle-trend-bar {
+  width: 11px;
+  background: linear-gradient(180deg, #82c9bf 0%, #3d9c90 100%);
+}
+
+.circle-glass-page .circle-trend-bar.latest {
+  background: linear-gradient(180deg, #70b9f0 0%, #3b78c5 100%);
+}
+
+.circle-glass-page .circle-trend-value {
+  bottom: calc(100% + 6px);
+  color: #314240;
+  font-size: 10px;
+}
+
+.circle-glass-page .circle-trend-day {
+  height: 13px;
+  color: #768482;
+  font-size: 10px;
+  line-height: 13px;
+}
+
+.circle-glass-page .circle-entry-list {
+  min-height: 0;
+  flex: 1 1 0;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.circle-glass-page .circle-entry {
+  padding: 12px 16px 12px 18px;
+  gap: 13px;
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
+  border-radius: 28px;
+  background: var(--circle-entry-bg, var(--circle-glass-surface, rgba(250, 253, 252, 0.66)));
+  box-shadow: 0 10px 24px rgba(30, 55, 56, 0.075);
+  -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(120%);
+  backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(120%);
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.circle-glass-page .circle-entry:nth-child(1) {
+  --circle-entry-bg: rgba(248, 253, 251, 0.68);
+  --circle-entry-icon-bg: #e5f0ed;
+  --circle-entry-icon-color: #16786f;
+}
+
+.circle-glass-page .circle-entry:nth-child(2) {
+  --circle-entry-bg: rgba(249, 251, 253, 0.68);
+  --circle-entry-icon-bg: #e8eef4;
+  --circle-entry-icon-color: #55738f;
+}
+
+.circle-glass-page .circle-entry:nth-child(3) {
+  --circle-entry-bg: rgba(253, 251, 247, 0.68);
+  --circle-entry-icon-bg: #f3eadc;
+  --circle-entry-icon-color: #a56c3b;
+}
+
+.circle-glass-page .circle-entry:nth-child(4) {
+  --circle-entry-bg: rgba(250, 250, 253, 0.68);
+  --circle-entry-icon-bg: #ece9f3;
+  --circle-entry-icon-color: #756491;
+}
+
+.circle-glass-page .circle-entry-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+.circle-glass-page .circle-entry-icon-mask {
+  width: 23px;
+  height: 23px;
+}
+
+.circle-glass-page .circle-entry-label {
+  color: #1c2423;
+  font-size: 21px;
+  font-weight: 600;
+}
+
+.circle-glass-page .circle-entry-arrow {
+  width: 38px;
+  height: 38px;
+  border: 1px solid rgba(255, 255, 255, 0.76);
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.58);
+  color: #536967;
+  font-size: 25px;
+  -webkit-backdrop-filter: blur(14px) saturate(118%);
+  backdrop-filter: blur(14px) saturate(118%);
+}
+
+.circle-glass-page .circle-entry:active {
+  transform: scale(var(--circle-glass-press, 0.98));
+  box-shadow: 0 6px 16px rgba(30, 55, 56, 0.075);
+}
+
+.circle-score-card {
+  padding: 18px 18px 14px;
+  border: 1px solid var(--circle-glass-border, rgba(255, 255, 255, 0.78));
+  border-radius: 30px;
+  background: var(--circle-glass-surface-strong, rgba(249, 252, 251, 0.82));
+  box-shadow: 0 18px 40px rgba(30, 55, 56, 0.1);
+  display: flex;
+  flex-direction: column;
+  -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
+  backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
+}
+
+.circle-score-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.circle-score-title {
+  color: #1c2423;
+  font-size: 24px;
+  line-height: 1.18;
+  font-weight: 650;
+  white-space: nowrap;
+}
+
+.circle-score-subtitle {
+  margin-top: 3px;
+  color: #657473;
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.circle-score-total {
+  padding-top: 4px;
+  color: #657473;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.circle-score-total text {
+  margin-left: 2px;
+  color: #16786f;
+  font-size: 17px;
+  font-weight: 700;
+}
+
+.circle-score-chart {
+  position: relative;
+  min-height: 0;
+  flex: 1;
+  margin-top: 5px;
+}
+
+.circle-score-axis {
+  position: absolute;
+  z-index: 1;
+  top: 10px;
+  bottom: 19px;
+  left: 0;
+  width: 25px;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+  color: #768482;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.circle-score-axis text {
+  transform: translateY(-50%);
+}
+
+.circle-score-axis text:last-child {
+  transform: translateY(50%);
+}
+
+.circle-score-svg {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 17px;
+  left: 25px;
+  width: calc(100% - 25px);
+  height: calc(100% - 17px);
+  overflow: visible;
+}
+
+.circle-score-grid-line {
+  stroke: rgba(49, 76, 84, 0.12);
+  stroke-width: 1;
+}
+
+.circle-score-line {
+  fill: none;
+  stroke: #16786f;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 3;
+}
+
+.circle-score-point {
+  fill: #ffffff;
+  stroke: #16786f;
+  stroke-width: 3;
+}
+
+.circle-score-value {
+  fill: #314240;
+  font-size: 12px;
+  font-weight: 700;
+  text-anchor: middle;
+}
+
+.circle-score-years {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 25px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  color: #768482;
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 500;
+  text-align: center;
+}
+
+@media (hover: hover) {
+  .circle-glass-page .circle-entry:hover {
+    background: rgba(255, 255, 255, 0.76);
+    box-shadow: 0 14px 28px rgba(30, 55, 56, 0.11);
+  }
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .circle-glass-page .circle-trend-card,
+  .circle-glass-page .circle-entry,
+  .circle-glass-page .circle-score-card {
+    background: #f9fbfa;
+  }
+
+  .circle-glass-page .circle-entry-arrow {
+    background: #f5f8f7;
+  }
+}
+
+@media (max-width: 350px) {
+  .circle-glass-page .circle-trend-card {
+    padding-right: 14px;
+    padding-left: 14px;
+  }
+
+  .circle-glass-page .circle-entry {
+    padding-right: 12px;
+    padding-left: 14px;
+  }
+
+  .circle-glass-page .circle-entry-label {
+    font-size: 20px;
+  }
+}
+
+.circle-detail-header {
+  min-height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.circle-back-button,
+.circle-detail-header-spacer {
+  width: 64rpx;
+  height: 64rpx;
+  flex-shrink: 0;
+}
+
+.circle-back-button {
+  margin: 0;
+  padding: 0;
+  border: 2rpx solid #e8edf5;
+  border-radius: 20rpx;
+  background: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.circle-back-button::after {
+  border: 0;
+}
+
+.circle-back-button image {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.circle-detail-heading {
+  color: #172033;
+  font-size: 32rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.circle-section {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.circle-section-head {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 0 6rpx;
+}
+
+.circle-section-title {
+  color: #101828;
+  font-size: 34rpx;
+  line-height: 1.22;
+  font-weight: 900;
+}
+
+.circle-section-subtitle {
+  margin-top: 8rpx;
+  color: #8a94a6;
+  font-size: 23rpx;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.circle-section-count {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: var(--gyt-primary, #3478f6);
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.experience-search {
+  box-sizing: border-box;
+  min-height: 76rpx;
+  padding: 0 18rpx;
+  border: 2rpx solid #edf2fb;
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.92);
+  box-shadow: 0 12rpx 28rpx rgba(25, 48, 89, 0.05);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.experience-search-icon {
+  color: #7c8c8c;
+  font-size: 32rpx;
+  line-height: 1;
+}
+
+.experience-search-input {
+  min-width: 0;
+  flex: 1;
+  height: 72rpx;
+  color: #1c2423;
+  font-size: 25rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.experience-search-placeholder {
+  color: #8a9897;
+  font-weight: 500;
+}
+
+.experience-search-clear {
+  box-sizing: border-box;
+  width: 40rpx;
+  height: 40rpx;
+  min-width: 40rpx;
+  min-height: 40rpx;
+  margin: 0;
+  padding: 9rpx;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(22, 120, 111, 0.1);
+  color: #16786f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.experience-search-clear::after {
+  border: 0;
+}
+
+.experience-filter-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.experience-filter-row {
+  display: flex;
+  gap: 12rpx;
+  min-width: max-content;
+  padding: 0 2rpx 2rpx;
+}
+
+.experience-filter-chip {
+  min-width: 116rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border-radius: 18rpx;
+  border: 2rpx solid #edf2fb;
+  background: rgba(255, 255, 255, 0.92);
+  color: #667085;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.experience-filter-chip.active {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.experience-card {
+  padding: 28rpx;
+  border-radius: 30rpx;
+  background: #ffffff;
+  border: 2rpx solid #edf2fb;
+  box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.07);
+}
+
+.experience-author-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-bottom: 20rpx;
+}
+
+.experience-avatar {
+  width: 62rpx;
+  height: 62rpx;
+  border-radius: 22rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 25rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.experience-author-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.experience-author-name {
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.experience-author-role {
+  margin-top: 4rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.experience-exam {
+  padding: 7rpx 12rpx;
+  border-radius: 999rpx;
+  background: #f6f8fc;
+  color: #667085;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.experience-card:active,
+.material-card:active {
+  transform: translateY(1rpx);
+}
+
+.experience-top,
+.experience-footer,
+.material-title-row,
+.material-share-line {
+  display: flex;
+  align-items: center;
+}
+
+.experience-top,
+.experience-footer,
+.material-title-row {
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.experience-tag,
+.material-badge {
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.experience-read {
+  color: #98a2b3;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.experience-title {
+  margin-top: 18rpx;
+  color: #101828;
+  font-size: 32rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.experience-summary {
+  margin-top: 12rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.experience-meta-row {
+  margin-top: 14rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx 16rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.experience-points,
+.material-tags {
+  margin-top: 18rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.experience-points text,
+.material-tags text {
+  padding: 8rpx 12rpx;
+  border-radius: 12rpx;
+  background: #f6f8fc;
+  color: #475467;
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.experience-footer {
+  margin-top: 20rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid #f0f4fb;
+}
+
+.experience-author {
+  color: #8a94a6;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.experience-stats {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8rpx 12rpx;
+  min-width: 0;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.experience-action {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 24rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.material-subject-scroll {
+  width: 100%;
+  white-space: nowrap;
+}
+
+.material-subject-row {
+  display: flex;
+  gap: 12rpx;
+  min-width: max-content;
+  padding: 0 2rpx 2rpx;
+}
+
+.material-subject-chip {
+  min-width: 132rpx;
+  min-height: 62rpx;
+  padding: 0 18rpx;
+  border-radius: 18rpx;
+  border: 2rpx solid #edf2fb;
+  background: #ffffff;
+  color: #667085;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.material-subject-chip.active {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.material-subject-card {
+  padding: 26rpx 28rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  background: linear-gradient(135deg, #ffffff 0%, var(--gyt-primary-tint, #f4f8ff) 100%);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.material-subject-title {
+  color: #101828;
+  font-size: 30rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.material-subject-copy {
+  margin-top: 8rpx;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.45;
+  font-weight: 700;
+}
+
+.material-subject-mark {
+  width: 78rpx;
+  height: 78rpx;
+  border-radius: 24rpx;
+  background: #ffffff;
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  line-height: 1;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.material-card {
+  padding: 26rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid #edf2fb;
+  background: #ffffff;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+}
+
+.material-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.material-title {
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.material-desc {
+  margin-top: 10rpx;
+  color: #667085;
+  font-size: 24rpx;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.material-share-line {
+  margin-top: 16rpx;
+  flex-wrap: wrap;
+  gap: 10rpx 16rpx;
+  color: #98a2b3;
+  font-size: 21rpx;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.material-action {
+  width: 86rpx;
+  min-height: 72rpx;
+  padding: 0;
+  border-radius: 20rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  flex-shrink: 0;
+}
+
+.circle-empty-card {
+  min-height: 360rpx;
+  padding: 44rpx 34rpx;
+  border-radius: 28rpx;
+  border: 2rpx solid #e8edf5;
+  background: #ffffff;
+  box-shadow: 0 14rpx 34rpx rgba(29, 42, 67, 0.05);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.circle-empty-icon {
+  width: 96rpx;
+  height: 96rpx;
+  border-radius: 30rpx;
+}
+
+.circle-empty-title {
+  margin-top: 22rpx;
+  color: #172033;
+  font-size: 34rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.circle-empty-copy {
+  margin-top: 12rpx;
+  max-width: 520rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 1.55;
+  font-weight: 700;
+}
+
+.circle-post-mask {
+  position: fixed;
+  left: 0;
+  right: 0;
+  top: 0;
+  bottom: 0;
+  z-index: 80;
+  background: rgba(16, 24, 40, 0.36);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 0 22rpx;
+}
+
+.circle-post-sheet {
+  position: relative;
+  width: 100%;
+  max-width: 760rpx;
+  max-height: 78vh;
+  padding: 20rpx 28rpx calc(env(safe-area-inset-bottom) + 30rpx);
+  border-radius: 34rpx 34rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 52rpx rgba(25, 48, 89, 0.16);
+}
+
+.circle-post-handle {
+  width: 78rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: #d9e1ef;
+  margin: 0 auto 22rpx;
+}
+
+.circle-post-close {
+  position: absolute;
+  top: 22rpx;
+  right: 24rpx;
+  width: 58rpx;
+  height: 58rpx;
+  padding: 0;
+  border-radius: 999rpx;
+  background: #f4f7fb;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.circle-post-close::after {
+  border: 0;
+}
+
+.circle-post-tag {
+  display: inline-flex;
+  padding: 8rpx 14rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.circle-post-title {
+  margin-top: 18rpx;
+  padding-right: 66rpx;
+  color: #101828;
+  font-size: 36rpx;
+  line-height: 1.32;
+  font-weight: 900;
+}
+
+.circle-post-meta {
+  margin-top: 10rpx;
+  color: #98a2b3;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.circle-post-author-row {
+  margin-top: 18rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.circle-post-avatar {
+  width: 58rpx;
+  height: 58rpx;
+  border-radius: 20rpx;
+}
+
+.circle-post-author-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.circle-post-author-name {
+  color: #101828;
+  font-size: 25rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.circle-post-stat-row {
+  margin-top: 18rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 20rpx;
+  background: #f7f9fd;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx 16rpx;
+  color: #667085;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.circle-post-scroll {
+  margin-top: 22rpx;
+  max-height: 48vh;
+}
+
+.circle-post-section {
+  margin-bottom: 24rpx;
+}
+
+.circle-post-section-title {
+  margin-bottom: 10rpx;
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.circle-post-paragraph {
+  color: #475467;
+  font-size: 27rpx;
+  line-height: 1.68;
+  font-weight: 700;
+}
+
+.circle-post-checklist {
+  margin-top: 10rpx;
+  padding: 20rpx;
+  border-radius: 24rpx;
+  background: #f7f9fd;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.circle-post-point {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  color: #344054;
+  font-size: 25rpx;
+  line-height: 1.4;
+  font-weight: 800;
+}
+
+.circle-post-point text:first-child {
+  color: var(--gyt-primary, #3478f6);
+  font-weight: 900;
+}
+
+.circle-post-action-row {
+  margin-top: 18rpx;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.circle-post-action-row button {
+  min-height: 76rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border-radius: 22rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  line-height: 1.2;
+  font-weight: 900;
 }
 
 .home-header,
@@ -5500,6 +7848,234 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
+}
+
+.circle-glass-page .circle-detail-page {
+  gap: 18px;
+}
+
+.circle-glass-page .circle-detail-heading,
+.circle-glass-page .circle-section-title,
+.circle-glass-page .experience-title,
+.circle-glass-page .material-title,
+.circle-glass-page .circle-empty-title,
+.circle-glass-page .circle-post-title,
+.circle-glass-page .circle-post-section-title {
+  color: #1c2423;
+}
+
+.circle-glass-page .circle-detail-heading,
+.circle-glass-page .circle-section-title {
+  font-weight: 650;
+}
+
+.circle-glass-page .circle-section-subtitle,
+.circle-glass-page .experience-summary,
+.circle-glass-page .material-desc,
+.circle-glass-page .circle-empty-copy,
+.circle-glass-page .circle-post-paragraph {
+  color: #657473;
+  font-weight: 500;
+}
+
+.circle-glass-page .circle-back-button {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  background: rgba(255, 255, 255, 0.54);
+  box-shadow: 0 8px 20px rgba(30, 55, 56, 0.1);
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.circle-glass-page .experience-search {
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  background: rgba(249, 252, 251, 0.58);
+  box-shadow: 0 10px 24px rgba(30, 55, 56, 0.08);
+  -webkit-backdrop-filter: blur(16px) saturate(118%);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+.circle-glass-page .experience-search-icon,
+.circle-glass-page .experience-search-input {
+  color: #2d3d3b;
+}
+
+.circle-glass-page .experience-search-placeholder {
+  color: #758381;
+}
+
+.circle-glass-page .experience-search-clear {
+  background: rgba(22, 120, 111, 0.1);
+  color: #16786f;
+}
+
+.circle-glass-page .circle-section-count,
+.circle-glass-page .experience-filter-chip,
+.circle-glass-page .material-subject-chip,
+.circle-glass-page .material-action,
+.circle-glass-page .circle-post-close,
+.circle-glass-page .circle-post-action-row button {
+  border-color: rgba(255, 255, 255, 0.72);
+  background: rgba(255, 255, 255, 0.54);
+  color: #16786f;
+  -webkit-backdrop-filter: blur(16px) saturate(118%);
+  backdrop-filter: blur(16px) saturate(118%);
+  transition: transform 180ms ease, background-color 180ms ease;
+}
+
+.circle-glass-page .experience-filter-chip.active,
+.circle-glass-page .material-subject-chip.active {
+  border-color: rgba(22, 120, 111, 0.18);
+  background: rgba(224, 241, 237, 0.72);
+  color: #16786f;
+}
+
+.circle-glass-page .experience-card,
+.circle-glass-page .material-card,
+.circle-glass-page .material-subject-card,
+.circle-glass-page .circle-empty-card,
+.circle-glass-page .circle-post-sheet {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
+  background: rgba(251, 253, 252, 0.78);
+  box-shadow: 0 16px 38px rgba(30, 55, 56, 0.09);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+}
+
+.circle-glass-page .material-subject-card {
+  background: rgba(240, 248, 245, 0.78);
+}
+
+.circle-glass-page .experience-avatar,
+.circle-glass-page .material-subject-mark,
+.circle-glass-page .circle-post-stat-row,
+.circle-glass-page .circle-post-checklist {
+  border-color: transparent;
+  background: #e8f1ee;
+  color: #16786f;
+}
+
+.circle-glass-page .experience-tag,
+.circle-glass-page .material-badge,
+.circle-glass-page .experience-points text,
+.circle-glass-page .material-tags text,
+.circle-glass-page .experience-exam {
+  background: #eef4f2;
+  color: #49625f;
+}
+
+.circle-glass-page .experience-card,
+.circle-glass-page .material-card {
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.circle-glass-page .experience-card:active,
+.circle-glass-page .material-card:active {
+  transform: scale(var(--circle-glass-press, 0.98));
+}
+
+.circle-glass-page .circle-back-button:active,
+.circle-glass-page .experience-filter-chip:active,
+.circle-glass-page .material-subject-chip:active,
+.circle-glass-page .material-action:active,
+.circle-glass-page .circle-post-close:active,
+.circle-glass-page .circle-post-action-row button:active {
+  transform: scale(var(--circle-glass-press, 0.98));
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .circle-glass-page .circle-back-button,
+  .circle-glass-page .experience-search,
+  .circle-glass-page .circle-section-count,
+  .circle-glass-page .experience-filter-chip,
+  .circle-glass-page .material-subject-chip,
+  .circle-glass-page .material-action,
+  .circle-glass-page .circle-post-close,
+  .circle-glass-page .circle-post-action-row button {
+    background: #f7faf8;
+  }
+
+  .circle-glass-page .experience-card,
+  .circle-glass-page .material-card,
+  .circle-glass-page .material-subject-card,
+  .circle-glass-page .circle-empty-card,
+  .circle-glass-page .circle-post-sheet {
+    background: #fbfcfb;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .circle-glass-page .circle-entry,
+  .circle-glass-page .circle-back-button,
+  .circle-glass-page .experience-filter-chip,
+  .circle-glass-page .material-subject-chip,
+  .circle-glass-page .material-action,
+  .circle-glass-page .circle-post-close,
+  .circle-glass-page .circle-post-action-row button,
+  .circle-glass-page .experience-card,
+  .circle-glass-page .material-card {
+    transition: none;
+  }
+}
+
+@media (max-width: 350px) {
+  .circle-glass-page .circle-trend-card {
+    padding-right: 13px;
+    padding-left: 13px;
+  }
+
+  .circle-glass-page .circle-trend-heading {
+    gap: 5px;
+  }
+
+  .circle-glass-page .circle-trend-title {
+    font-size: 21px;
+  }
+
+  .circle-glass-page .circle-trend-peak {
+    font-size: 11px;
+  }
+
+  .circle-score-title {
+    font-size: 20px;
+  }
+
+  .circle-score-total {
+    font-size: 11px;
+  }
+
+  .circle-score-total text {
+    font-size: 15px;
+  }
+}
+
+@media (max-height: 760px) {
+  .circle-insight-swiper {
+    height: 200px;
+    flex-basis: 200px;
+  }
+
+  .circle-glass-page .circle-entry {
+    padding-top: 8px;
+    padding-bottom: 8px;
+  }
+
+  .circle-glass-page .circle-entry-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+  }
+
+  .circle-glass-page .circle-entry-label {
+    font-size: 19px;
+  }
+
+  .circle-glass-page .circle-entry-arrow {
+    width: 34px;
+    height: 34px;
+    font-size: 22px;
+  }
 }
 
 /* #ifdef MP-WEIXIN */
