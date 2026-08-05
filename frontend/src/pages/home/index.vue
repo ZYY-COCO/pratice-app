@@ -209,72 +209,214 @@
             <view class="circle-detail-header-spacer"></view>
           </view>
 
-          <view v-if="selectedCircleSection === 'experience'" class="circle-section">
-            <view class="experience-search circle-glass-group">
-              <text class="experience-search-icon">⌕</text>
-              <input
-                v-model="experienceSearchKeyword"
-                class="experience-search-input"
-                placeholder="搜索经验贴"
-                placeholder-class="experience-search-placeholder"
-                confirm-type="search"
-              />
+          <view v-if="selectedCircleSection === 'community'" class="circle-section circle-community-section">
+            <view class="circle-community-tabs circle-glass-group" role="tablist" aria-label="考研圈栏目">
               <button
-                v-if="experienceSearchKeyword"
-                class="experience-search-clear"
-                aria-label="清除搜索"
-                @tap.stop="clearExperienceSearch"
+                v-for="item in circleCommunityTabs"
+                :key="item.key"
+                class="circle-community-tab"
+                :class="{ active: selectedCircleCommunityTab === item.key }"
+                :aria-selected="selectedCircleCommunityTab === item.key"
+                @tap="selectCircleCommunityTab(item.key)"
               >
-                <CloseIcon />
+                {{ item.label }}
               </button>
             </view>
 
-            <scroll-view scroll-x class="experience-filter-scroll">
-              <view class="experience-filter-row circle-glass-group">
+            <template v-if="selectedCircleCommunityTab">
+              <view class="experience-search circle-glass-group">
+                <text class="experience-search-icon">⌕</text>
+                <input
+                  v-model="activeCommunitySearchKeyword"
+                  class="experience-search-input"
+                  :placeholder="selectedCircleCommunityTab === 'experience' ? '搜索经验贴' : '搜索研友聊'"
+                  placeholder-class="experience-search-placeholder"
+                  confirm-type="search"
+                />
                 <button
-                  v-for="item in circleExperienceCategories"
-                  :key="item"
-                  class="experience-filter-chip"
-                  :class="{ active: selectedExperienceCategory === item }"
-                  @tap="selectExperienceCategory(item)"
+                  v-if="activeCommunitySearchKeyword"
+                  class="experience-search-clear"
+                  aria-label="清除搜索"
+                  @tap.stop="clearActiveCommunitySearch"
                 >
-                  {{ item }}
+                  <CloseIcon />
                 </button>
               </view>
-            </scroll-view>
 
-            <view
-              v-for="post in filteredCircleExperiencePosts"
-              :key="post.id"
-              class="experience-card"
-              @tap="openCirclePost(post)"
-            >
-              <view class="experience-author-row">
-                <view class="experience-avatar">{{ post.avatar }}</view>
-                <view class="experience-author-main">
-                  <view class="experience-author-name">{{ post.author }}</view>
-                  <view class="experience-author-role">{{ post.authorRole }} · {{ post.publishDate }}</view>
+              <scroll-view scroll-x class="community-filter-scroll">
+                <view class="community-filter-row circle-glass-group">
+                  <button
+                    v-for="item in activeCommunityCategories"
+                    :key="item"
+                    class="community-filter-chip"
+                    :class="{ active: activeCommunityCategory === item }"
+                    @tap="selectActiveCommunityCategory(item)"
+                  >
+                    {{ item }}
+                  </button>
                 </view>
-                <view class="experience-exam">{{ post.subject }}</view>
-              </view>
-              <view class="experience-title">{{ post.title }}</view>
-              <view class="experience-summary">{{ post.summary }}</view>
-              <view class="experience-points">
-                <text v-for="point in post.points" :key="point">{{ point }}</text>
-              </view>
-              <view class="experience-footer">
-                <view class="experience-stats">
-                  <text>{{ post.stats.views }} 阅读</text>
-                  <text>{{ post.stats.likes }} 赞</text>
-                  <text>{{ post.stats.saves }} 收藏</text>
-                </view>
-              </view>
-            </view>
+              </scroll-view>
 
-            <view v-if="filteredCircleExperiencePosts.length === 0" class="circle-empty-card">
-              <view class="circle-empty-title">暂无匹配的经验贴</view>
-              <view class="circle-empty-copy">换个关键词或分类试试</view>
-            </view>
+              <view class="community-feed">
+                <view
+                  v-for="post in filteredActiveCommunityPosts"
+                  :key="post.id"
+                  class="community-post-card"
+                  @tap="openCommunityPost(post)"
+                >
+                  <view class="community-post-header">
+                    <view class="community-avatar" :class="`tone-${post.tone}`">{{ post.avatar }}</view>
+                    <view class="community-author-main">
+                      <view class="community-author-name">{{ post.author }}</view>
+                      <view class="community-author-meta">{{ post.publishTime }}</view>
+                    </view>
+                    <view class="community-topic">{{ post.category }}</view>
+                  </view>
+
+                  <view class="community-post-title">{{ post.title }}</view>
+                  <view class="community-post-copy">{{ post.summary }}</view>
+
+                  <view v-if="post.media.length" class="community-media-grid" :class="`count-${post.media.length}`">
+                    <view
+                      v-for="media in post.media"
+                      :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
+                      class="community-media-tile"
+                      :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]"
+                    >
+                      <image v-if="media.imageUrl || media.image_url" class="community-media-image" :src="media.imageUrl || media.image_url" mode="aspectFill" />
+                      <view v-else class="community-media-text">
+                        <view class="community-media-kicker">{{ media.kicker }}</view>
+                        <view class="community-media-title">{{ media.title }}</view>
+                        <view class="community-media-copy">{{ media.copy }}</view>
+                      </view>
+                    </view>
+                  </view>
+
+                  <view v-if="post.commentPreviews.length" class="community-comment-preview-list">
+                    <view
+                      v-for="comment in post.commentPreviews"
+                      :key="comment.id"
+                      class="community-comment-preview"
+                      @tap.stop="openCommunityComments(post)"
+                    >
+                      <text class="community-comment-name">{{ comment.author }}：</text>
+                      <text class="community-comment-preview-copy">{{ comment.text }}</text>
+                    </view>
+                  </view>
+
+                  <view class="community-post-footer">
+                    <button
+                      class="community-post-action"
+                      :class="{ active: post.liked, pending: communityLikePostId === post.id }"
+                      :aria-label="post.liked ? '取消点赞' : '点赞'"
+                      :aria-pressed="post.liked"
+                      @tap.stop="toggleCommunityLike(post)"
+                    >
+                      <image class="community-action-icon" src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
+                      <text>{{ post.stats.likes }}</text>
+                    </button>
+                    <button
+                      class="community-post-action"
+                      aria-label="查看并评论"
+                      @tap.stop="openCommunityComments(post)"
+                    >
+                      <image class="community-action-icon" src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
+                      <text>{{ post.stats.comments }}</text>
+                    </button>
+                    <button
+                      class="community-post-action"
+                      aria-label="查看帖子"
+                      @tap.stop="openCommunityPost(post)"
+                    >
+                      <image class="community-action-icon" src="/static/ui-icons/circle-view.svg" mode="aspectFit" />
+                      <text>{{ post.stats.views }}</text>
+                    </button>
+                  </view>
+                </view>
+
+                <view v-if="filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
+                  <view class="circle-empty-title">暂无匹配的{{ selectedCircleCommunityTab === 'experience' ? '经验贴' : '交流内容' }}</view>
+                  <view class="circle-empty-copy">换个关键词或分类试试。</view>
+                </view>
+              </view>
+
+              <button
+                v-if="!selectedCommunityPost"
+                class="community-publish-button"
+                aria-label="发布话题"
+                @tap="openCommunityPublishPage(selectedCircleCommunityTab)"
+              >
+                <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+              </button>
+            </template>
+
+            <template v-else>
+              <view class="experience-search circle-glass-group">
+                <text class="experience-search-icon">⌕</text>
+                <input
+                  v-model="experienceSearchKeyword"
+                  class="experience-search-input"
+                  placeholder="搜索经验贴"
+                  placeholder-class="experience-search-placeholder"
+                  confirm-type="search"
+                />
+                <button
+                  v-if="experienceSearchKeyword"
+                  class="experience-search-clear"
+                  aria-label="清除搜索"
+                  @tap.stop="clearExperienceSearch"
+                >
+                  <CloseIcon />
+                </button>
+              </view>
+
+              <scroll-view scroll-x class="experience-filter-scroll">
+                <view class="experience-filter-row circle-glass-group">
+                  <button
+                    v-for="item in circleExperienceCategories"
+                    :key="item"
+                    class="experience-filter-chip"
+                    :class="{ active: selectedExperienceCategory === item }"
+                    @tap="selectExperienceCategory(item)"
+                  >
+                    {{ item }}
+                  </button>
+                </view>
+              </scroll-view>
+
+              <view
+                v-for="post in filteredCircleExperiencePosts"
+                :key="post.id"
+                class="experience-card"
+                @tap="openCirclePost(post)"
+              >
+                <view class="experience-author-row">
+                  <view class="experience-avatar">{{ post.avatar }}</view>
+                  <view class="experience-author-main">
+                    <view class="experience-author-name">{{ post.author }}</view>
+                    <view class="experience-author-role">{{ post.authorRole }} · {{ post.publishDate }}</view>
+                  </view>
+                  <view class="experience-exam">{{ post.subject }}</view>
+                </view>
+                <view class="experience-title">{{ post.title }}</view>
+                <view class="experience-summary">{{ post.summary }}</view>
+                <view class="experience-points">
+                  <text v-for="point in post.points" :key="point">{{ point }}</text>
+                </view>
+                <view class="experience-footer">
+                  <view class="experience-stats">
+                    <text>{{ post.stats.views }} 阅读</text>
+                    <text>{{ post.stats.likes }} 赞</text>
+                    <text>{{ post.stats.saves }} 收藏</text>
+                  </view>
+                </view>
+              </view>
+
+              <view v-if="filteredCircleExperiencePosts.length === 0" class="circle-empty-card">
+                <view class="circle-empty-title">暂无匹配的经验贴</view>
+                <view class="circle-empty-copy">换个关键词或分类试试</view>
+              </view>
+            </template>
           </view>
 
           <view v-else-if="selectedCircleSection === 'materials'" class="circle-section">
@@ -1018,6 +1160,135 @@
       </view>
     </view>
 
+    <view v-if="selectedCommunityPost" class="community-detail-mask" @tap="closeCommunityPost">
+      <view class="community-detail-sheet" @tap.stop>
+        <view class="community-detail-handle"></view>
+        <button class="community-detail-close" aria-label="关闭帖子详情" @tap="closeCommunityPost"><CloseIcon /></button>
+        <view class="community-detail-heading">帖子详情</view>
+        <scroll-view scroll-y class="community-detail-scroll">
+          <view class="community-detail-author-row">
+            <view class="community-avatar" :class="`tone-${selectedCommunityPost.tone}`">{{ selectedCommunityPost.avatar }}</view>
+            <view class="community-author-main">
+              <view class="community-author-name">{{ selectedCommunityPost.author }}</view>
+              <view class="community-author-meta">{{ selectedCommunityPost.publishTime }}</view>
+            </view>
+            <view class="community-topic">{{ selectedCommunityPost.category }}</view>
+          </view>
+
+          <view class="community-detail-title">{{ selectedCommunityPost.title }}</view>
+          <view class="community-detail-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
+
+          <view
+            v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
+            class="community-media-grid community-detail-media"
+            :class="`count-${selectedCommunityPost.media.length}`"
+          >
+            <view
+              v-for="media in selectedCommunityPost.media"
+              :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
+              class="community-media-tile"
+              :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]"
+            >
+              <image v-if="media.imageUrl || media.image_url" class="community-media-image" :src="media.imageUrl || media.image_url" mode="aspectFill" />
+              <view v-else class="community-media-text">
+                <view class="community-media-kicker">{{ media.kicker }}</view>
+                <view class="community-media-title">{{ media.title }}</view>
+                <view class="community-media-copy">{{ media.copy }}</view>
+              </view>
+            </view>
+          </view>
+
+          <view class="community-detail-stats">
+            <button
+              class="community-detail-like"
+              :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
+              @tap="toggleCommunityLike(selectedCommunityPost)"
+            >
+              <image src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
+              <text>{{ selectedCommunityPost.liked ? '已点赞' : '点赞' }} {{ selectedCommunityPost.stats.likes }}</text>
+            </button>
+            <text>{{ selectedCommunityPost.stats.views }} 浏览</text>
+          </view>
+
+          <button class="community-detail-comments-entry" @tap="openCommunityComments(selectedCommunityPost)">
+            <view>
+              <view class="community-detail-comments-count">评论 {{ selectedCommunityPost.stats.comments }}</view>
+              <view class="community-detail-comments-copy">查看全部评论并参与讨论</view>
+            </view>
+            <text>查看评论</text>
+          </button>
+        </scroll-view>
+      </view>
+    </view>
+
+    <view v-if="selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
+      <view class="community-comments-sheet" @tap.stop>
+        <view class="community-detail-handle"></view>
+        <button class="community-detail-close" aria-label="关闭评论" @tap="closeCommunityComments"><CloseIcon /></button>
+
+        <view class="community-comments-toolbar">
+          <view class="community-comments-counts">
+            <text class="community-comments-count active">评论 {{ selectedCommunityCommentsPost.stats.comments }}</text>
+            <text class="community-comments-count">点赞 {{ selectedCommunityCommentsPost.stats.likes }}</text>
+          </view>
+          <view class="community-comment-sort" aria-label="评论排序">
+            <button
+              class="community-comment-sort-button"
+              :class="{ active: communityCommentSort === 'default' }"
+              @tap="communityCommentSort = 'default'"
+            >默认</button>
+            <button
+              class="community-comment-sort-button"
+              :class="{ active: communityCommentSort === 'latest' }"
+              @tap="communityCommentSort = 'latest'"
+            >最新</button>
+            <button
+              class="community-comment-sort-button"
+              :class="{ active: communityCommentSort === 'earliest' }"
+              @tap="communityCommentSort = 'earliest'"
+            >最早</button>
+          </view>
+        </view>
+
+        <scroll-view scroll-y class="community-comments-scroll">
+          <view v-if="communityCommentsLoading" class="community-comments-empty">正在加载评论</view>
+          <view v-else-if="sortedCommunityComments.length === 0" class="community-comments-empty">
+            暂无评论，来留下第一条讨论吧。
+          </view>
+          <view v-else class="community-comments-list">
+            <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-comments-item">
+              <view class="community-comments-avatar">{{ comment.avatar }}</view>
+              <view class="community-comments-main">
+                <view class="community-comments-author">{{ comment.author }}</view>
+                <view class="community-comments-copy">{{ comment.content }}</view>
+                <view class="community-comments-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view class="community-comment-composer community-comments-composer">
+          <input
+            v-model="communityCommentDraft"
+            class="community-comment-input"
+            maxlength="500"
+            confirm-type="send"
+            placeholder="写下你的评论吧"
+            placeholder-class="community-comment-placeholder"
+            :disabled="communityCommentSubmitting"
+            @confirm="submitCommunityComment"
+          />
+          <button
+            class="community-comment-submit"
+            :disabled="communityCommentSubmitting || !communityCommentDraft.trim()"
+            @tap="submitCommunityComment"
+          >
+            {{ communityCommentSubmitting ? '发送中' : '发送' }}
+          </button>
+        </view>
+      </view>
+    </view>
+
     <view v-if="selectedCirclePost" class="circle-post-mask" @tap="closeCirclePost">
       <view class="circle-post-sheet" @tap.stop>
         <view class="circle-post-handle"></view>
@@ -1078,7 +1349,7 @@
 
 <script setup>
 import { computed, ref, watch } from 'vue'
-import { onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
+import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -1088,6 +1359,13 @@ import SectionCard from '../../components/SectionCard.vue'
 import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
 import { updateProfile } from '../../api/auth'
+import {
+  createCommunityComment,
+  fetchCommunityPost,
+  fetchCommunityPosts,
+  registerCommunityPostView,
+  toggleCommunityPostLike
+} from '../../api/community'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
 import { fetchAbilityReport, fetchLearningSummary, fetchStudyAdvice } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
@@ -1112,17 +1390,12 @@ const wordmarkSrc = '/static/gangyantong-wordmark.png'
 const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
 // #endif
 
-let IS_H5 = false
-// #ifdef H5
-IS_H5 = true
-// #endif
-
 const examOptions = EXAM_OPTIONS
 const themePresets = THEME_PRESETS
-const ENABLE_CIRCLE = Boolean(IS_H5)
+const ENABLE_CIRCLE = true
 const initialAuthUser = getAuthUser()
 const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
-const activeTab = ref('home')
+const activeTab = ref(ENABLE_CIRCLE ? 'circle' : 'home')
 const authUser = ref(initialAuthUser)
 const authed = ref(isLoggedIn())
 const wrongItems = ref([])
@@ -1176,6 +1449,18 @@ const circleScoreSchoolIndex = ref(Math.floor(Math.random() * 4))
 const selectedMaterialSubject = ref('中华文化')
 const selectedExperienceCategory = ref('全部')
 const experienceSearchKeyword = ref('')
+const selectedCircleCommunityTab = ref('chat')
+const selectedCommunityCategory = ref('全部')
+const communitySearchKeyword = ref('')
+const selectedCommunityPost = ref(null)
+const selectedCommunityCommentsPost = ref(null)
+const communityComments = ref([])
+const communityCommentsLoading = ref(false)
+const communityCommentSort = ref('default')
+const communityPostsLoading = ref(false)
+const communityLikePostId = ref('')
+const communityCommentDraft = ref('')
+const communityCommentSubmitting = ref(false)
 const circleTabCollapsed = ref(false)
 const circleLastScrollTop = ref(0)
 
@@ -1190,11 +1475,13 @@ const generateCountdown = ref(45)
 const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
+let communityViewTimerId = null
+const communityPostsLoadingTypes = new Set()
 const tabs = computed(() => {
   const items = [
     {
       key: 'home',
-      label: '首页',
+      label: '刷题',
       iconSrc: '/static/ui-icons/tab-home.svg',
       mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
     }
@@ -1217,16 +1504,21 @@ const tabs = computed(() => {
 
   return items
 })
-const showBottomTab = computed(() => !retestMode.value && !['mistakes', 'report'].includes(activeTab.value))
+const isCircleDetail = computed(() =>
+  activeTab.value === 'circle' && selectedCircleSection.value !== 'overview'
+)
+const showBottomTab = computed(() =>
+  !retestMode.value && !['mistakes', 'report'].includes(activeTab.value) && !isCircleDetail.value
+)
 const isCircleTabbarCollapsed = computed(() =>
   activeTab.value === 'circle' && selectedCircleSection.value !== 'overview' && circleTabCollapsed.value
 )
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
 const circleSections = [
   {
-    key: 'experience',
-    label: '经验贴',
-    iconSrc: '/static/ui-icons/circle-experience.svg'
+    key: 'community',
+    label: '考研圈',
+    iconSrc: '/static/ui-icons/tab-circle.svg'
   },
   {
     key: 'scores',
@@ -1271,7 +1563,82 @@ const circleScoreLinePoints = computed(() =>
     .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score)}`)
     .join(' ')
 )
-const circleExperienceCategories = ['全部', '备考节奏', '中华文化', '数学基础', '英语运用', '逻辑推理']
+const circleCommunityTabs = [
+  { key: 'chat', label: '研友聊' },
+  { key: 'experience', label: '经验贴' }
+]
+const circleCommunityCategories = ['全部', '备考日常', '择校答疑', '复习打卡', '资料互助']
+const circleCommunityPosts = ref([
+  {
+    id: '0b46a665-7b7d-4e0c-a62c-f42282f4e101',
+    category: '备考日常',
+    author: '南栀同学',
+    avatar: '南',
+    publishTime: '18 分钟前',
+    tone: 'mint',
+    title: 'Z001 三科刚起步，大家一周都怎么排？',
+    summary: '我先按固定题量排了第一周，怕节奏太满坚持不下来，想看看大家有没有更稳的安排。',
+    media: [
+      { kicker: '周一', title: '文化 20 题', copy: '错题当天回看', tone: 'sky' },
+      { kicker: '周三', title: '英语 20 题', copy: '短语优先', tone: 'mint' },
+      { kicker: '周五', title: '逻辑 15 题', copy: '周末做小结', tone: 'warm' }
+    ],
+    commentPreviews: [
+      { id: 'mock-pace-1', author: '研友小林', text: '我也是先把固定题量跑顺，第二周再慢慢加题。' },
+      { id: 'mock-pace-2', author: '橙子同学', text: '可以先把每科放在固定时段，执行起来会更稳。' },
+      { id: 'mock-pace-3', author: '阿远', text: '周末留半天复盘，后面加题时不容易乱。' }
+    ],
+    stats: { likes: 34, comments: 12, views: 186 }
+  },
+  {
+    id: '2fd58d9c-7c70-4d90-9d88-3a261c4847af',
+    category: '择校答疑',
+    author: '阿澈',
+    avatar: '澈',
+    publishTime: '46 分钟前',
+    tone: 'blue',
+    title: '港大和港中文的分数线，应该怎么看？',
+    summary: '目前基础一般，想申请文科方向。除了分数线，大家还会优先比较哪些信息？',
+    media: [],
+    commentPreviews: [
+      { id: 'mock-score-1', author: '思远', text: '先看专业和年度要求，再把语言成绩、材料和自己的准备周期一起算进去。' }
+    ],
+    stats: { likes: 21, comments: 18, views: 153 }
+  },
+  {
+    id: '423377f8-7fcf-4ddb-a34d-6ea7e25504da',
+    category: '复习打卡',
+    author: '小卷',
+    avatar: '卷',
+    publishTime: '1 小时前',
+    tone: 'warm',
+    title: '中华文化索引表打卡第 6 天',
+    summary: '今天补了人物、作品和朝代三列，发现做题时定位干扰项比以前快很多。',
+    media: [
+      { kicker: '今日笔记', title: '人物 × 作品', copy: '补齐 16 个易混点', tone: 'paper' }
+    ],
+    commentPreviews: [
+      { id: 'mock-culture-1', author: '小麦', text: '这个方法很好，我今晚也准备按这个结构补索引。' }
+    ],
+    stats: { likes: 48, comments: 9, views: 217 }
+  },
+  {
+    id: 'f7cd37cc-bf32-4873-b954-ffa5522d6e0b',
+    category: '资料互助',
+    author: '知行',
+    avatar: '知',
+    publishTime: '2 小时前',
+    tone: 'violet',
+    title: '整理了一份数学基础错题复盘模板',
+    summary: '模板按公式条件、代入过程和最后验算拆分，适合把重复错误记得更清楚。',
+    media: [],
+    commentPreviews: [
+      { id: 'mock-math-1', author: 'M 同学', text: '正好需要这个思路，做完题只记答案确实很难复盘。' }
+    ],
+    stats: { likes: 29, comments: 7, views: 141 }
+  }
+])
+const circleExperienceCategories = ['全部', 'Z001', 'Z002']
 const circleExperiencePosts = [
   {
     id: 'exp-z001-pace',
@@ -1449,6 +1816,41 @@ const circleExperiencePosts = [
     ]
   }
 ]
+const circleExperienceSeedPostIds = {
+  'exp-z001-pace': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0101',
+  'exp-culture-memory': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0102',
+  'exp-math-check': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0103',
+  'exp-english-language': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0104',
+  'exp-logic-template': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0105'
+}
+const circleExperienceCommunityPosts = ref(
+  circleExperiencePosts.map((post, index) => normalizeCommunityPost({
+    id: circleExperienceSeedPostIds[post.id],
+    postType: 'experience',
+    category: post.category,
+    author: post.author,
+    avatar: post.avatar,
+    publishTime: post.publishDate,
+    tone: ['mint', 'blue', 'warm', 'violet', 'mint'][index] || 'blue',
+    title: post.title,
+    summary: post.summary,
+    content: [
+      post.summary,
+      ...post.sections.map((section) => `${section.heading}\n${section.body}`)
+    ].join('\n\n'),
+    media: [],
+    commentPreviews: [{
+      id: `${post.id}-preview`,
+      author: '研友小林',
+      text: `我会先按“${post.points[0]}”来复盘。`
+    }],
+    stats: {
+      likes: post.stats.likes,
+      comments: 1,
+      views: post.stats.views
+    }
+  }))
+)
 const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
 const circleMaterialSummaries = {
   中华文化: '文学、历史、哲学、艺术和古代科技常识资料包。',
@@ -1541,17 +1943,85 @@ const circleMaterialResources = [
 const filteredCircleMaterials = computed(() =>
   circleMaterialResources.filter((item) => item.subject === selectedMaterialSubject.value)
 )
-const filteredCircleExperiencePosts = computed(() => {
-  const keyword = experienceSearchKeyword.value.trim().toLowerCase()
-  return circleExperiencePosts.filter((item) => {
-    const matchesCategory = selectedExperienceCategory.value === '全部' || item.category === selectedExperienceCategory.value
+const filteredCircleCommunityPosts = computed(() => {
+  const keyword = communitySearchKeyword.value.trim().toLowerCase()
+  return circleCommunityPosts.value.filter((item) => {
+    const matchesCategory = selectedCommunityCategory.value === '全部' || item.category === selectedCommunityCategory.value
     if (!matchesCategory || !keyword) return matchesCategory
-    return [item.author, item.authorRole, item.title, item.summary, item.subject, item.tag, ...item.points]
+    return [
+      item.author,
+      item.category,
+      item.title,
+      item.summary,
+      ...(item.commentPreviews || []).flatMap((comment) => [comment.author, comment.text]),
+      ...item.media.map((media) => `${media.title} ${media.copy}`)
+    ]
       .join(' ')
       .toLowerCase()
       .includes(keyword)
   })
 })
+const sortedCommunityComments = computed(() => {
+  const comments = [...communityComments.value]
+  if (communityCommentSort.value === 'default') return comments
+
+  const direction = communityCommentSort.value === 'latest' ? -1 : 1
+  return comments.sort((left, right) => {
+    const leftTimestamp = Date.parse(left.createdAt) || 0
+    const rightTimestamp = Date.parse(right.createdAt) || 0
+    return (leftTimestamp - rightTimestamp) * direction
+  })
+})
+const filteredCircleExperiencePosts = computed(() => {
+  const keyword = experienceSearchKeyword.value.trim().toLowerCase()
+  return circleExperienceCommunityPosts.value.filter((item) => {
+    const itemExamCode = getExperienceExamCode(item)
+    const matchesExamCode = selectedExperienceCategory.value === '全部'
+      || itemExamCode === selectedExperienceCategory.value
+      || itemExamCode === 'COMMON'
+    if (!matchesExamCode || !keyword) return matchesExamCode
+    return [
+      item.author,
+      item.category,
+      item.title,
+      item.summary,
+      ...(item.commentPreviews || []).flatMap((comment) => [comment.author, comment.text]),
+      ...(item.media || []).map((media) => `${media.title || ''} ${media.copy || ''}`)
+    ]
+      .join(' ')
+      .toLowerCase()
+      .includes(keyword)
+  })
+})
+const activeCommunitySearchKeyword = computed({
+  get: () => (
+    selectedCircleCommunityTab.value === 'experience'
+      ? experienceSearchKeyword.value
+      : communitySearchKeyword.value
+  ),
+  set: (value) => {
+    if (selectedCircleCommunityTab.value === 'experience') {
+      experienceSearchKeyword.value = value
+      return
+    }
+    communitySearchKeyword.value = value
+  }
+})
+const activeCommunityCategories = computed(() => (
+  selectedCircleCommunityTab.value === 'experience'
+    ? circleExperienceCategories
+    : circleCommunityCategories
+))
+const activeCommunityCategory = computed(() => (
+  selectedCircleCommunityTab.value === 'experience'
+    ? selectedExperienceCategory.value
+    : selectedCommunityCategory.value
+))
+const filteredActiveCommunityPosts = computed(() => (
+  selectedCircleCommunityTab.value === 'experience'
+    ? filteredCircleExperiencePosts.value
+    : filteredCircleCommunityPosts.value
+))
 const circleTrendPeak = computed(() => Math.max(...circlePracticeTrend.map((item) => item.count)))
 const circleTrendScaleMax = computed(() => Math.ceil(circleTrendPeak.value / 100) * 100)
 const circleTrendAxis = computed(() => [circleTrendScaleMax.value, Math.round(circleTrendScaleMax.value / 2), 0])
@@ -2082,6 +2552,7 @@ watch(activeTab, (value) => {
   if (value === 'circle') {
     selectedCircleSection.value = 'overview'
     selectedCirclePost.value = null
+    closeCommunityPost()
   }
   if (value !== 'mistakes') {
     selectedWrongDetail.value = null
@@ -2096,6 +2567,7 @@ watch(activeTab, (value) => {
   }
   if (value !== 'circle') {
     selectedCirclePost.value = null
+    closeCommunityPost()
   }
 })
 
@@ -2115,6 +2587,10 @@ onLoad((options) => {
     activeTab.value = 'circle'
     return
   }
+  if (options?.tab === 'home') {
+    activeTab.value = 'home'
+    return
+  }
   if (options?.tab === 'profile') {
     activeTab.value = 'profile'
   }
@@ -2128,6 +2604,13 @@ onShow(() => {
   authed.value = isLoggedIn()
   refreshLearningData()
   loadOfficialMessages(true)
+  if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
+    loadCircleCommunityPosts(selectedCircleCommunityTab.value)
+  }
+})
+
+onHide(() => {
+  clearCommunityViewTimer()
 })
 
 onPageScroll(({ scrollTop }) => {
@@ -2508,12 +2991,20 @@ function openCircleSection(key) {
   resetCircleTabbar()
   selectedCircleSection.value = key
   selectedCirclePost.value = null
+  closeCommunityPost()
+  if (key === 'community') {
+    selectedCircleCommunityTab.value = 'chat'
+    selectedCommunityCategory.value = '全部'
+    communitySearchKeyword.value = ''
+    loadCircleCommunityPosts('chat')
+  }
 }
 
 function returnToCircleOverview() {
   resetCircleTabbar()
   selectedCircleSection.value = 'overview'
   selectedCirclePost.value = null
+  closeCommunityPost()
 }
 
 function resetCircleTabbar() {
@@ -2530,6 +3021,7 @@ function updateCircleTabbarOnScroll(scrollTop) {
   const shouldTrackCircleScroll = activeTab.value === 'circle'
     && selectedCircleSection.value !== 'overview'
     && !selectedCirclePost.value
+    && !selectedCommunityPost.value
 
   if (!shouldTrackCircleScroll || currentScrollTop <= 32) {
     circleTabCollapsed.value = false
@@ -2601,6 +3093,342 @@ function selectExperienceCategory(category) {
 
 function clearExperienceSearch() {
   experienceSearchKeyword.value = ''
+}
+
+function clearCommunitySearch() {
+  communitySearchKeyword.value = ''
+}
+
+function clearActiveCommunitySearch() {
+  if (selectedCircleCommunityTab.value === 'experience') {
+    clearExperienceSearch()
+    return
+  }
+  clearCommunitySearch()
+}
+
+function getExperienceExamCode(post = {}) {
+  const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
+  if (['Z001', 'Z002', 'COMMON'].includes(explicitCode)) return explicitCode
+
+  const category = String(post.category || '')
+  const text = `${post.title || ''} ${post.summary || ''}`.toUpperCase()
+  if (category === '数学基础' || text.includes('Z002')) return 'Z002'
+  if (category === '逻辑推理' || category === '备考节奏' || text.includes('Z001')) return 'Z001'
+  return 'COMMON'
+}
+
+function normalizeCommunityPost(post = {}) {
+  const stats = post.stats || {}
+  const rawCommentPreviews = Array.isArray(post.commentPreviews)
+    ? post.commentPreviews
+    : Array.isArray(post.comment_previews)
+      ? post.comment_previews
+      : [post.commentPreview || post.comment_preview].filter(Boolean)
+  const commentPreviews = rawCommentPreviews
+    .slice(0, 3)
+    .map((comment, index) => ({
+      id: String(comment.id || `${post.id || 'post'}-preview-${index}`),
+      author: String(comment.author || '研友'),
+      text: String(comment.text || comment.content || '')
+    }))
+    .filter((comment) => comment.text)
+
+  return {
+    ...post,
+    id: String(post.id || ''),
+    postType: post.postType || post.post_type || 'chat',
+    examCode: getExperienceExamCode(post),
+    category: post.category || '备考日常',
+    author: post.author || '研友',
+    avatar: post.avatar || '研',
+    publishTime: post.publishTime || post.publish_time || '刚刚',
+    tone: post.tone || 'blue',
+    title: post.title || '',
+    summary: post.summary || post.content || '',
+    content: post.content || post.summary || '',
+    media: Array.isArray(post.media) ? post.media.slice(0, 9) : [],
+    commentPreviews,
+    commentPreview: commentPreviews[0] || null,
+    liked: Boolean(post.liked || post.is_liked),
+    stats: {
+      likes: Number(stats.likes ?? post.like_count ?? 0),
+      comments: Number(stats.comments ?? post.comment_count ?? 0),
+      views: Number(stats.views ?? post.view_count ?? 0)
+    }
+  }
+}
+
+function normalizeCommunityComment(comment = {}) {
+  return {
+    id: String(comment.id || `comment-${Date.now()}`),
+    author: comment.author || '研友',
+    avatar: comment.avatar || '研',
+    content: comment.content || '',
+    createdAt: comment.createdAt || comment.created_at || new Date().toISOString(),
+    isMine: Boolean(comment.isMine || comment.is_mine)
+  }
+}
+
+function patchCommunityPost(postId, patch) {
+  if (!postId) return
+  const applyPatch = (post) => ({
+    ...post,
+    ...patch,
+    stats: {
+      ...post.stats,
+      ...(patch.stats || {})
+    }
+  })
+  circleCommunityPosts.value = circleCommunityPosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
+  circleExperienceCommunityPosts.value = circleExperienceCommunityPosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
+  if (selectedCommunityPost.value?.id === postId) {
+    selectedCommunityPost.value = applyPatch(selectedCommunityPost.value)
+  }
+  if (selectedCommunityCommentsPost.value?.id === postId) {
+    selectedCommunityCommentsPost.value = applyPatch(selectedCommunityCommentsPost.value)
+  }
+}
+
+async function loadCircleCommunityPosts(postType = 'chat') {
+  const normalizedPostType = postType === 'experience' ? 'experience' : 'chat'
+  if (communityPostsLoadingTypes.has(normalizedPostType)) return
+  communityPostsLoadingTypes.add(normalizedPostType)
+  communityPostsLoading.value = true
+  try {
+    const response = await fetchCommunityPosts({ limit: 50, post_type: normalizedPostType })
+    if (Array.isArray(response?.items)) {
+      const posts = response.items.map((post) => normalizeCommunityPost(post))
+      if (normalizedPostType === 'experience') {
+        circleExperienceCommunityPosts.value = posts
+      } else {
+        circleCommunityPosts.value = posts
+      }
+    }
+  } catch (error) {
+    // 保留本地示例内容，避免数据库迁移完成前的界面出现空白。
+  } finally {
+    communityPostsLoadingTypes.delete(normalizedPostType)
+    communityPostsLoading.value = communityPostsLoadingTypes.size > 0
+  }
+}
+
+async function openCommunityPost(post) {
+  const initialPost = normalizeCommunityPost(post)
+  if (!initialPost.id) return
+  clearCommunityViewTimer()
+  selectedCommunityPost.value = initialPost
+  scheduleCommunityView(initialPost.id)
+
+  try {
+    const response = await fetchCommunityPost(initialPost.id)
+    if (response?.post && selectedCommunityPost.value?.id === initialPost.id) {
+      const remotePost = normalizeCommunityPost(response.post)
+      selectedCommunityPost.value = remotePost
+      patchCommunityPost(initialPost.id, remotePost)
+    }
+  } catch (error) {
+    // 详情的本地预览仍可阅读；互动请求会明确提示服务状态。
+  }
+}
+
+function closeCommunityPost() {
+  clearCommunityViewTimer()
+  closeCommunityComments()
+  selectedCommunityPost.value = null
+}
+
+async function openCommunityComments(post) {
+  const initialPost = normalizeCommunityPost(post)
+  if (!initialPost.id) return
+
+  selectedCommunityCommentsPost.value = initialPost
+  communityCommentSort.value = 'default'
+  communityCommentDraft.value = ''
+  communityComments.value = initialPost.commentPreviews.map((comment) => normalizeCommunityComment({
+    id: comment.id,
+    author: comment.author,
+    avatar: comment.author.slice(0, 1),
+    content: comment.text,
+    createdAt: ''
+  }))
+  communityCommentsLoading.value = true
+
+  try {
+    const response = await fetchCommunityPost(initialPost.id)
+    if (response?.post && selectedCommunityCommentsPost.value?.id === initialPost.id) {
+      const remotePost = normalizeCommunityPost(response.post)
+      selectedCommunityCommentsPost.value = remotePost
+      patchCommunityPost(initialPost.id, remotePost)
+      communityComments.value = Array.isArray(response.comments)
+        ? response.comments.map((comment) => normalizeCommunityComment(comment))
+        : []
+    }
+  } catch (error) {
+    // 接口暂不可用时保留帖子卡片带入的本地评论预览。
+  } finally {
+    if (selectedCommunityCommentsPost.value?.id === initialPost.id) {
+      communityCommentsLoading.value = false
+    }
+  }
+}
+
+function closeCommunityComments() {
+  selectedCommunityCommentsPost.value = null
+  communityComments.value = []
+  communityCommentsLoading.value = false
+  communityCommentSort.value = 'default'
+  communityCommentDraft.value = ''
+}
+
+function clearCommunityViewTimer() {
+  if (!communityViewTimerId) return
+  clearTimeout(communityViewTimerId)
+  communityViewTimerId = null
+}
+
+function scheduleCommunityView(postId) {
+  clearCommunityViewTimer()
+  communityViewTimerId = setTimeout(() => {
+    communityViewTimerId = null
+    if (selectedCommunityPost.value?.id !== postId) return
+    if (typeof document !== 'undefined' && document.visibilityState === 'hidden') return
+    registerEffectiveCommunityView(postId)
+  }, 3000)
+}
+
+function getCommunityAnonymousId() {
+  const storageKey = 'circle-community-anonymous-id'
+  const stored = String(uni.getStorageSync(storageKey) || '')
+  if (/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(stored)) {
+    return stored
+  }
+
+  const generated = typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function'
+    ? crypto.randomUUID()
+    : `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, (marker) => {
+      const random = Math.floor(Math.random() * 16)
+      return (marker === 'x' ? random : ((random & 0x3) | 0x8)).toString(16)
+    })
+  uni.setStorageSync(storageKey, generated)
+  return generated
+}
+
+async function registerEffectiveCommunityView(postId) {
+  try {
+    const response = await registerCommunityPostView(postId, {
+      anonymous_id: getCommunityAnonymousId()
+    })
+    if (response?.post_id === postId) {
+      patchCommunityPost(postId, {
+        stats: { views: Number(response.view_count || 0) }
+      })
+    }
+  } catch (error) {
+    // 浏览统计在后台失败时不影响用户继续阅读，也不会在本地虚增数字。
+  }
+}
+
+async function toggleCommunityLike(post) {
+  if (!post?.id || communityLikePostId.value === post.id) return
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+
+  communityLikePostId.value = post.id
+  try {
+    const response = await toggleCommunityPostLike(post.id)
+    patchCommunityPost(post.id, {
+      liked: Boolean(response?.is_liked),
+      stats: { likes: Number(response?.like_count || 0) }
+    })
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '点赞失败，请稍后重试'), icon: 'none' })
+  } finally {
+    communityLikePostId.value = ''
+  }
+}
+
+async function submitCommunityComment() {
+  const post = selectedCommunityCommentsPost.value
+  const content = communityCommentDraft.value.trim()
+  if (!post?.id || !content || communityCommentSubmitting.value) return
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+
+  communityCommentSubmitting.value = true
+  try {
+    const response = await createCommunityComment(post.id, { content })
+    if (response?.comment) {
+      const comment = normalizeCommunityComment(response.comment)
+      const commentPreviews = [
+        {
+          id: comment.id,
+          author: comment.author,
+          text: comment.content
+        },
+        ...post.commentPreviews.filter((item) => item.id !== comment.id)
+      ].slice(0, 3)
+      communityComments.value.push(comment)
+      patchCommunityPost(post.id, {
+        commentPreviews,
+        commentPreview: commentPreviews[0] || null,
+        stats: { comments: Number(response.comment_count || 0) }
+      })
+      communityCommentDraft.value = ''
+      uni.showToast({ title: '评论已发布', icon: 'success' })
+    }
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '评论发布失败，请稍后重试'), icon: 'none' })
+  } finally {
+    communityCommentSubmitting.value = false
+  }
+}
+
+function formatCommunityCommentTime(value) {
+  if (!value) return '刚刚'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '刚刚'
+  const seconds = Math.max(0, Math.floor((Date.now() - date.getTime()) / 1000))
+  if (seconds < 60) return '刚刚'
+  if (seconds < 3600) return `${Math.floor(seconds / 60)} 分钟前`
+  if (seconds < 86400) return `${Math.floor(seconds / 3600)} 小时前`
+  if (seconds < 604800) return `${Math.floor(seconds / 86400)} 天前`
+  return `${date.getMonth() + 1}/${date.getDate()}`
+}
+
+function openCommunityPublishPage(postType = selectedCircleCommunityTab.value) {
+  const normalizedPostType = postType === 'experience' ? 'experience' : 'chat'
+  uni.navigateTo({ url: `/pages/circle/publish?type=${normalizedPostType}` })
+}
+
+function selectCircleCommunityTab(tab) {
+  if (!circleCommunityTabs.some((item) => item.key === tab)) return
+  selectedCircleCommunityTab.value = tab
+  selectedCirclePost.value = null
+  closeCommunityPost()
+  loadCircleCommunityPosts(tab)
+  resetCircleTabbar()
+}
+
+function selectCircleCommunityCategory(category) {
+  if (!circleCommunityCategories.includes(category)) return
+  selectedCommunityCategory.value = category
+}
+
+function selectActiveCommunityCategory(category) {
+  if (selectedCircleCommunityTab.value === 'experience') {
+    selectExperienceCategory(category)
+    return
+  }
+  selectCircleCommunityCategory(category)
 }
 
 function handleCirclePostLocalAction(action) {
@@ -4191,6 +5019,15 @@ function formatDateTime(value) {
 .experience-filter-scroll {
   width: 100%;
   white-space: nowrap;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.experience-filter-scroll::-webkit-scrollbar,
+.community-filter-scroll::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
 }
 
 .experience-filter-row {
@@ -4206,21 +5043,24 @@ function formatDateTime(value) {
   margin: 0;
   padding: 0 18rpx;
   border-radius: 18rpx;
-  border: 2rpx solid #edf2fb;
-  background: rgba(255, 255, 255, 0.92);
-  color: #667085;
+  border: 2rpx solid rgba(255, 255, 255, 0.72);
+  background: rgba(248, 251, 250, 0.62);
+  color: #60716f;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   font-size: 22rpx;
   line-height: 1.2;
-  font-weight: 900;
+  font-weight: 800;
+  -webkit-backdrop-filter: blur(14px) saturate(112%);
+  backdrop-filter: blur(14px) saturate(112%);
+  transition: transform 180ms ease, color 180ms ease, background-color 180ms ease;
 }
 
 .experience-filter-chip.active {
-  border-color: var(--gyt-primary-border, #d7e5ff);
-  background: var(--gyt-primary-soft, #edf4ff);
-  color: var(--gyt-primary, #3478f6);
+  border-color: rgba(22, 120, 111, 0.16);
+  background: rgba(225, 242, 237, 0.82);
+  color: #16786f;
 }
 
 .experience-card {
@@ -4399,6 +5239,825 @@ function formatDateTime(value) {
   font-size: 24rpx;
   line-height: 1.2;
   font-weight: 900;
+}
+
+.circle-community-section {
+  gap: 16rpx;
+  padding-bottom: 24rpx;
+}
+
+.circle-community-tabs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8rpx;
+  padding: 8rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.74);
+  border-radius: 24rpx;
+  background: rgba(245, 250, 249, 0.64);
+  box-shadow: 0 12rpx 28rpx rgba(30, 55, 56, 0.06);
+  -webkit-backdrop-filter: blur(16px) saturate(116%);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+.circle-community-tab {
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  color: #70807e;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
+}
+
+.circle-community-tab::after,
+.community-filter-chip::after {
+  border: 0;
+}
+
+.circle-community-tab.active {
+  background: rgba(255, 255, 255, 0.8);
+  color: #16786f;
+  box-shadow: 0 5rpx 16rpx rgba(35, 65, 63, 0.09);
+}
+
+.circle-community-tab:active,
+.community-filter-chip:active {
+  transform: scale(0.98);
+}
+
+.community-filter-scroll {
+  width: 100%;
+  white-space: nowrap;
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.community-filter-row {
+  display: flex;
+  gap: 12rpx;
+  min-width: max-content;
+  padding: 0 2rpx 2rpx;
+}
+
+.community-filter-chip {
+  min-width: 122rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.72);
+  border-radius: 18rpx;
+  background: rgba(248, 251, 250, 0.62);
+  color: #60716f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  -webkit-backdrop-filter: blur(14px) saturate(112%);
+  backdrop-filter: blur(14px) saturate(112%);
+  transition: transform 180ms ease, color 180ms ease, background-color 180ms ease;
+}
+
+.community-filter-chip.active {
+  border-color: rgba(22, 120, 111, 0.16);
+  background: rgba(225, 242, 237, 0.82);
+  color: #16786f;
+}
+
+.community-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.community-post-card {
+  padding: 28rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.78);
+  border-radius: 30rpx;
+  background: rgba(248, 252, 250, 0.8);
+  box-shadow: 0 16rpx 40rpx rgba(30, 55, 56, 0.075);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.community-post-card:active {
+  transform: scale(0.985);
+  box-shadow: 0 10rpx 26rpx rgba(30, 55, 56, 0.08);
+}
+
+.community-post-header {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.community-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.76);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #16786f;
+  font-size: 25rpx;
+  line-height: 1;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.community-avatar.tone-mint {
+  background: #dff0eb;
+  color: #16786f;
+}
+
+.community-avatar.tone-blue {
+  background: #e4eef7;
+  color: #4c718e;
+}
+
+.community-avatar.tone-warm {
+  background: #f4eadb;
+  color: #a56c3b;
+}
+
+.community-avatar.tone-violet {
+  background: #ece9f4;
+  color: #756491;
+}
+
+.community-author-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-author-name {
+  color: #1c2423;
+  font-size: 25rpx;
+  line-height: 1.25;
+  font-weight: 800;
+}
+
+.community-author-meta {
+  margin-top: 4rpx;
+  color: #83918f;
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.community-topic {
+  max-width: 150rpx;
+  padding: 8rpx 12rpx;
+  border-radius: 999rpx;
+  background: rgba(232, 242, 239, 0.82);
+  color: #4f6c67;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.community-post-title {
+  margin-top: 20rpx;
+  color: #172221;
+  font-size: 31rpx;
+  line-height: 1.38;
+  font-weight: 800;
+}
+
+.community-post-copy {
+  margin-top: 12rpx;
+  color: #647573;
+  font-size: 24rpx;
+  line-height: 1.58;
+  font-weight: 600;
+}
+
+.community-media-grid {
+  margin-top: 20rpx;
+  display: grid;
+  grid-template-columns: repeat(3, 180rpx);
+  justify-content: start;
+  gap: 12rpx;
+}
+
+.community-media-tile {
+  box-sizing: border-box;
+  width: 180rpx;
+  height: 320rpx;
+  padding: 18rpx 16rpx;
+  border-radius: 20rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+  overflow: hidden;
+}
+
+.community-media-tile.is-image {
+  padding: 0;
+  background: #e7efee;
+}
+
+.community-media-image {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.community-media-text {
+  margin-top: auto;
+}
+
+.community-media-tile.tone-sky {
+  background: linear-gradient(145deg, #dcecf2, #accbd8);
+  color: #315867;
+}
+
+.community-media-tile.tone-mint {
+  background: linear-gradient(145deg, #d9eee8, #a9d2c7);
+  color: #285f57;
+}
+
+.community-media-tile.tone-warm {
+  background: linear-gradient(145deg, #f5ebdb, #dfc49d);
+  color: #79522c;
+}
+
+.community-media-tile.tone-paper {
+  background: linear-gradient(145deg, #f5f1e8, #d9d0bf);
+  color: #625d50;
+}
+
+.community-media-kicker {
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  opacity: 0.76;
+}
+
+.community-media-title {
+  margin-top: 8rpx;
+  font-size: 23rpx;
+  line-height: 1.25;
+  font-weight: 800;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.community-media-copy {
+  margin-top: 6rpx;
+  font-size: 18rpx;
+  line-height: 1.3;
+  font-weight: 600;
+  opacity: 0.8;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.community-comment-preview-list {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid rgba(99, 124, 120, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+}
+
+.community-comment-preview {
+  color: #667775;
+  font-size: 22rpx;
+  line-height: 1.5;
+  font-weight: 600;
+  display: flex;
+  min-width: 0;
+}
+
+.community-comment-name {
+  color: #3f5b56;
+  font-weight: 800;
+  flex-shrink: 0;
+}
+
+.community-comment-preview-copy {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 1;
+}
+
+.community-post-footer {
+  margin-top: 18rpx;
+  padding-top: 16rpx;
+  border-top: 2rpx solid rgba(99, 124, 120, 0.12);
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: center;
+  gap: 10rpx;
+  color: #83918f;
+  font-size: 26rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.community-post-action {
+  min-width: 0;
+  min-height: 56rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  color: #7a8987;
+  font: inherit;
+  white-space: nowrap;
+}
+
+.community-post-action::after {
+  border: 0;
+}
+
+.community-post-action.active {
+  color: #3478f6;
+}
+
+.community-post-action.pending {
+  opacity: 0.56;
+}
+
+.community-post-action:active {
+  transform: scale(0.96);
+}
+
+.community-action-icon {
+  width: 34rpx;
+  height: 34rpx;
+  flex: 0 0 34rpx;
+}
+
+.community-publish-button {
+  position: fixed;
+  z-index: 24;
+  right: 20px;
+  bottom: calc(env(safe-area-inset-bottom) + 22px);
+  width: 56px;
+  height: 56px;
+  min-width: 56px;
+  min-height: 56px;
+  margin: 0;
+  padding: 15px;
+  border: 0;
+  border-radius: 50%;
+  background: #3478F6;
+  box-shadow: 0 12px 26px rgba(52, 120, 246, 0.3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.community-publish-button::after {
+  border: 0;
+}
+
+.community-publish-button image {
+  width: 100%;
+  height: 100%;
+}
+
+.community-publish-button:active {
+  transform: scale(0.94);
+  box-shadow: 0 7px 16px rgba(52, 120, 246, 0.2);
+  background: #2867DE;
+}
+
+.community-detail-mask {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  padding: 0 22rpx;
+  background: rgba(18, 35, 35, 0.34);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.community-detail-sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760rpx;
+  max-height: min(84vh, 1180rpx);
+  padding: 20rpx 28rpx calc(env(safe-area-inset-bottom) + 22rpx);
+  border: 2rpx solid rgba(255, 255, 255, 0.86);
+  border-radius: 36rpx 36rpx 0 0;
+  background: rgba(250, 253, 252, 0.96);
+  box-shadow: 0 -18rpx 52rpx rgba(20, 43, 42, 0.2);
+  -webkit-backdrop-filter: blur(22px) saturate(118%);
+  backdrop-filter: blur(22px) saturate(118%);
+  display: flex;
+  flex-direction: column;
+}
+
+.community-detail-handle {
+  width: 70rpx;
+  height: 8rpx;
+  margin: 0 auto 20rpx;
+  border-radius: 999rpx;
+  background: rgba(88, 110, 107, 0.18);
+}
+
+.community-detail-close {
+  position: absolute;
+  top: 18rpx;
+  right: 22rpx;
+  width: 48rpx;
+  height: 48rpx;
+  min-width: 48rpx;
+  min-height: 48rpx;
+  margin: 0;
+  padding: 12rpx;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(52, 120, 246, 0.08);
+  color: #3478f6;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-detail-close::after {
+  border: 0;
+}
+
+.community-detail-heading {
+  padding-right: 66rpx;
+  color: #1c2423;
+  font-size: 32rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.community-detail-scroll {
+  min-height: 0;
+  max-height: 62vh;
+  margin-top: 22rpx;
+  flex: 1;
+}
+
+.community-detail-author-row {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.community-detail-title {
+  margin-top: 22rpx;
+  color: #172221;
+  font-size: 34rpx;
+  line-height: 1.38;
+  font-weight: 800;
+}
+
+.community-detail-copy {
+  margin-top: 14rpx;
+  padding-right: 2rpx;
+  color: #526562;
+  font-size: 26rpx;
+  line-height: 1.68;
+  font-weight: 600;
+  white-space: pre-line;
+}
+
+.community-detail-media {
+  margin-top: 22rpx;
+}
+
+.community-detail-stats {
+  margin-top: 24rpx;
+  padding: 16rpx 0;
+  border-top: 2rpx solid rgba(99, 124, 120, 0.12);
+  border-bottom: 2rpx solid rgba(99, 124, 120, 0.12);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: #7a8987;
+  font-size: 23rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.community-detail-like {
+  min-height: 54rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: rgba(52, 120, 246, 0.08);
+  color: #3478f6;
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  font-size: 23rpx;
+  font-weight: 800;
+}
+
+.community-detail-like::after {
+  border: 0;
+}
+
+.community-detail-like image {
+  width: 28rpx;
+  height: 28rpx;
+}
+
+.community-detail-like.active {
+  background: rgba(52, 120, 246, 0.16);
+}
+
+.community-detail-like.pending {
+  opacity: 0.56;
+}
+
+.community-detail-comments-entry {
+  width: 100%;
+  margin: 22rpx 0 2rpx;
+  padding: 20rpx;
+  border: 2rpx solid rgba(222, 234, 231, 0.92);
+  border-radius: 22rpx;
+  background: rgba(242, 248, 246, 0.82);
+  color: #3478f6;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  text-align: left;
+}
+
+.community-detail-comments-entry::after {
+  border: 0;
+}
+
+.community-detail-comments-entry:active {
+  transform: scale(0.98);
+}
+
+.community-detail-comments-count {
+  color: #1c2423;
+  font-size: 26rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.community-detail-comments-copy {
+  margin-top: 4rpx;
+  color: #82908e;
+  font-size: 21rpx;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.community-detail-comments-entry text {
+  flex-shrink: 0;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.community-comment-composer {
+  margin-top: 18rpx;
+  padding-top: 18rpx;
+  border-top: 2rpx solid rgba(99, 124, 120, 0.12);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.community-comment-input {
+  min-width: 0;
+  height: 68rpx;
+  padding: 0 18rpx;
+  border-radius: 20rpx;
+  background: rgba(237, 244, 242, 0.86);
+  color: #243532;
+  font-size: 24rpx;
+  font-weight: 600;
+  flex: 1;
+}
+
+.community-comment-placeholder {
+  color: #99a7a4;
+  font-weight: 500;
+}
+
+.community-comment-submit {
+  min-width: 92rpx;
+  min-height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 20rpx;
+  background: #3478f6;
+  color: #ffffff;
+  font-size: 23rpx;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-comment-submit::after {
+  border: 0;
+}
+
+.community-comment-submit[disabled] {
+  opacity: 0.48;
+}
+
+.community-comments-mask {
+  position: fixed;
+  z-index: 96;
+  inset: 0;
+  background: rgba(18, 35, 35, 0.38);
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+}
+
+.community-comments-sheet {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760rpx;
+  height: min(82vh, 1180rpx);
+  padding: 20rpx 28rpx calc(env(safe-area-inset-bottom) + 22rpx);
+  border: 2rpx solid rgba(255, 255, 255, 0.88);
+  border-radius: 36rpx 36rpx 0 0;
+  background: rgba(250, 253, 252, 0.97);
+  box-shadow: 0 -18rpx 52rpx rgba(20, 43, 42, 0.22);
+  -webkit-backdrop-filter: blur(22px) saturate(118%);
+  backdrop-filter: blur(22px) saturate(118%);
+  display: flex;
+  flex-direction: column;
+}
+
+.community-comments-toolbar {
+  min-height: 64rpx;
+  padding-right: 56rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+}
+
+.community-comments-counts {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  white-space: nowrap;
+}
+
+.community-comments-count {
+  color: #93a09e;
+  font-size: 26rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.community-comments-count.active {
+  color: #1c2423;
+}
+
+.community-comment-sort {
+  padding: 4rpx;
+  border-radius: 999rpx;
+  background: rgba(231, 240, 238, 0.86);
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+}
+
+.community-comment-sort-button {
+  min-width: 62rpx;
+  min-height: 48rpx;
+  margin: 0;
+  padding: 0 10rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: transparent;
+  color: #73817f;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.community-comment-sort-button::after {
+  border: 0;
+}
+
+.community-comment-sort-button.active {
+  background: rgba(255, 255, 255, 0.94);
+  color: #3478f6;
+  box-shadow: 0 4rpx 12rpx rgba(44, 71, 67, 0.08);
+}
+
+.community-comments-scroll {
+  min-height: 0;
+  margin-top: 24rpx;
+  flex: 1;
+}
+
+.community-comments-list {
+  padding-bottom: 8rpx;
+}
+
+.community-comments-item {
+  padding: 22rpx 0;
+  border-bottom: 2rpx solid rgba(99, 124, 120, 0.1);
+  display: flex;
+  gap: 16rpx;
+}
+
+.community-comments-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border-radius: 50%;
+  background: #e5f2ee;
+  color: #16786f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  line-height: 1;
+  font-weight: 800;
+  flex: 0 0 64rpx;
+}
+
+.community-comments-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-comments-author {
+  color: #314643;
+  font-size: 25rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.community-comments-copy {
+  margin-top: 8rpx;
+  color: #526562;
+  font-size: 27rpx;
+  line-height: 1.55;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.community-comments-time {
+  margin-top: 9rpx;
+  color: #99a6a4;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.community-comments-empty {
+  margin-top: 8rpx;
+  padding: 28rpx 24rpx;
+  border-radius: 22rpx;
+  background: rgba(240, 246, 244, 0.78);
+  color: #74817f;
+  font-size: 23rpx;
+  line-height: 1.5;
+  font-weight: 600;
+  text-align: center;
+}
+
+.community-comments-composer {
+  margin-top: 16rpx;
 }
 
 .material-subject-scroll {
@@ -7917,8 +9576,8 @@ function formatDateTime(value) {
 .circle-glass-page .circle-post-close,
 .circle-glass-page .circle-post-action-row button {
   border-color: rgba(255, 255, 255, 0.72);
-  background: rgba(255, 255, 255, 0.54);
-  color: #16786f;
+  background: rgba(248, 251, 250, 0.62);
+  color: #60716f;
   -webkit-backdrop-filter: blur(16px) saturate(118%);
   backdrop-filter: blur(16px) saturate(118%);
   transition: transform 180ms ease, background-color 180ms ease;
@@ -7926,8 +9585,8 @@ function formatDateTime(value) {
 
 .circle-glass-page .experience-filter-chip.active,
 .circle-glass-page .material-subject-chip.active {
-  border-color: rgba(22, 120, 111, 0.18);
-  background: rgba(224, 241, 237, 0.72);
+  border-color: rgba(22, 120, 111, 0.16);
+  background: rgba(225, 242, 237, 0.82);
   color: #16786f;
 }
 

@@ -1,15 +1,23 @@
 {
   "pages": [
     {
-      "path": "pages/login/index",
+      "path": "pages/home/index",
       "style": {
+        "navigationBarTitleText": "港研通",
         "navigationStyle": "custom"
       }
     },
     {
-      "path": "pages/home/index",
+      "path": "pages/circle/publish",
       "style": {
-        "navigationBarTitleText": "港研通",
+        "navigationBarTitleText": "发布话题",
+        "navigationStyle": "custom",
+        "backgroundColor": "#edf4f4"
+      }
+    },
+    {
+      "path": "pages/login/index",
+      "style": {
         "navigationStyle": "custom"
       }
     },
