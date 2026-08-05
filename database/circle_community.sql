@@ -184,11 +184,11 @@ begin
     delete from public.circle_community_likes
     where post_id = p_post_id and user_id = p_user_id;
 
-    update public.circle_community_posts
-    set like_count = greatest(like_count - 1, 0),
+    update public.circle_community_posts as post
+    set like_count = greatest(post.like_count - 1, 0),
         updated_at = now()
-    where id = p_post_id
-    returning like_count into v_like_count;
+    where post.id = p_post_id
+    returning post.like_count into v_like_count;
   else
     insert into public.circle_community_likes (post_id, user_id)
     values (p_post_id, p_user_id)
@@ -201,15 +201,15 @@ begin
     ) into v_liked;
 
     if v_liked then
-      update public.circle_community_posts
-      set like_count = like_count + 1,
+      update public.circle_community_posts as post
+      set like_count = post.like_count + 1,
           updated_at = now()
-      where id = p_post_id
-      returning like_count into v_like_count;
+      where post.id = p_post_id
+      returning post.like_count into v_like_count;
     else
-      select like_count into v_like_count
-      from public.circle_community_posts
-      where id = p_post_id;
+      select post.like_count into v_like_count
+      from public.circle_community_posts as post
+      where post.id = p_post_id;
     end if;
   end if;
 
@@ -263,15 +263,15 @@ begin
 
   v_counted := v_view_id is not null;
   if v_counted then
-    update public.circle_community_posts
-    set view_count = view_count + 1,
+    update public.circle_community_posts as post
+    set view_count = post.view_count + 1,
         updated_at = now()
-    where id = p_post_id
-    returning view_count into v_view_count;
+    where post.id = p_post_id
+    returning post.view_count into v_view_count;
   else
-    select view_count into v_view_count
-    from public.circle_community_posts
-    where id = p_post_id;
+    select post.view_count into v_view_count
+    from public.circle_community_posts as post
+    where post.id = p_post_id;
   end if;
 
   return query select v_counted, v_view_count;

@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID, uuid4
 
@@ -38,6 +38,7 @@ COMMUNITY_IMAGE_CONTENT_TYPES = {
 }
 COMMUNITY_POST_TYPES = {"chat", "experience"}
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
+COMMUNITY_STAT_UPDATE_ATTEMPTS = 4
 _community_post_type_column_available: bool | None = None
 
 
@@ -238,6 +239,164 @@ def _get_post_row(supabase, post_id: str) -> dict:
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
     return response.data[0]
+
+
+def _is_duplicate_community_interaction_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "duplicate key" in message or "unique constraint" in message or "23505" in message
+
+
+def _get_community_like(supabase, post_id: str, user_id: str) -> bool:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_likes")
+            .select("id")
+            .eq("post_id", post_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community like lookup",
+    )
+    return bool(response.data)
+
+
+def _adjust_community_post_stat(supabase, post_id: str, field: Literal["like_count", "view_count"], delta: int) -> int:
+    """Apply a counter change with a short optimistic retry for concurrent readers."""
+
+    for _ in range(COMMUNITY_STAT_UPDATE_ATTEMPTS):
+        post = _get_post_row(supabase, post_id)
+        current_value = max(0, int(post.get(field) or 0))
+        next_value = max(0, current_value + delta)
+        if next_value == current_value:
+            return current_value
+
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .update(
+                    {
+                        field: next_value,
+                        "updated_at": datetime.now(timezone.utc).isoformat(),
+                    }
+                )
+                .eq("id", post_id)
+                .eq(field, current_value)
+                .execute()
+            ),
+            operation_name=f"circle community {field} update",
+        )
+        if response.data:
+            return int(response.data[0].get(field) or next_value)
+
+    raise RuntimeError(f"Circle community {field} update conflict")
+
+
+def _toggle_community_like_without_rpc(supabase, post_id: str, user_id: str) -> tuple[bool, int]:
+    """Toggle a like without relying on the legacy database RPC implementation."""
+
+    _get_post_row(supabase, post_id)
+    if _get_community_like(supabase, post_id, user_id):
+        call_supabase(
+            lambda: (
+                supabase.table("circle_community_likes")
+                .delete()
+                .eq("post_id", post_id)
+                .eq("user_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community unlike",
+        )
+        if _get_community_like(supabase, post_id, user_id):
+            return True, int(_get_post_row(supabase, post_id).get("like_count") or 0)
+        return False, _adjust_community_post_stat(supabase, post_id, "like_count", -1)
+
+    try:
+        call_supabase(
+            lambda: (
+                supabase.table("circle_community_likes")
+                .insert({"post_id": post_id, "user_id": user_id})
+                .execute()
+            ),
+            operation_name="circle community like create",
+        )
+    except Exception as exc:
+        if not _is_duplicate_community_interaction_error(exc):
+            raise
+        return True, int(_get_post_row(supabase, post_id).get("like_count") or 0)
+
+    return True, _adjust_community_post_stat(supabase, post_id, "like_count", 1)
+
+
+def _find_community_view(supabase, post_id: str, user_id: str | None, anonymous_id: str | None) -> dict | None:
+    query = (
+        supabase.table("circle_community_views")
+        .select("id,last_counted_at")
+        .eq("post_id", post_id)
+        .limit(1)
+    )
+    query = query.eq("user_id", user_id) if user_id else query.eq("anonymous_id", anonymous_id)
+    response = call_supabase(query.execute, operation_name="circle community view lookup")
+    return (response.data or [None])[0]
+
+
+def _register_community_view_without_rpc(
+    supabase,
+    post_id: str,
+    user_id: str | None,
+    anonymous_id: str | None,
+) -> tuple[bool, int]:
+    """Count one view per viewer every 24 hours without the legacy database RPC."""
+
+    _get_post_row(supabase, post_id)
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+    cutoff_iso = (now - timedelta(hours=24)).isoformat()
+    existing = _find_community_view(supabase, post_id, user_id, anonymous_id)
+
+    if existing:
+        update_query = (
+            supabase.table("circle_community_views")
+            .update({"last_counted_at": now_iso})
+            .eq("id", existing["id"])
+            .lte("last_counted_at", cutoff_iso)
+        )
+        updated = call_supabase(
+            update_query.execute,
+            operation_name="circle community view refresh",
+        )
+        if not updated.data:
+            return False, int(_get_post_row(supabase, post_id).get("view_count") or 0)
+        return True, _adjust_community_post_stat(supabase, post_id, "view_count", 1)
+
+    view_data = {
+        "post_id": post_id,
+        "last_counted_at": now_iso,
+        **({"user_id": user_id} if user_id else {"anonymous_id": anonymous_id}),
+    }
+    try:
+        inserted = call_supabase(
+            lambda: supabase.table("circle_community_views").insert(view_data).execute(),
+            operation_name="circle community view create",
+        )
+    except Exception as exc:
+        if not _is_duplicate_community_interaction_error(exc):
+            raise
+        return False, int(_get_post_row(supabase, post_id).get("view_count") or 0)
+
+    try:
+        return True, _adjust_community_post_stat(supabase, post_id, "view_count", 1)
+    except Exception:
+        inserted_id = (inserted.data or [{}])[0].get("id")
+        if inserted_id:
+            try:
+                call_supabase(
+                    lambda: supabase.table("circle_community_views").delete().eq("id", inserted_id).execute(),
+                    operation_name="circle community view rollback",
+                )
+            except Exception:
+                logger.exception("Circle community view rollback failed")
+        raise
 
 
 def _current_author(supabase, user_id: str) -> tuple[str, str]:
@@ -444,20 +603,11 @@ def toggle_community_like(
 ) -> CommunityLikeResponse:
     supabase = get_supabase_admin()
     try:
-        response = call_supabase(
-            lambda: supabase.rpc(
-                "circle_community_toggle_like",
-                {"p_post_id": post_id, "p_user_id": user_id},
-            ).execute(),
-            operation_name="circle community like toggle",
-        )
-        row = (response.data or [None])[0]
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
+        is_liked, like_count = _toggle_community_like_without_rpc(supabase, post_id, user_id)
         return CommunityLikeResponse(
             post_id=post_id,
-            is_liked=bool(row.get("is_liked")),
-            like_count=int(row.get("like_count") or 0),
+            is_liked=is_liked,
+            like_count=like_count,
         )
     except HTTPException:
         raise
@@ -520,24 +670,16 @@ def register_community_view(
 
     supabase = get_supabase_admin()
     try:
-        response = call_supabase(
-            lambda: supabase.rpc(
-                "circle_community_register_view",
-                {
-                    "p_post_id": post_id,
-                    "p_user_id": user_id,
-                    "p_anonymous_id": anonymous_id,
-                },
-            ).execute(),
-            operation_name="circle community effective view registration",
+        counted, view_count = _register_community_view_without_rpc(
+            supabase,
+            post_id,
+            user_id,
+            anonymous_id,
         )
-        row = (response.data or [None])[0]
-        if not row:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
         return CommunityViewResponse(
             post_id=post_id,
-            counted=bool(row.get("counted")),
-            view_count=int(row.get("view_count") or 0),
+            counted=counted,
+            view_count=view_count,
         )
     except HTTPException:
         raise
