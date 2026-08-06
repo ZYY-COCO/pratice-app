@@ -1340,10 +1340,6 @@
             <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
             <text>{{ selectedCommunityPost.stats.comments }}</text>
           </button>
-          <view class="community-reader-action community-reader-action-static">
-            <image src="/static/ui-icons/circle-view.svg" mode="aspectFit" />
-            <text>{{ selectedCommunityPost.stats.views }}</text>
-          </view>
         </view>
       </view>
 
@@ -6561,10 +6557,6 @@ function formatDateTime(value) {
 
 .community-reader-action.pending {
   opacity: 0.56;
-}
-
-.community-reader-action-static {
-  pointer-events: none;
 }
 
 .community-reader-actions button:active,
