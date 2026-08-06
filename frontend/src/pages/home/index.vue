@@ -1230,10 +1230,9 @@
       </view>
     </view>
 
-    <view v-if="selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
+      <view v-if="selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
       <view class="community-comments-sheet" @tap.stop>
         <view class="community-detail-handle"></view>
-        <button class="community-detail-close" aria-label="关闭评论" @tap="closeCommunityComments"><CloseIcon /></button>
 
         <view class="community-comments-toolbar">
           <view class="community-comments-counts">
@@ -1265,6 +1264,7 @@
               @tap="communityCommentSort = 'earliest'"
             >最早</button>
           </view>
+          <button class="community-detail-close community-comments-close" aria-label="关闭评论" @tap="closeCommunityComments"><CloseIcon /></button>
         </view>
 
         <scroll-view scroll-y class="community-comments-scroll">
@@ -6040,10 +6040,10 @@ function formatDateTime(value) {
 
 .community-comments-toolbar {
   min-height: 64rpx;
-  padding-right: 56rpx;
+  padding-right: 0;
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-start;
   gap: 14rpx;
 }
 
@@ -6082,12 +6082,27 @@ function formatDateTime(value) {
 
 .community-comment-sort {
   min-height: 68rpx;
+  margin-left: auto;
   padding: 5rpx;
   border-radius: 999rpx;
   background: rgba(231, 240, 238, 0.86);
   display: flex;
   align-items: center;
   flex-shrink: 0;
+}
+
+.community-comments-close {
+  position: static;
+  width: 58rpx;
+  height: 58rpx;
+  min-width: 58rpx;
+  min-height: 58rpx;
+  padding: 14rpx;
+  flex: 0 0 58rpx;
+}
+
+.community-comments-counts + .community-comments-close {
+  margin-left: auto;
 }
 
 .community-comment-sort-button {
