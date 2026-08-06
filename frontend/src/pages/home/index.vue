@@ -300,7 +300,7 @@
                       v-for="comment in post.commentPreviews"
                       :key="comment.id"
                       class="community-comment-preview"
-                      @tap.stop="openCommunityComments(post)"
+                      @tap.stop="openCommunityPostComments(post)"
                     >
                       <text class="community-comment-name">{{ comment.author }}：</text>
                       <text class="community-comment-preview-copy">{{ comment.text }}</text>
@@ -321,7 +321,7 @@
                     <button
                       class="community-post-action"
                       aria-label="查看并评论"
-                      @tap.stop="openCommunityComments(post)"
+                      @tap.stop="openCommunityPostComments(post)"
                     >
                       <image class="community-action-icon" src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
                       <text>{{ post.stats.comments }}</text>
@@ -1186,164 +1186,147 @@
           <button class="community-reader-share" aria-label="分享帖子" @tap="shareCommunityPost">↗</button>
         </view>
 
-        <swiper
-          class="community-reader-swiper"
-          :current="communityReaderPage"
-          :duration="300"
-          @change="handleCommunityReaderPageChange"
+        <scroll-view
+          scroll-y
+          class="community-reader-scroll"
+          :scroll-into-view="communityReaderScrollTarget"
+          :scroll-with-animation="true"
         >
-          <swiper-item>
-            <view class="community-reader-page">
-              <scroll-view scroll-y class="community-reader-scroll">
-                <view class="community-reader-body">
-                  <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
-                  <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
+          <view class="community-reader-body">
+            <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
+            <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
 
-                  <view
-                    v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
-                    class="community-reader-media"
-                  >
-                    <swiper
-                      class="community-reader-media-swiper"
-                      :current="communityReaderMediaIndex"
-                      :duration="260"
-                      @change="handleCommunityReaderMediaChange"
-                    >
-                      <swiper-item
-                        v-for="media in selectedCommunityPost.media"
-                        :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
-                      >
-                        <view class="community-reader-media-slide" :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]">
-                          <image
-                            v-if="media.imageUrl || media.image_url"
-                            :src="media.imageUrl || media.image_url"
-                            mode="aspectFit"
-                          />
-                          <view v-else class="community-reader-media-fallback">
-                            <view>{{ media.kicker }}</view>
-                            <view class="community-reader-media-fallback-title">{{ media.title }}</view>
-                            <text>{{ media.copy }}</text>
-                          </view>
-                        </view>
-                      </swiper-item>
-                    </swiper>
-                    <view v-if="selectedCommunityPost.media.length > 1" class="community-reader-media-count">
-                      {{ communityReaderMediaIndex + 1 }}/{{ selectedCommunityPost.media.length }}
-                    </view>
-                  </view>
-
-                  <view class="community-reader-post-meta">
-                    <view>{{ selectedCommunityPost.stats.views }} 浏览</view>
-                    <view>{{ selectedCommunityPost.stats.likes }} 点赞</view>
-                    <view>{{ selectedCommunityPost.stats.comments }} 评论</view>
-                  </view>
-                </view>
-              </scroll-view>
-            </view>
-          </swiper-item>
-
-          <swiper-item>
-            <view class="community-reader-page community-reader-comments-page">
-              <scroll-view scroll-y class="community-reader-scroll">
-                <view class="community-reader-comments-body">
-                  <view class="community-reader-comments-toolbar">
-                    <view class="community-reader-comments-tabs">
-                      <button
-                        class="community-reader-comments-tab"
-                        :class="{ active: communityInteractionTab === 'comments' }"
-                        @tap="selectCommunityInteractionTab('comments')"
-                      >评论 {{ selectedCommunityPost.stats.comments }}</button>
-                      <button
-                        class="community-reader-comments-tab"
-                        :class="{ active: communityInteractionTab === 'likes' }"
-                        @tap="selectCommunityInteractionTab('likes')"
-                      >点赞 {{ selectedCommunityPost.stats.likes }}</button>
-                    </view>
-                    <view v-if="communityInteractionTab === 'comments'" class="community-reader-sort" aria-label="评论排序">
-                      <button
-                        :class="{ active: communityCommentSort === 'default' }"
-                        @tap="communityCommentSort = 'default'"
-                      >默认</button>
-                      <button
-                        :class="{ active: communityCommentSort === 'latest' }"
-                        @tap="communityCommentSort = 'latest'"
-                      >最新</button>
-                      <button
-                        :class="{ active: communityCommentSort === 'earliest' }"
-                        @tap="communityCommentSort = 'earliest'"
-                      >最早</button>
-                    </view>
-                  </view>
-
-                  <view v-if="communityInteractionTab === 'comments'" class="community-reader-inline-composer">
-                    <input
-                      v-model="communityCommentDraft"
-                      maxlength="500"
-                      confirm-type="send"
-                      placeholder="有话要说，快来评论"
-                      placeholder-class="community-reader-comment-placeholder"
-                      :disabled="communityCommentSubmitting"
-                      @confirm="submitCommunityComment"
+            <view
+              v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
+              class="community-reader-media"
+            >
+              <swiper
+                class="community-reader-media-swiper"
+                :current="communityReaderMediaIndex"
+                :duration="260"
+                @change="handleCommunityReaderMediaChange"
+              >
+                <swiper-item
+                  v-for="media in selectedCommunityPost.media"
+                  :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
+                >
+                  <view class="community-reader-media-slide" :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]">
+                    <image
+                      v-if="media.imageUrl || media.image_url"
+                      :src="media.imageUrl || media.image_url"
+                      mode="aspectFit"
                     />
-                    <button
-                      :disabled="communityCommentSubmitting || !communityCommentDraft.trim()"
-                      @tap="submitCommunityComment"
-                    >{{ communityCommentSubmitting ? '发送中' : '发送' }}</button>
+                    <view v-else class="community-reader-media-fallback">
+                      <view>{{ media.kicker }}</view>
+                      <view class="community-reader-media-fallback-title">{{ media.title }}</view>
+                      <text>{{ media.copy }}</text>
+                    </view>
                   </view>
-
-                  <template v-if="communityInteractionTab === 'comments'">
-                    <view v-if="communityCommentsLoading" class="community-reader-empty">正在加载评论</view>
-                    <view v-else-if="sortedCommunityComments.length === 0" class="community-reader-empty">
-                      暂无评论，来留下第一条讨论吧。
-                    </view>
-                    <view v-else class="community-reader-comment-list">
-                      <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
-                        <view class="community-reader-comment-avatar">
-                          <image v-if="comment.avatarUrl" :src="comment.avatarUrl" mode="aspectFill" />
-                          <text v-else>{{ comment.avatar }}</text>
-                        </view>
-                        <view class="community-reader-comment-main">
-                          <view class="community-reader-comment-author">{{ comment.author }}</view>
-                          <view class="community-reader-comment-copy">{{ comment.content }}</view>
-                          <view class="community-reader-comment-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
-                        </view>
-                      </view>
-                    </view>
-                  </template>
-
-                  <template v-else>
-                    <view v-if="communityLikesLoading" class="community-reader-empty">正在加载点赞用户</view>
-                    <view v-else-if="communityLikes.length === 0" class="community-reader-empty">
-                      暂无点赞，来成为第一位点赞的研友吧。
-                    </view>
-                    <view v-else class="community-reader-like-list">
-                      <view v-for="like in communityLikes" :key="like.id" class="community-reader-like-item">
-                        <view class="community-reader-comment-avatar">
-                          <image v-if="like.avatarUrl" :src="like.avatarUrl" mode="aspectFill" />
-                          <text v-else>{{ like.avatar }}</text>
-                        </view>
-                        <view class="community-reader-comment-main">
-                          <view class="community-reader-comment-author">{{ like.author }}</view>
-                          <view class="community-reader-comment-time">{{ formatCommunityCommentTime(like.likedAt) }} 点赞</view>
-                        </view>
-                      </view>
-                    </view>
-                  </template>
-                </view>
-              </scroll-view>
+                </swiper-item>
+              </swiper>
+              <view v-if="selectedCommunityPost.media.length > 1" class="community-reader-media-count">
+                {{ communityReaderMediaIndex + 1 }}/{{ selectedCommunityPost.media.length }}
+              </view>
             </view>
-          </swiper-item>
-        </swiper>
 
-        <view class="community-reader-page-dots" aria-hidden="true">
-          <view :class="{ active: communityReaderPage === 0 }"></view>
-          <view :class="{ active: communityReaderPage === 1 }"></view>
-        </view>
+            <view class="community-reader-post-meta">
+              <view>{{ selectedCommunityPost.stats.views }} 浏览</view>
+              <view>{{ selectedCommunityPost.stats.likes }} 点赞</view>
+              <view>{{ selectedCommunityPost.stats.comments }} 评论</view>
+            </view>
+
+            <view id="community-reader-comments" class="community-reader-comments-section">
+              <view class="community-reader-comments-toolbar">
+                <view class="community-reader-comments-tabs">
+                  <button
+                    class="community-reader-comments-tab"
+                    :class="{ active: communityInteractionTab === 'comments' }"
+                    @tap="selectCommunityInteractionTab('comments')"
+                  >评论 {{ selectedCommunityPost.stats.comments }}</button>
+                  <button
+                    class="community-reader-comments-tab"
+                    :class="{ active: communityInteractionTab === 'likes' }"
+                    @tap="selectCommunityInteractionTab('likes')"
+                  >点赞 {{ selectedCommunityPost.stats.likes }}</button>
+                </view>
+                <view v-if="communityInteractionTab === 'comments'" class="community-reader-sort" aria-label="评论排序">
+                  <button
+                    :class="{ active: communityCommentSort === 'default' }"
+                    @tap="communityCommentSort = 'default'"
+                  >默认</button>
+                  <button
+                    :class="{ active: communityCommentSort === 'latest' }"
+                    @tap="communityCommentSort = 'latest'"
+                  >最新</button>
+                  <button
+                    :class="{ active: communityCommentSort === 'earliest' }"
+                    @tap="communityCommentSort = 'earliest'"
+                  >最早</button>
+                </view>
+              </view>
+
+              <view v-if="communityInteractionTab === 'comments'" class="community-reader-inline-composer">
+                <input
+                  v-model="communityCommentDraft"
+                  maxlength="500"
+                  confirm-type="send"
+                  placeholder="有话要说，快来评论"
+                  placeholder-class="community-reader-comment-placeholder"
+                  :disabled="communityCommentSubmitting"
+                  @confirm="submitCommunityComment"
+                />
+                <button
+                  :disabled="communityCommentSubmitting || !communityCommentDraft.trim()"
+                  @tap="submitCommunityComment"
+                >{{ communityCommentSubmitting ? '发送中' : '发送' }}</button>
+              </view>
+
+              <template v-if="communityInteractionTab === 'comments'">
+                <view v-if="communityCommentsLoading" class="community-reader-empty">正在加载评论</view>
+                <view v-else-if="sortedCommunityComments.length === 0" class="community-reader-empty">
+                  暂无评论，来留下第一条讨论吧。
+                </view>
+                <view v-else class="community-reader-comment-list">
+                  <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
+                    <view class="community-reader-comment-avatar">
+                      <image v-if="comment.avatarUrl" :src="comment.avatarUrl" mode="aspectFill" />
+                      <text v-else>{{ comment.avatar }}</text>
+                    </view>
+                    <view class="community-reader-comment-main">
+                      <view class="community-reader-comment-author">{{ comment.author }}</view>
+                      <view class="community-reader-comment-copy">{{ comment.content }}</view>
+                      <view class="community-reader-comment-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+                    </view>
+                  </view>
+                </view>
+              </template>
+
+              <template v-else>
+                <view v-if="communityLikesLoading" class="community-reader-empty">正在加载点赞用户</view>
+                <view v-else-if="communityLikes.length === 0" class="community-reader-empty">
+                  暂无点赞，来成为第一位点赞的研友吧。
+                </view>
+                <view v-else class="community-reader-like-list">
+                  <view v-for="like in communityLikes" :key="like.id" class="community-reader-like-item">
+                    <view class="community-reader-comment-avatar">
+                      <image v-if="like.avatarUrl" :src="like.avatarUrl" mode="aspectFill" />
+                      <text v-else>{{ like.avatar }}</text>
+                    </view>
+                    <view class="community-reader-comment-main">
+                      <view class="community-reader-comment-author">{{ like.author }}</view>
+                      <view class="community-reader-comment-time">{{ formatCommunityCommentTime(like.likedAt) }} 点赞</view>
+                    </view>
+                  </view>
+                </view>
+              </template>
+            </view>
+          </view>
+        </scroll-view>
 
         <view class="community-reader-actions">
-          <button class="community-reader-comment-entry" @tap="openCommunityComments(selectedCommunityPost)">
+          <button class="community-reader-comment-entry" @tap="focusCommunityReaderComments">
             <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
-            <text>{{ communityReaderPage === 0 ? '说点什么...' : '继续讨论' }}</text>
+            <text>说点什么...</text>
           </button>
           <button
             class="community-reader-action"
@@ -1353,7 +1336,7 @@
             <image src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
             <text>{{ selectedCommunityPost.stats.likes }}</text>
           </button>
-          <button class="community-reader-action" @tap="openCommunityComments(selectedCommunityPost)">
+          <button class="community-reader-action" @tap="focusCommunityReaderComments">
             <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
             <text>{{ selectedCommunityPost.stats.comments }}</text>
           </button>
@@ -1588,7 +1571,7 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
@@ -1695,7 +1678,7 @@ const selectedCommunityCategory = ref('全部')
 const communitySearchKeyword = ref('')
 const selectedCommunityPost = ref(null)
 const selectedCommunityCommentsPost = ref(null)
-const communityReaderPage = ref(0)
+const communityReaderScrollTarget = ref('')
 const communityReaderMediaIndex = ref(0)
 const communityComments = ref([])
 const communityCommentsLoading = ref(false)
@@ -3468,15 +3451,21 @@ async function loadCircleCommunityPosts(postType = 'chat') {
   }
 }
 
-async function openCommunityPost(post) {
+async function openCommunityPost(post, options = {}) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
   clearCommunityViewTimer()
   closeCommunityComments()
-  communityReaderPage.value = 0
+  communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
   selectedCommunityPost.value = initialPost
   scheduleCommunityView(initialPost.id)
+  void openCommunityComments(initialPost)
+
+  if (options.focusComments) {
+    await nextTick()
+    focusCommunityReaderComments()
+  }
 
   try {
     const response = await fetchCommunityPost(initialPost.id)
@@ -3490,17 +3479,22 @@ async function openCommunityPost(post) {
   }
 }
 
-function handleCommunityReaderPageChange(event) {
-  const page = Number(event?.detail?.current ?? 0)
-  communityReaderPage.value = page
+function openCommunityPostComments(post) {
+  void openCommunityPost(post, { focusComments: true })
+}
 
-  if (
-    page === 1
-    && selectedCommunityPost.value?.id
-    && selectedCommunityCommentsPost.value?.id !== selectedCommunityPost.value.id
-  ) {
-    openCommunityComments(selectedCommunityPost.value)
+function focusCommunityReaderComments() {
+  const post = selectedCommunityPost.value
+  if (!post?.id) return
+
+  if (selectedCommunityCommentsPost.value?.id !== post.id) {
+    void openCommunityComments(post)
   }
+
+  communityReaderScrollTarget.value = ''
+  nextTick(() => {
+    communityReaderScrollTarget.value = 'community-reader-comments'
+  })
 }
 
 function handleCommunityReaderMediaChange(event) {
@@ -3526,7 +3520,7 @@ function shareCommunityPost() {
 function closeCommunityPost() {
   clearCommunityViewTimer()
   closeCommunityComments()
-  communityReaderPage.value = 0
+  communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
   selectedCommunityPost.value = null
 }
@@ -3535,7 +3529,6 @@ async function openCommunityComments(post) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
 
-  communityReaderPage.value = 1
   if (selectedCommunityCommentsPost.value?.id === initialPost.id) {
     communityInteractionTab.value = 'comments'
     return
@@ -6159,22 +6152,16 @@ function formatDateTime(value) {
   flex: 0 1 auto;
 }
 
-.community-reader-swiper {
+.community-reader-scroll {
   width: 100%;
   min-height: 0;
   flex: 1;
 }
 
-.community-reader-page,
-.community-reader-scroll {
-  height: 100%;
-}
-
-.community-reader-body,
-.community-reader-comments-body {
+.community-reader-body {
   box-sizing: border-box;
   min-height: 100%;
-  padding: 34rpx 30rpx 42rpx;
+  padding: 34rpx 30rpx calc(env(safe-area-inset-bottom) + 46rpx);
 }
 
 .community-reader-title {
@@ -6298,6 +6285,14 @@ function formatDateTime(value) {
   font-size: 21rpx;
   line-height: 1.25;
   font-weight: 700;
+}
+
+.community-reader-comments-section {
+  box-sizing: border-box;
+  min-height: calc(100dvh - 320rpx);
+  margin-top: 46rpx;
+  padding: 30rpx 0 44rpx;
+  border-top: 2rpx solid rgba(85, 116, 112, 0.16);
 }
 
 .community-reader-comments-toolbar {
@@ -6489,30 +6484,6 @@ function formatDateTime(value) {
   font-size: 20rpx;
   line-height: 1.2;
   font-weight: 600;
-}
-
-.community-reader-page-dots {
-  height: 24rpx;
-  padding: 8rpx 0 6rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 12rpx;
-  flex: 0 0 auto;
-}
-
-.community-reader-page-dots view {
-  width: 12rpx;
-  height: 12rpx;
-  border-radius: 50%;
-  background: rgba(78, 109, 105, 0.26);
-  transition: width 180ms ease, background-color 180ms ease;
-}
-
-.community-reader-page-dots view.active {
-  width: 34rpx;
-  border-radius: 999rpx;
-  background: #2e8e87;
 }
 
 .community-reader-actions {
