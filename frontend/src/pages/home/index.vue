@@ -1166,8 +1166,205 @@
       </view>
     </view>
 
-    <view v-if="selectedCommunityPost" class="community-detail-mask" @tap="closeCommunityPost">
-      <view class="community-detail-sheet" @tap.stop>
+    <view v-if="selectedCommunityPost" class="community-reader">
+      <view class="community-reader-surface">
+        <view class="community-reader-topbar">
+          <button class="community-reader-back" aria-label="返回社区" @tap="closeCommunityPost">
+            <image src="/static/ui-icons/back.svg" mode="aspectFit" />
+          </button>
+          <view class="community-reader-author">
+            <view class="community-reader-avatar" :class="`tone-${selectedCommunityPost.tone}`">
+              <image v-if="selectedCommunityPost.avatarUrl" :src="selectedCommunityPost.avatarUrl" mode="aspectFill" />
+              <text v-else>{{ selectedCommunityPost.avatar }}</text>
+            </view>
+            <view class="community-reader-author-copy">
+              <view class="community-reader-author-name">{{ selectedCommunityPost.author }}</view>
+              <view class="community-reader-author-meta">{{ communityReaderPostTypeLabel }} · {{ selectedCommunityPost.publishTime }}</view>
+            </view>
+          </view>
+          <view class="community-reader-category">{{ selectedCommunityPost.category }}</view>
+          <button class="community-reader-share" aria-label="分享帖子" @tap="shareCommunityPost">↗</button>
+        </view>
+
+        <swiper
+          class="community-reader-swiper"
+          :current="communityReaderPage"
+          :duration="300"
+          @change="handleCommunityReaderPageChange"
+        >
+          <swiper-item>
+            <view class="community-reader-page">
+              <scroll-view scroll-y class="community-reader-scroll">
+                <view class="community-reader-body">
+                  <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
+                  <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
+
+                  <view
+                    v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
+                    class="community-reader-media"
+                  >
+                    <swiper
+                      class="community-reader-media-swiper"
+                      :current="communityReaderMediaIndex"
+                      :duration="260"
+                      @change="handleCommunityReaderMediaChange"
+                    >
+                      <swiper-item
+                        v-for="media in selectedCommunityPost.media"
+                        :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
+                      >
+                        <view class="community-reader-media-slide" :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]">
+                          <image
+                            v-if="media.imageUrl || media.image_url"
+                            :src="media.imageUrl || media.image_url"
+                            mode="aspectFit"
+                          />
+                          <view v-else class="community-reader-media-fallback">
+                            <view>{{ media.kicker }}</view>
+                            <view class="community-reader-media-fallback-title">{{ media.title }}</view>
+                            <text>{{ media.copy }}</text>
+                          </view>
+                        </view>
+                      </swiper-item>
+                    </swiper>
+                    <view v-if="selectedCommunityPost.media.length > 1" class="community-reader-media-count">
+                      {{ communityReaderMediaIndex + 1 }}/{{ selectedCommunityPost.media.length }}
+                    </view>
+                  </view>
+
+                  <view class="community-reader-post-meta">
+                    <view>{{ selectedCommunityPost.stats.views }} 浏览</view>
+                    <view>{{ selectedCommunityPost.stats.likes }} 点赞</view>
+                    <view>{{ selectedCommunityPost.stats.comments }} 评论</view>
+                  </view>
+                </view>
+              </scroll-view>
+            </view>
+          </swiper-item>
+
+          <swiper-item>
+            <view class="community-reader-page community-reader-comments-page">
+              <scroll-view scroll-y class="community-reader-scroll">
+                <view class="community-reader-comments-body">
+                  <view class="community-reader-comments-toolbar">
+                    <view class="community-reader-comments-tabs">
+                      <button
+                        class="community-reader-comments-tab"
+                        :class="{ active: communityInteractionTab === 'comments' }"
+                        @tap="selectCommunityInteractionTab('comments')"
+                      >评论 {{ selectedCommunityPost.stats.comments }}</button>
+                      <button
+                        class="community-reader-comments-tab"
+                        :class="{ active: communityInteractionTab === 'likes' }"
+                        @tap="selectCommunityInteractionTab('likes')"
+                      >点赞 {{ selectedCommunityPost.stats.likes }}</button>
+                    </view>
+                    <view v-if="communityInteractionTab === 'comments'" class="community-reader-sort" aria-label="评论排序">
+                      <button
+                        :class="{ active: communityCommentSort === 'default' }"
+                        @tap="communityCommentSort = 'default'"
+                      >默认</button>
+                      <button
+                        :class="{ active: communityCommentSort === 'latest' }"
+                        @tap="communityCommentSort = 'latest'"
+                      >最新</button>
+                      <button
+                        :class="{ active: communityCommentSort === 'earliest' }"
+                        @tap="communityCommentSort = 'earliest'"
+                      >最早</button>
+                    </view>
+                  </view>
+
+                  <view v-if="communityInteractionTab === 'comments'" class="community-reader-inline-composer">
+                    <input
+                      v-model="communityCommentDraft"
+                      maxlength="500"
+                      confirm-type="send"
+                      placeholder="有话要说，快来评论"
+                      placeholder-class="community-reader-comment-placeholder"
+                      :disabled="communityCommentSubmitting"
+                      @confirm="submitCommunityComment"
+                    />
+                    <button
+                      :disabled="communityCommentSubmitting || !communityCommentDraft.trim()"
+                      @tap="submitCommunityComment"
+                    >{{ communityCommentSubmitting ? '发送中' : '发送' }}</button>
+                  </view>
+
+                  <template v-if="communityInteractionTab === 'comments'">
+                    <view v-if="communityCommentsLoading" class="community-reader-empty">正在加载评论</view>
+                    <view v-else-if="sortedCommunityComments.length === 0" class="community-reader-empty">
+                      暂无评论，来留下第一条讨论吧。
+                    </view>
+                    <view v-else class="community-reader-comment-list">
+                      <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
+                        <view class="community-reader-comment-avatar">
+                          <image v-if="comment.avatarUrl" :src="comment.avatarUrl" mode="aspectFill" />
+                          <text v-else>{{ comment.avatar }}</text>
+                        </view>
+                        <view class="community-reader-comment-main">
+                          <view class="community-reader-comment-author">{{ comment.author }}</view>
+                          <view class="community-reader-comment-copy">{{ comment.content }}</view>
+                          <view class="community-reader-comment-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+                        </view>
+                      </view>
+                    </view>
+                  </template>
+
+                  <template v-else>
+                    <view v-if="communityLikesLoading" class="community-reader-empty">正在加载点赞用户</view>
+                    <view v-else-if="communityLikes.length === 0" class="community-reader-empty">
+                      暂无点赞，来成为第一位点赞的研友吧。
+                    </view>
+                    <view v-else class="community-reader-like-list">
+                      <view v-for="like in communityLikes" :key="like.id" class="community-reader-like-item">
+                        <view class="community-reader-comment-avatar">
+                          <image v-if="like.avatarUrl" :src="like.avatarUrl" mode="aspectFill" />
+                          <text v-else>{{ like.avatar }}</text>
+                        </view>
+                        <view class="community-reader-comment-main">
+                          <view class="community-reader-comment-author">{{ like.author }}</view>
+                          <view class="community-reader-comment-time">{{ formatCommunityCommentTime(like.likedAt) }} 点赞</view>
+                        </view>
+                      </view>
+                    </view>
+                  </template>
+                </view>
+              </scroll-view>
+            </view>
+          </swiper-item>
+        </swiper>
+
+        <view class="community-reader-page-dots" aria-hidden="true">
+          <view :class="{ active: communityReaderPage === 0 }"></view>
+          <view :class="{ active: communityReaderPage === 1 }"></view>
+        </view>
+
+        <view class="community-reader-actions">
+          <button class="community-reader-comment-entry" @tap="openCommunityComments(selectedCommunityPost)">
+            <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
+            <text>{{ communityReaderPage === 0 ? '说点什么...' : '继续讨论' }}</text>
+          </button>
+          <button
+            class="community-reader-action"
+            :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
+            @tap="toggleCommunityLike(selectedCommunityPost)"
+          >
+            <image src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
+            <text>{{ selectedCommunityPost.stats.likes }}</text>
+          </button>
+          <button class="community-reader-action" @tap="openCommunityComments(selectedCommunityPost)">
+            <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
+            <text>{{ selectedCommunityPost.stats.comments }}</text>
+          </button>
+          <view class="community-reader-action community-reader-action-static">
+            <image src="/static/ui-icons/circle-view.svg" mode="aspectFit" />
+            <text>{{ selectedCommunityPost.stats.views }}</text>
+          </view>
+        </view>
+      </view>
+
+      <view v-if="false" class="community-detail-sheet" @tap.stop>
         <view class="community-detail-handle"></view>
         <button class="community-detail-close" aria-label="关闭帖子详情" @tap="closeCommunityPost"><CloseIcon /></button>
         <view class="community-detail-heading">帖子详情</view>
@@ -1230,7 +1427,7 @@
       </view>
     </view>
 
-      <view v-if="selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
+      <view v-if="false && selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
       <view class="community-comments-sheet" @tap.stop>
         <view class="community-detail-handle"></view>
 
@@ -1498,6 +1695,8 @@ const selectedCommunityCategory = ref('全部')
 const communitySearchKeyword = ref('')
 const selectedCommunityPost = ref(null)
 const selectedCommunityCommentsPost = ref(null)
+const communityReaderPage = ref(0)
+const communityReaderMediaIndex = ref(0)
 const communityComments = ref([])
 const communityCommentsLoading = ref(false)
 const communityInteractionTab = ref('comments')
@@ -2019,6 +2218,9 @@ const sortedCommunityComments = computed(() => {
     return (leftTimestamp - rightTimestamp) * direction
   })
 })
+const communityReaderPostTypeLabel = computed(() => (
+  selectedCommunityPost.value?.postType === 'experience' ? '经验贴' : '研友聊'
+))
 const filteredCircleExperiencePosts = computed(() => {
   const keyword = experienceSearchKeyword.value.trim().toLowerCase()
   return circleExperienceCommunityPosts.value.filter((item) => {
@@ -3270,6 +3472,9 @@ async function openCommunityPost(post) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
   clearCommunityViewTimer()
+  closeCommunityComments()
+  communityReaderPage.value = 0
+  communityReaderMediaIndex.value = 0
   selectedCommunityPost.value = initialPost
   scheduleCommunityView(initialPost.id)
 
@@ -3285,15 +3490,56 @@ async function openCommunityPost(post) {
   }
 }
 
+function handleCommunityReaderPageChange(event) {
+  const page = Number(event?.detail?.current ?? 0)
+  communityReaderPage.value = page
+
+  if (
+    page === 1
+    && selectedCommunityPost.value?.id
+    && selectedCommunityCommentsPost.value?.id !== selectedCommunityPost.value.id
+  ) {
+    openCommunityComments(selectedCommunityPost.value)
+  }
+}
+
+function handleCommunityReaderMediaChange(event) {
+  communityReaderMediaIndex.value = Number(event?.detail?.current ?? 0)
+}
+
+function shareCommunityPost() {
+  const post = selectedCommunityPost.value
+  if (!post?.title) return
+
+  const url = typeof window !== 'undefined' ? window.location.href : ''
+  if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
+    navigator.share({ title: post.title, text: post.title, url }).catch(() => {})
+    return
+  }
+
+  uni.setClipboardData({
+    data: url || post.title,
+    success: () => uni.showToast({ title: '链接已复制', icon: 'none' })
+  })
+}
+
 function closeCommunityPost() {
   clearCommunityViewTimer()
   closeCommunityComments()
+  communityReaderPage.value = 0
+  communityReaderMediaIndex.value = 0
   selectedCommunityPost.value = null
 }
 
 async function openCommunityComments(post) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
+
+  communityReaderPage.value = 1
+  if (selectedCommunityCommentsPost.value?.id === initialPost.id) {
+    communityInteractionTab.value = 'comments'
+    return
+  }
 
   selectedCommunityCommentsPost.value = initialPost
   communityInteractionTab.value = 'comments'
@@ -5766,6 +6012,633 @@ function formatDateTime(value) {
   transform: scale(0.94);
   box-shadow: 0 7px 16px rgba(52, 120, 246, 0.2);
   background: #2867DE;
+}
+
+.community-reader {
+  position: fixed;
+  z-index: 110;
+  inset: 0;
+  overflow: hidden;
+  background: rgba(15, 48, 51, 0.42);
+}
+
+.community-reader-surface {
+  width: 100%;
+  max-width: 860rpx;
+  height: 100vh;
+  height: 100dvh;
+  margin: 0 auto;
+  overflow: hidden;
+  background:
+    linear-gradient(180deg, rgba(224, 239, 237, 0.96) 0%, rgba(245, 249, 247, 0.98) 38%, rgba(232, 241, 239, 0.98) 100%),
+    url('/static/circle-study-sky.jpg') center / cover;
+  display: flex;
+  flex-direction: column;
+}
+
+.community-reader-topbar {
+  box-sizing: border-box;
+  min-height: 116rpx;
+  padding: calc(env(safe-area-inset-top) + 20rpx) 24rpx 18rpx;
+  border-bottom: 2rpx solid rgba(78, 111, 106, 0.12);
+  background: rgba(243, 249, 248, 0.84);
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  flex: 0 0 auto;
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+}
+
+.community-reader-back,
+.community-reader-share {
+  width: 66rpx;
+  height: 66rpx;
+  min-width: 66rpx;
+  min-height: 66rpx;
+  margin: 0;
+  padding: 16rpx;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2d8580;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-reader-back::after,
+.community-reader-share::after {
+  border: 0;
+}
+
+.community-reader-back image {
+  width: 100%;
+  height: 100%;
+}
+
+.community-reader-share {
+  padding: 0 0 8rpx 2rpx;
+  color: #237a76;
+  font-size: 44rpx;
+  line-height: 1;
+  font-weight: 500;
+}
+
+.community-reader-author {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 1;
+}
+
+.community-reader-avatar,
+.community-reader-comment-avatar {
+  overflow: hidden;
+  border: 2rpx solid rgba(255, 255, 255, 0.88);
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.community-reader-avatar {
+  width: 62rpx;
+  height: 62rpx;
+  color: #2e7a77;
+  font-size: 26rpx;
+}
+
+.community-reader-avatar image,
+.community-reader-comment-avatar image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.community-reader-author-copy {
+  min-width: 0;
+}
+
+.community-reader-author-name {
+  overflow: hidden;
+  color: #1b2b2a;
+  font-size: 27rpx;
+  line-height: 1.25;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-reader-author-meta {
+  overflow: hidden;
+  margin-top: 3rpx;
+  color: #788a87;
+  font-size: 19rpx;
+  line-height: 1.2;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-reader-category {
+  max-width: 122rpx;
+  padding: 12rpx 15rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: rgba(45, 133, 128, 0.11);
+  color: #237a76;
+  font-size: 19rpx;
+  line-height: 1;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  flex: 0 1 auto;
+}
+
+.community-reader-swiper {
+  width: 100%;
+  min-height: 0;
+  flex: 1;
+}
+
+.community-reader-page,
+.community-reader-scroll {
+  height: 100%;
+}
+
+.community-reader-body,
+.community-reader-comments-body {
+  box-sizing: border-box;
+  min-height: 100%;
+  padding: 34rpx 30rpx 42rpx;
+}
+
+.community-reader-title {
+  color: #172725;
+  font-size: 42rpx;
+  line-height: 1.32;
+  font-weight: 800;
+  word-break: break-word;
+}
+
+.community-reader-copy {
+  margin-top: 20rpx;
+  color: #506562;
+  font-size: 28rpx;
+  line-height: 1.72;
+  font-weight: 600;
+  white-space: pre-line;
+  word-break: break-word;
+}
+
+.community-reader-media {
+  position: relative;
+  margin-top: 28rpx;
+}
+
+.community-reader-media-swiper {
+  height: min(72vh, 920rpx);
+  overflow: hidden;
+  border: 2rpx solid rgba(255, 255, 255, 0.9);
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.62);
+  box-shadow: 0 16rpx 34rpx rgba(39, 80, 75, 0.12);
+}
+
+.community-reader-media-slide {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: #eaf3f2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-reader-media-slide image {
+  width: 100%;
+  height: 100%;
+}
+
+.community-reader-media-slide.tone-blue {
+  background: linear-gradient(145deg, #dceeff, #edf6fc);
+}
+
+.community-reader-media-slide.tone-mint {
+  background: linear-gradient(145deg, #dff4ee, #eef8f5);
+}
+
+.community-reader-media-slide.tone-sand {
+  background: linear-gradient(145deg, #f8ecd8, #fff7ed);
+}
+
+.community-reader-media-slide.tone-lilac {
+  background: linear-gradient(145deg, #eee7fa, #f8f4fd);
+}
+
+.community-reader-media-fallback {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 56rpx 42rpx;
+  color: #2c5d5a;
+  display: flex;
+  flex-direction: column;
+  justify-content: flex-end;
+}
+
+.community-reader-media-fallback view {
+  font-size: 24rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.community-reader-media-fallback-title {
+  margin-top: 14rpx;
+  color: #214e4a;
+  font-size: 42rpx;
+  line-height: 1.25;
+}
+
+.community-reader-media-fallback text {
+  margin-top: 16rpx;
+  font-size: 28rpx;
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+.community-reader-media-count {
+  position: absolute;
+  top: 18rpx;
+  right: 18rpx;
+  min-width: 70rpx;
+  padding: 11rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(25, 58, 57, 0.66);
+  color: #ffffff;
+  font-size: 21rpx;
+  line-height: 1;
+  font-weight: 800;
+  text-align: center;
+}
+
+.community-reader-post-meta {
+  margin-top: 28rpx;
+  padding: 20rpx 0;
+  border-top: 2rpx solid rgba(85, 116, 112, 0.14);
+  border-bottom: 2rpx solid rgba(85, 116, 112, 0.14);
+  color: #71837f;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 21rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.community-reader-comments-toolbar {
+  min-height: 68rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.community-reader-comments-tabs {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 1;
+}
+
+.community-reader-comments-tab {
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  color: #7a8a87;
+  font-size: 26rpx;
+  line-height: 1;
+  font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  white-space: nowrap;
+}
+
+.community-reader-comments-tab::after,
+.community-reader-sort button::after,
+.community-reader-inline-composer button::after,
+.community-reader-actions button::after {
+  border: 0;
+}
+
+.community-reader-comments-tab.active {
+  background: rgba(255, 255, 255, 0.78);
+  color: #1d2d2b;
+  box-shadow: 0 4rpx 14rpx rgba(44, 79, 74, 0.08);
+}
+
+.community-reader-sort {
+  min-height: 62rpx;
+  padding: 4rpx;
+  border-radius: 999rpx;
+  background: rgba(223, 237, 234, 0.92);
+  display: flex;
+  align-items: center;
+  flex: 0 0 auto;
+}
+
+.community-reader-sort button {
+  width: 62rpx;
+  min-width: 62rpx;
+  height: 54rpx;
+  min-height: 54rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: transparent;
+  color: #71817e;
+  font-size: 19rpx;
+  line-height: 1;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-reader-sort button.active {
+  background: rgba(255, 255, 255, 0.94);
+  color: #3478f6;
+  box-shadow: 0 3rpx 10rpx rgba(53, 84, 80, 0.08);
+}
+
+.community-reader-inline-composer {
+  min-height: 78rpx;
+  margin-top: 24rpx;
+  padding: 0 10rpx 0 22rpx;
+  border-radius: 24rpx;
+  background: rgba(231, 240, 238, 0.96);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.community-reader-inline-composer input {
+  min-width: 0;
+  color: #25413d;
+  font-size: 25rpx;
+  font-weight: 600;
+  flex: 1;
+}
+
+.community-reader-comment-placeholder {
+  color: #9aa9a6;
+}
+
+.community-reader-inline-composer button {
+  min-width: 92rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: #3478f6;
+  color: #ffffff;
+  font-size: 22rpx;
+  line-height: 1;
+  font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-reader-inline-composer button[disabled] {
+  opacity: 0.44;
+}
+
+.community-reader-empty {
+  margin-top: 26rpx;
+  padding: 32rpx 24rpx;
+  border-radius: 24rpx;
+  background: rgba(236, 245, 243, 0.82);
+  color: #768683;
+  font-size: 24rpx;
+  line-height: 1.55;
+  font-weight: 600;
+  text-align: center;
+}
+
+.community-reader-comment-list,
+.community-reader-like-list {
+  margin-top: 16rpx;
+}
+
+.community-reader-comment-item,
+.community-reader-like-item {
+  padding: 28rpx 0;
+  border-bottom: 2rpx solid rgba(91, 120, 116, 0.12);
+  display: flex;
+  align-items: flex-start;
+  gap: 16rpx;
+}
+
+.community-reader-comment-avatar {
+  width: 72rpx;
+  height: 72rpx;
+  background: #e1f0ed;
+  color: #217b75;
+  font-size: 28rpx;
+}
+
+.community-reader-comment-main {
+  min-width: 0;
+  padding-top: 3rpx;
+  flex: 1;
+}
+
+.community-reader-comment-author {
+  overflow: hidden;
+  color: #263c39;
+  font-size: 26rpx;
+  line-height: 1.3;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-reader-comment-copy {
+  margin-top: 10rpx;
+  color: #4e625f;
+  font-size: 28rpx;
+  line-height: 1.58;
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.community-reader-comment-time {
+  margin-top: 11rpx;
+  color: #98a6a3;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.community-reader-page-dots {
+  height: 24rpx;
+  padding: 8rpx 0 6rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12rpx;
+  flex: 0 0 auto;
+}
+
+.community-reader-page-dots view {
+  width: 12rpx;
+  height: 12rpx;
+  border-radius: 50%;
+  background: rgba(78, 109, 105, 0.26);
+  transition: width 180ms ease, background-color 180ms ease;
+}
+
+.community-reader-page-dots view.active {
+  width: 34rpx;
+  border-radius: 999rpx;
+  background: #2e8e87;
+}
+
+.community-reader-actions {
+  box-sizing: border-box;
+  min-height: 104rpx;
+  padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 14rpx);
+  border-top: 2rpx solid rgba(84, 117, 112, 0.13);
+  background: rgba(245, 250, 248, 0.92);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  flex: 0 0 auto;
+  -webkit-backdrop-filter: blur(18px) saturate(120%);
+  backdrop-filter: blur(18px) saturate(120%);
+}
+
+.community-reader-comment-entry {
+  min-width: 0;
+  min-height: 66rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(224, 237, 234, 0.92);
+  color: #80918e;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  font-size: 23rpx;
+  line-height: 1;
+  font-weight: 700;
+  flex: 1;
+}
+
+.community-reader-comment-entry image {
+  width: 28rpx;
+  height: 28rpx;
+  opacity: 0.72;
+  flex: 0 0 28rpx;
+}
+
+.community-reader-comment-entry text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-reader-action {
+  min-width: 62rpx;
+  min-height: 66rpx;
+  margin: 0;
+  padding: 0 8rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  color: #70827f;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6rpx;
+  font-size: 21rpx;
+  line-height: 1;
+  font-weight: 800;
+  flex: 0 0 auto;
+}
+
+.community-reader-action image {
+  width: 30rpx;
+  height: 30rpx;
+}
+
+.community-reader-action.active {
+  color: #3478f6;
+}
+
+.community-reader-action.pending {
+  opacity: 0.56;
+}
+
+.community-reader-action-static {
+  pointer-events: none;
+}
+
+.community-reader-actions button:active,
+.community-reader-share:active,
+.community-reader-back:active {
+  transform: scale(0.96);
+}
+
+@media (max-width: 340px) {
+  .community-reader-topbar {
+    gap: 10rpx;
+  }
+
+  .community-reader-category {
+    max-width: 82rpx;
+    padding-right: 10rpx;
+    padding-left: 10rpx;
+  }
+
+  .community-reader-comments-tab {
+    padding-right: 10rpx;
+    padding-left: 10rpx;
+    font-size: 23rpx;
+  }
+
+  .community-reader-sort button {
+    width: 54rpx;
+    min-width: 54rpx;
+    font-size: 18rpx;
+  }
+
+  .community-reader-actions {
+    gap: 7rpx;
+  }
+
+  .community-reader-comment-entry {
+    padding-right: 13rpx;
+    padding-left: 13rpx;
+  }
+
+  .community-reader-action {
+    min-width: 54rpx;
+    padding-right: 4rpx;
+    padding-left: 4rpx;
+  }
 }
 
 .community-detail-mask {
