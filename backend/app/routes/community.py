@@ -15,6 +15,8 @@ from app.schemas.community import (
     CommunityCreateCommentRequest,
     CommunityCreateCommentResponse,
     CommunityImageUploadResponse,
+    CommunityLikeItem,
+    CommunityLikeListResponse,
     CommunityCreatePostRequest,
     CommunityLikeResponse,
     CommunityPostDetailResponse,
@@ -153,6 +155,33 @@ def _fetch_liked_post_ids(supabase, user_id: str | None, post_ids: list[str]) ->
     return {str(row.get("post_id")) for row in (response.data or []) if row.get("post_id")}
 
 
+def _fetch_community_profiles(supabase, user_ids: list[str]) -> dict[str, dict]:
+    unique_user_ids = list(dict.fromkeys(user_id for user_id in user_ids if user_id))
+    if not unique_user_ids:
+        return {}
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("users")
+            .select("id,nickname,avatar_url")
+            .in_("id", unique_user_ids)
+            .execute()
+        ),
+        operation_name="circle community profile lookup",
+    )
+    return {
+        str(profile.get("id")): profile
+        for profile in (response.data or [])
+        if profile.get("id")
+    }
+
+
+def _community_avatar_url(row: dict, profiles: dict[str, dict]) -> str | None:
+    profile = profiles.get(str(row.get("author_id") or ""), {})
+    avatar_url = str(profile.get("avatar_url") or "").strip()
+    return avatar_url or None
+
+
 def _fetch_comment_previews(supabase, post_ids: list[str]) -> dict[str, list[CommunityCommentPreview]]:
     if not post_ids:
         return {}
@@ -186,6 +215,7 @@ def _post_item(
     row: dict,
     liked_post_ids: set[str],
     previews: dict[str, list[CommunityCommentPreview]],
+    profiles: dict[str, dict],
 ) -> CommunityPostItem:
     post_id = str(row.get("id"))
     content = str(row.get("content") or "")
@@ -196,6 +226,7 @@ def _post_item(
         category=str(row.get("category") or "备考日常"),
         author=str(row.get("author_name") or "研友"),
         avatar=_first_character(row.get("author_avatar") or row.get("author_name")),
+        avatar_url=_community_avatar_url(row, profiles),
         publish_time=_relative_time(row.get("created_at")),
         tone=str(row.get("author_tone") or "blue"),
         title=str(row.get("title") or ""),
@@ -213,11 +244,16 @@ def _post_item(
     )
 
 
-def _comment_item(row: dict, current_user_id: str | None) -> CommunityCommentItem:
+def _comment_item(
+    row: dict,
+    current_user_id: str | None,
+    profiles: dict[str, dict],
+) -> CommunityCommentItem:
     return CommunityCommentItem(
         id=str(row.get("id")),
         author=str(row.get("author_name") or "研友"),
         avatar=_first_character(row.get("author_avatar") or row.get("author_name")),
+        avatar_url=_community_avatar_url(row, profiles),
         content=str(row.get("content") or ""),
         created_at=row.get("created_at"),
         is_mine=bool(current_user_id and str(row.get("author_id") or "") == current_user_id),
@@ -399,11 +435,11 @@ def _register_community_view_without_rpc(
         raise
 
 
-def _current_author(supabase, user_id: str) -> tuple[str, str]:
+def _current_author(supabase, user_id: str) -> tuple[str, str, str | None]:
     response = call_supabase(
         lambda: (
             supabase.table("users")
-            .select("nickname,email")
+            .select("nickname,email,avatar_url")
             .eq("id", user_id)
             .limit(1)
             .execute()
@@ -414,7 +450,8 @@ def _current_author(supabase, user_id: str) -> tuple[str, str]:
     nickname = str(profile.get("nickname") or "").strip()
     email = str(profile.get("email") or "").strip()
     name = nickname or (email.split("@", 1)[0] if "@" in email else "") or "研友"
-    return name, _first_character(name)
+    avatar_url = str(profile.get("avatar_url") or "").strip() or None
+    return name, _first_character(name), avatar_url
 
 
 def _raise_community_service_error(exc: Exception) -> None:
@@ -451,10 +488,14 @@ def list_community_posts(
             if _community_post_type(row) == post_type
         ][:limit]
         post_ids = [str(row.get("id")) for row in rows if row.get("id")]
+        profiles = _fetch_community_profiles(
+            supabase,
+            [str(row.get("author_id") or "") for row in rows],
+        )
         liked_post_ids = _fetch_liked_post_ids(supabase, user_id, post_ids)
         previews = _fetch_comment_previews(supabase, post_ids)
         return CommunityPostListResponse(
-            items=[_post_item(row, liked_post_ids, previews) for row in rows],
+            items=[_post_item(row, liked_post_ids, previews, profiles) for row in rows],
             count=len(rows),
         )
     except HTTPException:
@@ -484,9 +525,17 @@ def get_community_post(
             ),
             operation_name="circle community comment list",
         )
+        comment_rows = comments_response.data or []
+        profiles = _fetch_community_profiles(
+            supabase,
+            [
+                str(item.get("author_id") or "")
+                for item in [row, *comment_rows]
+            ],
+        )
         return CommunityPostDetailResponse(
-            post=_post_item(row, liked_post_ids, previews),
-            comments=[_comment_item(item, user_id) for item in (comments_response.data or [])],
+            post=_post_item(row, liked_post_ids, previews, profiles),
+            comments=[_comment_item(item, user_id, profiles) for item in comment_rows],
         )
     except HTTPException:
         raise
@@ -550,7 +599,7 @@ def create_community_post(
 
     supabase = get_supabase_admin()
     try:
-        author_name, author_avatar = _current_author(supabase, user_id)
+        author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
         media = [item.model_dump(by_alias=True) for item in payload.media[:9]]
         post_data = {
             "author_id": user_id,
@@ -589,7 +638,12 @@ def create_community_post(
             )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Circle post create failed")
-        return _post_item(response.data[0], set(), {})
+        return _post_item(
+            response.data[0],
+            set(),
+            {},
+            {user_id: {"avatar_url": author_avatar_url}},
+        )
     except HTTPException:
         raise
     except Exception as exc:
@@ -615,6 +669,51 @@ def toggle_community_like(
         _raise_community_service_error(exc)
 
 
+@router.get("/posts/{post_id}/likes", response_model=CommunityLikeListResponse)
+def list_community_post_likes(
+    post_id: str,
+    limit: int = Query(default=100, ge=1, le=200),
+) -> CommunityLikeListResponse:
+    supabase = get_supabase_admin()
+    try:
+        _get_post_row(supabase, post_id)
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_likes")
+                .select("id,user_id,created_at", count="exact")
+                .eq("post_id", post_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ),
+            operation_name="circle community like list",
+        )
+        rows = response.data or []
+        profiles = _fetch_community_profiles(
+            supabase,
+            [str(row.get("user_id") or "") for row in rows],
+        )
+        items: list[CommunityLikeItem] = []
+        for row in rows:
+            profile = profiles.get(str(row.get("user_id") or ""), {})
+            author = str(profile.get("nickname") or "").strip() or "研友"
+            avatar_url = str(profile.get("avatar_url") or "").strip() or None
+            items.append(
+                CommunityLikeItem(
+                    id=str(row.get("id") or row.get("user_id")),
+                    author=author,
+                    avatar=_first_character(author),
+                    avatar_url=avatar_url,
+                    liked_at=row.get("created_at"),
+                )
+            )
+        return CommunityLikeListResponse(items=items, count=int(response.count or len(rows)))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
 @router.post(
     "/posts/{post_id}/comments",
     response_model=CommunityCreateCommentResponse,
@@ -628,7 +727,7 @@ def create_community_comment(
     supabase = get_supabase_admin()
     try:
         _get_post_row(supabase, post_id)
-        author_name, author_avatar = _current_author(supabase, user_id)
+        author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
         comment_response = call_supabase(
             lambda: supabase.table("circle_community_comments").insert(
                 {
@@ -646,7 +745,11 @@ def create_community_comment(
 
         updated_post = _get_post_row(supabase, post_id)
         return CommunityCreateCommentResponse(
-            comment=_comment_item(comment_response.data[0], user_id),
+            comment=_comment_item(
+                comment_response.data[0],
+                user_id,
+                {user_id: {"avatar_url": author_avatar_url}},
+            ),
             comment_count=int(updated_post.get("comment_count") or 0),
         )
     except HTTPException:

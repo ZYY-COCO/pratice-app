@@ -265,7 +265,10 @@
                   @tap="openCommunityPost(post)"
                 >
                   <view class="community-post-header">
-                    <view class="community-avatar" :class="`tone-${post.tone}`">{{ post.avatar }}</view>
+                    <view class="community-avatar" :class="`tone-${post.tone}`">
+                      <image v-if="post.avatarUrl" class="community-avatar-image" :src="post.avatarUrl" mode="aspectFill" />
+                      <text v-else>{{ post.avatar }}</text>
+                    </view>
                     <view class="community-author-main">
                       <view class="community-author-name">{{ post.author }}</view>
                       <view class="community-author-meta">{{ post.publishTime }}</view>
@@ -391,7 +394,10 @@
                 @tap="openCirclePost(post)"
               >
                 <view class="experience-author-row">
-                  <view class="experience-avatar">{{ post.avatar }}</view>
+                  <view class="experience-avatar">
+                    <image v-if="post.avatarUrl" class="experience-avatar-image" :src="post.avatarUrl" mode="aspectFill" />
+                    <text v-else>{{ post.avatar }}</text>
+                  </view>
                   <view class="experience-author-main">
                     <view class="experience-author-name">{{ post.author }}</view>
                     <view class="experience-author-role">{{ post.authorRole }} · {{ post.publishDate }}</view>
@@ -1167,7 +1173,10 @@
         <view class="community-detail-heading">帖子详情</view>
         <scroll-view scroll-y class="community-detail-scroll">
           <view class="community-detail-author-row">
-            <view class="community-avatar" :class="`tone-${selectedCommunityPost.tone}`">{{ selectedCommunityPost.avatar }}</view>
+            <view class="community-avatar" :class="`tone-${selectedCommunityPost.tone}`">
+              <image v-if="selectedCommunityPost.avatarUrl" class="community-avatar-image" :src="selectedCommunityPost.avatarUrl" mode="aspectFill" />
+              <text v-else>{{ selectedCommunityPost.avatar }}</text>
+            </view>
             <view class="community-author-main">
               <view class="community-author-name">{{ selectedCommunityPost.author }}</view>
               <view class="community-author-meta">{{ selectedCommunityPost.publishTime }}</view>
@@ -1228,10 +1237,18 @@
 
         <view class="community-comments-toolbar">
           <view class="community-comments-counts">
-            <text class="community-comments-count active">评论 {{ selectedCommunityCommentsPost.stats.comments }}</text>
-            <text class="community-comments-count">点赞 {{ selectedCommunityCommentsPost.stats.likes }}</text>
+            <button
+              class="community-comments-count"
+              :class="{ active: communityInteractionTab === 'comments' }"
+              @tap="selectCommunityInteractionTab('comments')"
+            >评论 {{ selectedCommunityCommentsPost.stats.comments }}</button>
+            <button
+              class="community-comments-count"
+              :class="{ active: communityInteractionTab === 'likes' }"
+              @tap="selectCommunityInteractionTab('likes')"
+            >点赞 {{ selectedCommunityCommentsPost.stats.likes }}</button>
           </view>
-          <view class="community-comment-sort" aria-label="评论排序">
+          <view v-if="communityInteractionTab === 'comments'" class="community-comment-sort" aria-label="评论排序">
             <button
               class="community-comment-sort-button"
               :class="{ active: communityCommentSort === 'default' }"
@@ -1251,23 +1268,46 @@
         </view>
 
         <scroll-view scroll-y class="community-comments-scroll">
-          <view v-if="communityCommentsLoading" class="community-comments-empty">正在加载评论</view>
-          <view v-else-if="sortedCommunityComments.length === 0" class="community-comments-empty">
-            暂无评论，来留下第一条讨论吧。
-          </view>
-          <view v-else class="community-comments-list">
-            <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-comments-item">
-              <view class="community-comments-avatar">{{ comment.avatar }}</view>
-              <view class="community-comments-main">
-                <view class="community-comments-author">{{ comment.author }}</view>
-                <view class="community-comments-copy">{{ comment.content }}</view>
-                <view class="community-comments-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+          <template v-if="communityInteractionTab === 'comments'">
+            <view v-if="communityCommentsLoading" class="community-comments-empty">正在加载评论</view>
+            <view v-else-if="sortedCommunityComments.length === 0" class="community-comments-empty">
+              暂无评论，来留下第一条讨论吧。
+            </view>
+            <view v-else class="community-comments-list">
+              <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-comments-item">
+                <view class="community-comments-avatar">
+                  <image v-if="comment.avatarUrl" class="community-comments-avatar-image" :src="comment.avatarUrl" mode="aspectFill" />
+                  <text v-else>{{ comment.avatar }}</text>
+                </view>
+                <view class="community-comments-main">
+                  <view class="community-comments-author">{{ comment.author }}</view>
+                  <view class="community-comments-copy">{{ comment.content }}</view>
+                  <view class="community-comments-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+                </view>
               </view>
             </view>
-          </view>
+          </template>
+          <template v-else>
+            <view v-if="communityLikesLoading" class="community-comments-empty">正在加载点赞用户</view>
+            <view v-else-if="communityLikes.length === 0" class="community-comments-empty">
+              暂无点赞，来成为第一位点赞的研友吧。
+            </view>
+            <view v-else class="community-likes-list">
+              <view v-for="like in communityLikes" :key="like.id" class="community-likes-item">
+                <view class="community-likes-avatar">
+                  <image v-if="like.avatarUrl" class="community-likes-avatar-image" :src="like.avatarUrl" mode="aspectFill" />
+                  <text v-else>{{ like.avatar }}</text>
+                </view>
+                <view class="community-likes-main">
+                  <view class="community-likes-author">{{ like.author }}</view>
+                  <view class="community-likes-time">{{ formatCommunityCommentTime(like.likedAt) }} 点赞</view>
+                </view>
+              </view>
+            </view>
+          </template>
         </scroll-view>
 
-        <view class="community-comment-composer community-comments-composer">
+        <view v-if="communityInteractionTab === 'comments'" class="community-comment-composer community-comments-composer">
           <input
             v-model="communityCommentDraft"
             class="community-comment-input"
@@ -1296,7 +1336,10 @@
         <view class="circle-post-tag">{{ selectedCirclePost.tag }}</view>
         <view class="circle-post-title">{{ selectedCirclePost.title }}</view>
         <view class="circle-post-author-row">
-          <view class="experience-avatar circle-post-avatar">{{ selectedCirclePost.avatar }}</view>
+          <view class="experience-avatar circle-post-avatar">
+            <image v-if="selectedCirclePost.avatarUrl" class="experience-avatar-image" :src="selectedCirclePost.avatarUrl" mode="aspectFill" />
+            <text v-else>{{ selectedCirclePost.avatar }}</text>
+          </view>
           <view class="circle-post-author-main">
             <view class="circle-post-author-name">{{ selectedCirclePost.author }}</view>
             <view class="circle-post-meta">{{ selectedCirclePost.authorRole }} · {{ selectedCirclePost.examCode }} · {{ selectedCirclePost.readTime }}</view>
@@ -1362,6 +1405,7 @@ import { updateProfile } from '../../api/auth'
 import {
   createCommunityComment,
   fetchCommunityPost,
+  fetchCommunityPostLikes,
   fetchCommunityPosts,
   registerCommunityPostView,
   toggleCommunityPostLike
@@ -1456,6 +1500,9 @@ const selectedCommunityPost = ref(null)
 const selectedCommunityCommentsPost = ref(null)
 const communityComments = ref([])
 const communityCommentsLoading = ref(false)
+const communityInteractionTab = ref('comments')
+const communityLikes = ref([])
+const communityLikesLoading = ref(false)
 const communityCommentSort = ref('default')
 const communityPostsLoading = ref(false)
 const communityLikePostId = ref('')
@@ -3142,6 +3189,7 @@ function normalizeCommunityPost(post = {}) {
     category: post.category || '备考日常',
     author: post.author || '研友',
     avatar: post.avatar || '研',
+    avatarUrl: post.avatarUrl || post.avatar_url || '',
     publishTime: post.publishTime || post.publish_time || '刚刚',
     tone: post.tone || 'blue',
     title: post.title || '',
@@ -3164,6 +3212,7 @@ function normalizeCommunityComment(comment = {}) {
     id: String(comment.id || `comment-${Date.now()}`),
     author: comment.author || '研友',
     avatar: comment.avatar || '研',
+    avatarUrl: comment.avatarUrl || comment.avatar_url || '',
     content: comment.content || '',
     createdAt: comment.createdAt || comment.created_at || new Date().toISOString(),
     isMine: Boolean(comment.isMine || comment.is_mine)
@@ -3247,8 +3296,11 @@ async function openCommunityComments(post) {
   if (!initialPost.id) return
 
   selectedCommunityCommentsPost.value = initialPost
+  communityInteractionTab.value = 'comments'
   communityCommentSort.value = 'default'
   communityCommentDraft.value = ''
+  communityLikes.value = []
+  communityLikesLoading.value = false
   communityComments.value = initialPost.commentPreviews.map((comment) => normalizeCommunityComment({
     id: comment.id,
     author: comment.author,
@@ -3277,10 +3329,52 @@ async function openCommunityComments(post) {
   }
 }
 
+async function selectCommunityInteractionTab(tab) {
+  const post = selectedCommunityCommentsPost.value
+  if (!post?.id) return
+
+  communityInteractionTab.value = tab === 'likes' ? 'likes' : 'comments'
+  if (communityInteractionTab.value === 'likes') {
+    await loadCommunityPostLikes(post.id)
+  }
+}
+
+async function loadCommunityPostLikes(postId) {
+  if (!postId || communityLikesLoading.value) return
+
+  communityLikesLoading.value = true
+  try {
+    const response = await fetchCommunityPostLikes(postId, { limit: 100 })
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityLikes.value = Array.isArray(response?.items)
+        ? response.items.map((item) => ({
+          id: String(item.id || `${postId}-${item.author || 'like'}`),
+          author: item.author || '研友',
+          avatar: item.avatar || String(item.author || '研友').slice(0, 1),
+          avatarUrl: item.avatarUrl || item.avatar_url || '',
+          likedAt: item.likedAt || item.liked_at || ''
+        }))
+        : []
+    }
+  } catch (error) {
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityLikes.value = []
+      uni.showToast({ title: getSafeError(error, '点赞用户加载失败，请稍后重试'), icon: 'none' })
+    }
+  } finally {
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityLikesLoading.value = false
+    }
+  }
+}
+
 function closeCommunityComments() {
   selectedCommunityCommentsPost.value = null
   communityComments.value = []
   communityCommentsLoading.value = false
+  communityInteractionTab.value = 'comments'
+  communityLikes.value = []
+  communityLikesLoading.value = false
   communityCommentSort.value = 'default'
   communityCommentDraft.value = ''
 }
@@ -3347,6 +3441,12 @@ async function toggleCommunityLike(post) {
       liked: Boolean(response?.is_liked),
       stats: { likes: Number(response?.like_count || 0) }
     })
+    if (
+      selectedCommunityCommentsPost.value?.id === post.id
+      && communityInteractionTab.value === 'likes'
+    ) {
+      await loadCommunityPostLikes(post.id)
+    }
   } catch (error) {
     uni.showToast({ title: getSafeError(error, '点赞失败，请稍后重试'), icon: 'none' })
   } finally {
@@ -5094,6 +5194,14 @@ function formatDateTime(value) {
   font-weight: 900;
 }
 
+.experience-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .experience-author-main {
   min-width: 0;
   flex: 1;
@@ -5373,6 +5481,14 @@ function formatDateTime(value) {
   line-height: 1;
   font-weight: 800;
   flex-shrink: 0;
+}
+
+.community-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
 }
 
 .community-avatar.tone-mint {
@@ -5940,18 +6056,33 @@ function formatDateTime(value) {
 }
 
 .community-comments-count {
+  min-height: 54rpx;
+  margin: 0;
+  padding: 0 14rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
   color: #93a09e;
   font-size: 26rpx;
-  line-height: 1.2;
+  line-height: 1;
   font-weight: 800;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-comments-count::after {
+  border: 0;
 }
 
 .community-comments-count.active {
+  background: rgba(255, 255, 255, 0.76);
   color: #1c2423;
 }
 
 .community-comment-sort {
-  padding: 4rpx;
+  min-height: 68rpx;
+  padding: 5rpx;
   border-radius: 999rpx;
   background: rgba(231, 240, 238, 0.86);
   display: flex;
@@ -5960,17 +6091,23 @@ function formatDateTime(value) {
 }
 
 .community-comment-sort-button {
-  min-width: 62rpx;
-  min-height: 48rpx;
+  width: 84rpx;
+  min-width: 84rpx;
+  height: 58rpx;
+  min-height: 58rpx;
   margin: 0;
-  padding: 0 10rpx;
+  padding: 0;
   border: 0;
   border-radius: 999rpx;
   background: transparent;
   color: #73817f;
-  font-size: 20rpx;
-  line-height: 1.2;
+  font-size: 22rpx;
+  line-height: 1;
   font-weight: 800;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
 }
 
 .community-comment-sort-button::after {
@@ -6015,6 +6152,15 @@ function formatDateTime(value) {
   flex: 0 0 64rpx;
 }
 
+.community-comments-avatar-image,
+.community-likes-avatar-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border-radius: inherit;
+  object-fit: cover;
+}
+
 .community-comments-main {
   min-width: 0;
   flex: 1;
@@ -6054,6 +6200,58 @@ function formatDateTime(value) {
   line-height: 1.5;
   font-weight: 600;
   text-align: center;
+}
+
+.community-likes-list {
+  padding-bottom: 8rpx;
+}
+
+.community-likes-item {
+  min-height: 84rpx;
+  padding: 20rpx 0;
+  border-bottom: 2rpx solid rgba(99, 124, 120, 0.1);
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+}
+
+.community-likes-avatar {
+  width: 64rpx;
+  height: 64rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.78);
+  border-radius: 50%;
+  background: #e5f2ee;
+  color: #16786f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 26rpx;
+  line-height: 1;
+  font-weight: 800;
+  flex: 0 0 64rpx;
+}
+
+.community-likes-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-likes-author {
+  overflow: hidden;
+  color: #314643;
+  font-size: 25rpx;
+  line-height: 1.3;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-likes-time {
+  margin-top: 7rpx;
+  color: #99a6a4;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 600;
 }
 
 .community-comments-composer {

@@ -30,6 +30,7 @@ class CommunityPostItem(BaseModel):
     category: str
     author: str
     avatar: str
+    avatar_url: str | None = None
     publish_time: str
     tone: str
     title: str
@@ -51,6 +52,7 @@ class CommunityCommentItem(BaseModel):
     id: str
     author: str
     avatar: str
+    avatar_url: str | None = None
     content: str
     created_at: str | None = None
     is_mine: bool = False
@@ -59,6 +61,19 @@ class CommunityCommentItem(BaseModel):
 class CommunityPostDetailResponse(BaseModel):
     post: CommunityPostItem
     comments: list[CommunityCommentItem] = Field(default_factory=list)
+
+
+class CommunityLikeItem(BaseModel):
+    id: str
+    author: str
+    avatar: str
+    avatar_url: str | None = None
+    liked_at: str | None = None
+
+
+class CommunityLikeListResponse(BaseModel):
+    items: list[CommunityLikeItem] = Field(default_factory=list)
+    count: int = 0
 
 
 class CommunityCreatePostRequest(BaseModel):

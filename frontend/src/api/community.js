@@ -44,6 +44,15 @@ export function toggleCommunityPostLike(postId) {
   })
 }
 
+export function fetchCommunityPostLikes(postId, params = {}) {
+  return request({
+    url: `/circle/community/posts/${encodeURIComponent(postId)}/likes`,
+    method: 'GET',
+    data: params,
+    authRedirect: false
+  })
+}
+
 export function createCommunityComment(postId, payload) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}/comments`,
