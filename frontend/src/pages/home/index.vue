@@ -1193,9 +1193,6 @@
           :scroll-with-animation="true"
         >
           <view class="community-reader-body">
-            <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
-            <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
-
             <view
               v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
               class="community-reader-media"
@@ -1228,6 +1225,9 @@
                 {{ communityReaderMediaIndex + 1 }}/{{ selectedCommunityPost.media.length }}
               </view>
             </view>
+
+            <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
+            <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
 
             <view class="community-reader-post-meta">
               <view>{{ selectedCommunityPost.stats.views }} 浏览</view>
@@ -6181,6 +6181,10 @@ function formatDateTime(value) {
 .community-reader-media {
   position: relative;
   margin-top: 28rpx;
+}
+
+.community-reader-media + .community-reader-title {
+  margin-top: 32rpx;
 }
 
 .community-reader-media-swiper {
