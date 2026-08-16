@@ -8,6 +8,25 @@
 - 版本选择页：`src/pages/version/index.vue`
 - 科目页：`src/pages/subjects/index.vue`
 - 专项刷题页：`src/pages/practice/index.vue`
+- 会员中心：`src/pages/pro/index.vue`
+- 个人资料：`src/pages/profile/index.vue`
+- 排行榜：`src/pages/leaderboard/index.vue`
+- 练习历史：`src/pages/history/index.vue`
+- 收藏夹：`src/pages/favorites/index.vue`
+- 后台管理：`src/pages/admin/index.vue`
+- 统一登录页：`src/pages/login/index.vue`（题库管理白名单用户会自动进入中台）
+- 桌面题库中台：`src/pages/admin/question-desktop.vue`
+- 题库批量导入：`src/pages/admin/question-image-import.vue`
+
+后台管理仅管理员可见，包含用户、反馈、题库管理、题目编辑、审核队列、发布 / 下架和批量导入待审核流程。
+
+桌面题库中台没有用户端菜单入口。请通过 H5 统一登录页登录：
+
+```text
+/#/pages/login/index
+```
+
+登录后由后端检查 `question_admin_access` 数据库白名单；白名单用户自动进入桌面题库中台，其他用户照常进入 App。旧的 `/#/pages/admin/question-login` 地址仅保留自动跳转兼容，不再显示独立登录页。该桌面页面独立于现有手机端后台，不替换 `src/pages/admin/index.vue`。
 
 ## API 配置
 

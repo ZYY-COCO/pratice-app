@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import admin, ai, answers, auth, community, favorites, feedback, formulas, membership, official_messages, questions, reports, wrong_questions
+from app.routes import admin, ai, answers, auth, community, favorites, feedback, formulas, major_catalog, membership, official_messages, questions, reports, wrong_questions
 
 
 def create_app() -> FastAPI:
@@ -28,6 +28,7 @@ def create_app() -> FastAPI:
     app.include_router(membership.router)
     app.include_router(ai.router)
     app.include_router(formulas.router)
+    app.include_router(major_catalog.router)
     app.include_router(official_messages.router)
     app.include_router(official_messages.admin_router)
     app.include_router(admin.router)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
 from typing import Literal
 from uuid import UUID, uuid4
@@ -11,6 +12,7 @@ from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.community import (
     CommunityCommentItem,
+    CommunityCommentLikeResponse,
     CommunityCommentPreview,
     CommunityCreateCommentRequest,
     CommunityCreateCommentResponse,
@@ -41,6 +43,19 @@ COMMUNITY_IMAGE_CONTENT_TYPES = {
 COMMUNITY_POST_TYPES = {"chat", "experience"}
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 COMMUNITY_STAT_UPDATE_ATTEMPTS = 4
+COMMUNITY_RETIRED_SEED_POST_IDS = frozenset(
+    {
+        "0b46a665-7b7d-4e0c-a62c-f42282f4e101",
+        "2fd58d9c-7c70-4d90-9d88-3a261c4847af",
+        "423377f8-7fcf-4ddb-a34d-6ea7e25504da",
+        "f7cd37cc-bf32-4873-b954-ffa5522d6e0b",
+        "7aa84b22-9b9d-4d28-9ef8-7a09d42b0101",
+        "7aa84b22-9b9d-4d28-9ef8-7a09d42b0102",
+        "7aa84b22-9b9d-4d28-9ef8-7a09d42b0103",
+        "7aa84b22-9b9d-4d28-9ef8-7a09d42b0104",
+        "7aa84b22-9b9d-4d28-9ef8-7a09d42b0105",
+    }
+)
 _community_post_type_column_available: bool | None = None
 
 
@@ -155,6 +170,23 @@ def _fetch_liked_post_ids(supabase, user_id: str | None, post_ids: list[str]) ->
     return {str(row.get("post_id")) for row in (response.data or []) if row.get("post_id")}
 
 
+def _fetch_liked_comment_ids(supabase, user_id: str | None, comment_ids: list[str]) -> set[str]:
+    if not user_id or not comment_ids:
+        return set()
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_comment_likes")
+            .select("comment_id")
+            .eq("user_id", user_id)
+            .in_("comment_id", comment_ids)
+            .execute()
+        ),
+        operation_name="circle community comment like status lookup",
+    )
+    return {str(row.get("comment_id")) for row in (response.data or []) if row.get("comment_id")}
+
+
 def _fetch_community_profiles(supabase, user_ids: list[str]) -> dict[str, dict]:
     unique_user_ids = list(dict.fromkeys(user_id for user_id in user_ids if user_id))
     if not unique_user_ids:
@@ -248,19 +280,26 @@ def _comment_item(
     row: dict,
     current_user_id: str | None,
     profiles: dict[str, dict],
+    liked_comment_ids: set[str],
 ) -> CommunityCommentItem:
+    comment_id = str(row.get("id"))
     return CommunityCommentItem(
-        id=str(row.get("id")),
+        id=comment_id,
         author=str(row.get("author_name") or "研友"),
         avatar=_first_character(row.get("author_avatar") or row.get("author_name")),
         avatar_url=_community_avatar_url(row, profiles),
         content=str(row.get("content") or ""),
         created_at=row.get("created_at"),
         is_mine=bool(current_user_id and str(row.get("author_id") or "") == current_user_id),
+        like_count=int(row.get("like_count") or 0),
+        liked=comment_id in liked_comment_ids,
     )
 
 
 def _get_post_row(supabase, post_id: str) -> dict:
+    if post_id in COMMUNITY_RETIRED_SEED_POST_IDS:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
+
     response = call_supabase(
         lambda: (
             supabase.table("circle_community_posts")
@@ -274,6 +313,23 @@ def _get_post_row(supabase, post_id: str) -> dict:
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
+    return response.data[0]
+
+
+def _get_comment_row(supabase, post_id: str, comment_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_comments")
+            .select("*")
+            .eq("id", comment_id)
+            .eq("post_id", post_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community comment lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle comment not found")
     return response.data[0]
 
 
@@ -362,6 +418,94 @@ def _toggle_community_like_without_rpc(supabase, post_id: str, user_id: str) -> 
         return True, int(_get_post_row(supabase, post_id).get("like_count") or 0)
 
     return True, _adjust_community_post_stat(supabase, post_id, "like_count", 1)
+
+
+def _get_community_comment_like(supabase, comment_id: str, user_id: str) -> bool:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_comment_likes")
+            .select("id")
+            .eq("comment_id", comment_id)
+            .eq("user_id", user_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community comment like lookup",
+    )
+    return bool(response.data)
+
+
+def _adjust_community_comment_like_count(
+    supabase,
+    post_id: str,
+    comment_id: str,
+    delta: int,
+) -> int:
+    """Apply a comment like counter change with a short optimistic retry."""
+
+    for _ in range(COMMUNITY_STAT_UPDATE_ATTEMPTS):
+        comment = _get_comment_row(supabase, post_id, comment_id)
+        current_value = max(0, int(comment.get("like_count") or 0))
+        next_value = max(0, current_value + delta)
+        if next_value == current_value:
+            return current_value
+
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .update({"like_count": next_value})
+                .eq("id", comment_id)
+                .eq("like_count", current_value)
+                .execute()
+            ),
+            operation_name="circle community comment like count update",
+        )
+        if response.data:
+            return int(response.data[0].get("like_count") or next_value)
+
+    raise RuntimeError("Circle community comment like count update conflict")
+
+
+def _toggle_community_comment_like_without_rpc(
+    supabase,
+    post_id: str,
+    comment_id: str,
+    user_id: str,
+) -> tuple[bool, int]:
+    """Toggle one user's like on one comment without depending on database RPC."""
+
+    _get_post_row(supabase, post_id)
+    _get_comment_row(supabase, post_id, comment_id)
+    if _get_community_comment_like(supabase, comment_id, user_id):
+        call_supabase(
+            lambda: (
+                supabase.table("circle_community_comment_likes")
+                .delete()
+                .eq("comment_id", comment_id)
+                .eq("user_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community comment unlike",
+        )
+        if _get_community_comment_like(supabase, comment_id, user_id):
+            return True, int(_get_comment_row(supabase, post_id, comment_id).get("like_count") or 0)
+        return False, _adjust_community_comment_like_count(supabase, post_id, comment_id, -1)
+
+    try:
+        call_supabase(
+            lambda: (
+                supabase.table("circle_community_comment_likes")
+                .insert({"comment_id": comment_id, "user_id": user_id})
+                .execute()
+            ),
+            operation_name="circle community comment like create",
+        )
+    except Exception as exc:
+        if not _is_duplicate_community_interaction_error(exc):
+            raise
+        return True, int(_get_comment_row(supabase, post_id, comment_id).get("like_count") or 0)
+
+    return True, _adjust_community_comment_like_count(supabase, post_id, comment_id, 1)
 
 
 def _find_community_view(supabase, post_id: str, user_id: str | None, anonymous_id: str | None) -> dict | None:
@@ -466,34 +610,70 @@ def _raise_community_service_error(exc: Exception) -> None:
 def list_community_posts(
     post_type: Literal["chat", "experience"] = Query(default="chat"),
     category: str | None = Query(default=None, max_length=24),
-    limit: int = Query(default=50, ge=1, le=100),
+    limit: int = Query(default=12, ge=1, le=30),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostListResponse:
+    global _community_post_type_column_available
+
     supabase = get_supabase_admin()
     try:
-        query = (
-            supabase.table("circle_community_posts")
-            .select("*", count="exact")
-            .eq("is_published", True)
-            .order("created_at", desc=True)
-            .limit(100)
-        )
-        if category and category != "全部":
-            query = query.eq("category", category)
+        query_limit = min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 30)
 
-        response = call_supabase(query.execute, operation_name="circle community post list")
+        def build_post_list_query(include_post_type: bool):
+            query = (
+                supabase.table("circle_community_posts")
+                .select("*")
+                .eq("is_published", True)
+                .order("created_at", desc=True)
+                .limit(query_limit)
+            )
+            if include_post_type:
+                query = query.eq("post_type", post_type)
+            if category and category != "全部":
+                query = query.eq("category", category)
+            return query
+
+        if _community_post_type_column_available is not False:
+            try:
+                response = call_supabase(
+                    lambda: build_post_list_query(True).execute(),
+                    operation_name="circle community post list",
+                )
+                _community_post_type_column_available = True
+                rows = response.data or []
+            except Exception as exc:
+                if not _is_missing_post_type_column_error(exc):
+                    raise
+                _community_post_type_column_available = False
+                response = call_supabase(
+                    lambda: build_post_list_query(False).execute(),
+                    operation_name="circle community post list legacy",
+                )
+                rows = [row for row in (response.data or []) if _community_post_type(row) == post_type]
+        else:
+            response = call_supabase(
+                lambda: build_post_list_query(False).execute(),
+                operation_name="circle community post list legacy",
+            )
+            rows = [row for row in (response.data or []) if _community_post_type(row) == post_type]
+
         rows = [
             row
-            for row in (response.data or [])
-            if _community_post_type(row) == post_type
+            for row in rows
+            if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
         ][:limit]
         post_ids = [str(row.get("id")) for row in rows if row.get("id")]
-        profiles = _fetch_community_profiles(
-            supabase,
-            [str(row.get("author_id") or "") for row in rows],
-        )
-        liked_post_ids = _fetch_liked_post_ids(supabase, user_id, post_ids)
-        previews = _fetch_comment_previews(supabase, post_ids)
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            profiles_future = executor.submit(
+                _fetch_community_profiles,
+                supabase,
+                [str(row.get("author_id") or "") for row in rows],
+            )
+            liked_post_ids_future = executor.submit(_fetch_liked_post_ids, supabase, user_id, post_ids)
+            previews_future = executor.submit(_fetch_comment_previews, supabase, post_ids)
+            profiles = profiles_future.result()
+            liked_post_ids = liked_post_ids_future.result()
+            previews = previews_future.result()
         return CommunityPostListResponse(
             items=[_post_item(row, liked_post_ids, previews, profiles) for row in rows],
             count=len(rows),
@@ -526,6 +706,11 @@ def get_community_post(
             operation_name="circle community comment list",
         )
         comment_rows = comments_response.data or []
+        liked_comment_ids = _fetch_liked_comment_ids(
+            supabase,
+            user_id,
+            [str(item.get("id") or "") for item in comment_rows],
+        )
         profiles = _fetch_community_profiles(
             supabase,
             [
@@ -535,7 +720,10 @@ def get_community_post(
         )
         return CommunityPostDetailResponse(
             post=_post_item(row, liked_post_ids, previews, profiles),
-            comments=[_comment_item(item, user_id, profiles) for item in comment_rows],
+            comments=[
+                _comment_item(item, user_id, profiles, liked_comment_ids)
+                for item in comment_rows
+            ],
         )
     except HTTPException:
         raise
@@ -669,6 +857,34 @@ def toggle_community_like(
         _raise_community_service_error(exc)
 
 
+@router.post(
+    "/posts/{post_id}/comments/{comment_id}/like",
+    response_model=CommunityCommentLikeResponse,
+)
+def toggle_community_comment_like(
+    post_id: str,
+    comment_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityCommentLikeResponse:
+    supabase = get_supabase_admin()
+    try:
+        is_liked, like_count = _toggle_community_comment_like_without_rpc(
+            supabase,
+            post_id,
+            comment_id,
+            user_id,
+        )
+        return CommunityCommentLikeResponse(
+            comment_id=comment_id,
+            is_liked=is_liked,
+            like_count=like_count,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
 @router.get("/posts/{post_id}/likes", response_model=CommunityLikeListResponse)
 def list_community_post_likes(
     post_id: str,
@@ -749,6 +965,7 @@ def create_community_comment(
                 comment_response.data[0],
                 user_id,
                 {user_id: {"avatar_url": author_avatar_url}},
+                set(),
             ),
             comment_count=int(updated_post.get("comment_count") or 0),
         )

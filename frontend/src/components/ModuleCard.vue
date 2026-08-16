@@ -1,6 +1,22 @@
 <template>
   <view class="module-card" @tap="$emit('select', item.key)">
-    <view class="icon">{{ item.icon }}</view>
+    <view
+      class="icon"
+      :class="{
+        'icon--culture': item.iconVariant === 'culture',
+        'icon--math': item.key === '数学基础',
+        'icon--emphasis': ['英语运用', '逻辑推理'].includes(item.key)
+      }"
+    >
+      <image
+        v-if="item.iconVariant === 'culture'"
+        class="culture-icon-image"
+        src="/static/ui-icons/subject-culture-scroll-shadowless.png"
+        mode="aspectFit"
+      />
+      <view v-else-if="item.key === '数学基础'" class="math-icon" aria-hidden="true" />
+      <text v-else>{{ item.icon }}</text>
+    </view>
     <view class="content">
       <view class="title">{{ item.title }}</view>
       <view class="divider"></view>
@@ -32,8 +48,8 @@ defineProps({
   width: 100%;
   max-width: 100%;
   min-width: 0;
-  min-height: 184rpx;
-  padding: 28rpx 28rpx;
+  min-height: 200rpx;
+  padding: 24rpx 28rpx;
   border-radius: 36rpx;
   background: #ffffff;
   border: 2rpx solid #e8effc;
@@ -54,6 +70,41 @@ defineProps({
   justify-content: center;
   flex-shrink: 0;
   font-size: 52rpx;
+}
+
+.icon--culture {
+  overflow: hidden;
+  box-sizing: border-box;
+  background: var(--gyt-primary-soft, #f1f6ff);
+  border: none;
+  border-radius: 30rpx;
+  box-shadow: none;
+}
+
+.icon--emphasis {
+  font-size: 58rpx;
+}
+
+.icon--math {
+  box-shadow: none;
+}
+
+.math-icon {
+  width: 68rpx;
+  height: 68rpx;
+  flex: 0 0 68rpx;
+  background: var(--gyt-primary, #1677ff);
+  -webkit-mask: url('/static/ui-icons/subject-math.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/subject-math.svg') center / contain no-repeat;
+}
+
+.culture-icon-image {
+  width: 110rpx;
+  height: 110rpx;
+  max-width: none;
+  flex: 0 0 110rpx;
+  transform: translate(3rpx, 1rpx);
+  filter: none;
 }
 
 .content {

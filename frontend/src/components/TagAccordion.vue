@@ -103,7 +103,7 @@ function isSectionPartial(section) {
   width: 50rpx;
   height: 50rpx;
   border-radius: 17rpx;
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 2rpx dashed #98a2b3;
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -116,12 +116,14 @@ function isSectionPartial(section) {
 
 .section-check.checked {
   border-color: var(--gyt-primary);
+  border-style: solid;
   background: var(--gyt-primary);
   box-shadow: 0 8rpx 16rpx var(--gyt-primary-shadow);
 }
 
 .section-check.partial {
   border-color: var(--gyt-primary);
+  border-style: solid;
   background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
 }
@@ -175,7 +177,7 @@ function isSectionPartial(section) {
   width: 48rpx;
   height: 48rpx;
   border-radius: 16rpx;
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 2rpx dashed #98a2b3;
   background: #ffffff;
   display: flex;
   align-items: center;
@@ -188,6 +190,7 @@ function isSectionPartial(section) {
 
 .check-box.checked {
   border-color: var(--gyt-primary);
+  border-style: solid;
   background: var(--gyt-primary);
   box-shadow: 0 8rpx 16rpx var(--gyt-primary-shadow);
 }

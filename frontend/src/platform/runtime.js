@@ -34,12 +34,24 @@ export function openExternalUrl(url, options = {}) {
   }
   // #endif
 
+  // #ifdef MP-WEIXIN
+  uni.showModal({
+    title: options.mpTitle || '链接信息',
+    content: options.mpMessage || url,
+    showCancel: false,
+    confirmText: '我知道了'
+  })
+  return false
+  // #endif
+
+  // #ifndef MP-WEIXIN
   uni.setClipboardData({
     data: url,
     success() {
       uni.showToast({ title: options.copyMessage || '链接已复制', icon: 'none' })
     }
   })
+  // #endif
   return false
 }
 

@@ -6,5 +6,11 @@ export function isAiGeneratedQuestion(question = {}) {
 }
 
 export function getQuestionSourceLabel(question = {}) {
-  return isAiGeneratedQuestion(question) ? 'AI专项出题' : ''
+  if (!isAiGeneratedQuestion(question)) return ''
+  // #ifdef MP-WEIXIN
+  return ''
+  // #endif
+  // #ifndef MP-WEIXIN
+  return 'AI专项出题'
+  // #endif
 }

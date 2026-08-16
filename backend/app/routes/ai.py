@@ -23,7 +23,12 @@ from app.schemas.ai import (
     SimilarQuestionResponse,
     WeaknessAnalysisResponse,
 )
-from app.services.answers import get_question_or_404
+from app.services.answers import (
+    get_question_or_404,
+    has_answer_submission,
+    require_answer_disclosure_allowed,
+    warm_submission_questions,
+)
 from app.services.ai_client import call_deepseek_chat
 from app.services.question_sources import exclude_ai_generated_questions
 from app.services.reports import build_ability_item
@@ -733,9 +738,13 @@ def _mark_session_failed(supabase, session_id: str, detail: str) -> None:
 
 
 @router.post("/explain-wrong", response_model=ExplainWrongResponse)
-def explain_wrong(payload: ExplainWrongRequest, _: str = Depends(get_current_user_id)) -> ExplainWrongResponse:
+def explain_wrong(
+    payload: ExplainWrongRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> ExplainWrongResponse:
     supabase = get_supabase_admin()
     question = get_question_or_404(supabase, payload.question_id)
+    require_answer_disclosure_allowed(supabase, user_id, payload.question_id)
 
     return ExplainWrongResponse(
         why_wrong=f"你选择了 {payload.selected_answer}，建议先对照题干关键词与选项含义，排除不符合知识点的选项。",
@@ -747,19 +756,24 @@ def explain_wrong(payload: ExplainWrongRequest, _: str = Depends(get_current_use
 @router.post("/question-chat", response_model=QuestionChatResponse)
 async def question_chat(
     payload: QuestionChatRequest,
-    _: str = Depends(get_current_user_id),
+    user_id: str = Depends(get_current_user_id),
 ) -> QuestionChatResponse:
     supabase = get_supabase_admin()
     question = get_question_or_404(supabase, payload.question_id)
+    answer_disclosure_allowed = has_answer_submission(supabase, user_id, payload.question_id)
+    safe_payload = payload.model_copy(
+        update={"submitted": bool(payload.submitted and answer_disclosure_allowed)}
+    )
+    safe_question = question if safe_payload.submitted else _hide_answer(question)
     try:
         result = await call_deepseek_chat(
-            _build_question_chat_messages(question, payload),
+            _build_question_chat_messages(safe_question, safe_payload),
             max_tokens=650,
             timeout_seconds=18,
         )
     except HTTPException:
         result = {
-            "reply": _build_question_chat_fallback_reply(question, payload),
+            "reply": _build_question_chat_fallback_reply(safe_question, safe_payload),
             "model": "local_fallback",
         }
 
@@ -862,6 +876,7 @@ async def generate_training(
         questions = inserted.data or []
         if len(questions) < target.question_count:
             raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail="AI 题目写入数量不足，请稍后重试")
+        warm_submission_questions(questions)
         mapping_rows = [
             {"session_id": session_id, "question_id": question["id"], "position": index + 1}
             for index, question in enumerate(questions[: target.question_count])
@@ -911,7 +926,9 @@ def get_training_session(
         .order("position")
         .execute()
     )
-    questions = [_hide_answer(row["questions"]) for row in question_response.data or [] if row.get("questions")]
+    full_questions = [row["questions"] for row in question_response.data or [] if row.get("questions")]
+    warm_submission_questions(full_questions)
+    questions = [_hide_answer(question) for question in full_questions]
     target = AiTrainingTarget(
         subject=session["subject"],
         module=session["module"],
@@ -985,9 +1002,9 @@ def get_training_summary(
                 "question_id": question["id"],
                 "stem": question.get("stem"),
                 "selected_answer": answer.get("selected_answer") if answer else None,
-                "correct_answer": question.get("answer"),
+                "correct_answer": question.get("answer") if answer else None,
                 "is_correct": is_correct if answer else None,
-                "explanation": question.get("explanation"),
+                "explanation": question.get("explanation") if answer else None,
                 "subject": question.get("subject"),
                 "module": question.get("module"),
                 "submodule": question.get("submodule"),

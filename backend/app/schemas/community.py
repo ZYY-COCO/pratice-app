@@ -1,6 +1,10 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+COMMUNITY_CHAT_CATEGORIES = {"中华文化", "数学基础", "英语运用", "逻辑推理"}
+COMMUNITY_EXPERIENCE_CATEGORIES = {"Z001", "Z002"}
 
 
 class CommunityMediaItem(BaseModel):
@@ -56,6 +60,8 @@ class CommunityCommentItem(BaseModel):
     content: str
     created_at: str | None = None
     is_mine: bool = False
+    like_count: int = 0
+    liked: bool = False
 
 
 class CommunityPostDetailResponse(BaseModel):
@@ -80,8 +86,25 @@ class CommunityCreatePostRequest(BaseModel):
     post_type: Literal["chat", "experience"] = "chat"
     category: str = Field(min_length=1, max_length=24)
     title: str = Field(min_length=1, max_length=80)
-    content: str = Field(min_length=1, max_length=2000)
+    content: str = Field(min_length=1, max_length=3000)
     media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
+
+    @model_validator(mode="after")
+    def validate_category_for_post_type(self) -> "CommunityCreatePostRequest":
+        self.category = self.category.strip()
+        allowed_categories = (
+            COMMUNITY_EXPERIENCE_CATEGORIES
+            if self.post_type == "experience"
+            else COMMUNITY_CHAT_CATEGORIES
+        )
+        if self.category not in allowed_categories:
+            message = (
+                "经验贴分类仅支持 Z001、Z002"
+                if self.post_type == "experience"
+                else "研友聊分类仅支持中华文化、数学基础、英语运用、逻辑推理"
+            )
+            raise ValueError(message)
+        return self
 
 
 class CommunityImageUploadResponse(BaseModel):
@@ -90,6 +113,12 @@ class CommunityImageUploadResponse(BaseModel):
 
 class CommunityLikeResponse(BaseModel):
     post_id: str
+    is_liked: bool
+    like_count: int
+
+
+class CommunityCommentLikeResponse(BaseModel):
+    comment_id: str
     is_liked: bool
     like_count: int
 

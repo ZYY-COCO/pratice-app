@@ -1,4 +1,10 @@
+import base64
+import hashlib
+import json
 import logging
+from collections import OrderedDict
+from threading import Lock
+from time import monotonic, time
 from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
@@ -9,6 +15,63 @@ from app.services.supabase_resilience import call_supabase, is_authentication_er
 
 
 logger = logging.getLogger(__name__)
+
+# A question list request verifies the same access token immediately before a
+# learner submits an answer.  Keeping only the successful verification for a
+# short window removes a redundant round trip on that critical interaction.
+# The cache key is a digest, never the raw bearer token.
+_RECENT_AUTH_TTL_SECONDS = 5 * 60.0
+_RECENT_AUTH_MAX_ENTRIES = 2048
+_recent_auth_users: OrderedDict[str, tuple[str, float]] = OrderedDict()
+_recent_auth_lock = Lock()
+
+
+def _auth_cache_key(token: str) -> str:
+    return hashlib.sha256(token.encode("utf-8")).hexdigest()
+
+
+def _access_token_remaining_seconds(token: str) -> float | None:
+    """Read JWT expiry only to cap a recently validated cache entry."""
+
+    try:
+        payload = token.split(".")[1]
+        payload += "=" * (-len(payload) % 4)
+        claims = json.loads(base64.urlsafe_b64decode(payload))
+        expires_at = float(claims["exp"])
+        return max(0.0, expires_at - time())
+    except (IndexError, KeyError, TypeError, ValueError, json.JSONDecodeError):
+        return None
+
+
+def _get_recent_authenticated_user(token: str) -> str | None:
+    key = _auth_cache_key(token)
+    now = monotonic()
+    with _recent_auth_lock:
+        cached = _recent_auth_users.get(key)
+        if not cached:
+            return None
+
+        user_id, expires_at = cached
+        if expires_at <= now:
+            _recent_auth_users.pop(key, None)
+            return None
+
+        _recent_auth_users.move_to_end(key)
+        return user_id
+
+
+def _remember_authenticated_user(token: str, user_id: str) -> None:
+    key = _auth_cache_key(token)
+    token_remaining_seconds = _access_token_remaining_seconds(token)
+    ttl_seconds = min(_RECENT_AUTH_TTL_SECONDS, token_remaining_seconds) if token_remaining_seconds is not None else _RECENT_AUTH_TTL_SECONDS
+    if ttl_seconds <= 0:
+        return
+
+    with _recent_auth_lock:
+        _recent_auth_users[key] = (user_id, monotonic() + ttl_seconds)
+        _recent_auth_users.move_to_end(key)
+        while len(_recent_auth_users) > _RECENT_AUTH_MAX_ENTRIES:
+            _recent_auth_users.popitem(last=False)
 
 
 def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> str:
@@ -23,6 +86,10 @@ def get_bearer_token(authorization: Annotated[str | None, Header()] = None) -> s
 
 def get_current_user_id(token: Annotated[str, Depends(get_bearer_token)]) -> str:
     """Validate Supabase access token and return the auth user id."""
+
+    cached_user_id = _get_recent_authenticated_user(token)
+    if cached_user_id:
+        return cached_user_id
 
     supabase = get_supabase_admin()
     try:
@@ -42,7 +109,10 @@ def get_current_user_id(token: Annotated[str, Depends(get_bearer_token)]) -> str
     user = getattr(user_response, "user", None)
     if not user:
         raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid or expired token")
-    return user.id
+
+    user_id = str(user.id)
+    _remember_authenticated_user(token, user_id)
+    return user_id
 
 
 def get_optional_current_user_id(authorization: Annotated[str | None, Header()] = None) -> str | None:

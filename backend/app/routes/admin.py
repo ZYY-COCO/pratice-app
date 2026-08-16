@@ -13,6 +13,13 @@ from app.dependencies import (
     require_question_admin_user,
 )
 from app.schemas.admin import (
+    AdminCommunityBulkVisibilityRequest,
+    AdminCommunityBulkVisibilityResponse,
+    AdminCommunityOverviewResponse,
+    AdminCommunityPostDetailResponse,
+    AdminCommunityPostItem,
+    AdminCommunityPostListResponse,
+    AdminCommunityPostVisibilityRequest,
     AdminFeedbackListResponse,
     AdminFeedbackStatusRequest,
     AdminGrantMembershipRequest,
@@ -72,6 +79,18 @@ QUESTION_ADMIN_DASHBOARD_PERIOD_DAYS = {0, 7, 30}
 QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS = 1
 QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS = 20_000
 QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS = 10_000
+COMMUNITY_ADMIN_POST_LIMIT = 20
+COMMUNITY_ADMIN_POST_MAX_LIMIT = 50
+COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT = 5_000
+COMMUNITY_ADMIN_POST_TYPES = {"all", "chat", "experience"}
+COMMUNITY_ADMIN_POST_STATUSES = {"all", "published", "archived"}
+COMMUNITY_ADMIN_POST_SORTS = {
+    "newest": ("created_at", True),
+    "views": ("view_count", True),
+    "likes": ("like_count", True),
+    "comments": ("comment_count", True),
+}
+COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 
 
@@ -117,12 +136,29 @@ def _normalize_question_admin_dashboard(raw: object) -> QuestionAdminDashboardRe
             accuracy=float(item.get("accuracy") or 0),
         ))
 
+    difficult_questions_page = max(1, int(payload.get("difficult_questions_page") or 1))
+    difficult_questions_page_size = max(
+        1,
+        min(
+            int(payload.get("difficult_questions_page_size") or QUESTION_ADMIN_DASHBOARD_LIMIT),
+            QUESTION_ADMIN_DASHBOARD_LIMIT,
+        ),
+    )
+    difficult_questions_count = int(
+        payload.get("difficult_questions_count")
+        if payload.get("difficult_questions_count") is not None
+        else len(difficult_questions)
+    )
+
     return QuestionAdminDashboardResponse(
         today_practicing_users=int(payload.get("today_practicing_users") or 0),
         online_members=int(payload.get("online_members") or 0),
         online_window_minutes=int(
             payload.get("online_window_minutes") or QUESTION_ADMIN_ONLINE_WINDOW_MINUTES
         ),
+        difficult_questions_count=max(0, difficult_questions_count),
+        difficult_questions_page=difficult_questions_page,
+        difficult_questions_page_size=difficult_questions_page_size,
         difficult_questions=difficult_questions,
     )
 
@@ -158,10 +194,18 @@ def _question_admin_dashboard_fallback(
     sort_by: str = "wrong_count",
     min_attempts: int = QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS,
     period_days: int = 0,
+    page: int = 1,
+    page_size: int = QUESTION_ADMIN_DASHBOARD_LIMIT,
 ) -> QuestionAdminDashboardResponse:
     """Compatibility path while the dashboard RPC migration is being applied."""
 
     current = _now()
+    normalized_page = max(1, int(page or 1))
+    normalized_page_size = max(
+        1,
+        min(int(page_size or QUESTION_ADMIN_DASHBOARD_LIMIT), QUESTION_ADMIN_DASHBOARD_LIMIT),
+    )
+    offset = (normalized_page - 1) * normalized_page_size
     shanghai_now = current.astimezone(CHINA_STANDARD_TIME)
     shanghai_day_start = shanghai_now.replace(hour=0, minute=0, second=0, microsecond=0)
     day_start = shanghai_day_start.astimezone(timezone.utc)
@@ -269,12 +313,16 @@ def _question_admin_dashboard_fallback(
             accuracy=round((correct / attempts) * 100, 1) if attempts else 0,
         ))
     difficult_questions.sort(key=lambda item: _dashboard_question_sort_key(item, sort_by))
+    difficult_questions_count = len(difficult_questions)
 
     return QuestionAdminDashboardResponse(
         today_practicing_users=len(today_users),
         online_members=online_members,
         online_window_minutes=QUESTION_ADMIN_ONLINE_WINDOW_MINUTES,
-        difficult_questions=difficult_questions[:QUESTION_ADMIN_DASHBOARD_LIMIT],
+        difficult_questions_count=difficult_questions_count,
+        difficult_questions_page=normalized_page,
+        difficult_questions_page_size=normalized_page_size,
+        difficult_questions=difficult_questions[offset:offset + normalized_page_size],
     )
 
 
@@ -285,16 +333,24 @@ def _load_question_admin_dashboard(
     sort_by: str = "wrong_count",
     min_attempts: int = QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS,
     period_days: int = 0,
+    page: int = 1,
+    page_size: int = QUESTION_ADMIN_DASHBOARD_LIMIT,
 ) -> QuestionAdminDashboardResponse:
+    normalized_page = max(1, int(page or 1))
+    normalized_page_size = max(
+        1,
+        min(int(page_size or QUESTION_ADMIN_DASHBOARD_LIMIT), QUESTION_ADMIN_DASHBOARD_LIMIT),
+    )
     try:
         response = supabase.rpc(
             "question_admin_dashboard_snapshot",
             {
-                "p_limit": QUESTION_ADMIN_DASHBOARD_LIMIT,
+                "p_limit": normalized_page_size,
                 "p_subject": subject,
                 "p_sort_by": sort_by,
                 "p_min_attempts": min_attempts,
                 "p_period_days": period_days,
+                "p_offset": (normalized_page - 1) * normalized_page_size,
             },
         ).execute()
         return _normalize_question_admin_dashboard(response.data)
@@ -305,6 +361,8 @@ def _load_question_admin_dashboard(
             sort_by=sort_by,
             min_attempts=min_attempts,
             period_days=period_days,
+            page=normalized_page,
+            page_size=normalized_page_size,
         )
         try:
             legacy_response = supabase.rpc(
@@ -354,6 +412,96 @@ def _apply_admin_question_filters(
         if term:
             query = query.ilike("stem", f"%{term}%")
     return query
+
+
+def _community_admin_post_type(row: dict) -> str:
+    post_type = str(row.get("post_type") or "").strip()
+    if post_type in {"chat", "experience"}:
+        return post_type
+
+    media = row.get("media")
+    if isinstance(media, list):
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            marker = str(item.get(COMMUNITY_POST_TYPE_MARKER_KEY) or "").strip()
+            if marker in {"chat", "experience"}:
+                return marker
+    return "chat"
+
+
+def _community_admin_media(value: object) -> list[dict]:
+    if not isinstance(value, list):
+        return []
+    return [
+        item
+        for item in value
+        if isinstance(item, dict) and COMMUNITY_POST_TYPE_MARKER_KEY not in item
+    ][:9]
+
+
+def _is_missing_community_post_type_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return "post_type" in message and ("does not exist" in message or "42703" in message)
+
+
+def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
+    author_name = str(row.get("author_name") or "研友").strip() or "研友"
+    return AdminCommunityPostItem(
+        id=str(row.get("id") or ""),
+        author_id=str(row.get("author_id")) if row.get("author_id") else None,
+        author_name=author_name,
+        author_avatar=str(row.get("author_avatar") or author_name[:1] or "研"),
+        category=str(row.get("category") or "备考日常"),
+        post_type=_community_admin_post_type(row),
+        title=str(row.get("title") or ""),
+        content=str(row.get("content") or ""),
+        media=_community_admin_media(row.get("media")),
+        like_count=_safe_int(row.get("like_count"), 0),
+        comment_count=_safe_int(row.get("comment_count"), 0),
+        view_count=_safe_int(row.get("view_count"), 0),
+        is_published=bool(row.get("is_published")),
+        created_at=row.get("created_at"),
+        updated_at=row.get("updated_at"),
+    )
+
+
+def _apply_admin_community_post_filters(
+    query,
+    *,
+    post_status: str,
+    post_type: str,
+    search: str | None,
+):
+    if post_status == "published":
+        query = query.eq("is_published", True)
+    elif post_status == "archived":
+        query = query.eq("is_published", False)
+    if post_type != "all":
+        query = query.eq("post_type", post_type)
+    if search:
+        term = search.strip().replace(",", " ").replace("(", " ").replace(")", " ")
+        if term:
+            query = query.or_(
+                f"title.ilike.%{term}%,content.ilike.%{term}%,author_name.ilike.%{term}%"
+            )
+    return query
+
+
+def _community_post_detail_row(supabase, post_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_posts")
+            .select("*")
+            .eq("id", post_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin community post detail",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community post not found")
+    return response.data[0]
 
 
 def _assert_manageable_question(question: dict) -> None:
@@ -1185,6 +1333,8 @@ def question_admin_portal_dashboard(
     sort_by: str = Query(default="wrong_count", max_length=30),
     min_attempts: int = Query(default=QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS, ge=1, le=10000),
     period_days: int = Query(default=0, ge=0, le=365),
+    page: int = Query(default=1, ge=1, le=50000),
+    page_size: int = Query(default=QUESTION_ADMIN_DASHBOARD_LIMIT, ge=1, le=QUESTION_ADMIN_DASHBOARD_LIMIT),
     _: dict = Depends(require_question_admin_portal_user),
 ) -> QuestionAdminDashboardResponse:
     normalized_subject = subject.strip() if subject else None
@@ -1203,7 +1353,242 @@ def question_admin_portal_dashboard(
         sort_by=normalized_sort,
         min_attempts=min_attempts,
         period_days=period_days,
+        page=page,
+        page_size=page_size,
     )
+
+
+@router.get("/question-portal/community/overview", response_model=AdminCommunityOverviewResponse)
+def question_admin_community_overview(
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityOverviewResponse:
+    supabase = get_supabase_admin()
+    local_now = datetime.now(CHINA_STANDARD_TIME)
+    today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
+    try:
+        return AdminCommunityOverviewResponse(
+            total_posts=_count_table(supabase, "circle_community_posts"),
+            published_posts=_count_query(
+                supabase.table("circle_community_posts")
+                .select("id", count="exact")
+                .eq("is_published", True)
+            ),
+            archived_posts=_count_query(
+                supabase.table("circle_community_posts")
+                .select("id", count="exact")
+                .eq("is_published", False)
+            ),
+            today_posts=_count_query(
+                supabase.table("circle_community_posts")
+                .select("id", count="exact")
+                .gte("created_at", _to_iso(today_start))
+            ),
+        )
+    except Exception as exc:
+        logger.warning("Admin community overview unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区内容数据暂时不可用",
+        ) from exc
+
+
+@router.get("/question-portal/community/posts", response_model=AdminCommunityPostListResponse)
+def question_admin_community_posts(
+    post_status: str = Query(default="all", alias="status", max_length=20),
+    post_type: str = Query(default="all", max_length=20),
+    sort_by: str = Query(default="newest", max_length=20),
+    search: str | None = Query(default=None, max_length=80),
+    limit: int = Query(default=COMMUNITY_ADMIN_POST_LIMIT, ge=1, le=COMMUNITY_ADMIN_POST_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityPostListResponse:
+    normalized_status = post_status.strip().lower() or "all"
+    normalized_type = post_type.strip().lower() or "all"
+    normalized_sort = sort_by.strip().lower() or "newest"
+    if normalized_status not in COMMUNITY_ADMIN_POST_STATUSES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的帖子状态")
+    if normalized_type not in COMMUNITY_ADMIN_POST_TYPES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的帖子类型")
+    if normalized_sort not in COMMUNITY_ADMIN_POST_SORTS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方式")
+
+    order_field, order_desc = COMMUNITY_ADMIN_POST_SORTS[normalized_sort]
+    supabase = get_supabase_admin()
+    def build_query(*, include_post_type: bool, include_count: bool):
+        query = supabase.table("circle_community_posts")
+        query = query.select("*", count="exact") if include_count else query.select("*")
+        query = _apply_admin_community_post_filters(
+            query,
+            post_status=normalized_status,
+            post_type=normalized_type if include_post_type else "all",
+            search=search,
+        )
+        return query.order(order_field, desc=order_desc).order("created_at", desc=True)
+
+    query = build_query(include_post_type=True, include_count=True)
+    try:
+        response = call_supabase(
+            lambda: query.range(offset, offset + limit - 1).execute(),
+            operation_name="admin community post list",
+        )
+        return AdminCommunityPostListResponse(
+            items=[_build_admin_community_post_item(row) for row in (response.data or [])],
+            count=int(response.count or 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if normalized_type != "all" and _is_missing_community_post_type_column_error(exc):
+            try:
+                legacy_response = call_supabase(
+                    lambda: build_query(include_post_type=False, include_count=False)
+                    .range(0, COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT - 1)
+                    .execute(),
+                    operation_name="admin community post legacy list",
+                )
+                legacy_rows = [
+                    row
+                    for row in (legacy_response.data or [])
+                    if _community_admin_post_type(row) == normalized_type
+                ]
+                page_rows = legacy_rows[offset:offset + limit]
+                return AdminCommunityPostListResponse(
+                    items=[_build_admin_community_post_item(row) for row in page_rows],
+                    count=len(legacy_rows),
+                )
+            except Exception as legacy_exc:
+                logger.warning(
+                    "Admin community legacy post list unavailable (error_type=%s)",
+                    type(legacy_exc).__name__,
+                )
+        logger.warning("Admin community post list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区帖子列表暂时不可用",
+        ) from exc
+
+
+@router.get("/question-portal/community/posts/{post_id}", response_model=AdminCommunityPostDetailResponse)
+def question_admin_community_post_detail(
+    post_id: str,
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityPostDetailResponse:
+    supabase = get_supabase_admin()
+    try:
+        post = _community_post_detail_row(supabase, post_id)
+        comments_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .select("*")
+                .eq("post_id", post_id)
+                .order("created_at", desc=False)
+                .limit(200)
+                .execute()
+            ),
+            operation_name="admin community post comments",
+        )
+        comments = [
+            {
+                "id": str(row.get("id") or ""),
+                "author_id": str(row.get("author_id")) if row.get("author_id") else None,
+                "author_name": str(row.get("author_name") or "研友"),
+                "author_avatar": str(row.get("author_avatar") or "研"),
+                "content": str(row.get("content") or ""),
+                "like_count": _safe_int(row.get("like_count"), 0),
+                "created_at": row.get("created_at"),
+            }
+            for row in (comments_response.data or [])
+        ]
+        return AdminCommunityPostDetailResponse(
+            post=_build_admin_community_post_item(post),
+            comments=comments,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community post detail unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区帖子详情暂时不可用",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/posts/bulk-visibility",
+    response_model=AdminCommunityBulkVisibilityResponse,
+)
+def question_admin_bulk_update_community_post_visibility(
+    payload: AdminCommunityBulkVisibilityRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityBulkVisibilityResponse:
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .update({"is_published": payload.is_published, "updated_at": _to_iso(_now())})
+                .in_("id", payload.ids)
+                .execute()
+            ),
+            operation_name="admin community bulk visibility update",
+        )
+        updated_count = len(response.data or [])
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="publish_community_posts" if payload.is_published else "archive_community_posts",
+            target_type="community_post",
+            target_id=None,
+            details={"post_ids": payload.ids, "updated_count": updated_count},
+        )
+        return AdminCommunityBulkVisibilityResponse(updated_count=updated_count)
+    except Exception as exc:
+        logger.warning("Admin community bulk visibility update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区帖子状态更新失败",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/posts/{post_id}/visibility",
+    response_model=AdminCommunityPostItem,
+)
+def question_admin_update_community_post_visibility(
+    post_id: str,
+    payload: AdminCommunityPostVisibilityRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityPostItem:
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .update({"is_published": payload.is_published, "updated_at": _to_iso(_now())})
+                .eq("id", post_id)
+                .execute()
+            ),
+            operation_name="admin community post visibility update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community post not found")
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="publish_community_post" if payload.is_published else "archive_community_post",
+            target_type="community_post",
+            target_id=post_id,
+            details={"is_published": payload.is_published},
+        )
+        return _build_admin_community_post_item(response.data[0])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community post visibility update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区帖子状态更新失败",
+        ) from exc
 
 
 @router.get("/question-banks", response_model=QuestionBankListResponse)

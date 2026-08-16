@@ -10,6 +10,20 @@ DEFAULT_API_BASE_URL = 'https://www.gangyantong.com/api'
 
 let configuredBaseUrl = import.meta.env.VITE_API_BASE_URL || DEFAULT_API_BASE_URL
 
+let isH5Development = false
+// #ifdef H5
+isH5Development = Boolean(import.meta.env.DEV)
+// #endif
+
+const isLoopbackApiUrl = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/i.test(configuredBaseUrl)
+const isLanBrowser = typeof window !== 'undefined'
+  && !['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname)
+
+// A phone opening the H5 preview cannot reach the computer through its own loopback address.
+if (isH5Development && isLoopbackApiUrl && isLanBrowser) {
+  configuredBaseUrl = '/api'
+}
+
 // #ifdef MP-WEIXIN
 configuredBaseUrl = DEFAULT_API_BASE_URL
 // #endif

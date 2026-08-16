@@ -10,9 +10,12 @@ create table if not exists public.circle_community_posts (
     check (author_tone in ('mint', 'blue', 'warm', 'violet')),
   post_type text not null default 'chat'
     check (post_type in ('chat', 'experience')),
-  category text not null check (char_length(btrim(category)) between 1 and 24),
+  category text not null check (
+    (post_type = 'chat' and category in ('中华文化', '数学基础', '英语运用', '逻辑推理'))
+    or (post_type = 'experience' and category in ('Z001', 'Z002'))
+  ),
   title text not null check (char_length(btrim(title)) between 1 and 80),
-  content text not null check (char_length(btrim(content)) between 1 and 2000),
+  content text not null check (char_length(btrim(content)) between 1 and 3000),
   media jsonb not null default '[]'::jsonb check (jsonb_typeof(media) = 'array'),
   like_count integer not null default 0 check (like_count >= 0),
   comment_count integer not null default 0 check (comment_count >= 0),
@@ -73,58 +76,7 @@ create unique index if not exists idx_circle_community_views_anonymous
   on public.circle_community_views (post_id, anonymous_id)
   where anonymous_id is not null;
 
--- 现有本地示例帖作为首批可互动内容。固定 UUID 让前端预览和线上数据保持一致。
-insert into public.circle_community_posts (
-  id, author_name, author_avatar, author_tone, category, title, content, media,
-  like_count, comment_count, view_count
-) values
-  (
-    '0b46a665-7b7d-4e0c-a62c-f42282f4e101',
-    '南栀同学', '南', 'mint', '备考日常',
-    'Z001 三科刚起步，大家一周都怎么排？',
-    '我先按固定题量排了第一周，怕节奏太满坚持不下来，想看看大家有没有更稳的安排。',
-    jsonb_build_array(
-      jsonb_build_object('kicker', '周一', 'title', '文化 20 题', 'copy', '错题当天回看', 'tone', 'sky'),
-      jsonb_build_object('kicker', '周三', 'title', '英语 20 题', 'copy', '短语优先', 'tone', 'mint'),
-      jsonb_build_object('kicker', '周五', 'title', '逻辑 15 题', 'copy', '周末做小结', 'tone', 'warm')
-    ),
-    34, 12, 186
-  ),
-  (
-    '2fd58d9c-7c70-4d90-9d88-3a261c4847af',
-    '阿澈', '澈', 'blue', '择校答疑',
-    '港大和港中文的分数线，应该怎么看？',
-    '目前基础一般，想申请文科方向。除了分数线，大家还会优先比较哪些信息？',
-    '[]'::jsonb,
-    21, 18, 153
-  ),
-  (
-    '423377f8-7fcf-4ddb-a34d-6ea7e25504da',
-    '小卷', '卷', 'warm', '复习打卡',
-    '中华文化索引表打卡第 6 天',
-    '今天补了人物、作品和朝代三列，发现做题时定位干扰项比以前快很多。',
-    jsonb_build_array(
-      jsonb_build_object('kicker', '今日笔记', 'title', '人物 × 作品', 'copy', '补齐 16 个易混点', 'tone', 'paper')
-    ),
-    48, 9, 217
-  ),
-  (
-    'f7cd37cc-bf32-4873-b954-ffa5522d6e0b',
-    '知行', '知', 'violet', '资料互助',
-    '整理了一份数学基础错题复盘模板',
-    '模板按公式条件、代入过程和最后验算拆分，适合把重复错误记得更清楚。',
-    '[]'::jsonb,
-    29, 7, 141
-  )
-on conflict (id) do nothing;
-
--- 每张示例帖保留一条可进入详情查看的历史评论，计数基线保持当前页面展示的数字。
-insert into public.circle_community_comments (id, post_id, author_name, author_avatar, content) values
-  ('f4065c3c-f9f5-41ee-98d7-5b2c79c1c0a1', '0b46a665-7b7d-4e0c-a62c-f42282f4e101', '研友小林', '林', '我也是先把固定题量跑顺，第二周再慢慢加题。'),
-  ('f4065c3c-f9f5-41ee-98d7-5b2c79c1c0a2', '2fd58d9c-7c70-4d90-9d88-3a261c4847af', '思远', '思', '先看专业和年度要求，再把语言成绩、材料和自己的准备周期一起算进去。'),
-  ('f4065c3c-f9f5-41ee-98d7-5b2c79c1c0a3', '423377f8-7fcf-4ddb-a34d-6ea7e25504da', '小麦', '麦', '这个方法很好，我今晚也准备按这个结构补索引。'),
-  ('f4065c3c-f9f5-41ee-98d7-5b2c79c1c0a4', 'f7cd37cc-bf32-4873-b954-ffa5522d6e0b', 'M 同学', 'M', '正好需要这个思路，做完题只记答案确实很难复盘。')
-on conflict (id) do nothing;
+-- Community posts are created by users. No demo content is seeded here.
 
 create or replace function public.circle_community_refresh_comment_count()
 returns trigger

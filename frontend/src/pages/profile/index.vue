@@ -66,7 +66,7 @@
       </button>
     </SectionCard>
 
-    <SectionCard title="绑定 / 更改 QQ 邮箱" :subtitle="emailSectionSubtitle">
+    <SectionCard title="绑定 / 更改 QQ 邮箱">
       <view class="current-email">当前邮箱：{{ currentEmailText }}</view>
       <!-- #ifdef MP-WEIXIN -->
       <view v-if="isWechatBindingFlow" class="binding-rule">
@@ -116,9 +116,6 @@
     </SectionCard>
 
     <SectionCard title="账号安全" subtitle="删除账号后将无法恢复当前学习数据。">
-      <view class="danger-copy">
-        删除账号会清除登录身份，并删除与该账号关联的刷题记录、错题、收藏和学习统计。
-      </view>
       <button class="danger-button" :disabled="deletingAccount" @tap="confirmDeleteAccount">
         {{ deletingAccount ? '删除中...' : '删除账号' }}
       </button>

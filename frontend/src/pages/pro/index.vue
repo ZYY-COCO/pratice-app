@@ -4,7 +4,12 @@
       <view class="hero-tag">免费开放</view>
       <view class="hero-title">学习功能说明</view>
       <view class="hero-subtitle">
+        <!-- #ifdef MP-WEIXIN -->
+        当前微信小程序为免费内测版，不提供付费购买、会员订阅或外部支付入口。登录后可免费使用当前已开放的刷题、复盘和学习记录功能。
+        <!-- #endif -->
+        <!-- #ifndef MP-WEIXIN -->
         当前 App Store 版本不提供付费数字内容、订阅、App 内购买或外部支付入口。登录后可免费使用当前已开放的刷题、复盘和学习记录功能。
+        <!-- #endif -->
       </view>
     </view>
 
@@ -82,12 +87,22 @@ const freeFeatures = [
     icon: '报',
     tone: 'purple'
   },
+  // #ifdef MP-WEIXIN
+  {
+    title: '练习历史',
+    desc: '保存已完成的练习记录，方便后续回顾与复盘。',
+    icon: '史',
+    tone: 'orange'
+  }
+  // #endif
+  // #ifndef MP-WEIXIN
   {
     title: 'AI 专项练习',
     desc: '登录后可按知识点生成专项练习内容，用于巩固学习。',
     icon: 'AI',
     tone: 'orange'
   }
+  // #endif
 ]
 
 function openSupportPage() {
@@ -95,16 +110,38 @@ function openSupportPage() {
 }
 
 function openPrivacyPage() {
+  // #ifdef MP-WEIXIN
+  if (typeof wx !== 'undefined' && typeof wx.openPrivacyContract === 'function') {
+    wx.openPrivacyContract({
+      fail() {
+        uni.showToast({ title: '请在小程序资料中查看隐私保护指引', icon: 'none' })
+      }
+    })
+    return
+  }
+  // #endif
   openExternalUrl(privacyUrl)
 }
 
 function copyEmail() {
+  // #ifdef MP-WEIXIN
+  uni.showModal({
+    title: '联系邮箱',
+    content: supportEmail,
+    showCancel: false,
+    confirmText: '我知道了'
+  })
+  return
+  // #endif
+
+  // #ifndef MP-WEIXIN
   uni.setClipboardData({
     data: supportEmail,
     success() {
       uni.showToast({ title: '邮箱已复制', icon: 'none' })
     }
   })
+  // #endif
 }
 </script>
 

@@ -24,6 +24,44 @@ export function fetchQuestionAdminDashboard(params = {}) {
   })
 }
 
+export function fetchQuestionAdminCommunityOverview() {
+  return request({
+    url: '/admin/question-portal/community/overview',
+    method: 'GET'
+  })
+}
+
+export function fetchQuestionAdminCommunityPosts(params = {}) {
+  return request({
+    url: '/admin/question-portal/community/posts',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchQuestionAdminCommunityPostDetail(postId) {
+  return request({
+    url: `/admin/question-portal/community/posts/${encodeURIComponent(postId)}`,
+    method: 'GET'
+  })
+}
+
+export function updateQuestionAdminCommunityPostVisibility(postId, payload) {
+  return request({
+    url: `/admin/question-portal/community/posts/${encodeURIComponent(postId)}/visibility`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function bulkUpdateQuestionAdminCommunityPostVisibility(payload) {
+  return request({
+    url: '/admin/question-portal/community/posts/bulk-visibility',
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchAdminQuestionBanks() {
   return request({
     url: '/admin/question-banks',

@@ -4,7 +4,7 @@
       <!-- #ifdef MP-WEIXIN -->
       <image
         v-if="activeItem.mpIconSrc"
-        class="tab-icon-image tab-icon-png"
+        :class="['tab-icon-image', 'tab-icon-png', activeItem.iconClass]"
         :src="activeItem.mpIconSrc"
         mode="aspectFit"
       />
@@ -13,7 +13,7 @@
       <!-- #ifndef MP-WEIXIN -->
       <view
         v-if="activeItem.iconSrc"
-        class="tab-icon-image tab-icon-mask"
+        :class="['tab-icon-image', 'tab-icon-mask', activeItem.iconClass]"
         :style="getIconMaskStyle(activeItem.iconSrc)"
       />
       <text v-else class="tab-icon">{{ activeItem.icon }}</text>
@@ -21,7 +21,10 @@
       <text class="tab-label">{{ activeItem.label }}</text>
     </view>
 
-    <template v-else>
+    <view v-else class="tabbar-items">
+      <view class="tab-active-indicator" :style="activeIndicatorStyle" aria-hidden="true">
+        <view class="tab-active-indicator-surface"></view>
+      </view>
       <view
         v-for="item in items"
         :key="item.key"
@@ -32,7 +35,7 @@
         <!-- #ifdef MP-WEIXIN -->
         <image
           v-if="item.mpIconSrc"
-          class="tab-icon-image tab-icon-png"
+          :class="['tab-icon-image', 'tab-icon-png', item.iconClass]"
           :src="item.mpIconSrc"
           mode="aspectFit"
         />
@@ -41,14 +44,14 @@
         <!-- #ifndef MP-WEIXIN -->
         <view
           v-if="item.iconSrc"
-          class="tab-icon-image tab-icon-mask"
+          :class="['tab-icon-image', 'tab-icon-mask', item.iconClass]"
           :style="getIconMaskStyle(item.iconSrc)"
         />
         <text v-else class="tab-icon">{{ item.icon }}</text>
         <!-- #endif -->
         <text class="tab-label">{{ item.label }}</text>
       </view>
-    </template>
+    </view>
   </view>
 </template>
 
@@ -80,6 +83,19 @@ const activeItem = computed(() =>
   props.items.find((item) => item.key === props.modelValue) || props.items[0]
 )
 
+const activeIndex = computed(() => {
+  const index = props.items.findIndex((item) => item.key === props.modelValue)
+  return index < 0 ? 0 : index
+})
+
+const activeIndicatorStyle = computed(() => {
+  const itemCount = Math.max(props.items.length, 1)
+  return {
+    width: `${100 / itemCount}%`,
+    transform: `translate3d(${activeIndex.value * 100}%, 0, 0)`
+  }
+})
+
 const getIconMaskStyle = (iconSrc) => ({
   WebkitMaskImage: `url("${iconSrc}")`,
   maskImage: `url("${iconSrc}")`
@@ -103,6 +119,34 @@ const getIconMaskStyle = (iconSrc) => ({
   backdrop-filter: blur(16rpx);
 }
 
+.tabbar-items {
+  position: relative;
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  align-items: stretch;
+}
+
+.tab-active-indicator {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  bottom: 0;
+  left: 0;
+  box-sizing: border-box;
+  padding: 0 7rpx;
+  pointer-events: none;
+  will-change: transform;
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.tab-active-indicator-surface {
+  width: 100%;
+  height: 100%;
+  border-radius: 26rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+}
+
 .tabbar.glass {
   right: auto;
   bottom: calc(env(safe-area-inset-bottom) + 12px);
@@ -112,10 +156,10 @@ const getIconMaskStyle = (iconSrc) => ({
   height: 68px;
   gap: 4px;
   padding: 5px;
-  border-color: rgba(255, 255, 255, 0.78);
+  border-color: rgba(255, 255, 255, 0.72);
   border-radius: 28px;
-  background: var(--circle-tab-bg, rgba(247, 250, 249, 0.58));
-  box-shadow: var(--circle-tab-shadow, 0 14px 34px rgba(30, 55, 56, 0.16));
+  background: rgba(255, 255, 255, 0.64);
+  box-shadow: 0 14px 34px var(--gyt-primary-shadow, rgba(52, 120, 246, 0.16));
   transform: translateX(-50%);
   -webkit-backdrop-filter: blur(26px) saturate(125%);
   backdrop-filter: blur(26px) saturate(125%);
@@ -128,11 +172,28 @@ const getIconMaskStyle = (iconSrc) => ({
   gap: 0;
   padding: 4px;
   border-radius: 28px;
-  background: rgba(247, 250, 249, 0.66);
-  box-shadow: 0 12px 28px rgba(30, 55, 56, 0.15);
+  background: rgba(255, 255, 255, 0.58);
+  box-shadow: 0 12px 28px var(--gyt-primary-shadow, rgba(52, 120, 246, 0.15));
+}
+
+.tabbar.glass .tabbar-items {
+  height: 100%;
+}
+
+.tabbar.glass .tab-active-indicator {
+  padding: 0 2px;
+}
+
+.tabbar.glass .tab-active-indicator-surface {
+  border-radius: var(--circle-radius-control, 18px);
+  border: 1px solid var(--gyt-primary-border, #d7e5ff);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.82), var(--gyt-primary-soft, #edf4ff));
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 4px 12px var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
 }
 
 .tab-item {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 82rpx;
   padding: 12rpx 8rpx;
@@ -146,7 +207,7 @@ const getIconMaskStyle = (iconSrc) => ({
 }
 
 .tab-item.active {
-  background: var(--gyt-primary-soft, #edf4ff);
+  background: transparent;
 }
 
 .tabbar.glass .tab-item {
@@ -160,8 +221,8 @@ const getIconMaskStyle = (iconSrc) => ({
 }
 
 .tabbar.glass .tab-item.active {
-  background: rgba(255, 255, 255, 0.52);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66), 0 3px 10px rgba(37, 71, 69, 0.08);
+  background: transparent;
+  box-shadow: none;
 }
 
 .tabbar.glass .tab-item:active {
@@ -174,24 +235,25 @@ const getIconMaskStyle = (iconSrc) => ({
   height: 100%;
   padding: 4px 14px;
   border-radius: 24px;
-  background: rgba(255, 255, 255, 0.56);
+  border: 1px solid var(--gyt-primary-border, #d7e5ff);
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.8), var(--gyt-primary-soft, #edf4ff));
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 8px;
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.66), 0 3px 10px rgba(37, 71, 69, 0.08);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78), 0 4px 12px var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
   animation: tab-compact-in 180ms ease both;
 }
 
 .tabbar.glass .tab-compact .tab-icon,
 .tabbar.glass .tab-compact .tab-label {
-  color: var(--circle-brand, #5b8fdf);
+  color: var(--gyt-primary, #3478f6);
 }
 
 .tabbar.glass .tab-compact .tab-icon-image {
   width: 20px;
   height: 20px;
-  background-color: var(--circle-brand, #5b8fdf);
+  background-color: var(--gyt-primary, #3478f6);
 }
 
 .tabbar.glass .tab-compact .tab-label {
@@ -219,12 +281,14 @@ const getIconMaskStyle = (iconSrc) => ({
   font-size: 34rpx;
   line-height: 1;
   font-weight: 900;
+  transition: color 160ms ease;
 }
 
 .tab-icon-image {
   width: 36rpx;
   height: 36rpx;
   background-color: #98a2b3;
+  transition: background-color 160ms ease, opacity 160ms ease;
 }
 
 .tab-icon-mask {
@@ -234,6 +298,10 @@ const getIconMaskStyle = (iconSrc) => ({
   mask-repeat: no-repeat;
   -webkit-mask-size: contain;
   mask-size: contain;
+}
+
+.tab-icon-practice {
+  transform: scale(0.9);
 }
 
 .tab-icon-png {
@@ -246,17 +314,18 @@ const getIconMaskStyle = (iconSrc) => ({
   font-size: 25rpx;
   line-height: 1.2;
   font-weight: 800;
+  transition: color 160ms ease;
 }
 
 .tabbar.glass .tab-icon,
 .tabbar.glass .tab-label {
-  color: var(--circle-muted, #718096);
+  color: rgba(84, 98, 116, 0.72);
 }
 
 .tabbar.glass .tab-icon-image {
   width: 20px;
   height: 20px;
-  background-color: var(--circle-muted, #718096);
+  background-color: rgba(84, 98, 116, 0.72);
 }
 
 .tabbar.glass .tab-label {
@@ -283,11 +352,11 @@ const getIconMaskStyle = (iconSrc) => ({
 
 .tabbar.glass .tab-item.active .tab-icon,
 .tabbar.glass .tab-item.active .tab-label {
-  color: var(--circle-brand, #5b8fdf);
+  color: var(--gyt-primary, #3478f6);
 }
 
 .tabbar.glass .tab-item.active .tab-icon-image {
-  background-color: var(--circle-brand, #5b8fdf);
+  background-color: var(--gyt-primary, #3478f6);
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -298,7 +367,11 @@ const getIconMaskStyle = (iconSrc) => ({
 
 @media (prefers-reduced-motion: reduce) {
   .tabbar.glass,
-  .tabbar.glass .tab-item {
+  .tabbar.glass .tab-item,
+  .tab-active-indicator,
+  .tab-icon,
+  .tab-icon-image,
+  .tab-label {
     transition: none;
   }
 

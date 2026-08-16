@@ -6,6 +6,7 @@ from urllib.parse import unquote
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
+from app.services.answers import warm_submission_questions
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.questions import Passage, Question, QuestionListResponse, QuestionProgressResponse
 from app.services.question_sources import exclude_ai_generated_questions
@@ -314,6 +315,7 @@ def list_questions(
     if randomize:
         rows = deduplicate_question_rows(rows)
         rows = random.sample(rows, min(limit, len(rows)))
+    warm_submission_questions(rows)
     items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
 
@@ -341,6 +343,7 @@ def list_questions_by_module(
     rows = deduplicate_question_rows(response.data or [])
     random.shuffle(rows)
     rows = rows[:limit]
+    warm_submission_questions(rows)
     items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
 
@@ -383,6 +386,7 @@ def list_review_due_questions(
     response = apply_active_question_filter(supabase.table("questions").select("*")).in_("id", due_ids).execute()
     row_by_id = {row["id"]: row for row in response.data or []}
     rows = [row_by_id[question_id] for question_id in due_ids if question_id in row_by_id]
+    warm_submission_questions(rows)
     items = [Question(**hide_answer(row)) for row in rows]
     return QuestionListResponse(items=items, count=len(items))
 

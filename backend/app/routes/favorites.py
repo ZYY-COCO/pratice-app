@@ -14,6 +14,12 @@ from app.schemas.questions import Question
 router = APIRouter(prefix="/favorites", tags=["收藏夹"])
 
 
+def _hide_answer(question: dict | None) -> dict | None:
+    if not question:
+        return None
+    return {**question, "answer": None, "explanation": None}
+
+
 @router.get("", response_model=FavoriteQuestionListResponse)
 def list_favorites(
     user_id: str = Depends(get_current_user_id),
@@ -35,6 +41,7 @@ def list_favorites(
         question = row.get("questions")
         if subject and question and question.get("subject") != subject:
             continue
+        question = _hide_answer(question)
         items.append(
             FavoriteQuestionItem(
                 id=row["id"],

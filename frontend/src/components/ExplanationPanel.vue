@@ -2,17 +2,12 @@
   <view v-if="visible" class="panel">
     <view class="title">【人工精编解析】</view>
 
-    <view v-if="pending" class="pending-box">
-      <text class="pending-title">正在判题，很快返回答案和解析...</text>
-      <text class="pending-sub">题目已锁定，请稍等 1-2 秒。</text>
-    </view>
-
-    <view v-else class="body">
+    <view class="body">
       <text class="strong">正确答案：{{ correctAnswer }}</text>
       <MathText class="paragraph" :value="explanation" />
     </view>
 
-    <view v-if="!pending && autoTag" class="tag">{{ autoTag }}</view>
+    <view v-if="autoTag" class="tag">{{ autoTag }}</view>
   </view>
 </template>
 
@@ -21,10 +16,6 @@ import MathText from './MathText.vue'
 
 const props = defineProps({
   visible: {
-    type: Boolean,
-    default: false
-  },
-  pending: {
     type: Boolean,
     default: false
   },
@@ -57,29 +48,6 @@ const props = defineProps({
   color: #223254;
   font-size: 28rpx;
   font-weight: 800;
-}
-
-.pending-box {
-  margin-top: 16rpx;
-  padding: 22rpx;
-  border-radius: 22rpx;
-  background: var(--gyt-primary-tint);
-  border: 2rpx dashed var(--gyt-primary-border);
-}
-
-.pending-title {
-  display: block;
-  color: #172033;
-  font-size: 26rpx;
-  font-weight: 800;
-}
-
-.pending-sub {
-  display: block;
-  margin-top: 10rpx;
-  color: #667085;
-  font-size: 23rpx;
-  line-height: 1.6;
 }
 
 .body {

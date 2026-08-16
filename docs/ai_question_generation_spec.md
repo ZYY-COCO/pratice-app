@@ -4,6 +4,8 @@
 [scripts/import_questions.py](<C:/Users/1111/Documents/New project/scripts/import_questions.py:1>)
 校验，并导入 Supabase `questions` 表。
 
+英语运用 `语言知识` 与 Z002 `数学基础` 的详细硬规则见 [question_bank_generation_rules.md](question_bank_generation_rules.md)。如果两个文档出现冲突，以更具体的专题规则为准。
+
 ## 1. 权威依据
 
 后续 AI 出题时，默认以以下文件作为约束来源：
@@ -201,11 +203,11 @@ cd "C:\Users\1111\Documents\New project\backend"
 .\.venv\Scripts\python.exe ..\scripts\import_questions.py --file "..\data\your_batch.json" --dry-run
 ```
 
-5. 校验通过后正式导入
+5. dry-run 确认 `Invalid questions: 0` 且用户明确同意后，正式批量导入
 
 ```powershell
 cd "C:\Users\1111\Documents\New project\backend"
-.\.venv\Scripts\python.exe ..\scripts\import_questions.py --file "..\data\your_batch.json"
+.\.venv\Scripts\python.exe ..\scripts\import_questions_bulk.py --file "..\data\your_batch.json" --batch-size 100
 ```
 
 ## 10. 当前建议的批次命名

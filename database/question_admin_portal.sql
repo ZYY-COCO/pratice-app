@@ -30,7 +30,8 @@ create or replace function public.question_admin_dashboard_snapshot(
   p_subject text default null,
   p_sort_by text default 'wrong_count',
   p_min_attempts integer default 1,
-  p_period_days integer default 0
+  p_period_days integer default 0,
+  p_offset integer default 0
 )
 returns jsonb
 language sql
@@ -62,7 +63,7 @@ as $$
       and u.membership_status = 'active'
       and (u.membership_expires_at is null or u.membership_expires_at > now())
   ),
-  ranked_questions as (
+  ranked_base as (
     select
       ua.question_id,
       count(*)::integer as attempt_count,
@@ -84,17 +85,23 @@ as $$
       )
     group by ua.question_id
     having count(*) >= greatest(1, least(coalesce(p_min_attempts, 1), 10000))
+  ),
+  ranked_questions as (
+    select *
+    from ranked_base
     order by
-      case when p_sort_by = 'accuracy' then
-        count(*) filter (where ua.is_correct = true)::numeric / nullif(count(*), 0)
-      end asc nulls last,
-      case when p_sort_by = 'attempt_count' then count(*) end desc,
-      case when p_sort_by = 'wrong_count' then
-        count(*) filter (where ua.is_correct = false)
-      end desc,
-      count(*) filter (where ua.is_correct = false) desc,
-      count(*) desc
+      case when p_sort_by = 'accuracy' then accuracy end asc nulls last,
+      case when p_sort_by = 'attempt_count' then attempt_count end desc,
+      case when p_sort_by = 'wrong_count' then wrong_count end desc,
+      wrong_count desc,
+      attempt_count desc,
+      question_id
     limit greatest(1, least(coalesce(p_limit, 20), 20))
+    offset greatest(0, coalesce(p_offset, 0))
+  ),
+  difficult_questions_count as (
+    select count(*)::integer as total
+    from ranked_base
   ),
   difficult_questions as (
     select coalesce(
@@ -124,6 +131,9 @@ as $$
     'today_practicing_users', (select total from today_visitors),
     'online_members', (select total from online_member_activity),
     'online_window_minutes', 15,
+    'difficult_questions_count', (select total from difficult_questions_count),
+    'difficult_questions_page', (greatest(0, coalesce(p_offset, 0)) / greatest(1, least(coalesce(p_limit, 20), 20))) + 1,
+    'difficult_questions_page_size', greatest(1, least(coalesce(p_limit, 20), 20)),
     'difficult_questions', (select items from difficult_questions)
   );
 $$;
@@ -132,10 +142,11 @@ $$;
 -- resolving to this function through its default parameters.
 drop function if exists public.question_admin_dashboard_snapshot(integer);
 drop function if exists public.question_admin_dashboard_snapshot(integer, text, text);
+drop function if exists public.question_admin_dashboard_snapshot(integer, text, text, integer, integer);
 
-revoke all on function public.question_admin_dashboard_snapshot(integer, text, text, integer, integer)
+revoke all on function public.question_admin_dashboard_snapshot(integer, text, text, integer, integer, integer)
   from public, anon, authenticated;
-grant execute on function public.question_admin_dashboard_snapshot(integer, text, text, integer, integer)
+grant execute on function public.question_admin_dashboard_snapshot(integer, text, text, integer, integer, integer)
   to service_role;
 
 -- Grant access by inserting an existing app user. There is intentionally no

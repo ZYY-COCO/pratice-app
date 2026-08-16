@@ -1,6 +1,6 @@
 <template>
   <!-- #ifdef H5 -->
-  <view class="icp-footer" :class="{ compact, glass }">
+  <view class="icp-footer" :class="{ compact, glass, inline, lower }">
     <view class="icp-footer-inner">
       <a
         class="icp-link"
@@ -36,6 +36,14 @@ defineProps({
   glass: {
     type: Boolean,
     default: false
+  },
+  inline: {
+    type: Boolean,
+    default: false
+  },
+  lower: {
+    type: Boolean,
+    default: false
   }
 })
 </script>
@@ -69,6 +77,34 @@ defineProps({
   padding-bottom: calc(env(safe-area-inset-bottom) + 142rpx);
 }
 
+.icp-footer.inline {
+  min-height: 28rpx;
+  padding: 2rpx 0 0;
+  color: #98a2b3;
+  font-size: 18rpx;
+  line-height: 1.2;
+}
+
+.icp-footer.inline .icp-footer-inner {
+  flex-wrap: nowrap;
+  gap: 10rpx;
+  white-space: nowrap;
+}
+
+.icp-footer.inline .police-link {
+  gap: 4rpx;
+}
+
+.icp-footer.inline .police-icon {
+  width: 18rpx;
+  height: 18rpx;
+  flex-basis: 18rpx;
+}
+
+.icp-footer.compact.inline {
+  padding: 2rpx 0 calc(env(safe-area-inset-bottom) + 142rpx);
+}
+
 .icp-footer.glass {
   margin-top: 8px;
   padding: 10px 4px calc(env(safe-area-inset-bottom) + 84px);
@@ -82,6 +118,18 @@ defineProps({
 
 .icp-footer.glass .icp-link {
   color: var(--circle-muted, #718096);
+}
+
+.icp-footer.compact.inline.glass {
+  padding: 10px 4px calc(env(safe-area-inset-bottom) + 84px);
+}
+
+.icp-footer.compact.inline.lower {
+  padding-top: 14rpx;
+}
+
+.icp-footer.compact.inline.lower.glass {
+  padding-top: 16px;
 }
 
 .icp-link {

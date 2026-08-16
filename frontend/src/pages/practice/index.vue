@@ -1,19 +1,23 @@
 <template>
-  <view class="page practice-page" :style="themeInlineStyle">
+  <view
+    class="page practice-page"
+    :class="{ 'quiz-page': mode === 'quiz' && !reviewMode && !summaryMode && !aiSummaryMode }"
+    :style="themeInlineStyle"
+  >
     <view
       class="top-nav"
-      :class="{ 'scope-top-nav': mode === 'tags' }"
-      :style="mode === 'tags' ? scopeHeaderStyle : undefined"
+      :class="{ 'scope-top-nav': usesScopeHeader }"
+      :style="usesScopeHeader ? scopeHeaderStyle : undefined"
     >
       <button class="back-btn" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
       </button>
-      <view class="top-copy" :class="{ 'scope-top-copy': mode === 'tags' }">
+      <view class="top-copy" :class="{ 'scope-top-copy': usesScopeHeader }">
         <view class="top-title">{{ pageTitle }}</view>
         <view v-if="topSubtitle" class="top-sub">{{ topSubtitle }}</view>
       </view>
     </view>
-    <view v-if="mode === 'tags'" class="scope-top-nav-spacer"></view>
+    <view v-if="usesScopeHeader" class="scope-top-nav-spacer"></view>
 
     <template v-if="mode === 'tags'">
       <view v-if="showCultureProgress" class="culture-progress-card">
@@ -49,9 +53,6 @@
         <view class="count-head">
           <view class="count-copy">
             <view class="count-title">本轮题量</view>
-            <view class="count-sub">
-              {{ practiceMode === 'comprehensive' ? '综合刷题会覆盖全部知识点，并按近期表现智能配题。' : '新用户先做五档难度诊断；有记录后按表现智能配题。' }}
-            </view>
           </view>
           <view class="count-value">{{ selectedQuestionSize }}题</view>
         </view>
@@ -115,12 +116,20 @@
             v-if="showCultureProgress"
             class="sticky-btn review-sticky-btn"
             :disabled="cultureReviewDisabled"
+            hover-class="sticky-btn--pressed"
+            :hover-stay-time="60"
             @tap="startCultureReview"
           >
             <text>开始复习</text>
             <text class="sticky-btn-sub">{{ cultureReviewButtonText }}</text>
           </button>
-          <button class="sticky-btn start-sticky-btn" :disabled="loading" @tap="startQuiz">
+          <button
+            class="sticky-btn start-sticky-btn"
+            :disabled="loading"
+            hover-class="sticky-btn--pressed"
+            :hover-stay-time="60"
+            @tap="startQuiz"
+          >
             <text class="start-sticky-label">{{ loading ? '加载中...' : startButtonText }}</text>
           </button>
         </view>
@@ -172,11 +181,8 @@
       <template v-if="summaryMode">
       <!-- #endif -->
         <view class="summary-card" :class="{ 'mock-summary-card': mockExamMode }">
-          <view class="summary-kicker">{{ mockExamMode ? '模拟测试成绩' : '综合刷题结果' }}</view>
+          <view class="summary-kicker">{{ summaryKicker }}</view>
           <view class="summary-score">{{ mockExamMode ? `${mockExamScore} / ${mockExamTotalScore}` : `${correctCount} / ${reviewResults.length}` }}</view>
-          <view class="summary-sub">
-            {{ mockExamMode ? mockExamSummaryText : '绿色代表答对，红色代表答错，橙色代表网络回包异常但不会阻断结果页。点击题号可查看对应解析。' }}
-          </view>
         </view>
 
         <view v-if="mockExamMode" class="mock-section-card">
@@ -215,37 +221,32 @@
       <template v-else>
       <view class="quiz-shell">
         <view class="quiz-top">
-          <view class="badge">{{ quizProgressText }}</view>
-          <button
-            v-if="showQuestionSheetEntry"
-            class="question-map-btn"
-            @tap="openAnswerSheet"
-          >
-            题卡
-          </button>
-          <view class="timer">⏱ {{ formattedTimer }}</view>
+          <view class="quiz-top-leading">
+            <view class="badge">{{ quizProgressText }}</view>
+          </view>
+          <view class="quiz-top-actions">
+            <view class="timer">⏱ {{ formattedTimer }}</view>
+            <button
+              v-if="showQuestionSheetEntry"
+              class="question-map-btn"
+              @tap="openAnswerSheet"
+            >
+              题卡
+            </button>
+          </view>
         </view>
 
         <view class="question-card">
-          <view class="question-head">
-            <view class="badge plain">{{ questionBadgeText }}</view>
-            <button
-              class="favorite-btn"
-              :class="{ active: currentFavorited }"
-              :disabled="favoriteLoading || !canFavoriteCurrent"
-              :aria-label="currentFavorited ? '取消收藏' : '收藏题目'"
-              @tap.stop="toggleCurrentFavorite"
-            >
-              <view class="practice-favorite-icon" aria-hidden="true"></view>
-            </button>
-          </view>
+          <button
+            class="favorite-btn"
+            :class="{ active: currentFavorited }"
+            :disabled="favoriteLoading || !canFavoriteCurrent"
+            :aria-label="currentFavorited ? '取消收藏' : '收藏题目'"
+            @tap.stop="toggleCurrentFavorite"
+          >
+            <view class="practice-favorite-icon" aria-hidden="true"></view>
+          </button>
           <QuestionStem class="question-title" :question="normalizedCurrentQuestion" />
-          <SourceTag
-            :question="normalizedCurrentQuestion"
-            :practice-mode="practiceMode"
-            :review-mode="reviewMode"
-            :mock-exam-mode="mockExamMode"
-          />
         </view>
       </view>
 
@@ -256,6 +257,7 @@
           :label="option.key"
           :content="option.text"
           :is-math="normalizedCurrentQuestion.isMath"
+          :compact="mode === 'quiz' && !reviewMode"
           :selected="selectedOption === option.key"
           :submitted="optionSubmitted"
           :correct="submitted && option.key === correctAnswer"
@@ -266,16 +268,18 @@
       <view v-else class="state-box warning">{{ currentQuestionIssueText }}</view>
 
       <view v-if="currentQuestionHasBlockingIssue" class="primary-action-row">
-        <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
+        <button class="prev-btn" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
         <button class="submit-btn" @tap="handleInvalidQuestionNext">
           {{ hasNextQuestion ? '跳过异常题' : '结束本轮' }}
         </button>
       </view>
       <view v-else-if="!reviewMode && !submitted" class="primary-action-row">
-        <button class="prev-btn" :disabled="!hasPrevQuestion || submitting" @tap="goPrevQuestion">上一题</button>
+        <button class="prev-btn" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
         <button
           class="submit-btn"
-          :disabled="!selectedOption || submitting || markingUnfamiliar || currentQuestionHasBlockingIssue"
+          :disabled="!selectedOption || markingUnfamiliar || currentQuestionHasBlockingIssue"
+          hover-class="submit-btn--pressed"
+          :hover-stay-time="80"
           @tap="handlePrimaryAction"
         >
           {{ primaryButtonText }}
@@ -284,52 +288,50 @@
       <button
         v-if="showUnfamiliarShortcut"
         class="unfamiliar-btn"
-        :disabled="markingUnfamiliar || submitting"
+        :disabled="markingUnfamiliar"
         @tap="markCurrentUnfamiliarAndNext"
       >
         {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习' }}
       </button>
 
+      <view v-if="submitted && !reviewMode" class="action-row">
+        <view class="review-nav-row">
+          <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
+          <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
+          <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
+        </view>
+      </view>
+
+      <view v-if="submitted && !reviewMode" class="post-submit-action-row">
+        <button
+          v-if="showUnfamiliarAfterCorrect"
+          class="unfamiliar-btn post-submit-unfamiliar-btn"
+          :disabled="markingUnfamiliar"
+          @tap="markCurrentUnfamiliarAndNext"
+        >
+          {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉' }}
+        </button>
+        <button class="explanation-toggle-btn" @tap="toggleExplanation">
+          {{ explanationToggleText }}
+        </button>
+      </view>
+
       <view id="result-anchor">
         <ExplanationPanel
-          :visible="submitting || submitted"
-          :pending="submitting && !submitted"
+          :visible="reviewMode"
           :correct-answer="correctAnswer"
           :explanation="answerExplanation"
-          :auto-tag="resultTag"
         />
       </view>
 
-      <view v-if="submitted && abilityAccuracy !== null && !reviewMode" class="result-note">
-        当前知识点正确率：{{ abilityAccuracy }}%
-      </view>
-
-      <view v-if="submitted || reviewMode" class="action-row">
-        <template v-if="reviewMode">
-          <view class="review-nav-row">
-            <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
-            <button class="next-btn" :disabled="!hasNextQuestion" @tap="goNextQuestion">下一题</button>
-          </view>
-          <button class="next-btn outline" @tap="isAiTrainingMode ? showAiSummary() : showSummary()">
-            {{ isAiTrainingMode ? '返回 AI 总结' : '查看结果总览' }}
-          </button>
-        </template>
-
-        <template v-else>
-          <button
-            v-if="showUnfamiliarAfterCorrect"
-            class="unfamiliar-btn"
-            :disabled="markingUnfamiliar"
-            @tap="markCurrentUnfamiliarAndNext"
-          >
-            {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习' }}
-          </button>
-          <view class="review-nav-row">
-            <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
-            <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
-            <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
-          </view>
-        </template>
+      <view v-if="reviewMode" class="action-row">
+        <view class="review-nav-row">
+          <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
+          <button class="next-btn" :disabled="!hasNextQuestion" @tap="goNextQuestion">下一题</button>
+        </view>
+        <button class="next-btn outline" @tap="isAiTrainingMode ? showAiSummary() : showSummary()">
+          {{ isAiTrainingMode ? '返回 AI 总结' : '查看结果总览' }}
+        </button>
       </view>
 
       <button v-if="mockExamMode" class="ghost-button back-tags" @tap="confirmExitPractice">
@@ -351,10 +353,13 @@
     />
     <!-- #endif -->
 
-    <view v-if="showAnswerSheet" class="answer-sheet-mask" @tap="closeAnswerSheet">
-      <view class="answer-sheet" @tap.stop>
-        <view class="sheet-handle"></view>
-        <view class="sheet-title">答题卡</view>
+	<view v-if="showAnswerSheet" class="answer-sheet-mask" @tap="closeAnswerSheet">
+		<view class="answer-sheet" @tap.stop>
+			<view class="sheet-handle"></view>
+			<view class="answer-sheet-head">
+				<view class="sheet-title">答题卡</view>
+				<button class="sheet-cancel-btn" @tap.stop="closeAnswerSheet">取消</button>
+			</view>
 
         <view
           v-for="section in answerSheetSections"
@@ -378,12 +383,32 @@
           </view>
         </view>
 
-        <button class="sheet-close-btn" @tap="closeAnswerSheet">继续答题</button>
+		</view>
+	</view>
+
+    <view
+      v-if="submitted && explanationExpanded && !reviewMode"
+      class="explanation-sheet-mask"
+      @tap="closeExplanation"
+    >
+      <view class="explanation-sheet" @tap.stop>
+        <view class="sheet-handle explanation-sheet-handle"></view>
+        <view class="explanation-sheet-head">
+          <view class="explanation-sheet-title">题目解析</view>
+          <button class="explanation-sheet-close" @tap.stop="closeExplanation">关闭</button>
+        </view>
+        <scroll-view class="explanation-sheet-body" scroll-y>
+          <ExplanationPanel
+            :visible="true"
+            :correct-answer="correctAnswer"
+            :explanation="answerExplanation"
+          />
+        </scroll-view>
       </view>
     </view>
 
     <!-- #ifdef H5 -->
-    <IcpFooter />
+    <IcpFooter v-if="mode !== 'quiz' || summaryMode || aiSummaryMode" />
     <!-- #endif -->
   </view>
 </template>
@@ -405,7 +430,6 @@ import ExplanationPanel from '../../components/ExplanationPanel.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import OptionCard from '../../components/OptionCard.vue'
 import QuestionStem from '../../components/QuestionStem.vue'
-import SourceTag from '../../components/SourceTag.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { confirmFavoriteRemoval } from '../../utils/favorites'
@@ -456,6 +480,7 @@ const aiSessionId = ref('')
 const selectedOption = ref('')
 const submitted = ref(false)
 const submitting = ref(false)
+const explanationExpanded = ref(false)
 const markingUnfamiliar = ref(false)
 const loading = ref(false)
 const loadError = ref('')
@@ -549,6 +574,10 @@ const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.v
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
+const summaryKicker = computed(() => {
+  if (mockExamMode.value) return '模拟测试成绩'
+  return practiceMode.value === 'comprehensive' ? '综合刷题结果' : '专项刷题结果'
+})
 const aiSummaryTotal = computed(() => aiSummary.value?.total_count ?? (aiReviewResults.value.length || questionPool.value.length || 0))
 const aiSummaryCorrect = computed(() => aiSummary.value?.correct_count ?? aiReviewResults.value.filter((item) => item.isCorrect).length)
 const aiSummaryAccuracy = computed(() => {
@@ -576,20 +605,25 @@ const showUnfamiliarAfterCorrect = computed(() =>
   submitted.value &&
   selectedOption.value === correctAnswer.value
 )
+const explanationToggleText = computed(() => {
+  return selectedOption.value === correctAnswer.value ? '查看解析' : '展示解析'
+})
+const usesScopeHeader = computed(() => mode.value === 'tags' || mode.value === 'quiz')
+
 const pageTitle = computed(() => {
+  if (mode.value === 'tags' || mode.value === 'quiz') {
+    return subject.value || '专题练习'
+  }
   if (mockExamMode.value) {
     return '模拟测试'
   }
   if (isAiTrainingMode.value) {
     return 'AI 专项出题'
   }
-  if (mode.value === 'tags') {
-    return subject.value || '专题练习'
-  }
   return practiceMode.value === 'comprehensive' ? '综合刷题' : '专项刷题'
 })
 const topSubtitle = computed(() => {
-  if (mode.value === 'tags') return ''
+  if (mode.value === 'tags' || mode.value === 'quiz') return ''
   return mockExamMode.value ? `${examCode.value} / 105分轻量模拟` : `${examCode.value} / ${subject.value}`
 })
 const scopeHeaderStyle = computed(() => {
@@ -613,7 +647,7 @@ const stickySub = computed(() => {
   }
   return `预计 ${selectedQuestionCount.value} 道题 · ${dataModeLabel.value}`
 })
-const startButtonText = computed(() => (practiceMode.value === 'comprehensive' ? '开始综合刷题' : '开始刷题'))
+const startButtonText = computed(() => '开始刷题')
 const cultureProgressPercent = computed(() => Math.max(0, Math.min(100, Number(cultureProgress.value.progress_percent || 0))))
 const cultureProgressWidth = computed(() => `${cultureProgressPercent.value}%`)
 const cultureReviewDueCount = computed(() => Number(cultureProgress.value.review_due_count || 0))
@@ -629,17 +663,6 @@ const quizProgressText = computed(() => {
   const prefix = reviewMode.value ? '查看解析' : '当前进度'
   return `${prefix} ${currentQuestionIndex.value + 1} / ${questionPool.value.length}`
 })
-const questionBadgeText = computed(() => {
-  if (mockExamMode.value) {
-    return reviewMode.value
-      ? `${currentQuestion.value.mockSection || '模拟测试'} · 解析回顾`
-      : `${currentQuestion.value.mockSection || '模拟测试'} · ${currentQuestion.value.pointValue || 1}分题`
-  }
-  if (practiceMode.value === 'comprehensive') {
-    return reviewMode.value ? '综合刷题 · 解析回顾' : '综合刷题 · 隐藏知识点'
-  }
-  return `${currentQuestion.value.year} · ${currentQuestion.value.badge}`
-})
 const questionHelperText = computed(() => {
   if (mockExamMode.value) {
     return reviewMode.value
@@ -653,22 +676,15 @@ const questionHelperText = computed(() => {
 })
 const primaryButtonText = computed(() => {
   if (practiceMode.value === 'comprehensive') {
-    if (submitting.value) {
-      return '正在提交整卷...'
-    }
     return hasNextQuestion.value ? '下一题' : (mockExamMode.value ? '交卷并查看成绩' : '提交整卷并查看答案')
   }
-  return submitted.value ? '解析已展开' : submitting.value ? '正在判题...' : '提交并查看解析'
+  return '提交'
 })
 const showQuestionSheetEntry = computed(() => mockExamMode.value || practiceMode.value === 'comprehensive')
 const mockExamTotalScore = computed(() => MOCK_EXAM_TOTAL_SCORE)
 const mockExamScore = computed(() =>
   reviewResults.value.reduce((sum, item) => sum + (item.isCorrect ? Number(item.question?.pointValue || 0) : 0), 0)
 )
-const mockExamSummaryText = computed(() => {
-  const total = reviewResults.value.length || questionPool.value.length || MOCK_EXAM_TOTAL_COUNT
-  return `本次答对 ${correctCount.value} / ${total} 题，用时 ${formattedTimer.value}。建议先复盘红色题号，再按薄弱模块做专项训练。`
-})
 const mockExamSectionScores = computed(() => {
   const config = getMockExamConfig(examCode.value)
   return config.map((section) => {
@@ -1570,6 +1586,7 @@ function applyQuestionAt(index) {
     submodule: nextQuestion.submodule || ''
   }
   submitting.value = false
+  explanationExpanded.value = false
 
   if (savedInstantResult) {
     selectedOption.value = savedInstantResult.selectedAnswer
@@ -1872,6 +1889,9 @@ function closeAnswerSheet() {
 }
 
 function jumpToQuestion(index) {
+  if (submitting.value) {
+    return
+  }
   showAnswerSheet.value = false
   if (reviewMode.value) {
     applyReviewAt(index)
@@ -1881,6 +1901,9 @@ function jumpToQuestion(index) {
 }
 
 async function handlePrimaryAction() {
+  if (submitting.value || markingUnfamiliar.value) {
+    return
+  }
   if (currentQuestionHasBlockingIssue.value) {
     handleInvalidQuestionNext()
     return
@@ -1903,6 +1926,14 @@ function handleInvalidQuestionNext() {
   finishQuiz()
 }
 
+function toggleExplanation() {
+  explanationExpanded.value = true
+}
+
+function closeExplanation() {
+  explanationExpanded.value = false
+}
+
 async function markCurrentUnfamiliarAndNext() {
   syncAccessToken()
 
@@ -1911,7 +1942,7 @@ async function markCurrentUnfamiliarAndNext() {
     return
   }
 
-  if (!canMarkCurrentUnfamiliar.value || markingUnfamiliar.value) {
+  if (!canMarkCurrentUnfamiliar.value || markingUnfamiliar.value || submitting.value) {
     return
   }
 
@@ -1964,7 +1995,7 @@ async function markCurrentUnfamiliarAndNext() {
 }
 
 async function handleComprehensiveAction() {
-  if (!selectedOption.value) {
+  if (!selectedOption.value || submitting.value) {
     return
   }
 
@@ -1982,6 +2013,9 @@ async function handleComprehensiveAction() {
 }
 
 async function submitComprehensiveAnswers() {
+  if (submitting.value) {
+    return
+  }
   syncAccessToken()
   const entries = questionPool.value.map((question) => {
     const key = question.questionId || question.id
@@ -2009,8 +2043,6 @@ async function submitComprehensiveAnswers() {
   }
 
   submitting.value = true
-  await nextTick()
-  scrollToResultSection()
 
   try {
     const useRealSubmit = entries.every(({ question }) => isRealSubmitQuestion(question))
@@ -2085,6 +2117,8 @@ function saveInstantQuestionResult(answerResult) {
       selectedAnswer: answerResult.selectedAnswer,
       correctAnswer: answerResult.correctAnswer,
       explanation: answerResult.explanation,
+      isCorrect: answerResult.isCorrect,
+      syncFailed: Boolean(answerResult.syncFailed),
       resultTag: resultTag.value,
       abilityAccuracy: abilityAccuracy.value
     }
@@ -2142,13 +2176,12 @@ async function submitComprehensiveSingle({ question, selected }, batchError) {
 
 async function submitAnswer() {
   syncAccessToken()
-  if (!selectedOption.value) {
+  if (!selectedOption.value || submitting.value) {
     return
   }
 
   submitting.value = true
-  await nextTick()
-  scrollToResultSection()
+  explanationExpanded.value = false
   try {
     let answerResult = null
     if (hasAccessToken.value && isRealQuestion()) {
@@ -2194,8 +2227,6 @@ async function submitAnswer() {
     saveInstantQuestionResult(answerResult)
     submitted.value = true
     clearTimer()
-    await nextTick()
-    scrollToResultSection()
   } catch (error) {
     if (isAiTrainingMode.value && isRealQuestion()) {
       const pending = buildPendingComprehensiveResult(currentQuestion.value, selectedOption.value, error)
@@ -2207,8 +2238,6 @@ async function submitAnswer() {
       saveInstantQuestionResult(pending)
       submitted.value = true
       clearTimer()
-      await nextTick()
-      scrollToResultSection()
       return
     }
     uni.showToast({ title: error?.detail || '提交失败', icon: 'none' })
@@ -2231,6 +2260,7 @@ function applyReviewAt(index) {
   answerExplanation.value = result.explanation
   resultTag.value = result.syncFailed ? '本题记录已提交，答案解析稍后可在练习历史中查看。' : result.isCorrect ? '本题答对。' : '本题答错，已纳入错题统计。'
   submitted.value = true
+  explanationExpanded.value = true
   abilityAccuracy.value = null
   loadCurrentFavoriteStatus()
 }
@@ -2332,7 +2362,7 @@ async function toggleCurrentFavorite() {
 }
 
 function goPrevQuestion() {
-  if (!hasPrevQuestion.value) {
+  if (!hasPrevQuestion.value || submitting.value) {
     return
   }
 
@@ -2346,7 +2376,7 @@ function goPrevQuestion() {
 }
 
 function goNextQuestion() {
-  if (!hasNextQuestion.value) {
+  if (!hasNextQuestion.value || submitting.value) {
     return
   }
 
@@ -2439,14 +2469,43 @@ function finishQuiz() {
     showAiSummary()
     return
   }
-  uni.showToast({ title: '本轮完成，已返回刷题范围', icon: 'none' })
-  resetToTags()
+
+  const results = buildSpecialPracticeReviewResults()
+  if (!results.length) {
+    resetToTags()
+    return
+  }
+
+  reviewResults.value = results
+  showAnswerSheet.value = false
+  explanationExpanded.value = false
+  showSummary()
+}
+
+function buildSpecialPracticeReviewResults() {
+  return questionPool.value
+    .map((question) => {
+      const key = question.questionId || question.id
+      const saved = instantQuestionResults.value[key]
+      if (!saved) return null
+
+      return {
+        question,
+        selectedAnswer: saved.selectedAnswer || '',
+        correctAnswer: saved.correctAnswer || question.answer || '',
+        explanation: saved.explanation || question.explanation || '',
+        isCorrect: saved.isCorrect ?? (saved.selectedAnswer === saved.correctAnswer),
+        syncFailed: Boolean(saved.syncFailed)
+      }
+    })
+    .filter(Boolean)
 }
 
 function resetQuizState() {
   selectedOption.value = ''
   submitted.value = false
   submitting.value = false
+  explanationExpanded.value = false
   markingUnfamiliar.value = false
   timerSeconds.value = 0
   abilityAccuracy.value = null
@@ -2504,14 +2563,6 @@ function scrollToQuestionTop() {
   }, 30)
 }
 
-function scrollToResultSection() {
-  setTimeout(() => {
-    uni.pageScrollTo({
-      selector: '#result-anchor',
-      duration: 260
-    })
-  }, 30)
-}
 </script>
 
 <style scoped>
@@ -2531,6 +2582,38 @@ function scrollToResultSection() {
   margin-bottom: 22rpx;
 }
 
+.practice-page.quiz-page {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior: contain;
+  padding: calc(var(--status-bar-height) + 10rpx) 28rpx calc(env(safe-area-inset-bottom) + 18rpx);
+}
+
+.quiz-page .top-nav {
+  flex: 0 0 auto;
+  margin-bottom: 10rpx;
+}
+
+.quiz-page .back-btn {
+  width: 68rpx;
+  height: 68rpx;
+  border-radius: 22rpx;
+}
+
+.quiz-page .top-title {
+  font-size: 32rpx;
+}
+
+.quiz-page .top-sub {
+  margin-top: 2rpx;
+  font-size: 20rpx;
+}
+
 .scope-top-nav {
   position: fixed;
   top: var(--status-bar-height, 0px);
@@ -2545,6 +2628,21 @@ function scrollToResultSection() {
   box-shadow: 0 14rpx 30rpx rgba(20, 31, 66, var(--scope-header-shadow-opacity, 0));
   backdrop-filter: blur(14rpx);
   transition: background-color 180ms ease, box-shadow 180ms ease;
+}
+
+.quiz-page .scope-top-nav {
+  flex: 0 0 auto;
+  margin: 0;
+}
+
+.quiz-page .scope-top-nav .back-btn {
+  width: 76rpx;
+  height: 76rpx;
+  border-radius: 26rpx;
+}
+
+.quiz-page .scope-top-nav .top-title {
+  font-size: 38rpx;
 }
 
 .scope-top-nav-spacer {
@@ -2694,7 +2792,6 @@ function scrollToResultSection() {
 }
 
 .mode-sub,
-.count-sub,
 .comprehensive-line {
   margin-top: 8rpx;
   color: #667085;
@@ -2907,6 +3004,16 @@ function scrollToResultSection() {
   font-size: 26rpx;
   font-weight: 900;
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
+}
+
+.sticky-btn:not([disabled]):active,
+.sticky-btn:not([disabled]).sticky-btn--pressed {
+  filter: brightness(0.95);
+  transform: scale(0.985);
+  box-shadow: 0 8rpx 16rpx var(--gyt-primary-shadow);
 }
 
 .sticky-actions {
@@ -2951,8 +3058,12 @@ function scrollToResultSection() {
   opacity: 0.86;
 }
 
-.sticky-btn[disabled] {
-  background: #c6d3f2;
+.start-sticky-btn[disabled] {
+  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  box-shadow: none;
+  opacity: 1;
 }
 
 .review-sticky-btn[disabled] {
@@ -2965,9 +3076,76 @@ function scrollToResultSection() {
 .quiz-top {
   display: flex;
   justify-content: space-between;
-  align-items: center;
-  gap: 16rpx;
+  align-items: flex-start;
+  gap: 12rpx;
   margin-bottom: 16rpx;
+}
+
+.quiz-top-leading {
+  min-width: 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  flex: 1 1 auto;
+}
+
+.quiz-top-leading > .badge {
+  flex: 0 0 auto;
+  white-space: nowrap;
+}
+
+.quiz-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  flex: 0 0 auto;
+}
+
+.quiz-page .quiz-shell {
+  flex: 0 0 auto;
+  padding: 16rpx 20rpx 14rpx;
+  border-radius: 30rpx;
+}
+
+.quiz-page .quiz-top {
+  margin-bottom: 8rpx;
+}
+
+.quiz-page .quiz-top-leading,
+.quiz-page .quiz-top-actions {
+  gap: 8rpx;
+}
+
+.quiz-page .badge {
+  padding: 8rpx 14rpx;
+  font-size: 21rpx;
+}
+
+.quiz-page .timer {
+  padding: 10rpx 14rpx;
+  border-radius: 18rpx;
+  font-size: 21rpx;
+}
+
+.quiz-page .question-head {
+  margin-bottom: 8rpx;
+}
+
+.quiz-page .favorite-btn {
+  width: 54rpx;
+  height: 54rpx;
+  font-size: 30rpx;
+}
+
+.quiz-page .question-card {
+  min-height: 92rpx;
+  padding: 4rpx 4rpx;
+}
+
+.quiz-page .question-title {
+  padding-right: 62rpx;
+  font-size: 34rpx;
+  line-height: 1.42;
 }
 
 .question-map-btn {
@@ -3018,6 +3196,9 @@ function scrollToResultSection() {
 }
 
 .favorite-btn {
+  position: absolute;
+  top: 50%;
+  right: 0;
   width: 64rpx;
   height: 64rpx;
   margin: 0;
@@ -3033,6 +3214,7 @@ function scrollToResultSection() {
   align-items: center;
   justify-content: center;
   box-shadow: none;
+  transform: translateY(-50%);
 }
 
 .favorite-btn::after {
@@ -3066,15 +3248,22 @@ function scrollToResultSection() {
 }
 
 .question-card {
-  padding: 30rpx 8rpx 6rpx;
+  position: relative;
+  min-height: 104rpx;
+  padding: 18rpx 8rpx 12rpx;
   border-radius: 0;
   background: #ffffff;
   border: 0;
   box-shadow: none;
   background: transparent;
+  display: flex;
+  align-items: center;
 }
 
 .question-title {
+  width: 100%;
+  box-sizing: border-box;
+  padding-right: 70rpx;
   color: #172033;
   font-size: 38rpx;
   line-height: 1.55;
@@ -3116,10 +3305,38 @@ function scrollToResultSection() {
   line-height: 1.25;
   text-align: center;
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
+  -webkit-tap-highlight-color: transparent;
+  transform: translateZ(0);
+  transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
+}
+
+.submit-btn:not([disabled]):active,
+.submit-btn:not([disabled]).submit-btn--pressed {
+  filter: brightness(0.9);
+  transform: translateY(2rpx) scale(0.97);
+  box-shadow: 0 5rpx 12rpx var(--gyt-primary-shadow);
+}
+
+.quiz-page .options {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(112rpx, 1fr));
+  gap: 12rpx;
+  margin: 12rpx 0;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: none;
+}
+
+.quiz-page .options::-webkit-scrollbar {
+  display: none;
 }
 
 .submit-btn[disabled] {
-  background: #c6d3f2;
+  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
   box-shadow: none;
 }
 
@@ -3266,11 +3483,17 @@ function scrollToResultSection() {
 }
 
 .summary-dot {
+  width: 100%;
+  min-width: 0;
   min-height: 78rpx;
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
   border: 0;
   border-radius: 22rpx;
   color: #ffffff;
   font-size: 28rpx;
+  line-height: 1;
   font-weight: 900;
   display: flex;
   align-items: center;
@@ -3296,18 +3519,59 @@ function scrollToResultSection() {
   margin-top: 20rpx;
 }
 
-.result-note {
-  margin-top: 18rpx;
-  color: var(--gyt-primary);
-  font-size: 24rpx;
-  font-weight: 700;
-  text-align: center;
-}
-
 .primary-action-row {
   display: flex;
   align-items: stretch;
   gap: 16rpx;
+}
+
+.quiz-page .primary-action-row {
+  flex: 0 0 auto;
+  gap: 12rpx;
+}
+
+.quiz-page .prev-btn,
+.quiz-page .submit-btn {
+  min-height: 112rpx;
+  border-radius: 28rpx;
+  font-size: 28rpx;
+}
+
+.quiz-page .unfamiliar-btn {
+  min-height: 96rpx;
+  margin-top: 12rpx;
+  border-radius: 26rpx;
+  font-size: 26rpx;
+}
+
+/* 答题后的底部操作区与未答题状态使用同一套占位尺寸，保持一屏完成操作。 */
+.quiz-page .action-row {
+  flex: 0 0 auto;
+  gap: 12rpx;
+  margin-top: 0;
+}
+
+.quiz-page .review-nav-row {
+  gap: 12rpx;
+}
+
+.quiz-page .review-nav-row .next-btn.secondary {
+  flex: 0 0 35%;
+}
+
+.quiz-page .action-row .next-btn {
+  min-height: 112rpx;
+}
+
+.quiz-page .post-submit-action-row {
+  flex: 0 0 auto;
+  margin-top: 12rpx;
+}
+
+.quiz-page .post-submit-action-row .unfamiliar-btn,
+.quiz-page .post-submit-action-row .explanation-toggle-btn {
+  min-height: 96rpx;
+  font-size: 26rpx;
 }
 
 .prev-btn {
@@ -3362,6 +3626,39 @@ function scrollToResultSection() {
   color: #98a2b3;
 }
 
+.post-submit-action-row {
+  display: flex;
+  align-items: stretch;
+  gap: 12rpx;
+  margin-top: 12rpx;
+}
+
+.post-submit-action-row .unfamiliar-btn,
+.explanation-toggle-btn {
+  flex: 1 1 0;
+  width: auto;
+  min-width: 0;
+  min-height: 96rpx;
+  margin-top: 0;
+}
+
+.explanation-toggle-btn {
+  padding: 0 24rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 26rpx;
+  background: var(--gyt-primary);
+  color: #ffffff;
+  font-size: 27rpx;
+  font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
+  box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow);
+}
+
 .action-row .unfamiliar-btn {
   margin-top: 0;
 }
@@ -3389,12 +3686,20 @@ function scrollToResultSection() {
   flex: 1;
   width: 100%;
   min-height: 102rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   border: 0;
   border-radius: 28rpx;
   background: #172033;
   color: #ffffff;
   font-size: 28rpx;
   font-weight: 900;
+  line-height: 1.25;
+  text-align: center;
 }
 
 .next-btn.done {
@@ -3452,6 +3757,18 @@ function scrollToResultSection() {
   background: #d7deea;
 }
 
+.answer-sheet-head {
+  position: relative;
+  min-height: 64rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.answer-sheet-head .sheet-title {
+  width: 100%;
+}
+
 .sheet-title {
   text-align: center;
   color: #172033;
@@ -3506,15 +3823,103 @@ function scrollToResultSection() {
   box-shadow: 0 10rpx 24rpx var(--gyt-primary-shadow);
 }
 
-.sheet-close-btn {
+.explanation-sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 240;
+  display: flex;
+  align-items: flex-end;
+  background: rgba(15, 23, 42, 0.36);
+  animation: explanation-mask-in 180ms ease-out both;
+}
+
+.explanation-sheet {
   width: 100%;
-  min-height: 92rpx;
-  margin-top: 28rpx;
-  border: 0;
-  border-radius: 28rpx;
-  background: var(--gyt-primary);
-  color: #ffffff;
-  font-size: 28rpx;
+  height: 70vh;
+  height: 70dvh;
+  min-height: 56vh;
+  min-height: 56dvh;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-radius: 40rpx 40rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 48rpx rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+  animation: explanation-sheet-up 260ms cubic-bezier(0.22, 0.8, 0.24, 1) both;
+}
+
+.explanation-sheet-handle {
+  flex: 0 0 auto;
+  margin-top: 18rpx;
+  margin-bottom: 14rpx;
+}
+
+.explanation-sheet-head {
+  flex: 0 0 auto;
+  min-height: 64rpx;
+  padding: 0 32rpx 16rpx;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  border-bottom: 2rpx solid #edf1f7;
+}
+
+.explanation-sheet-title {
+  color: #172033;
+  font-size: 30rpx;
   font-weight: 900;
+}
+
+.sheet-cancel-btn,
+.explanation-sheet-close {
+  min-width: 92rpx;
+  min-height: 58rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  font-size: 24rpx;
+  font-weight: 800;
+  line-height: 58rpx;
+}
+
+.sheet-cancel-btn {
+  position: absolute;
+  top: 50%;
+  right: 0;
+  transform: translateY(-50%);
+}
+
+.sheet-cancel-btn::after,
+.explanation-sheet-close::after {
+  border: 0;
+}
+
+.explanation-sheet-body {
+  flex: 1 1 auto;
+  min-height: 0;
+  box-sizing: border-box;
+  padding: 28rpx 32rpx calc(env(safe-area-inset-bottom) + 36rpx);
+}
+
+.explanation-sheet-body :deep(.panel) {
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+@keyframes explanation-mask-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes explanation-sheet-up {
+  from { transform: translateY(100%); }
+  to { transform: translateY(0); }
 }
 </style>

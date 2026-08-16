@@ -62,6 +62,23 @@ export const THEME_PRESETS = [
       'radial-gradient(circle at top right, rgba(118, 104, 223, 0.1), transparent 25%), linear-gradient(180deg, #fbfbff 0%, #f3f1ff 100%)',
     panelBg:
       'radial-gradient(circle at 86% 10%, rgba(118, 104, 223, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #f2f0ff 100%)'
+  },
+  {
+    key: 'circle-glass',
+    name: '方案一（研圈玻璃）',
+    desc: '研圈背景与磨砂卡片，适合全局预览。',
+    primary: '#16786f',
+    primarySoft: 'rgba(225, 242, 237, 0.62)',
+    primaryTint: 'rgba(241, 249, 246, 0.74)',
+    primaryBorder: 'rgba(255, 255, 255, 0.68)',
+    primaryGradient: 'linear-gradient(135deg, #16786f, #57a99b)',
+    primaryShadow: 'rgba(30, 55, 56, 0.16)',
+    pageBg:
+      'linear-gradient(180deg, rgba(10, 41, 42, 0.22) 0%, rgba(18, 49, 49, 0.12) 48%, rgba(18, 43, 43, 0.32) 100%), url("/static/circle-study-sky.jpg") center center / cover fixed',
+    panelBg:
+      'linear-gradient(135deg, rgba(250, 253, 252, 0.78), rgba(230, 242, 238, 0.58))',
+    circleGlass: true,
+    iconThemeKey: 'blue'
   }
 ]
 
@@ -110,5 +127,9 @@ export function applyThemeByKey(key) {
     '--gyt-page-bg': preset.pageBg,
     '--gyt-panel-bg': preset.panelBg
   })
+
+  if (typeof document !== 'undefined') {
+    document.documentElement.classList.toggle('gyt-circle-glass-theme', preset.circleGlass === true)
+  }
   return preset
 }

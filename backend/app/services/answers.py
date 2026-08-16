@@ -1,4 +1,7 @@
+from collections import OrderedDict
 from datetime import datetime, timezone
+from threading import Lock
+from time import monotonic
 
 from fastapi import HTTPException, status
 from supabase import Client
@@ -8,6 +11,66 @@ from app.services.question_sources import is_ai_generated_question
 
 VERSION_EXAM_CODES = {"Z001", "Z002"}
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
+
+# Question lists already read complete active question records before answers
+# are stripped from the API response.  Retain only the grading fields in a
+# short-lived server-side cache so the submit endpoint can return the result
+# without repeating that database lookup.  Nothing from this cache is exposed
+# before the learner submits an answer.
+_SUBMISSION_QUESTION_FIELDS = (
+    "id",
+    "exam_code",
+    "subject",
+    "module",
+    "submodule",
+    "source_type",
+    "answer",
+    "explanation",
+)
+_SUBMISSION_QUESTION_CACHE_TTL_SECONDS = 10 * 60.0
+_SUBMISSION_QUESTION_CACHE_MAX_ENTRIES = 3000
+_submission_question_cache: OrderedDict[str, tuple[dict, float]] = OrderedDict()
+_submission_question_cache_lock = Lock()
+
+
+def _cache_submission_question(question: dict) -> None:
+    question_id = str(question.get("id") or "")
+    if not question_id or not question.get("answer"):
+        return
+
+    cached_question = {field: question.get(field) for field in _SUBMISSION_QUESTION_FIELDS}
+    with _submission_question_cache_lock:
+        _submission_question_cache[question_id] = (
+            cached_question,
+            monotonic() + _SUBMISSION_QUESTION_CACHE_TTL_SECONDS,
+        )
+        _submission_question_cache.move_to_end(question_id)
+        while len(_submission_question_cache) > _SUBMISSION_QUESTION_CACHE_MAX_ENTRIES:
+            _submission_question_cache.popitem(last=False)
+
+
+def warm_submission_questions(questions: list[dict]) -> None:
+    """Warm grading data from question-list rows without exposing answers."""
+
+    for question in questions:
+        _cache_submission_question(question)
+
+
+def _get_cached_submission_question(question_id: str) -> dict | None:
+    key = str(question_id)
+    now = monotonic()
+    with _submission_question_cache_lock:
+        cached = _submission_question_cache.get(key)
+        if not cached:
+            return None
+
+        question, expires_at = cached
+        if expires_at <= now:
+            _submission_question_cache.pop(key, None)
+            return None
+
+        _submission_question_cache.move_to_end(key)
+        return dict(question)
 
 
 def get_question_or_404(supabase: Client, question_id: str) -> dict:
@@ -19,6 +82,10 @@ def get_question_or_404(supabase: Client, question_id: str) -> dict:
 
 def get_submission_question_or_404(supabase: Client, question_id: str) -> dict:
     """Fetch only the fields needed to grade and explain one submitted answer."""
+    cached_question = _get_cached_submission_question(question_id)
+    if cached_question:
+        return cached_question
+
     response = (
         supabase.table("questions")
         .select("id, exam_code, subject, module, submodule, source_type, answer, explanation")
@@ -28,7 +95,9 @@ def get_submission_question_or_404(supabase: Client, question_id: str) -> dict:
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Question not found")
-    return response.data[0]
+    question = response.data[0]
+    _cache_submission_question(question)
+    return question
 
 
 def has_answer_submission(supabase: Client, user_id: str, question_id: str) -> bool:

@@ -14,7 +14,7 @@
         </view>
         <view class="brand-copy">
           <view class="brand-name">港研通</view>
-          <view class="brand-caption">题库中台</view>
+          <view class="brand-caption">后台管理</view>
         </view>
         <button
           class="sidebar-focus-toggle"
@@ -212,50 +212,248 @@
               <view class="empty-title">暂无可汇总的刷题记录</view>
               <view class="empty-copy">产生用户答题记录后，这里会自动显示高频错题。</view>
             </view>
-            <view v-else class="data-table difficult-table">
-              <view class="table-row table-head">
-                <view class="rank-cell">排名</view>
-                <view class="stem-cell">题目</view>
-                <view class="category-cell">分类</view>
-                <view class="number-cell">答错次数</view>
-                <view class="number-cell">作答次数</view>
-                <view class="accuracy-cell">正确率</view>
-              </view>
-              <button
-                v-for="(item, index) in dashboard.difficult_questions"
-                :key="item.question_id"
-                class="table-row difficult-row"
-                @tap="openQuestionById(item.question_id)"
-              >
-                <view class="rank-cell">
-                  <text class="rank-badge" :class="{ top: index < 3 }">{{ index + 1 }}</text>
+            <view v-else>
+              <view class="data-table difficult-table">
+                <view class="table-row table-head">
+                  <view class="rank-cell">排名</view>
+                  <view class="stem-cell">题目</view>
+                  <view class="category-cell">分类</view>
+                  <view class="number-cell">答错次数</view>
+                  <view class="number-cell">作答次数</view>
+                  <view class="accuracy-cell">正确率</view>
                 </view>
-                <view class="stem-cell">
-                  <MathText class="stem-primary" :value="item.stem" />
-                  <view class="stem-id">ID {{ shortId(item.question_id) }}</view>
-                </view>
-                <view class="category-cell">
-                  <text class="category-primary">{{ item.subject || '未分类' }}</text>
-                  <text class="category-secondary">{{ item.module || '未分模块' }}</text>
-                </view>
-                <view class="number-cell wrong-number">{{ item.wrong_count }}</view>
-                <view class="number-cell">{{ item.attempt_count }}</view>
-                <view class="accuracy-cell">
-                  <view class="accuracy-copy">
-                    <text>{{ formatAccuracy(item.accuracy) }}</text>
-                    <text class="accuracy-tone" :class="accuracyTone(item.accuracy)">
-                      {{ accuracyHint(item.accuracy) }}
+                <button
+                  v-for="(item, index) in dashboard.difficult_questions"
+                  :key="item.question_id"
+                  class="table-row difficult-row"
+                  @tap="openQuestionById(item.question_id)"
+                >
+                  <view class="rank-cell">
+                    <text class="rank-badge" :class="{ top: dashboardRankOffset + index < 3 }">
+                      {{ dashboardRankOffset + index + 1 }}
                     </text>
                   </view>
-                  <view class="accuracy-track">
-                    <view
-                      class="accuracy-fill"
-                      :class="accuracyTone(item.accuracy)"
-                      :style="{ width: `${clampAccuracy(item.accuracy)}%` }"
-                    ></view>
+                  <view class="stem-cell">
+                    <MathText class="stem-primary" :value="item.stem" />
+                    <view class="stem-id">ID {{ shortId(item.question_id) }}</view>
+                  </view>
+                  <view class="category-cell">
+                    <text class="category-primary">{{ item.subject || '未分类' }}</text>
+                    <text class="category-secondary">{{ item.module || '未分模块' }}</text>
+                  </view>
+                  <view class="number-cell wrong-number">{{ item.wrong_count }}</view>
+                  <view class="number-cell">{{ item.attempt_count }}</view>
+                  <view class="accuracy-cell">
+                    <view class="accuracy-copy">
+                      <text>{{ formatAccuracy(item.accuracy) }}</text>
+                      <text class="accuracy-tone" :class="accuracyTone(item.accuracy)">
+                        {{ accuracyHint(item.accuracy) }}
+                      </text>
+                    </view>
+                    <view class="accuracy-track">
+                      <view
+                        class="accuracy-fill"
+                        :class="accuracyTone(item.accuracy)"
+                        :style="{ width: `${clampAccuracy(item.accuracy)}%` }"
+                      ></view>
+                    </view>
+                  </view>
+                </button>
+              </view>
+              <view class="pagination-row dashboard-pagination-row">
+                <view class="pagination-actions">
+                  <button
+                    :disabled="dashboardDifficultPage <= 1 || dashboardLoading"
+                    @tap="changeDashboardDifficultPage(dashboardDifficultPage - 1)"
+                  >‹</button>
+                  <view class="page-current">{{ dashboardDifficultPage }}</view>
+                  <view class="page-total">/ {{ dashboardDifficultTotalPages }}</view>
+                  <button
+                    :disabled="dashboardDifficultPage >= dashboardDifficultTotalPages || dashboardLoading"
+                    @tap="changeDashboardDifficultPage(dashboardDifficultPage + 1)"
+                  >›</button>
+                </view>
+              </view>
+            </view>
+          </view>
+        </section>
+
+        <section v-if="activeSection === 'community'" class="content-section community-section">
+          <view class="community-summary">
+            <view class="community-summary-card">
+              <view class="community-summary-label">全部帖子</view>
+              <view class="community-summary-value">{{ formatCount(communityOverview.total_posts) }}</view>
+              <view class="community-summary-note">社区累计发布内容</view>
+            </view>
+            <view class="community-summary-card mint">
+              <view class="community-summary-label">公开展示</view>
+              <view class="community-summary-value">{{ formatCount(communityOverview.published_posts) }}</view>
+              <view class="community-summary-note">当前对用户可见</view>
+            </view>
+            <view class="community-summary-card slate">
+              <view class="community-summary-label">已下架</view>
+              <view class="community-summary-value">{{ formatCount(communityOverview.archived_posts) }}</view>
+              <view class="community-summary-note">保留管理记录，可恢复</view>
+            </view>
+            <view class="community-summary-card blue">
+              <view class="community-summary-label">今日新增</view>
+              <view class="community-summary-value">{{ formatCount(communityOverview.today_posts) }}</view>
+              <view class="community-summary-note">按北京时间统计</view>
+            </view>
+          </view>
+
+          <view class="question-workspace community-workspace">
+            <view class="workspace-heading">
+              <view>
+                <view class="panel-title">社区内容</view>
+                <view class="panel-subtitle">查看用户发布内容与互动数据，并进行下架或恢复。</view>
+              </view>
+            </view>
+
+            <view class="filter-toolbar community-filter-toolbar">
+              <view class="search-shell community-search-shell">
+                <view class="search-icon">
+                  <image class="search-icon-image" src="/static/admin-icons/admin-search.svg" mode="aspectFit" />
+                </view>
+                <input
+                  v-model.trim="communityFilters.search"
+                  class="search-input"
+                  placeholder="搜索帖子、正文或用户"
+                  confirm-type="search"
+                  @input="handleCommunitySearchInput"
+                  @confirm="applyCommunityFilters"
+                />
+                <button v-if="communityFilters.search" class="search-clear" @tap="clearCommunitySearch">×</button>
+              </view>
+
+              <AdminSelect
+                class="question-admin-select community-admin-select"
+                :options="communityStatusLabels"
+                :value-index="selectedCommunityStatusIndex"
+                aria-label="帖子状态筛选"
+                @change="handleCommunityStatusChange"
+              />
+              <AdminSelect
+                class="question-admin-select community-admin-select"
+                :options="communityTypeLabels"
+                :value-index="selectedCommunityTypeIndex"
+                aria-label="帖子类型筛选"
+                @change="handleCommunityTypeChange"
+              />
+              <AdminSelect
+                class="question-admin-select community-admin-select sort"
+                :options="communitySortLabels"
+                :value-index="selectedCommunitySortIndex"
+                aria-label="帖子排序方式"
+                @change="handleCommunitySortChange"
+              />
+              <button v-if="communityHasFilters" class="clear-filter-button" @tap="clearCommunityFilters">清空</button>
+            </view>
+
+            <view v-if="communitySelectedIds.length" class="bulk-toolbar">
+              <view class="bulk-copy">已选择 <text>{{ communitySelectedIds.length }}</text> 条帖子</view>
+              <view class="bulk-actions">
+                <button
+                  v-if="communityBulkVisibilityAction"
+                  class="bulk-button"
+                  :class="communityBulkVisibilityAction.tone"
+                  @tap="bulkChangeCommunityVisibility(communityBulkVisibilityAction.isPublished)"
+                >
+                  {{ communityBulkVisibilityAction.label }}
+                </button>
+                <button class="bulk-cancel" @tap="communitySelectedIds = []">取消选择</button>
+              </view>
+            </view>
+
+            <view class="question-table-wrap">
+              <view class="question-table community-table">
+                <view class="community-grid table-head">
+                  <view class="check-cell">
+                    <button class="check-box" :class="{ checked: allCommunityPageSelected }" @tap="toggleSelectCommunityPage">
+                      {{ allCommunityPageSelected ? '✓' : '' }}
+                    </button>
+                  </view>
+                  <view>帖子</view>
+                  <view>发布用户</view>
+                  <view>分类</view>
+                  <view>浏览</view>
+                  <view>点赞</view>
+                  <view>评论</view>
+                  <view>状态</view>
+                  <view>发布时间</view>
+                  <view>操作</view>
+                </view>
+
+                <view v-if="communityLoading" class="table-state">正在加载社区内容…</view>
+                <view v-else-if="communityLoadError" class="table-state error">
+                  <view>社区内容加载失败，请检查网络或权限状态。</view>
+                  <button @tap="loadCommunityData">重新加载</button>
+                </view>
+                <view v-else-if="communityPosts.length === 0" class="table-state">
+                  <view>当前条件下没有帖子</view>
+                </view>
+                <view
+                  v-for="item in communityPosts"
+                  v-else
+                  :key="item.id"
+                  class="community-grid community-row"
+                  @tap="openCommunityPostDetail(item)"
+                >
+                  <view class="check-cell">
+                    <button
+                      class="check-box"
+                      :class="{ checked: isCommunitySelected(item.id) }"
+                      @tap.stop="toggleCommunitySelection(item.id)"
+                    >
+                      {{ isCommunitySelected(item.id) ? '✓' : '' }}
+                    </button>
+                  </view>
+                  <view class="community-post-cell">
+                    <view class="community-post-title">{{ item.title || '未填写标题' }}</view>
+                    <view class="community-post-copy">{{ item.content || '未填写正文' }}</view>
+                  </view>
+                  <view class="community-author-cell">
+                    <view class="community-author-avatar">{{ item.author_avatar || item.author_name?.slice(0, 1) || '研' }}</view>
+                    <view class="community-author-meta">
+                      <view class="community-author-name">{{ item.author_name || '研友' }}</view>
+                      <view class="community-author-id">ID {{ shortId(item.author_id) }}</view>
+                    </view>
+                  </view>
+                  <view class="community-category-cell">
+                    <view class="community-category-primary">{{ item.category || '未分类' }}</view>
+                    <view class="community-category-type">{{ communityPostTypeText(item.post_type) }}</view>
+                  </view>
+                  <view class="community-stat-cell">{{ formatCount(item.view_count) }}</view>
+                  <view class="community-stat-cell">{{ formatCount(item.like_count) }}</view>
+                  <view class="community-stat-cell">{{ formatCount(item.comment_count) }}</view>
+                  <view class="status-cell">
+                    <text class="status-pill" :class="item.is_published ? 'published' : 'archived'">
+                      {{ communityPostStatusText(item.is_published) }}
+                    </text>
+                  </view>
+                  <view class="date-cell">{{ formatDate(item.created_at) }}</view>
+                  <view class="community-action-cell">
+                    <button class="row-action" @tap.stop="openCommunityPostDetail(item)">查看</button>
+                    <button
+                      class="community-visibility-button"
+                      :class="{ restore: !item.is_published }"
+                      @tap.stop="toggleCommunityPostVisibility(item)"
+                    >
+                      {{ item.is_published ? '下架' : '恢复' }}
+                    </button>
                   </view>
                 </view>
-              </button>
+              </view>
+            </view>
+
+            <view class="pagination-row">
+              <view class="pagination-info">共 {{ formatCount(communityCount) }} 条，每页 {{ communityPageSize }} 条</view>
+              <view class="pagination-actions">
+                <button :disabled="communityPage <= 1 || communityLoading" @tap="changeCommunityPage(communityPage - 1)">‹</button>
+                <view class="page-current">{{ communityPage }}</view>
+                <view class="page-total">/ {{ communityTotalPages }}</view>
+                <button :disabled="communityPage >= communityTotalPages || communityLoading" @tap="changeCommunityPage(communityPage + 1)">›</button>
+              </view>
             </view>
           </view>
         </section>
@@ -525,6 +723,103 @@
         </section>
       </template>
     </main>
+
+    <view v-if="communityDetailVisible" class="drawer-backdrop community-detail-backdrop" @tap="closeCommunityPostDetail">
+      <view class="community-detail-modal" @tap.stop>
+        <view class="drawer-header community-detail-header">
+          <view>
+            <view class="drawer-kicker">COMMUNITY CONTENT</view>
+            <view class="drawer-title">帖子详情</view>
+          </view>
+          <button class="drawer-close" :disabled="communitySaving" @tap="closeCommunityPostDetail">×</button>
+        </view>
+
+        <view v-if="communityDetailLoading" class="drawer-state">正在读取帖子详情…</view>
+        <scroll-view v-else-if="communityDetail?.post" scroll-y class="community-detail-scroll">
+          <view class="community-detail-content">
+            <view class="community-detail-meta">
+              <view class="community-detail-author">
+                <view class="community-detail-avatar">
+                  {{ communityDetail.post.author_avatar || communityDetail.post.author_name?.slice(0, 1) || '研' }}
+                </view>
+                <view>
+                  <view class="community-detail-author-name">{{ communityDetail.post.author_name || '研友' }}</view>
+                  <view class="community-detail-author-id">用户 ID {{ shortId(communityDetail.post.author_id) }}</view>
+                </view>
+              </view>
+              <view class="community-detail-status">
+                <text class="status-pill" :class="communityDetail.post.is_published ? 'published' : 'archived'">
+                  {{ communityPostStatusText(communityDetail.post.is_published) }}
+                </text>
+                <text>{{ formatDateTime(communityDetail.post.created_at) }}</text>
+              </view>
+            </view>
+
+            <view class="community-detail-stat-grid">
+              <view><text>浏览</text><strong>{{ formatCount(communityDetail.post.view_count) }}</strong></view>
+              <view><text>点赞</text><strong>{{ formatCount(communityDetail.post.like_count) }}</strong></view>
+              <view><text>评论</text><strong>{{ formatCount(communityDetail.post.comment_count) }}</strong></view>
+              <view><text>分类</text><strong>{{ communityDetail.post.category || '未分类' }}</strong></view>
+            </view>
+
+            <view class="community-detail-topic-row">
+              <text>{{ communityPostTypeText(communityDetail.post.post_type) }}</text>
+              <text>{{ communityDetail.post.category || '未分类' }}</text>
+            </view>
+            <view class="community-detail-title">{{ communityDetail.post.title || '未填写标题' }}</view>
+            <view class="community-detail-body">{{ communityDetail.post.content || '未填写正文' }}</view>
+
+            <view v-if="communityDetail.post.media?.length" class="community-detail-media-grid">
+              <view
+                v-for="media in communityDetail.post.media"
+                :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
+                class="community-detail-media-item"
+              >
+                <image
+                  v-if="media.imageUrl || media.image_url"
+                  :src="media.imageUrl || media.image_url"
+                  mode="aspectFill"
+                />
+                <view v-else class="community-detail-media-fallback">
+                  <text>{{ media.title || '帖子附件' }}</text>
+                </view>
+              </view>
+            </view>
+
+            <view class="community-detail-comments-heading">
+              评论 <text>{{ formatCount(communityDetail.comments?.length) }}</text>
+            </view>
+            <view v-if="communityDetail.comments?.length" class="community-detail-comments">
+              <view v-for="comment in communityDetail.comments" :key="comment.id" class="community-detail-comment">
+                <view class="community-comment-avatar">{{ comment.author_avatar || comment.author_name?.slice(0, 1) || '研' }}</view>
+                <view class="community-comment-main">
+                  <view class="community-comment-topline">
+                    <text>{{ comment.author_name || '研友' }}</text>
+                    <text>{{ formatDateTime(comment.created_at) }}</text>
+                  </view>
+                  <view class="community-comment-copy">{{ comment.content }}</view>
+                </view>
+                <view class="community-comment-likes">赞 {{ formatCount(comment.like_count) }}</view>
+              </view>
+            </view>
+            <view v-else class="community-detail-empty-comments">暂无评论</view>
+          </view>
+        </scroll-view>
+
+        <view class="drawer-footer community-detail-footer">
+          <button class="footer-button secondary" :disabled="communitySaving" @tap="closeCommunityPostDetail">关闭</button>
+          <button
+            v-if="communityDetail?.post"
+            class="footer-button"
+            :class="communityDetail.post.is_published ? 'danger' : 'primary'"
+            :disabled="communitySaving"
+            @tap="toggleCommunityPostVisibility(communityDetail.post)"
+          >
+            {{ communityDetail.post.is_published ? '下架帖子' : '恢复帖子' }}
+          </button>
+        </view>
+      </view>
+    </view>
 
     <view
       v-if="drawerVisible"
@@ -799,6 +1094,7 @@ import { computed, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AdminSelect from '../../components/AdminSelect.vue'
 import {
+  bulkUpdateQuestionAdminCommunityPostVisibility,
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
   createAdminQuestionBank,
@@ -808,13 +1104,17 @@ import {
   fetchAdminQuestionBanks,
   fetchAdminQuestions,
   fetchAdminQuestionStats,
+  fetchQuestionAdminCommunityOverview,
+  fetchQuestionAdminCommunityPostDetail,
+  fetchQuestionAdminCommunityPosts,
   fetchQuestionAdminDashboard,
   fetchQuestionAdminPortalMe,
   publishAdminQuestionBankPendingQuestions,
   renameAdminQuestionBank,
   updateAdminQuestion,
   updateAdminQuestionReview,
-  updateAdminQuestionStatus
+  updateAdminQuestionStatus,
+  updateQuestionAdminCommunityPostVisibility
 } from '../../api/admin'
 import MathText from '../../components/MathText.vue'
 import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
@@ -833,6 +1133,11 @@ const portalLoading = ref(true)
 const portalBootstrapError = ref(null)
 const refreshing = ref(false)
 const dashboardLoading = ref(false)
+const communityLoading = ref(false)
+const communityLoadError = ref(false)
+const communityDetailVisible = ref(false)
+const communityDetailLoading = ref(false)
+const communitySaving = ref(false)
 const questionsLoading = ref(false)
 const questionLoadError = ref(false)
 const questionBanksLoading = ref(false)
@@ -845,6 +1150,7 @@ const dashboard = reactive({
   today_practicing_users: 0,
   online_members: 0,
   online_window_minutes: 15,
+  difficult_questions_count: 0,
   difficult_questions: []
 })
 const dashboardFilters = reactive({
@@ -852,6 +1158,26 @@ const dashboardFilters = reactive({
   sort_by: 'wrong_count',
   period_days: 0
 })
+const dashboardDifficultPage = ref(1)
+const dashboardDifficultPageSize = 20
+const communityOverview = reactive({
+  total_posts: 0,
+  published_posts: 0,
+  archived_posts: 0,
+  today_posts: 0
+})
+const communityFilters = reactive({
+  status: 'all',
+  post_type: 'all',
+  sort_by: 'newest',
+  search: ''
+})
+const communityPosts = ref([])
+const communityCount = ref(0)
+const communityPage = ref(1)
+const communityPageSize = 20
+const communitySelectedIds = ref([])
+const communityDetail = ref(null)
 const globalQuestionStats = reactive({
   active: 0,
   archived: 0,
@@ -895,6 +1221,7 @@ const devPreviewMode = ref(false)
 const returnedReviewQuestions = ref([])
 const returnedReviewBatchExported = ref(false)
 let searchTimer = null
+let communitySearchTimer = null
 
 const filters = reactive({
   subject: '',
@@ -928,6 +1255,7 @@ const form = reactive({
 
 const navItems = [
   { key: 'dashboard', label: '仪表盘', icon: '/static/admin-icons/nav-dashboard.svg' },
+  { key: 'community', label: '内容管理', icon: '/static/ui-icons/circle-community.svg' },
   { key: 'questions', label: '题目管理', icon: '/static/admin-icons/nav-question-management.svg' },
   { key: 'import', label: '批量导入', icon: '/static/admin-icons/nav-batch-import.svg' }
 ]
@@ -951,6 +1279,22 @@ const dashboardTimeRangeOptions = [
   { label: '全部时间', value: 0 },
   { label: '近 7 天', value: 7 },
   { label: '近 30 天', value: 30 }
+]
+const communityStatusOptions = [
+  { label: '全部状态', value: 'all' },
+  { label: '公开展示', value: 'published' },
+  { label: '已下架', value: 'archived' }
+]
+const communityTypeOptions = [
+  { label: '全部帖子', value: 'all' },
+  { label: '研友聊', value: 'chat' },
+  { label: '经验贴', value: 'experience' }
+]
+const communitySortOptions = [
+  { label: '最新发布', value: 'newest' },
+  { label: '浏览量：从高到低', value: 'views' },
+  { label: '点赞数：从高到低', value: 'likes' },
+  { label: '评论数：从高到低', value: 'comments' }
 ]
 const answerOptions = ['A', 'B', 'C', 'D']
 const previewQuestions = [
@@ -1028,6 +1372,98 @@ const previewQuestions = [
   }
 ]
 
+const previewCommunityPosts = [
+  {
+    id: 'preview-community-001',
+    author_id: 'a1b2c3d4-e5f6-4a7b-8c9d-0123456789ab',
+    author_name: '林同学',
+    author_avatar: '林',
+    category: '中华文化',
+    post_type: 'chat',
+    title: '中华文化复习怎么安排更高效？',
+    content: '最近开始整理中国文学常识，大家是按模块刷题，还是先做一轮综合题再回头补弱项？',
+    media: [],
+    view_count: 328,
+    like_count: 26,
+    comment_count: 4,
+    is_published: true,
+    created_at: '2026-08-07T01:15:00Z',
+    updated_at: '2026-08-07T01:15:00Z',
+    comments: [
+      {
+        id: 'preview-comment-001',
+        author_name: '陈同学',
+        author_avatar: '陈',
+        content: '我先按模块过一遍，再用错题本回顾，节奏会更稳。',
+        like_count: 5,
+        created_at: '2026-08-07T01:30:00Z'
+      },
+      {
+        id: 'preview-comment-002',
+        author_name: '周同学',
+        author_avatar: '周',
+        content: '建议文学和历史交替刷，连续做同类题容易疲劳。',
+        like_count: 3,
+        created_at: '2026-08-07T02:05:00Z'
+      }
+    ]
+  },
+  {
+    id: 'preview-community-002',
+    author_id: 'b1c2d3e4-f5a6-4b7c-8d9e-0123456789ab',
+    author_name: '许同学',
+    author_avatar: '许',
+    category: 'Z001',
+    post_type: 'experience',
+    title: 'Z001 逻辑推理二刷笔记',
+    content: '二刷时把错题拆成概念判断、论证和分析推理三个文件夹，每晚只复盘当天错误的题目。',
+    media: [],
+    view_count: 781,
+    like_count: 74,
+    comment_count: 11,
+    is_published: true,
+    created_at: '2026-08-06T08:25:00Z',
+    updated_at: '2026-08-06T08:25:00Z',
+    comments: []
+  },
+  {
+    id: 'preview-community-003',
+    author_id: 'c1d2e3f4-a5b6-4c7d-8e9f-0123456789ab',
+    author_name: '何同学',
+    author_avatar: '何',
+    category: '英语运用',
+    post_type: 'chat',
+    title: '英语词汇总是记了又忘怎么办？',
+    content: '想试试把词汇放到真题句子里复习，大家有没有适合日常打卡的方法？',
+    media: [],
+    view_count: 194,
+    like_count: 18,
+    comment_count: 7,
+    is_published: false,
+    created_at: '2026-08-05T03:10:00Z',
+    updated_at: '2026-08-06T09:30:00Z',
+    comments: []
+  },
+  {
+    id: 'preview-community-004',
+    author_id: 'd1e2f3a4-b5c6-4d7e-8f9a-0123456789ab',
+    author_name: '苏同学',
+    author_avatar: '苏',
+    category: 'Z002',
+    post_type: 'experience',
+    title: '数学基础错题复盘节奏分享',
+    content: '我把每道错题按错因标记为计算、概念和审题，隔天再做一次，正确后才归档。',
+    media: [],
+    view_count: 612,
+    like_count: 51,
+    comment_count: 8,
+    is_published: true,
+    created_at: '2026-08-04T12:40:00Z',
+    updated_at: '2026-08-04T12:40:00Z',
+    comments: []
+  }
+]
+
 const currentNavLabel = computed(() => {
   if (activeSection.value === 'import' && importPreviewVisible.value) {
     return '批量导入 / 导入预览'
@@ -1037,7 +1473,7 @@ const currentNavLabel = computed(() => {
       ? `题目管理 / ${reviewQuestionBank.value.name} / 待审核`
       : '题目管理 / 待审核'
   }
-  const label = navItems.find((item) => item.key === activeSection.value)?.label || '题库中台'
+  const label = navItems.find((item) => item.key === activeSection.value)?.label || '后台管理'
   return activeSection.value === 'questions' && activeQuestionBank.value
     ? `${label} / ${activeQuestionBank.value.name}`
     : label
@@ -1055,7 +1491,8 @@ const pageTitle = computed(() => {
     return '导入预览'
   }
   const titles = {
-    dashboard: '题库仪表盘',
+    dashboard: '后台仪表盘',
+    community: '社区内容',
     questions: '题目管理',
     review: '审核队列',
     import: '批量导入'
@@ -1063,9 +1500,9 @@ const pageTitle = computed(() => {
   if (activeSection.value === 'questions' && activeQuestionBank.value) {
     return activeQuestionBank.value.name
   }
-  return titles[activeSection.value] || '题库中台'
+  return titles[activeSection.value] || '后台管理'
 })
-const profileName = '题库管理'
+const profileName = '后台管理'
 const todayLabel = computed(() => new Intl.DateTimeFormat('zh-CN', {
   month: 'long',
   day: 'numeric',
@@ -1127,6 +1564,43 @@ const selectedDashboardTimeRangeIndex = computed(() => optionIndex(
   dashboardTimeRangeOptions,
   Number(dashboardFilters.period_days || 0)
 ))
+const dashboardDifficultTotalPages = computed(() => Math.max(
+  1,
+  Math.ceil(Number(dashboard.difficult_questions_count || dashboard.difficult_questions.length || 0) / dashboardDifficultPageSize)
+))
+const dashboardRankOffset = computed(() => (dashboardDifficultPage.value - 1) * dashboardDifficultPageSize)
+const communityStatusLabels = computed(() => communityStatusOptions.map((item) => item.label))
+const communityTypeLabels = computed(() => communityTypeOptions.map((item) => item.label))
+const communitySortLabels = computed(() => communitySortOptions.map((item) => item.label))
+const selectedCommunityStatusIndex = computed(() => optionIndex(communityStatusOptions, communityFilters.status))
+const selectedCommunityTypeIndex = computed(() => optionIndex(communityTypeOptions, communityFilters.post_type))
+const selectedCommunitySortIndex = computed(() => optionIndex(communitySortOptions, communityFilters.sort_by))
+const communityTotalPages = computed(() => Math.max(1, Math.ceil(Number(communityCount.value || 0) / communityPageSize)))
+const communitySelectedSet = computed(() => new Set(communitySelectedIds.value))
+const allCommunityPageSelected = computed(() => (
+  communityPosts.value.length > 0 && communityPosts.value.every((item) => communitySelectedSet.value.has(item.id))
+))
+const selectedCommunityPosts = computed(() => (
+  communityPosts.value.filter((item) => communitySelectedSet.value.has(item.id))
+))
+const communityBulkVisibilityAction = computed(() => {
+  const items = selectedCommunityPosts.value
+  if (!items.length || items.length !== communitySelectedIds.value.length) return null
+  const publishedStates = Array.from(new Set(items.map((item) => Boolean(item.is_published))))
+  if (publishedStates.length !== 1) return null
+  const isPublished = publishedStates[0]
+  return {
+    isPublished: !isPublished,
+    label: isPublished ? (items.length > 1 ? '批量下架' : '下架') : (items.length > 1 ? '批量恢复' : '恢复'),
+    tone: isPublished ? 'danger' : 'publish'
+  }
+})
+const communityHasFilters = computed(() => Boolean(
+  communityFilters.status !== 'all' ||
+  communityFilters.post_type !== 'all' ||
+  communityFilters.sort_by !== 'newest' ||
+  communityFilters.search
+))
 const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, filters.module))
 const selectedDifficultyIndex = computed(() => optionIndex(difficultyOptions, filters.difficulty))
 const selectedStatusIndex = computed(() => optionIndex(statusOptions, filters.status))
@@ -1179,7 +1653,7 @@ const drawerTitle = computed(() => (
 ))
 
 onLoad(async (options = {}) => {
-  if (['dashboard', 'questions', 'import'].includes(options.section)) {
+  if (['dashboard', 'community', 'questions', 'import'].includes(options.section)) {
     activeSection.value = options.section
   }
   requestedQuestionBankId.value = String(options.question_bank_id || '')
@@ -1193,6 +1667,7 @@ onLoad(async (options = {}) => {
 
 onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
+  if (communitySearchTimer) clearTimeout(communitySearchTimer)
 })
 
 async function bootstrap() {
@@ -1208,7 +1683,9 @@ async function bootstrap() {
       authUser.value = updateAuthUser(me.profile) || me.profile
     }
     await Promise.all([loadDashboard(), loadQuestionStats()])
-    if (activeSection.value === 'questions') {
+    if (activeSection.value === 'community') {
+      await loadCommunityData()
+    } else if (activeSection.value === 'questions') {
       await loadQuestionBanks()
       const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
       if (requestedBank) await openQuestionBank(requestedBank)
@@ -1233,18 +1710,18 @@ function buildPortalBootstrapError(error) {
   const statusCode = Number(error?.statusCode || error?.status || 0)
   if (statusCode === 403) {
     return {
-      title: '当前账号没有题库中台权限',
-      message: '请联系管理员将该账号加入题库中台访问白名单。'
+      title: '当前账号没有后台管理权限',
+      message: '请联系管理员将该账号加入后台管理访问白名单。'
     }
   }
   if (statusCode === 503) {
     return {
-      title: '题库中台暂不可用',
+      title: '后台管理暂不可用',
       message: '服务正在维护或配置中，请稍后重试。'
     }
   }
   return {
-    title: '无法连接题库中台',
+    title: '无法连接后台管理',
     message: '请检查网络后重试；登录状态已保留。'
   }
 }
@@ -1260,17 +1737,77 @@ async function loadDashboard() {
       subject: dashboardFilters.subject,
       sort_by: dashboardFilters.sort_by,
       min_attempts: 1,
-      period_days: dashboardFilters.period_days
+      period_days: dashboardFilters.period_days,
+      page: dashboardDifficultPage.value,
+      page_size: dashboardDifficultPageSize
     })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
     dashboard.online_members = Number(response?.online_members || 0)
     dashboard.online_window_minutes = Number(response?.online_window_minutes || 15)
-    dashboard.difficult_questions = Array.isArray(response?.difficult_questions) ? response.difficult_questions : []
+    const difficultQuestions = Array.isArray(response?.difficult_questions) ? response.difficult_questions : []
+    dashboard.difficult_questions_count = Number(
+      response?.difficult_questions_count == null
+        ? difficultQuestions.length
+        : response.difficult_questions_count
+    )
+    dashboardDifficultPage.value = Math.max(1, Number(response?.difficult_questions_page || dashboardDifficultPage.value || 1))
+    const dashboardTotalPages = Math.max(
+      1,
+      Math.ceil(Number(dashboard.difficult_questions_count || difficultQuestions.length || 0) / dashboardDifficultPageSize)
+    )
+    if (dashboard.difficult_questions_count > 0 && difficultQuestions.length === 0 && dashboardDifficultPage.value > dashboardTotalPages) {
+      dashboardDifficultPage.value = dashboardTotalPages
+      await loadDashboard()
+      return
+    }
+    dashboard.difficult_questions = difficultQuestions
   } catch (error) {
     dashboard.difficult_questions = []
+    dashboard.difficult_questions_count = 0
     uni.showToast({ title: '仪表盘数据加载失败', icon: 'none' })
   } finally {
     dashboardLoading.value = false
+  }
+}
+
+async function loadCommunityData() {
+  if (devPreviewMode.value) {
+    loadDevPreviewCommunity()
+    return
+  }
+  communityLoading.value = true
+  communityLoadError.value = false
+  try {
+    const [overviewResponse, postsResponse] = await Promise.all([
+      fetchQuestionAdminCommunityOverview(),
+      fetchQuestionAdminCommunityPosts({
+        status: communityFilters.status,
+        post_type: communityFilters.post_type,
+        sort_by: communityFilters.sort_by,
+        search: communityFilters.search,
+        limit: communityPageSize,
+        offset: (communityPage.value - 1) * communityPageSize
+      })
+    ])
+    communityOverview.total_posts = Number(overviewResponse?.total_posts || 0)
+    communityOverview.published_posts = Number(overviewResponse?.published_posts || 0)
+    communityOverview.archived_posts = Number(overviewResponse?.archived_posts || 0)
+    communityOverview.today_posts = Number(overviewResponse?.today_posts || 0)
+    communityPosts.value = Array.isArray(postsResponse?.items) ? postsResponse.items : []
+    communityCount.value = Number(postsResponse?.count || 0)
+    const totalPages = Math.max(1, Math.ceil(communityCount.value / communityPageSize))
+    if (communityCount.value > 0 && communityPosts.value.length === 0 && communityPage.value > totalPages) {
+      communityPage.value = totalPages
+      await loadCommunityData()
+      return
+    }
+    communitySelectedIds.value = []
+  } catch (error) {
+    communityPosts.value = []
+    communityCount.value = 0
+    communityLoadError.value = true
+  } finally {
+    communityLoading.value = false
   }
 }
 
@@ -1374,6 +1911,8 @@ async function switchSection(section) {
   if (activeSection.value === section) {
     if (section === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value)) {
       await returnToQuestionBanks()
+    } else if (section === 'community') {
+      await loadCommunityData()
     }
     return
   }
@@ -1387,6 +1926,7 @@ async function switchSection(section) {
   activeSection.value = section
   currentPage.value = 1
   selectedIds.value = []
+  communitySelectedIds.value = []
   if (section === 'questions') {
     activeQuestionBank.value = null
     showGlobalQuestionList.value = false
@@ -1394,6 +1934,8 @@ async function switchSection(section) {
     await loadQuestionBanks()
   } else if (section === 'dashboard') {
     await Promise.all([loadDashboard(), loadQuestionStats()])
+  } else if (section === 'community') {
+    await loadCommunityData()
   }
 }
 
@@ -1407,6 +1949,8 @@ async function refreshCurrentSection() {
   try {
     if (activeSection.value === 'dashboard') {
       await Promise.all([loadDashboard(), loadQuestionStats()])
+    } else if (activeSection.value === 'community') {
+      await loadCommunityData()
     } else if (activeSection.value === 'questions' && !activeQuestionBank.value && !showGlobalQuestionList.value) {
       await loadQuestionBanks()
     } else if (activeSection.value === 'questions' || activeSection.value === 'review') {
@@ -1515,8 +2059,47 @@ function handleStatusChange(event) {
   applyFilters()
 }
 
+function applyCommunityFilters() {
+  communityPage.value = 1
+  loadCommunityData()
+}
+
+function clearCommunityFilters() {
+  communityFilters.status = 'all'
+  communityFilters.post_type = 'all'
+  communityFilters.sort_by = 'newest'
+  communityFilters.search = ''
+  applyCommunityFilters()
+}
+
+function clearCommunitySearch() {
+  communityFilters.search = ''
+  applyCommunityFilters()
+}
+
+function handleCommunitySearchInput() {
+  if (communitySearchTimer) clearTimeout(communitySearchTimer)
+  communitySearchTimer = setTimeout(applyCommunityFilters, 420)
+}
+
+function handleCommunityStatusChange(event) {
+  communityFilters.status = communityStatusOptions[Number(event?.detail?.value || 0)]?.value || 'all'
+  applyCommunityFilters()
+}
+
+function handleCommunityTypeChange(event) {
+  communityFilters.post_type = communityTypeOptions[Number(event?.detail?.value || 0)]?.value || 'all'
+  applyCommunityFilters()
+}
+
+function handleCommunitySortChange(event) {
+  communityFilters.sort_by = communitySortOptions[Number(event?.detail?.value || 0)]?.value || 'newest'
+  applyCommunityFilters()
+}
+
 async function handleDashboardSubjectChange(event) {
   dashboardFilters.subject = dashboardSubjectOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  dashboardDifficultPage.value = 1
   await loadDashboard()
 }
 
@@ -1524,6 +2107,7 @@ async function handleDashboardSortChange(event) {
   const value = dashboardSortOptions[Number(event?.detail?.value || 0)]?.value || 'wrong_count'
   if (dashboardFilters.sort_by === value) return
   dashboardFilters.sort_by = value
+  dashboardDifficultPage.value = 1
   await loadDashboard()
 }
 
@@ -1531,6 +2115,7 @@ async function handleDashboardTimeRangeChange(event) {
   dashboardFilters.period_days = Number(
     dashboardTimeRangeOptions[Number(event?.detail?.value || 0)]?.value || 0
   )
+  dashboardDifficultPage.value = 1
   await loadDashboard()
 }
 
@@ -1715,6 +2300,148 @@ function changePage(page) {
   if (next === currentPage.value) return
   currentPage.value = next
   loadQuestions()
+}
+
+function changeDashboardDifficultPage(page) {
+  const next = Math.max(1, Math.min(dashboardDifficultTotalPages.value, Number(page || 1)))
+  if (next === dashboardDifficultPage.value) return
+  dashboardDifficultPage.value = next
+  loadDashboard()
+}
+
+function changeCommunityPage(page) {
+  const next = Math.max(1, Math.min(communityTotalPages.value, Number(page || 1)))
+  if (next === communityPage.value) return
+  communityPage.value = next
+  loadCommunityData()
+}
+
+function isCommunitySelected(id) {
+  return communitySelectedSet.value.has(id)
+}
+
+function toggleCommunitySelection(id) {
+  communitySelectedIds.value = isCommunitySelected(id)
+    ? communitySelectedIds.value.filter((item) => item !== id)
+    : [...communitySelectedIds.value, id]
+}
+
+function toggleSelectCommunityPage() {
+  if (allCommunityPageSelected.value) {
+    const visibleIds = new Set(communityPosts.value.map((item) => item.id))
+    communitySelectedIds.value = communitySelectedIds.value.filter((id) => !visibleIds.has(id))
+    return
+  }
+  communitySelectedIds.value = Array.from(new Set([
+    ...communitySelectedIds.value,
+    ...communityPosts.value.map((item) => item.id)
+  ]))
+}
+
+function closeCommunityPostDetail(force = false) {
+  if (communitySaving.value && !force) return
+  communityDetailVisible.value = false
+  communityDetailLoading.value = false
+  communityDetail.value = null
+}
+
+async function openCommunityPostDetail(item) {
+  if (!item?.id || communitySaving.value) return
+  communityDetailVisible.value = true
+  communityDetailLoading.value = true
+  communityDetail.value = null
+  if (devPreviewMode.value) {
+    const post = previewCommunityPosts.find((candidate) => candidate.id === item.id) || item
+    communityDetail.value = {
+      post: { ...post },
+      comments: Array.isArray(post.comments) ? post.comments : []
+    }
+    communityDetailLoading.value = false
+    return
+  }
+  try {
+    const response = await fetchQuestionAdminCommunityPostDetail(item.id)
+    if (!response?.post) throw new Error('Community post not found')
+    communityDetail.value = response
+  } catch (error) {
+    closeCommunityPostDetail(true)
+    uni.showToast({ title: '帖子详情加载失败', icon: 'none' })
+  } finally {
+    communityDetailLoading.value = false
+  }
+}
+
+async function toggleCommunityPostVisibility(item) {
+  if (!item?.id || communitySaving.value) return
+  const publish = !item.is_published
+  const actionText = publish ? '恢复展示' : '下架'
+  const confirmed = await confirmAction(
+    `确认${actionText}？`,
+    publish
+      ? '恢复后，帖子会重新对用户可见。'
+      : '下架后，帖子将不再对用户可见，但可在后台恢复。',
+    actionText
+  )
+  if (!confirmed) return
+  communitySaving.value = true
+  try {
+    let updatedPost = null
+    if (devPreviewMode.value) {
+      const previewPost = previewCommunityPosts.find((candidate) => candidate.id === item.id)
+      if (previewPost) {
+        previewPost.is_published = publish
+        previewPost.updated_at = new Date().toISOString()
+        updatedPost = { ...previewPost }
+      }
+    } else {
+      updatedPost = await updateQuestionAdminCommunityPostVisibility(item.id, { is_published: publish })
+    }
+    if (communityDetail.value?.post?.id === item.id && updatedPost) {
+      communityDetail.value = { ...communityDetail.value, post: updatedPost }
+    }
+    uni.showToast({ title: publish ? '帖子已恢复' : '帖子已下架', icon: 'success' })
+    await loadCommunityData()
+  } catch (error) {
+    uni.showToast({ title: publish ? '帖子恢复失败' : '帖子下架失败', icon: 'none' })
+  } finally {
+    communitySaving.value = false
+  }
+}
+
+async function bulkChangeCommunityVisibility(isPublished) {
+  if (!communitySelectedIds.value.length || communitySaving.value) return
+  const actionText = isPublished ? '恢复展示' : '下架'
+  const confirmed = await confirmAction(
+    `确认批量${actionText}？`,
+    `将对已选择的 ${communitySelectedIds.value.length} 条帖子执行${actionText}。`,
+    actionText
+  )
+  if (!confirmed) return
+  communitySaving.value = true
+  try {
+    let updatedCount = 0
+    if (devPreviewMode.value) {
+      const selected = new Set(communitySelectedIds.value)
+      previewCommunityPosts.forEach((item) => {
+        if (!selected.has(item.id)) return
+        item.is_published = isPublished
+        item.updated_at = new Date().toISOString()
+        updatedCount += 1
+      })
+    } else {
+      const response = await bulkUpdateQuestionAdminCommunityPostVisibility({
+        ids: communitySelectedIds.value,
+        is_published: isPublished
+      })
+      updatedCount = Number(response?.updated_count || 0)
+    }
+    uni.showToast({ title: `已处理 ${updatedCount} 条`, icon: 'success' })
+    await loadCommunityData()
+  } catch (error) {
+    uni.showToast({ title: '批量操作失败', icon: 'none' })
+  } finally {
+    communitySaving.value = false
+  }
 }
 
 function isSelected(id) {
@@ -2294,7 +3021,7 @@ function logout() {
     return
   }
   uni.showModal({
-    title: '退出题库中台？',
+    title: '退出后台管理？',
     content: '退出后需要重新输入内部账号和密码。',
     confirmText: '退出',
     confirmColor: '#d85a5a',
@@ -2325,6 +3052,8 @@ function loadDevPreview() {
       const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
       if (requestedBank) openQuestionBank(requestedBank)
     })
+  } else if (activeSection.value === 'community') {
+    loadDevPreviewCommunity()
   } else if (activeSection.value === 'review') {
     loadQuestions()
   }
@@ -2392,7 +3121,39 @@ function loadDevPreviewDashboard() {
     }
     return right.wrong_count - left.wrong_count || right.attempt_count - left.attempt_count
   })
-  dashboard.difficult_questions = filteredItems
+  dashboard.difficult_questions_count = filteredItems.length
+  const offset = (dashboardDifficultPage.value - 1) * dashboardDifficultPageSize
+  dashboard.difficult_questions = filteredItems.slice(offset, offset + dashboardDifficultPageSize)
+}
+
+function loadDevPreviewCommunity() {
+  const keyword = String(communityFilters.search || '').trim().toLowerCase()
+  const filtered = previewCommunityPosts.filter((item) => {
+    if (communityFilters.status === 'published' && !item.is_published) return false
+    if (communityFilters.status === 'archived' && item.is_published) return false
+    if (communityFilters.post_type !== 'all' && item.post_type !== communityFilters.post_type) return false
+    if (keyword) {
+      const searchable = `${item.title} ${item.content} ${item.author_name} ${item.category}`.toLowerCase()
+      if (!searchable.includes(keyword)) return false
+    }
+    return true
+  })
+  filtered.sort((left, right) => {
+    if (communityFilters.sort_by === 'views') return right.view_count - left.view_count
+    if (communityFilters.sort_by === 'likes') return right.like_count - left.like_count
+    if (communityFilters.sort_by === 'comments') return right.comment_count - left.comment_count
+    return new Date(right.created_at).getTime() - new Date(left.created_at).getTime()
+  })
+  communityCount.value = filtered.length
+  const offset = (communityPage.value - 1) * communityPageSize
+  communityPosts.value = filtered.slice(offset, offset + communityPageSize).map((item) => ({ ...item }))
+  communityOverview.total_posts = previewCommunityPosts.length
+  communityOverview.published_posts = previewCommunityPosts.filter((item) => item.is_published).length
+  communityOverview.archived_posts = previewCommunityPosts.filter((item) => !item.is_published).length
+  communityOverview.today_posts = previewCommunityPosts.filter((item) => item.created_at.startsWith('2026-08-07')).length
+  communityLoadError.value = false
+  communityLoading.value = false
+  communitySelectedIds.value = []
 }
 
 function optionIndex(options, value) {
@@ -2407,6 +3168,14 @@ function questionDisplayStatus(question) {
     return QUESTION_STATUS.PENDING_REVIEW
   }
   return status
+}
+
+function communityPostStatusText(isPublished) {
+  return isPublished ? '公开展示' : '已下架'
+}
+
+function communityPostTypeText(postType) {
+  return postType === 'experience' ? '经验贴' : '研友聊'
 }
 
 function questionStatusText(status) {
@@ -3514,6 +4283,480 @@ button {
   margin-top: 0;
 }
 
+.community-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 13px;
+}
+
+.community-summary-card {
+  min-height: 104px;
+  padding: 16px 18px;
+  position: relative;
+  overflow: hidden;
+  border: 1px solid #dbe6ea;
+  border-radius: 10px;
+  box-sizing: border-box;
+  background: #fff;
+  box-shadow: 0 7px 22px rgba(31, 50, 71, 0.025);
+}
+
+.community-summary-card::before {
+  width: 4px;
+  content: '';
+  position: absolute;
+  inset: 16px auto 16px 0;
+  border-radius: 0 3px 3px 0;
+  background: #75a8d7;
+}
+
+.community-summary-card.mint::before {
+  background: #57cbb1;
+}
+
+.community-summary-card.slate::before {
+  background: #96a6b8;
+}
+
+.community-summary-card.blue::before {
+  background: #5c9de2;
+}
+
+.community-summary-label {
+  color: #718096;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.community-summary-value {
+  margin-top: 12px;
+  color: #1f2f44;
+  font-size: 23px;
+  font-weight: 750;
+  line-height: 1;
+}
+
+.community-summary-note {
+  margin-top: 10px;
+  color: #98a3af;
+  font-size: 9px;
+}
+
+.community-workspace {
+  margin-top: 16px;
+}
+
+.community-filter-toolbar {
+  background: #fbfcfd;
+}
+
+.community-search-shell {
+  width: 292px;
+}
+
+.community-admin-select {
+  width: 120px;
+  --admin-select-menu-min-width: 132px;
+}
+
+.community-admin-select.sort {
+  width: 164px;
+  --admin-select-menu-min-width: 164px;
+}
+
+.community-table {
+  min-width: 980px;
+}
+
+.community-grid {
+  width: 100%;
+  padding: 0 15px;
+  display: grid;
+  grid-template-columns: 42px minmax(220px, 2.3fr) minmax(118px, 0.9fr) 76px 48px 48px 48px 68px 76px 58px;
+  align-items: center;
+  box-sizing: border-box;
+}
+
+.community-row {
+  min-height: 84px;
+  border-top: 1px solid #edf1f3;
+  color: #536176;
+  background: #fff;
+  cursor: pointer;
+  transition: background 0.16s ease;
+}
+
+.community-row:hover {
+  background: #f7fbfa;
+}
+
+.community-post-cell,
+.community-author-cell,
+.community-category-cell,
+.community-action-cell {
+  min-width: 0;
+}
+
+.community-post-title {
+  overflow: hidden;
+  color: #26364a;
+  font-size: 12px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-post-copy {
+  margin-top: 6px;
+  overflow: hidden;
+  color: #9aa4b0;
+  font-size: 10px;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-author-cell {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.community-author-avatar,
+.community-detail-avatar,
+.community-comment-avatar {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #d2ebe5;
+  color: #267b6d;
+  background: #e7f7f2;
+  font-weight: 800;
+}
+
+.community-author-avatar {
+  width: 28px;
+  height: 28px;
+  border-radius: 8px;
+  font-size: 11px;
+}
+
+.community-author-meta {
+  min-width: 0;
+}
+
+.community-author-name {
+  overflow: hidden;
+  color: #43546a;
+  font-size: 11px;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-author-id,
+.community-category-type {
+  margin-top: 4px;
+  overflow: hidden;
+  color: #9aa5b1;
+  font-size: 9px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-category-primary {
+  color: #4c5d71;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.community-stat-cell {
+  color: #536277;
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.community-action-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+}
+
+.community-action-cell .row-action,
+.community-visibility-button {
+  width: 52px;
+  height: 25px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #f0d0cd;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #a65a53;
+  background: #fff7f6;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.community-visibility-button.restore {
+  border-color: #cce8e1;
+  color: #267f6e;
+  background: #f3fbf8;
+}
+
+.community-detail-backdrop {
+  z-index: 106;
+}
+
+.community-detail-modal {
+  width: min(840px, 100%);
+  max-height: min(860px, calc(100vh - 44px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid rgba(221, 233, 235, 0.92);
+  border-radius: 16px;
+  box-sizing: border-box;
+  background: #fff;
+  box-shadow: 0 22px 64px rgba(19, 35, 52, 0.2);
+}
+
+.community-detail-header {
+  flex: 0 0 auto;
+}
+
+.community-detail-scroll {
+  min-height: 0;
+  flex: 1;
+  background: #fbfcfd;
+}
+
+.community-detail-content {
+  padding: 22px 28px 30px;
+}
+
+.community-detail-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 18px;
+}
+
+.community-detail-author {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.community-detail-avatar {
+  width: 36px;
+  height: 36px;
+  border-radius: 10px;
+  font-size: 13px;
+}
+
+.community-detail-author-name {
+  color: #35465b;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.community-detail-author-id,
+.community-detail-status > text:last-child {
+  margin-top: 5px;
+  color: #98a3af;
+  font-size: 9px;
+}
+
+.community-detail-status {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+}
+
+.community-detail-stat-grid {
+  margin-top: 19px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  border: 1px solid #e3eaed;
+  border-radius: 9px;
+  background: #fff;
+}
+
+.community-detail-stat-grid > view {
+  min-height: 68px;
+  padding: 13px 15px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border-right: 1px solid #edf1f3;
+  box-sizing: border-box;
+}
+
+.community-detail-stat-grid > view:last-child {
+  border-right: 0;
+}
+
+.community-detail-stat-grid text {
+  color: #97a2ae;
+  font-size: 9px;
+}
+
+.community-detail-stat-grid strong {
+  margin-top: 7px;
+  overflow: hidden;
+  color: #3c4d62;
+  font-size: 13px;
+  font-weight: 750;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-detail-topic-row {
+  margin-top: 22px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.community-detail-topic-row text {
+  padding: 4px 7px;
+  border-radius: 6px;
+  color: #39776c;
+  background: #e9f7f2;
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.community-detail-title {
+  margin-top: 14px;
+  color: #243449;
+  font-size: 17px;
+  font-weight: 750;
+  line-height: 1.45;
+}
+
+.community-detail-body {
+  margin-top: 12px;
+  color: #536276;
+  font-size: 12px;
+  line-height: 1.8;
+  white-space: pre-wrap;
+}
+
+.community-detail-media-grid {
+  margin-top: 18px;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.community-detail-media-item {
+  aspect-ratio: 1;
+  overflow: hidden;
+  border-radius: 8px;
+  background: #e8f0ef;
+}
+
+.community-detail-media-item image {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.community-detail-media-fallback {
+  width: 100%;
+  height: 100%;
+  padding: 12px;
+  display: flex;
+  align-items: flex-end;
+  box-sizing: border-box;
+  color: #507269;
+  background: #e6f3ef;
+  font-size: 10px;
+}
+
+.community-detail-comments-heading {
+  margin-top: 26px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid #e6ecef;
+  color: #405166;
+  font-size: 11px;
+  font-weight: 750;
+}
+
+.community-detail-comments-heading text {
+  margin-left: 5px;
+  color: #76a098;
+}
+
+.community-detail-comment {
+  padding: 13px 0;
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border-bottom: 1px solid #eef2f4;
+}
+
+.community-comment-avatar {
+  width: 26px;
+  height: 26px;
+  border-radius: 7px;
+  font-size: 10px;
+}
+
+.community-comment-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-comment-topline {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  color: #647387;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.community-comment-topline text:last-child,
+.community-comment-likes {
+  color: #a0aab5;
+  font-size: 9px;
+  font-weight: 400;
+}
+
+.community-comment-copy {
+  margin-top: 5px;
+  color: #58687b;
+  font-size: 10px;
+  line-height: 1.6;
+}
+
+.community-comment-likes {
+  min-width: 42px;
+  padding-top: 2px;
+  text-align: right;
+}
+
+.community-detail-empty-comments {
+  padding: 22px 0 4px;
+  color: #9aa5b0;
+  font-size: 10px;
+  text-align: center;
+}
+
+.community-detail-footer {
+  flex: 0 0 auto;
+}
+
 .panel-heading,
 .workspace-heading {
   min-height: 78px;
@@ -4309,6 +5552,10 @@ button {
   justify-content: space-between;
   border-top: 1px solid #e8eef1;
   box-sizing: border-box;
+}
+
+.dashboard-pagination-row {
+  justify-content: center;
 }
 
 .pagination-info,
@@ -5263,7 +6510,8 @@ button {
     margin-left: 72px;
   }
 
-  .dashboard-metrics {
+  .dashboard-metrics,
+  .community-summary {
     grid-template-columns: 1fr 1fr;
   }
 
@@ -5303,9 +6551,31 @@ button {
   }
 
   .dashboard-metrics,
+  .community-summary,
   .question-summary,
   .import-flow {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .community-detail-modal {
+    max-height: calc(100vh - 28px);
+  }
+
+  .community-detail-content {
+    padding-left: 18px;
+    padding-right: 18px;
+  }
+
+  .community-detail-stat-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .community-detail-stat-grid > view:nth-child(2) {
+    border-right: 0;
+  }
+
+  .community-detail-stat-grid > view:nth-child(-n + 2) {
+    border-bottom: 1px solid #edf1f3;
   }
 
   .bank-file-grid {

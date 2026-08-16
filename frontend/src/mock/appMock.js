@@ -224,6 +224,7 @@ export function getHomeModules(examCode) {
     {
       key: '中华文化',
       icon: '📚',
+      iconVariant: 'culture',
       title: '中华文化',
       desc: '哲学 / 历史 / 文学 / 艺术'
     },

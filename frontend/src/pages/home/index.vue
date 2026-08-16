@@ -3,22 +3,17 @@
     class="page home-page"
     :class="{
       'no-tab-page': !showBottomTab,
-      'circle-glass-page': activeTab === 'circle'
+      'circle-glass-page': activeTab === 'circle' || isCircleGlassTheme,
+      'circle-themed-page': activeTab === 'circle' && !isCircleGlassTheme,
+      'landing-glass-page': activeTab === 'landing' && isCircleGlassTheme,
+      'glass-theme-page': isCircleGlassTheme
     }"
     :style="pageInlineStyle"
   >
-    <template v-if="activeTab === 'home'">
-      <view class="home-dashboard">
+    <template v-if="activeTab === 'landing'">
+        <view class="landing-dashboard">
         <view class="home-header">
           <view class="brand-line">
-            <view class="brand-title" aria-label="港研通">
-              <image
-                class="brand-title-image"
-                :src="wordmarkSrc"
-                mode="widthFix"
-                alt="港研通"
-              />
-            </view>
             <text v-if="isAuthed" class="brand-badge">{{ examCode }}</text>
           </view>
           <view class="home-actions">
@@ -39,12 +34,139 @@
           </view>
         </view>
 
+        <view class="landing-focus-block">
+          <swiper
+            class="landing-focus-swiper"
+            :current="homeFocusIndex"
+            :autoplay="true"
+            :interval="4800"
+            :duration="420"
+            circular
+            @change="handleHomeFocusChange"
+          >
+            <swiper-item v-for="(item, index) in homeFocusItems" :key="item.title">
+              <view
+                class="landing-focus-slide"
+                :class="index === 0 ? 'is-blue' : index === 1 ? 'is-violet' : 'is-mint'"
+                role="button"
+                :aria-label="item.title"
+                @tap="openHomeFocus(item)"
+              >
+                <view class="landing-focus-copy">
+                  <text class="landing-focus-badge">{{ item.badge }}</text>
+                  <view class="landing-focus-copy-main">
+                    <text class="landing-focus-title">{{ item.title }}</text>
+                    <text class="landing-focus-subtitle">{{ item.subtitle }}</text>
+                  </view>
+                </view>
+                <view class="landing-focus-art" aria-hidden="true">
+                  <view class="landing-focus-art-card">
+                    <text class="landing-focus-art-year">2026</text>
+                    <text class="landing-focus-art-label">{{ item.artLabel }}</text>
+                    <view class="landing-focus-art-line"></view>
+                    <view class="landing-focus-art-line short"></view>
+                  </view>
+                </view>
+              </view>
+            </swiper-item>
+          </swiper>
+          <view class="landing-focus-pagination" aria-label="首页资讯轮播">
+            <button
+              v-for="(item, index) in homeFocusItems"
+              :key="item.title"
+              class="landing-focus-dot"
+              :class="{ active: homeFocusIndex === index }"
+              :aria-label="'切换到：' + item.title"
+              @tap="selectHomeFocus(index)"
+            ></button>
+          </view>
+        </view>
+
+        <view class="landing-section landing-news-section">
+          <view class="landing-section-heading">
+            <view>
+              <text class="landing-section-title">港澳台考研资讯</text>
+            </view>
+            <button class="landing-more-button" @tap="openNewsArchive">更多 <text>›</text></button>
+          </view>
+
+          <view class="landing-news-list">
+            <view
+              v-for="(item, index) in homeNewsItems.slice(0, 2)"
+              :key="item.title"
+              class="landing-news-card"
+              :class="index === 0 ? 'is-featured' : ''"
+              role="button"
+              :aria-label="item.title"
+              @tap="openHomeNews(item)"
+            >
+              <view class="landing-news-copy">
+                <text class="landing-news-source">{{ item.source }}</text>
+                <text class="landing-news-title">{{ item.title }}</text>
+                <text class="landing-news-date">{{ item.date }}</text>
+              </view>
+              <view class="landing-news-cover" :class="item.coverTone" aria-hidden="true">
+                <view class="landing-news-document">
+                  <view class="landing-news-document-top">
+                    <text>研招</text>
+                    <text>官方公告</text>
+                  </view>
+                  <text class="landing-news-document-title">{{ item.coverLabel }}</text>
+                  <view class="landing-news-document-lines">
+                    <view></view>
+                    <view></view>
+                    <view></view>
+                  </view>
+                </view>
+              </view>
+            </view>
+          </view>
+        </view>
+
+        <view class="landing-section landing-services-section">
+          <view class="landing-section-heading">
+            <view>
+              <text class="landing-section-title">报考服务</text>
+            </view>
+          </view>
+
+          <view class="landing-service-grid">
+            <button
+              v-for="item in homeServiceItems"
+              :key="item.key"
+              class="landing-service-card"
+              :class="item.tone"
+              @tap="openHomeService(item)"
+            >
+              <view class="landing-service-icon">
+                <image
+                  class="landing-service-icon-image"
+                  :src="item.iconSrc"
+                  mode="aspectFit"
+                  :alt="item.title"
+                />
+              </view>
+              <view class="landing-service-row">
+                <text class="landing-service-title">{{ item.title }}</text>
+              </view>
+            </button>
+          </view>
+        </view>
+
+        <!-- #ifdef H5 -->
+        <IcpFooter inline />
+        <!-- #endif -->
+      </view>
+    </template>
+
+    <template v-else-if="activeTab === 'home'">
+      <view class="home-dashboard practice-dashboard">
         <view class="welcome-card" @tap="goLeaderboard">
           <view class="welcome-main">
             <view class="wave-icon">👋</view>
             <view class="welcome-copy">
               <text class="welcome-title">{{ dashboard.userName }}，今天刷一组题吧</text>
-              <text class="welcome-subtitle">登录后可直接刷真题并同步错题本</text>
+              <text v-if="!isAuthed" class="welcome-subtitle">登录后可直接刷真题并同步错题本</text>
             </view>
             <view class="hero-illustration">📋</view>
           </view>
@@ -98,7 +220,13 @@
 
     <template v-else-if="activeTab === 'circle'">
       <view class="circle-dashboard">
-        <view v-if="selectedCircleSection === 'overview'" class="circle-overview">
+        <view
+          class="circle-view-stage"
+          @touchstart="beginCircleEdgeSwipe"
+          @touchend="finishCircleEdgeSwipe"
+        >
+          <transition :name="circleSectionTransitionName">
+        <view v-if="selectedCircleSection === 'overview'" key="circle-overview" class="circle-overview circle-view-panel">
           <swiper
             class="circle-insight-swiper"
             :current="circleInsightIndex"
@@ -200,7 +328,7 @@
           </view>
         </view>
 
-        <view v-else class="circle-detail-page">
+        <view v-else key="circle-detail" class="circle-detail-page circle-view-panel">
           <view class="circle-detail-header">
             <button class="circle-back-button" aria-label="返回研圈首页" @tap="returnToCircleOverview">
               <image src="/static/ui-icons/back.svg" mode="aspectFit" />
@@ -337,20 +465,16 @@
                   </view>
                 </view>
 
-                <view v-if="filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
+                <view v-if="communityPostsLoading && filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
+                  <view class="circle-empty-title">正在加载{{ selectedCircleCommunityTab === 'experience' ? '经验贴' : '交流内容' }}</view>
+                  <view class="circle-empty-copy">正在同步最新帖子。</view>
+                </view>
+                <view v-else-if="filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
                   <view class="circle-empty-title">暂无匹配的{{ selectedCircleCommunityTab === 'experience' ? '经验贴' : '交流内容' }}</view>
                   <view class="circle-empty-copy">换个关键词或分类试试。</view>
                 </view>
               </view>
 
-              <button
-                v-if="!selectedCommunityPost"
-                class="community-publish-button"
-                aria-label="发布话题"
-                @tap="openCommunityPublishPage(selectedCircleCommunityTab)"
-              >
-                <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
-              </button>
             </template>
 
             <template v-else>
@@ -487,6 +611,17 @@
             <view class="circle-empty-copy">{{ circlePlannedSection.label }}正在整理中，后续会在这里开放。</view>
           </view>
         </view>
+          </transition>
+        </view>
+        <button
+          v-if="showCommunityPublishButton"
+          class="community-publish-button"
+          :aria-label="selectedCircleCommunityTab === 'experience' ? '发布经验贴' : '发布话题'"
+          @tap.stop="openCommunityPublishPage(selectedCircleCommunityTab)"
+          @click.stop="openCommunityPublishPage(selectedCircleCommunityTab)"
+        >
+          <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+        </button>
       </view>
     </template>
 
@@ -579,40 +714,57 @@
       <template v-else>
         <SectionCard>
           <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
-          <view v-else class="filter-card">
-            <scroll-view scroll-x class="filter-scroll">
-              <button
-                v-for="item in subjectFilters"
-                :key="item"
-                class="filter-chip"
-                :class="{ active: wrongFilters.subject === item }"
-                @tap="setWrongFilter('subject', item)"
+          <view v-else class="wrong-filter-card">
+            <view class="wrong-filter-grid">
+              <picker
+                class="wrong-filter-select"
+                mode="selector"
+                :range="wrongSubjectPickerOptions"
+                range-key="label"
+                :value="wrongSubjectPickerIndex"
+                @change="onWrongSubjectPickerChange"
               >
-                {{ item || '全部科目' }}
-              </button>
-            </scroll-view>
-            <scroll-view scroll-x class="filter-scroll">
-              <button
-                v-for="item in moduleFilters"
-                :key="item"
-                class="filter-chip"
-                :class="{ active: wrongFilters.module === item }"
-                @tap="setWrongFilter('module', item)"
+                <view class="wrong-filter-select-control">
+                  <text class="wrong-filter-select-name">科目</text>
+                  <text class="wrong-filter-select-value">{{ selectedWrongSubjectLabel }}</text>
+                  <view class="wrong-filter-select-arrow-icon" aria-hidden="true"></view>
+                </view>
+              </picker>
+
+              <picker
+                class="wrong-filter-select"
+                :class="{ disabled: !wrongFilters.subject }"
+                mode="selector"
+                :range="wrongModulePickerOptions"
+                range-key="label"
+                :value="wrongModulePickerIndex"
+                :disabled="!wrongFilters.subject"
+                @change="onWrongModulePickerChange"
               >
-                {{ item || '全部模块' }}
-              </button>
-            </scroll-view>
-            <scroll-view scroll-x class="filter-scroll">
-              <button
-                v-for="item in submoduleFilters"
-                :key="item"
-                class="filter-chip"
-                :class="{ active: wrongFilters.submodule === item }"
-                @tap="setWrongFilter('submodule', item)"
+                <view class="wrong-filter-select-control">
+                  <text class="wrong-filter-select-name">模块</text>
+                  <text class="wrong-filter-select-value" :class="{ muted: !wrongFilters.subject }">{{ selectedWrongModuleLabel }}</text>
+                  <view class="wrong-filter-select-arrow-icon" aria-hidden="true"></view>
+                </view>
+              </picker>
+
+              <picker
+                class="wrong-filter-select is-submodule"
+                :class="{ disabled: !wrongFilters.module }"
+                mode="selector"
+                :range="wrongSubmodulePickerOptions"
+                range-key="label"
+                :value="wrongSubmodulePickerIndex"
+                :disabled="!wrongFilters.module"
+                @change="onWrongSubmodulePickerChange"
               >
-                {{ item || '全部子模块' }}
-              </button>
-            </scroll-view>
+                <view class="wrong-filter-select-control">
+                  <text class="wrong-filter-select-name">子模块</text>
+                  <text class="wrong-filter-select-value" :class="{ muted: !wrongFilters.module }">{{ selectedWrongSubmoduleLabel }}</text>
+                  <view class="wrong-filter-select-arrow-icon" aria-hidden="true"></view>
+                </view>
+              </picker>
+            </view>
           </view>
           <view v-if="wrongLoading" class="state-box">正在读取真实错题记录...</view>
           <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
@@ -781,10 +933,8 @@
       </view>
     </template>
 
-    <template v-else>
-      <view class="profile-dashboard">
-        <view class="profile-top-title">港研通</view>
-
+      <template v-else>
+        <view class="profile-dashboard">
         <view class="account-card" :class="{ guest: !isAuthed }" @tap="handleAccountEntry">
           <image
             v-if="avatarImageUrl"
@@ -923,7 +1073,6 @@
         <view v-if="isAuthed" class="logout-card" @tap="logout">退出登录</view>
       </view>
     </template>
-
     <!-- #ifndef MP-WEIXIN -->
     <view v-if="showTrainingSheet" class="training-sheet-mask" @tap="closeRecommendedTrainingSheet">
       <view class="training-sheet" @tap.stop>
@@ -1115,7 +1264,7 @@
         <button class="theme-modal-close" aria-label="关闭" @tap="handleCloseThemeModal"><CloseIcon /></button>
         <view class="theme-modal-head">
           <view class="theme-modal-title">外观主题</view>
-          <view class="theme-modal-subtitle">选择一套浅色主题，首页和常用页面会立即更新。</view>
+          <view class="theme-modal-subtitle">选择一套主题方案，首页和常用页面会立即更新。</view>
         </view>
         <view class="theme-option-list">
           <view
@@ -1166,7 +1315,13 @@
       </view>
     </view>
 
-    <view v-if="selectedCommunityPost" class="community-reader">
+    <transition name="circle-reader">
+    <view
+      v-if="selectedCommunityPost"
+      class="community-reader"
+      @touchstart="beginCommunityReaderEdgeSwipe"
+      @touchend="finishCommunityReaderEdgeSwipe"
+    >
       <view class="community-reader-surface">
         <view class="community-reader-topbar">
           <button class="community-reader-back" aria-label="返回社区" @tap="closeCommunityPost">
@@ -1229,12 +1384,6 @@
             <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
             <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
 
-            <view class="community-reader-post-meta">
-              <view>{{ selectedCommunityPost.stats.views }} 浏览</view>
-              <view>{{ selectedCommunityPost.stats.likes }} 点赞</view>
-              <view>{{ selectedCommunityPost.stats.comments }} 评论</view>
-            </view>
-
             <view id="community-reader-comments" class="community-reader-comments-section">
               <view class="community-reader-comments-toolbar">
                 <view class="community-reader-comments-tabs">
@@ -1265,28 +1414,12 @@
                 </view>
               </view>
 
-              <view v-if="communityInteractionTab === 'comments'" class="community-reader-inline-composer">
-                <input
-                  v-model="communityCommentDraft"
-                  maxlength="500"
-                  confirm-type="send"
-                  placeholder="有话要说，快来评论"
-                  placeholder-class="community-reader-comment-placeholder"
-                  :disabled="communityCommentSubmitting"
-                  @confirm="submitCommunityComment"
-                />
-                <button
-                  :disabled="communityCommentSubmitting || !communityCommentDraft.trim()"
-                  @tap="submitCommunityComment"
-                >{{ communityCommentSubmitting ? '发送中' : '发送' }}</button>
-              </view>
-
               <template v-if="communityInteractionTab === 'comments'">
                 <view v-if="communityCommentsLoading" class="community-reader-empty">正在加载评论</view>
                 <view v-else-if="sortedCommunityComments.length === 0" class="community-reader-empty">
                   暂无评论，来留下第一条讨论吧。
                 </view>
-                <view v-else class="community-reader-comment-list">
+                  <view v-else class="community-reader-comment-list">
                   <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
                     <view class="community-reader-comment-avatar">
                       <image v-if="comment.avatarUrl" :src="comment.avatarUrl" mode="aspectFill" />
@@ -1297,6 +1430,17 @@
                       <view class="community-reader-comment-copy">{{ comment.content }}</view>
                       <view class="community-reader-comment-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
                     </view>
+                    <button
+                      class="community-reader-comment-like"
+                      :class="{ active: comment.liked, pending: communityCommentLikeId === comment.id }"
+                      :aria-label="comment.liked ? '取消评论点赞' : '点赞评论'"
+                      :aria-pressed="comment.liked"
+                      :disabled="communityCommentLikeId === comment.id"
+                      @tap.stop="toggleCommunityCommentLike(comment)"
+                    >
+                      <view class="community-reader-comment-like-icon" aria-hidden="true"></view>
+                      <text>{{ comment.likeCount }}</text>
+                    </button>
                   </view>
                 </view>
               </template>
@@ -1324,10 +1468,18 @@
         </scroll-view>
 
         <view class="community-reader-actions">
-          <button class="community-reader-comment-entry" @tap="focusCommunityReaderComments">
+          <view class="community-reader-comment-entry">
             <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
-            <text>说点什么...</text>
-          </button>
+            <input
+              v-model="communityCommentDraft"
+              maxlength="500"
+              confirm-type="send"
+              placeholder="说点什么..."
+              placeholder-class="community-reader-comment-placeholder"
+              :disabled="communityCommentSubmitting"
+              @confirm="submitCommunityComment"
+            />
+          </view>
           <button
             class="community-reader-action"
             :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
@@ -1405,6 +1557,7 @@
         </scroll-view>
       </view>
     </view>
+    </transition>
 
       <view v-if="false && selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
       <view class="community-comments-sheet" @tap.stop>
@@ -1551,15 +1704,18 @@
 
     <!-- #ifdef H5 -->
     <IcpFooter
+      v-if="activeTab !== 'landing'"
       :compact="showBottomTab"
-      :glass="activeTab === 'circle'"
+      :inline="showBottomTab"
+      :lower="activeTab === 'home' || activeTab === 'profile'"
+      :glass="true"
     />
     <!-- #endif -->
     <BottomTabBar
       v-if="showBottomTab"
       v-model="activeTab"
       :items="tabs"
-      :glass="activeTab === 'circle'"
+      :glass="true"
       :collapsed="isCircleTabbarCollapsed"
       @expand="expandCircleTabbar"
     />
@@ -1584,6 +1740,7 @@ import {
   fetchCommunityPostLikes,
   fetchCommunityPosts,
   registerCommunityPostView,
+  toggleCommunityCommentLike as toggleCommunityCommentLikeRequest,
   toggleCommunityPostLike
 } from '../../api/community'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
@@ -1602,20 +1759,16 @@ import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { THEME_PRESETS, applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
-// #ifdef MP-WEIXIN
-const wordmarkSrc = '/static/gangyantong-wordmark.png'
-// #endif
-
-// #ifndef MP-WEIXIN
-const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
-// #endif
-
 const examOptions = EXAM_OPTIONS
-const themePresets = THEME_PRESETS
+const themePresets = computed(() => {
+  const glassPreset = THEME_PRESETS.find((item) => item.circleGlass === true)
+  if (!glassPreset) return THEME_PRESETS
+  return [glassPreset, ...THEME_PRESETS.filter((item) => item.key !== glassPreset.key)]
+})
 const ENABLE_CIRCLE = true
 const initialAuthUser = getAuthUser()
 const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
-const activeTab = ref(ENABLE_CIRCLE ? 'circle' : 'home')
+const activeTab = ref('landing')
 const authUser = ref(initialAuthUser)
 const authed = ref(isLoggedIn())
 const wrongItems = ref([])
@@ -1664,6 +1817,9 @@ const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
 const selectedCircleSection = ref('overview')
 const selectedCirclePost = ref(null)
+const circleSectionTransitionDirection = ref('forward')
+const circleEdgeSwipeStart = ref(null)
+const communityReaderEdgeSwipeStart = ref(null)
 const circleInsightIndex = ref(0)
 const circleScoreSchoolIndex = ref(Math.floor(Math.random() * 4))
 const selectedMaterialSubject = ref('中华文化')
@@ -1684,10 +1840,84 @@ const communityLikesLoading = ref(false)
 const communityCommentSort = ref('default')
 const communityPostsLoading = ref(false)
 const communityLikePostId = ref('')
+const communityCommentLikeId = ref('')
 const communityCommentDraft = ref('')
 const communityCommentSubmitting = ref(false)
 const circleTabCollapsed = ref(false)
 const circleLastScrollTop = ref(0)
+const homeFocusIndex = ref(0)
+
+const homeFocusItems = [
+  {
+    badge: '考试提醒',
+    title: '初试统考准考证打印提醒',
+    subtitle: '广州报考点考生请及时核对考试信息',
+    artLabel: '准考证',
+    url: 'https://www.gatzs.com.cn/'
+  },
+  {
+    badge: '官方公告',
+    title: '广州报考点招生通告',
+    subtitle: '报名、确认与考试方式一次看清',
+    artLabel: '报考点',
+    url: 'https://www.gatzs.com.cn/gatzsinfo/yzDetailInfo.action?categoryId=858151&infoId=3540991750&schId=858091'
+  },
+  {
+    badge: '备考指南',
+    title: 'Z001 / Z002 考试指南',
+    subtitle: '了解考试模块、范围与备考方向',
+    artLabel: '考试指南',
+    url: 'https://yankao.neea.edu.cn/html1/report/2512/13-1.htm'
+  }
+]
+
+const homeNewsItems = [
+  {
+    source: '广东省教育考试院',
+    title: '2026年面向港澳台地区研究生招生初试统考《准考证》打印提醒及广州报考点考生须知',
+    date: '2026-04-01',
+    coverLabel: '准考证打印',
+    coverTone: 'is-blue',
+    url: 'https://www.gatzs.com.cn/'
+  },
+  {
+    source: '广东省教育考试院',
+    title: '2026年港澳台研究生招生广州报考点通告',
+    date: '2025-12-16',
+    coverLabel: '广州报考点',
+    coverTone: 'is-orange',
+    url: 'https://www.gatzs.com.cn/gatzsinfo/yzDetailInfo.action?categoryId=858151&infoId=3540991750&schId=858091'
+  },
+  {
+    source: '教育部教育考试院',
+    title: '2026年面向香港、澳门、台湾地区研究生招生考试指南正式公布',
+    date: '2025-12-07',
+    coverLabel: '考试指南',
+    coverTone: 'is-mint',
+    url: 'https://yankao.neea.edu.cn/html1/report/2512/13-1.htm'
+  }
+]
+
+const homeServiceItems = [
+  {
+    key: 'school-notices',
+    title: '院校公告',
+    iconSrc: '/static/ui-icons/home-school-notices.svg',
+    tone: 'is-school'
+  },
+  {
+    key: 'major-catalog',
+    title: '专业目录',
+    iconSrc: '/static/ui-icons/home-major-catalog.svg',
+    tone: 'is-major'
+  },
+  {
+    key: 'application-guide',
+    title: '报考指南',
+    iconSrc: '/static/ui-icons/home-application-guide.svg',
+    tone: 'is-guide'
+  }
+]
 
 applyThemeByKey(selectedThemeKey.value)
 const smartMode = ref(true)
@@ -1701,13 +1931,27 @@ const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
 let communityViewTimerId = null
+let lastCommunityPublishNavigationAt = 0
 const communityPostsLoadingTypes = new Set()
+const COMMUNITY_FEED_PAGE_SIZE = 12
+const COMMUNITY_FEED_CACHE_TTL = 60 * 1000
+const COMMUNITY_FEED_CACHE_PREFIX = 'circle-community-feed-v2'
+const communityFeedCacheHydratedKeys = new Set()
+const communityFeedCacheFreshness = new Map()
+let communityFeedPrefetchStarted = false
 const tabs = computed(() => {
   const items = [
     {
+      key: 'landing',
+      label: '首页',
+      icon: '⌂',
+      iconSrc: '/static/ui-icons/tab-home.svg'
+    },
+    {
       key: 'home',
       label: '刷题',
-      iconSrc: '/static/ui-icons/tab-home.svg',
+      iconClass: 'tab-icon-practice',
+      iconSrc: '/static/ui-icons/tab-practice.svg',
       mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
     }
   ]
@@ -1743,7 +1987,7 @@ const circleSections = [
   {
     key: 'community',
     label: '考研圈',
-    iconSrc: '/static/ui-icons/tab-circle.svg'
+    iconSrc: '/static/ui-icons/circle-community.svg'
   },
   {
     key: 'scores',
@@ -1792,290 +2036,11 @@ const circleCommunityTabs = [
   { key: 'chat', label: '研友聊' },
   { key: 'experience', label: '经验贴' }
 ]
-const circleCommunityCategories = ['全部', '备考日常', '择校答疑', '复习打卡', '资料互助']
-const circleCommunityPosts = ref([
-  {
-    id: '0b46a665-7b7d-4e0c-a62c-f42282f4e101',
-    category: '备考日常',
-    author: '南栀同学',
-    avatar: '南',
-    publishTime: '18 分钟前',
-    tone: 'mint',
-    title: 'Z001 三科刚起步，大家一周都怎么排？',
-    summary: '我先按固定题量排了第一周，怕节奏太满坚持不下来，想看看大家有没有更稳的安排。',
-    media: [
-      { kicker: '周一', title: '文化 20 题', copy: '错题当天回看', tone: 'sky' },
-      { kicker: '周三', title: '英语 20 题', copy: '短语优先', tone: 'mint' },
-      { kicker: '周五', title: '逻辑 15 题', copy: '周末做小结', tone: 'warm' }
-    ],
-    commentPreviews: [
-      { id: 'mock-pace-1', author: '研友小林', text: '我也是先把固定题量跑顺，第二周再慢慢加题。' },
-      { id: 'mock-pace-2', author: '橙子同学', text: '可以先把每科放在固定时段，执行起来会更稳。' },
-      { id: 'mock-pace-3', author: '阿远', text: '周末留半天复盘，后面加题时不容易乱。' }
-    ],
-    stats: { likes: 34, comments: 12, views: 186 }
-  },
-  {
-    id: '2fd58d9c-7c70-4d90-9d88-3a261c4847af',
-    category: '择校答疑',
-    author: '阿澈',
-    avatar: '澈',
-    publishTime: '46 分钟前',
-    tone: 'blue',
-    title: '港大和港中文的分数线，应该怎么看？',
-    summary: '目前基础一般，想申请文科方向。除了分数线，大家还会优先比较哪些信息？',
-    media: [],
-    commentPreviews: [
-      { id: 'mock-score-1', author: '思远', text: '先看专业和年度要求，再把语言成绩、材料和自己的准备周期一起算进去。' }
-    ],
-    stats: { likes: 21, comments: 18, views: 153 }
-  },
-  {
-    id: '423377f8-7fcf-4ddb-a34d-6ea7e25504da',
-    category: '复习打卡',
-    author: '小卷',
-    avatar: '卷',
-    publishTime: '1 小时前',
-    tone: 'warm',
-    title: '中华文化索引表打卡第 6 天',
-    summary: '今天补了人物、作品和朝代三列，发现做题时定位干扰项比以前快很多。',
-    media: [
-      { kicker: '今日笔记', title: '人物 × 作品', copy: '补齐 16 个易混点', tone: 'paper' }
-    ],
-    commentPreviews: [
-      { id: 'mock-culture-1', author: '小麦', text: '这个方法很好，我今晚也准备按这个结构补索引。' }
-    ],
-    stats: { likes: 48, comments: 9, views: 217 }
-  },
-  {
-    id: 'f7cd37cc-bf32-4873-b954-ffa5522d6e0b',
-    category: '资料互助',
-    author: '知行',
-    avatar: '知',
-    publishTime: '2 小时前',
-    tone: 'violet',
-    title: '整理了一份数学基础错题复盘模板',
-    summary: '模板按公式条件、代入过程和最后验算拆分，适合把重复错误记得更清楚。',
-    media: [],
-    commentPreviews: [
-      { id: 'mock-math-1', author: 'M 同学', text: '正好需要这个思路，做完题只记答案确实很难复盘。' }
-    ],
-    stats: { likes: 29, comments: 7, views: 141 }
-  }
-])
+const circleCommunityCategories = ['全部', '中华文化', '数学基础', '英语运用', '逻辑推理']
+const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
+const circleCommunityPosts = ref([])
 const circleExperienceCategories = ['全部', 'Z001', 'Z002']
-const circleExperiencePosts = [
-  {
-    id: 'exp-z001-pace',
-    category: '备考节奏',
-    tag: '备考节奏',
-    examCode: 'Z001',
-    subject: '综合备考',
-    title: '三科并行时，先把每天的固定题量跑顺',
-    summary: '适合刚开始准备 Z001 的同学，把中华文化、英语运用和逻辑推理拆成可执行的日计划。',
-    author: '研友 A',
-    authorRole: 'Z001 上岸经验',
-    avatar: 'A',
-    publishDate: '2026-08-03',
-    updatedDate: '2026-08-03',
-    readTime: '4 分钟',
-    stats: {
-      views: 1268,
-      likes: 86,
-      saves: 42
-    },
-    points: ['每天先做固定题量', '错题当天复盘', '周末做一次小结'],
-    sections: [
-      {
-        heading: '先固定动作',
-        body: '最容易拖慢进度的不是某个知识点，而是每天不知道先做什么。我的做法是把三科拆成固定动作：中华文化 20 题、英语语言知识 20 题、逻辑推理 15 题，先保证不断档。'
-      },
-      {
-        heading: '错题当天处理',
-        body: '错题不要堆到周末统一看。当天错的题，至少要把题干关键词、误选原因和正确选项理由写出来。第二天开始前先看昨天的错题，再进入新题。'
-      },
-      {
-        heading: '周末只看两个指标',
-        body: '周末复盘只看两件事：哪一科掉分最多，哪一种题型最拖时间。下一周就把这两个点放到每天第一组题里。'
-      }
-    ]
-  },
-  {
-    id: 'exp-culture-memory',
-    category: '中华文化',
-    tag: '中华文化',
-    examCode: 'COMMON',
-    subject: '中华文化',
-    title: '中华文化别死背，先按人物、作品、朝代建索引',
-    summary: '把文学、历史、艺术和科技常识放进同一张索引表，做题时更容易定位干扰项。',
-    author: '研友 B',
-    authorRole: '文化常识高分复盘',
-    avatar: '文',
-    publishDate: '2026-08-02',
-    updatedDate: '2026-08-03',
-    readTime: '5 分钟',
-    stats: {
-      views: 982,
-      likes: 73,
-      saves: 58
-    },
-    points: ['先归类再背诵', '干扰项找相近领域', '解析只记判断理由'],
-    sections: [
-      {
-        heading: '先把知识点放进位置',
-        body: '中华文化题看起来杂，但常见干扰项通常来自相近领域。比如人物和作品、朝代和制度、艺术门类和代表作，经常会互相混淆。'
-      },
-      {
-        heading: '用索引表补全连接',
-        body: '我会先建四列：人物、作品、朝代、关键词。刷题遇到新的知识点就补进去，不追求一次背完，但要求每次补充都能和旧知识发生连接。'
-      },
-      {
-        heading: '解析只留判断理由',
-        body: '解析不用抄长段材料，只保留判断理由。比如“这部作品属于某朝代”“这个概念对应某学派”，越短越容易复盘。'
-      }
-    ]
-  },
-  {
-    id: 'exp-math-check',
-    category: '数学基础',
-    tag: '数学基础',
-    examCode: 'Z002',
-    subject: '数学基础',
-    title: '数学基础的提分点，常常藏在计算检查里',
-    summary: '适合 Z002 用户，把极限、导数和积分题拆成公式选择、代入和验算三个动作。',
-    author: '研友 C',
-    authorRole: 'Z002 数学复盘',
-    avatar: '数',
-    publishDate: '2026-08-01',
-    updatedDate: '2026-08-03',
-    readTime: '3 分钟',
-    stats: {
-      views: 746,
-      likes: 51,
-      saves: 33
-    },
-    points: ['先写公式条件', '代入后再化简', '最后检查定义域'],
-    sections: [
-      {
-        heading: '条件比公式更先出现',
-        body: '数学基础不是只看会不会套公式。很多失分来自条件没看清，尤其是极限、导数和积分里的定义域、连续性和可导性。'
-      },
-      {
-        heading: '代入前先写公式',
-        body: '我的顺序是：先写本题对应公式，再把题目条件代进去，最后才做化简。这样能减少一上来就算偏的情况。'
-      },
-      {
-        heading: '最后检查问法',
-        body: '做完一定检查答案有没有违反定义域、端点条件或题干问法。这个步骤很短，但能救回不少分。'
-      }
-    ]
-  },
-  {
-    id: 'exp-english-language',
-    category: '英语运用',
-    tag: '英语运用',
-    examCode: 'COMMON',
-    subject: '英语运用',
-    title: '英语语言知识先抓固定搭配，再回头补语法',
-    summary: '把词汇、短语和语法分成两条线，先解决选择题里最容易反复错的搭配问题。',
-    author: '研友 D',
-    authorRole: '英语运用复盘',
-    avatar: '英',
-    publishDate: '2026-07-31',
-    updatedDate: '2026-08-03',
-    readTime: '4 分钟',
-    stats: {
-      views: 689,
-      likes: 48,
-      saves: 37
-    },
-    points: ['固定搭配优先', '错题按词性归类', '语法点只记触发条件'],
-    sections: [
-      {
-        heading: '先处理高频短语',
-        body: '英语运用的语言知识题，很多时候不是整句都看不懂，而是固定搭配和词义边界没记牢。先把高频短语和动词搭配过一轮，做题速度会明显稳定。'
-      },
-      {
-        heading: '错题按词性归档',
-        body: '我会把错题按名词、动词、形容词、副词和介词搭配归类。这样复盘时不是孤立背一个答案，而是知道自己经常在哪类词上犹豫。'
-      },
-      {
-        heading: '语法只抓触发条件',
-        body: '语法点不用写很长的定义，重点记触发条件。看到从句、非谓语、虚拟语气的标志，就能更快排除不合适的选项。'
-      }
-    ]
-  },
-  {
-    id: 'exp-logic-template',
-    category: '逻辑推理',
-    tag: '逻辑推理',
-    examCode: 'Z001',
-    subject: '逻辑推理',
-    title: '逻辑题别急着选，先把论点和论据圈出来',
-    summary: '适合论证类题反复错的同学，用固定拆题模板降低读题压力。',
-    author: '研友 E',
-    authorRole: '逻辑推理提分记录',
-    avatar: '逻',
-    publishDate: '2026-07-30',
-    updatedDate: '2026-08-03',
-    readTime: '4 分钟',
-    stats: {
-      views: 812,
-      likes: 67,
-      saves: 49
-    },
-    points: ['先找论点', '再看论据', '最后判断选项作用'],
-    sections: [
-      {
-        heading: '把题干拆成两层',
-        body: '论证题最怕一口气读完后直接看选项。我的做法是先圈论点，再划论据，确认题目是在问加强、削弱、假设还是解释。'
-      },
-      {
-        heading: '选项看作用而不是语气',
-        body: '很多选项语气很像正确答案，但它没有真正改变论点和论据之间的关系。判断时要问一句：这个选项到底让结论更稳，还是让结论更不稳。'
-      },
-      {
-        heading: '错题复盘保留结构',
-        body: '复盘时不要只写“看错了”。要写清楚原论点、原论据、自己误选的选项作用，以及正确选项为什么更贴合题目问法。'
-      }
-    ]
-  }
-]
-const circleExperienceSeedPostIds = {
-  'exp-z001-pace': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0101',
-  'exp-culture-memory': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0102',
-  'exp-math-check': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0103',
-  'exp-english-language': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0104',
-  'exp-logic-template': '7aa84b22-9b9d-4d28-9ef8-7a09d42b0105'
-}
-const circleExperienceCommunityPosts = ref(
-  circleExperiencePosts.map((post, index) => normalizeCommunityPost({
-    id: circleExperienceSeedPostIds[post.id],
-    postType: 'experience',
-    category: post.category,
-    author: post.author,
-    avatar: post.avatar,
-    publishTime: post.publishDate,
-    tone: ['mint', 'blue', 'warm', 'violet', 'mint'][index] || 'blue',
-    title: post.title,
-    summary: post.summary,
-    content: [
-      post.summary,
-      ...post.sections.map((section) => `${section.heading}\n${section.body}`)
-    ].join('\n\n'),
-    media: [],
-    commentPreviews: [{
-      id: `${post.id}-preview`,
-      author: '研友小林',
-      text: `我会先按“${post.points[0]}”来复盘。`
-    }],
-    stats: {
-      likes: post.stats.likes,
-      comments: 1,
-      views: post.stats.views
-    }
-  }))
-)
+const circleExperienceCommunityPosts = ref([])
 const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
 const circleMaterialSummaries = {
   中华文化: '文学、历史、哲学、艺术和古代科技常识资料包。',
@@ -2206,7 +2171,6 @@ const filteredCircleExperiencePosts = computed(() => {
     const itemExamCode = getExperienceExamCode(item)
     const matchesExamCode = selectedExperienceCategory.value === '全部'
       || itemExamCode === selectedExperienceCategory.value
-      || itemExamCode === 'COMMON'
     if (!matchesExamCode || !keyword) return matchesExamCode
     return [
       item.author,
@@ -2250,12 +2214,22 @@ const filteredActiveCommunityPosts = computed(() => (
     ? filteredCircleExperiencePosts.value
     : filteredCircleCommunityPosts.value
 ))
+const showCommunityPublishButton = computed(() => (
+  activeTab.value === 'circle'
+  && selectedCircleSection.value === 'community'
+  && Boolean(selectedCircleCommunityTab.value)
+  && !selectedCommunityPost.value
+  && !selectedCommunityCommentsPost.value
+))
 const circleTrendPeak = computed(() => Math.max(...circlePracticeTrend.map((item) => item.count)))
 const circleTrendScaleMax = computed(() => Math.ceil(circleTrendPeak.value / 100) * 100)
 const circleTrendAxis = computed(() => [circleTrendScaleMax.value, Math.round(circleTrendScaleMax.value / 2), 0])
 const selectedCircleSectionLabel = computed(() =>
   circleSections.find((item) => item.key === selectedCircleSection.value)?.label || '研圈'
 )
+const circleSectionTransitionName = computed(() => (
+  circleSectionTransitionDirection.value === 'back' ? 'circle-section-back' : 'circle-section-forward'
+))
 const circleMaterialSubjectSummary = computed(() =>
   circleMaterialSummaries[selectedMaterialSubject.value] || '按科目整理资料包。'
 )
@@ -2455,13 +2429,14 @@ const practiceTools = computed(() => {
 })
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
+const isCircleGlassTheme = computed(() => currentTheme.value.circleGlass === true)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const mpLayoutStyle = ref('')
 const pageInlineStyle = computed(() => [themeInlineStyle.value, mpLayoutStyle.value].filter(Boolean).join(';'))
 const mistakeHeaderStyle = computed(() => {
   const progress = Math.min(1, Math.max(0, mistakeHeaderScrollTop.value / 220))
   return {
-    '--mistake-header-opacity': String(0.2 + progress * 0.78),
+    '--mistake-header-opacity': String(0.96 + progress * 0.04),
     '--mistake-header-shadow-opacity': String(progress * 0.11)
   }
 })
@@ -2481,7 +2456,8 @@ function syncMpSafeLayout() {
 
 const getMpThemeIconSrc = (iconSrc) => {
   const filename = String(iconSrc || '').split('/').pop().replace(/\.svg$/i, '.png')
-  return `/static/mp-weixin/theme-icons/${selectedThemeKey.value}/${filename}`
+  const iconThemeKey = currentTheme.value.iconThemeKey || currentTheme.value.key
+  return `/static/mp-weixin/theme-icons/${iconThemeKey}/${filename}`
 }
 const getThemeIconStyle = (iconSrc) => ({
   WebkitMaskImage: `url("${iconSrc}")`,
@@ -2554,7 +2530,10 @@ const retestProgressLabel = computed(() => {
   return `${Math.min(retestIndex.value + 1, retestTotal.value)} / ${retestTotal.value}`
 })
 const retestOptions = computed(() => buildQuestionOptions(retestDetail.value?.question))
-const subjectFilters = computed(() => ['', ...activeExamSubjects.value])
+const subjectFilters = computed(() => [
+  '',
+  ...activeExamSubjects.value.filter((subject) => examMistakes.value.some((item) => item.subject === subject))
+])
 const moduleFilters = computed(() => buildFilterOptions(examMistakes.value, 'module', { subject: wrongFilters.value.subject }))
 const submoduleFilters = computed(() =>
   buildFilterOptions(examMistakes.value, 'submodule', {
@@ -2562,6 +2541,32 @@ const submoduleFilters = computed(() =>
     module: wrongFilters.value.module
   })
 )
+const wrongSubjectPickerOptions = computed(() => toWrongFilterPickerOptions(subjectFilters.value, '全部科目'))
+const wrongModulePickerOptions = computed(() => (
+  wrongFilters.value.subject
+    ? toWrongFilterPickerOptions(moduleFilters.value, '全部模块')
+    : [{ value: '', label: '请先选科目' }]
+))
+const wrongSubmodulePickerOptions = computed(() => (
+  wrongFilters.value.module
+    ? toWrongFilterPickerOptions(submoduleFilters.value, '全部子模块')
+    : [{ value: '', label: '请先选模块' }]
+))
+const wrongSubjectPickerIndex = computed(() => getWrongFilterPickerIndex(
+  wrongSubjectPickerOptions.value,
+  wrongFilters.value.subject
+))
+const wrongModulePickerIndex = computed(() => getWrongFilterPickerIndex(
+  wrongModulePickerOptions.value,
+  wrongFilters.value.module
+))
+const wrongSubmodulePickerIndex = computed(() => getWrongFilterPickerIndex(
+  wrongSubmodulePickerOptions.value,
+  wrongFilters.value.submodule
+))
+const selectedWrongSubjectLabel = computed(() => wrongSubjectPickerOptions.value[wrongSubjectPickerIndex.value]?.label || '全部科目')
+const selectedWrongModuleLabel = computed(() => wrongModulePickerOptions.value[wrongModulePickerIndex.value]?.label || '请先选科目')
+const selectedWrongSubmoduleLabel = computed(() => wrongSubmodulePickerOptions.value[wrongSubmodulePickerIndex.value]?.label || '请先选模块')
 const wrongFilterScopeParts = computed(() =>
   [wrongFilters.value.subject, wrongFilters.value.module, wrongFilters.value.submodule].filter(Boolean)
 )
@@ -2774,7 +2779,7 @@ watch(examCode, (value) => {
 watch(activeTab, (value) => {
   resetCircleTabbar()
   if (value === 'circle' && !ENABLE_CIRCLE) {
-    activeTab.value = 'home'
+    activeTab.value = 'landing'
     return
   }
   if (value === 'circle') {
@@ -2813,15 +2818,15 @@ onLoad((options) => {
   // #endif
   if (options?.tab === 'circle' && ENABLE_CIRCLE) {
     activeTab.value = 'circle'
-    return
-  }
-  if (options?.tab === 'home') {
+  } else if (options?.tab === 'landing') {
+    activeTab.value = 'landing'
+  } else if (options?.tab === 'home') {
     activeTab.value = 'home'
-    return
-  }
-  if (options?.tab === 'profile') {
+  } else if (options?.tab === 'profile') {
     activeTab.value = 'profile'
   }
+
+  warmCircleCommunityFeeds()
 })
 
 onShow(() => {
@@ -2833,7 +2838,8 @@ onShow(() => {
   refreshLearningData()
   loadOfficialMessages(true)
   if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
-    loadCircleCommunityPosts(selectedCircleCommunityTab.value)
+    const postType = selectedCircleCommunityTab.value
+    loadCircleCommunityPosts(postType, { force: consumeCircleCommunityFeedRefresh(postType) })
   }
 })
 
@@ -2882,6 +2888,64 @@ async function changeExam(code) {
 function goModule(subject) {
   uni.setStorageSync('subject', subject)
   uni.navigateTo({ url: `/pages/practice/index?subject=${encodeURIComponent(subject)}` })
+}
+
+function handleHomeFocusChange(event) {
+  const nextIndex = Number(event?.detail?.current)
+  if (Number.isInteger(nextIndex) && nextIndex >= 0 && nextIndex < homeFocusItems.length) {
+    homeFocusIndex.value = nextIndex
+  }
+}
+
+function selectHomeFocus(index) {
+  if (!Number.isInteger(index) || index < 0 || index >= homeFocusItems.length) return
+  homeFocusIndex.value = index
+}
+
+function openHomeFocus(item) {
+  openHomeExternalLink(item?.url)
+}
+
+function openHomeNews(item) {
+  openHomeExternalLink(item?.url)
+}
+
+function openNewsArchive() {
+  openHomeExternalLink('https://www.gatzs.com.cn/')
+}
+
+function openHomeService(item) {
+  if (item?.key === 'major-catalog') {
+    uni.navigateTo({ url: '/pages/major-catalog/index' })
+    return
+  }
+  if (item?.key === 'application-guide') {
+    openNewsArchive()
+    return
+  }
+  uni.showToast({
+    title: `${item?.title || '该'}查询功能即将开放`,
+    icon: 'none'
+  })
+}
+
+function openHomeExternalLink(url) {
+  if (!url) return
+
+  // #ifdef H5
+  window.open(url, '_blank', 'noopener,noreferrer')
+  // #endif
+
+  // #ifdef APP-PLUS
+  plus.runtime.openURL(url)
+  // #endif
+
+  // #ifdef MP-WEIXIN
+  uni.setClipboardData({
+    data: url,
+    success: () => uni.showToast({ title: '官方链接已复制', icon: 'none' })
+  })
+  // #endif
 }
 
 function openMockExamIntro() {
@@ -3215,7 +3279,9 @@ async function closeOfficialMessages() {
 }
 
 function openCircleSection(key) {
-  if (!circleSections.some((item) => item.key === key)) return
+  if (!circleSections.some((item) => item.key === key) || selectedCircleSection.value === key) return
+  circleSectionTransitionDirection.value = 'forward'
+  scrollCircleContentToTop()
   resetCircleTabbar()
   selectedCircleSection.value = key
   selectedCirclePost.value = null
@@ -3224,15 +3290,61 @@ function openCircleSection(key) {
     selectedCircleCommunityTab.value = 'chat'
     selectedCommunityCategory.value = '全部'
     communitySearchKeyword.value = ''
-    loadCircleCommunityPosts('chat')
+    selectedExperienceCategory.value = '全部'
+    experienceSearchKeyword.value = ''
+    const shouldRefreshChat = consumeCircleCommunityFeedRefresh('chat')
+    hydrateCircleCommunityFeed('chat')
+    loadCircleCommunityPosts('chat', { force: shouldRefreshChat })
   }
 }
 
 function returnToCircleOverview() {
+  if (selectedCircleSection.value === 'overview') return
+  circleSectionTransitionDirection.value = 'back'
+  scrollCircleContentToTop()
   resetCircleTabbar()
   selectedCircleSection.value = 'overview'
   selectedCirclePost.value = null
   closeCommunityPost()
+}
+
+function scrollCircleContentToTop() {
+  uni.pageScrollTo({
+    scrollTop: 0,
+    duration: 0
+  })
+}
+
+function getCircleTouchPoint(event) {
+  return event?.touches?.[0] || event?.changedTouches?.[0] || null
+}
+
+function beginCircleEdgeSwipe(event) {
+  if (selectedCircleSection.value === 'overview' || selectedCommunityPost.value || selectedCirclePost.value) {
+    circleEdgeSwipeStart.value = null
+    return
+  }
+
+  const touch = getCircleTouchPoint(event)
+  if (!touch) return
+  circleEdgeSwipeStart.value = {
+    x: Number(touch.clientX ?? touch.pageX ?? 0),
+    y: Number(touch.clientY ?? touch.pageY ?? 0)
+  }
+}
+
+function finishCircleEdgeSwipe(event) {
+  const start = circleEdgeSwipeStart.value
+  circleEdgeSwipeStart.value = null
+  if (!start || selectedCircleSection.value === 'overview') return
+
+  const touch = getCircleTouchPoint(event)
+  if (!touch) return
+  const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
+  const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
+  if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
+    returnToCircleOverview()
+  }
 }
 
 function resetCircleTabbar() {
@@ -3337,13 +3449,24 @@ function clearActiveCommunitySearch() {
 
 function getExperienceExamCode(post = {}) {
   const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
-  if (['Z001', 'Z002', 'COMMON'].includes(explicitCode)) return explicitCode
+  if (['Z001', 'Z002'].includes(explicitCode)) return explicitCode
 
   const category = String(post.category || '')
   const text = `${post.title || ''} ${post.summary || ''}`.toUpperCase()
-  if (category === '数学基础' || text.includes('Z002')) return 'Z002'
-  if (category === '逻辑推理' || category === '备考节奏' || text.includes('Z001')) return 'Z001'
-  return 'COMMON'
+  if (['Z001', 'Z002'].includes(category)) return category
+  if (category === 'Z002' || category === '数学基础' || text.includes('Z002')) return 'Z002'
+  return 'Z001'
+}
+
+function getCommunityChatCategory(post = {}) {
+  const category = String(post.category || '')
+  if (circleCommunitySubjectCategories.includes(category)) return category
+
+  const text = `${post.title || ''} ${post.summary || ''} ${post.content || ''}`.toUpperCase()
+  if (category === 'Z002' || text.includes('Z002') || /数学|微积分|导数|积分/.test(text)) return '数学基础'
+  if (/英语|词汇|语法|短语/.test(text)) return '英语运用'
+  if (/逻辑|论点|论据|推理/.test(text)) return '逻辑推理'
+  return '中华文化'
 }
 
 function normalizeCommunityPost(post = {}) {
@@ -3362,12 +3485,18 @@ function normalizeCommunityPost(post = {}) {
     }))
     .filter((comment) => comment.text)
 
+  const postType = post.postType || post.post_type || 'chat'
+  const examCode = getExperienceExamCode(post)
+  const category = postType === 'experience'
+    ? examCode
+    : getCommunityChatCategory(post)
+
   return {
     ...post,
     id: String(post.id || ''),
-    postType: post.postType || post.post_type || 'chat',
-    examCode: getExperienceExamCode(post),
-    category: post.category || '备考日常',
+    postType,
+    examCode: postType === 'experience' ? examCode : '',
+    category,
     author: post.author || '研友',
     avatar: post.avatar || '研',
     avatarUrl: post.avatarUrl || post.avatar_url || '',
@@ -3396,7 +3525,9 @@ function normalizeCommunityComment(comment = {}) {
     avatarUrl: comment.avatarUrl || comment.avatar_url || '',
     content: comment.content || '',
     createdAt: comment.createdAt || comment.created_at || new Date().toISOString(),
-    isMine: Boolean(comment.isMine || comment.is_mine)
+    isMine: Boolean(comment.isMine || comment.is_mine),
+    liked: Boolean(comment.liked || comment.is_liked),
+    likeCount: Number(comment.likeCount ?? comment.like_count ?? 0)
   }
 }
 
@@ -3422,25 +3553,130 @@ function patchCommunityPost(postId, patch) {
   if (selectedCommunityCommentsPost.value?.id === postId) {
     selectedCommunityCommentsPost.value = applyPatch(selectedCommunityCommentsPost.value)
   }
+  persistCircleCommunityFeed('chat')
+  persistCircleCommunityFeed('experience')
 }
 
-async function loadCircleCommunityPosts(postType = 'chat') {
-  const normalizedPostType = postType === 'experience' ? 'experience' : 'chat'
+function normalizeCircleCommunityPostType(postType) {
+  return postType === 'experience' ? 'experience' : 'chat'
+}
+
+function getCircleCommunityFeedStorageKey(postType) {
+  const viewerId = String(authUser.value?.id || 'guest').trim() || 'guest'
+  return `${COMMUNITY_FEED_CACHE_PREFIX}:${viewerId}:${normalizeCircleCommunityPostType(postType)}`
+}
+
+function getCircleCommunityFeedRefreshKey(postType) {
+  return `circle-community-feed-refresh-${normalizeCircleCommunityPostType(postType)}`
+}
+
+function consumeCircleCommunityFeedRefresh(postType) {
+  const storageKey = getCircleCommunityFeedRefreshKey(postType)
+  try {
+    const refreshRequestedAt = Number(uni.getStorageSync(storageKey) || 0)
+    if (!refreshRequestedAt) return false
+    uni.removeStorageSync(storageKey)
+    return true
+  } catch (error) {
+    return false
+  }
+}
+
+function getCircleCommunityFeedPosts(postType) {
+  return normalizeCircleCommunityPostType(postType) === 'experience'
+    ? circleExperienceCommunityPosts.value
+    : circleCommunityPosts.value
+}
+
+function setCircleCommunityFeedPosts(postType, posts, { persist = true } = {}) {
+  const normalizedPostType = normalizeCircleCommunityPostType(postType)
+  const nextPosts = Array.isArray(posts) ? posts : []
+  if (normalizedPostType === 'experience') {
+    circleExperienceCommunityPosts.value = nextPosts
+  } else {
+    circleCommunityPosts.value = nextPosts
+  }
+  if (persist) {
+    persistCircleCommunityFeed(normalizedPostType)
+  }
+}
+
+function persistCircleCommunityFeed(postType) {
+  const storageKey = getCircleCommunityFeedStorageKey(postType)
+  try {
+    uni.setStorageSync(storageKey, {
+      cachedAt: Date.now(),
+      posts: getCircleCommunityFeedPosts(postType)
+    })
+    communityFeedCacheHydratedKeys.add(storageKey)
+    communityFeedCacheFreshness.set(storageKey, Date.now())
+  } catch (error) {
+    // 缓存不可用时继续使用网络数据，不影响社区浏览。
+  }
+}
+
+function hydrateCircleCommunityFeed(postType) {
+  const normalizedPostType = normalizeCircleCommunityPostType(postType)
+  const storageKey = getCircleCommunityFeedStorageKey(normalizedPostType)
+  if (communityFeedCacheHydratedKeys.has(storageKey)) {
+    return Date.now() - Number(communityFeedCacheFreshness.get(storageKey) || 0) <= COMMUNITY_FEED_CACHE_TTL
+  }
+  communityFeedCacheHydratedKeys.add(storageKey)
+
+  try {
+    const cached = uni.getStorageSync(storageKey)
+    if (!cached || !Array.isArray(cached.posts)) {
+      communityFeedCacheFreshness.set(storageKey, 0)
+      return false
+    }
+    const posts = cached.posts.map((post) => normalizeCommunityPost(post))
+    setCircleCommunityFeedPosts(normalizedPostType, posts, { persist: false })
+    const cachedAt = Number(cached.cachedAt || 0)
+    communityFeedCacheFreshness.set(storageKey, cachedAt)
+    return Date.now() - cachedAt <= COMMUNITY_FEED_CACHE_TTL
+  } catch (error) {
+    communityFeedCacheFreshness.set(storageKey, 0)
+    return false
+  }
+}
+
+function warmCircleCommunityFeeds() {
+  if (communityFeedPrefetchStarted) return
+  communityFeedPrefetchStarted = true
+
+  const chatCacheFresh = hydrateCircleCommunityFeed('chat')
+  const experienceCacheFresh = hydrateCircleCommunityFeed('experience')
+
+  if (!chatCacheFresh) {
+    setTimeout(() => {
+      void loadCircleCommunityPosts('chat')
+    }, 0)
+  }
+  if (!experienceCacheFresh) {
+    setTimeout(() => {
+      void loadCircleCommunityPosts('experience')
+    }, chatCacheFresh ? 80 : 220)
+  }
+}
+
+async function loadCircleCommunityPosts(postType = 'chat', { force = false } = {}) {
+  const normalizedPostType = normalizeCircleCommunityPostType(postType)
+  const cacheIsFresh = hydrateCircleCommunityFeed(normalizedPostType)
+  if (cacheIsFresh && !force) return
   if (communityPostsLoadingTypes.has(normalizedPostType)) return
   communityPostsLoadingTypes.add(normalizedPostType)
   communityPostsLoading.value = true
   try {
-    const response = await fetchCommunityPosts({ limit: 50, post_type: normalizedPostType })
+    const response = await fetchCommunityPosts({
+      limit: COMMUNITY_FEED_PAGE_SIZE,
+      post_type: normalizedPostType
+    })
     if (Array.isArray(response?.items)) {
       const posts = response.items.map((post) => normalizeCommunityPost(post))
-      if (normalizedPostType === 'experience') {
-        circleExperienceCommunityPosts.value = posts
-      } else {
-        circleCommunityPosts.value = posts
-      }
+      setCircleCommunityFeedPosts(normalizedPostType, posts)
     }
   } catch (error) {
-    // 保留本地示例内容，避免数据库迁移完成前的界面出现空白。
+    // 请求失败时保留已经读取到的真实缓存，不再回退到示例帖子。
   } finally {
     communityPostsLoadingTypes.delete(normalizedPostType)
     communityPostsLoading.value = communityPostsLoadingTypes.size > 0
@@ -3519,6 +3755,29 @@ function closeCommunityPost() {
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
   selectedCommunityPost.value = null
+}
+
+function beginCommunityReaderEdgeSwipe(event) {
+  const touch = getCircleTouchPoint(event)
+  if (!touch) return
+  communityReaderEdgeSwipeStart.value = {
+    x: Number(touch.clientX ?? touch.pageX ?? 0),
+    y: Number(touch.clientY ?? touch.pageY ?? 0)
+  }
+}
+
+function finishCommunityReaderEdgeSwipe(event) {
+  const start = communityReaderEdgeSwipeStart.value
+  communityReaderEdgeSwipeStart.value = null
+  if (!start || !selectedCommunityPost.value) return
+
+  const touch = getCircleTouchPoint(event)
+  if (!touch) return
+  const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
+  const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
+  if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
+    closeCommunityPost()
+  }
 }
 
 async function openCommunityComments(post) {
@@ -3611,6 +3870,7 @@ function closeCommunityComments() {
   communityLikes.value = []
   communityLikesLoading.value = false
   communityCommentSort.value = 'default'
+  communityCommentLikeId.value = ''
   communityCommentDraft.value = ''
 }
 
@@ -3689,6 +3949,33 @@ async function toggleCommunityLike(post) {
   }
 }
 
+async function toggleCommunityCommentLike(comment) {
+  const post = selectedCommunityCommentsPost.value
+  if (!post?.id || !comment?.id || communityCommentLikeId.value === comment.id) return
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+
+  communityCommentLikeId.value = comment.id
+  try {
+    const response = await toggleCommunityCommentLikeRequest(post.id, comment.id)
+    communityComments.value = communityComments.value.map((item) => (
+      item.id === comment.id
+        ? {
+            ...item,
+            liked: Boolean(response?.is_liked),
+            likeCount: Number(response?.like_count || 0)
+          }
+        : item
+    ))
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '评论点赞失败，请稍后重试'), icon: 'none' })
+  } finally {
+    communityCommentLikeId.value = ''
+  }
+}
+
 async function submitCommunityComment() {
   const post = selectedCommunityCommentsPost.value
   const content = communityCommentDraft.value.trim()
@@ -3740,8 +4027,24 @@ function formatCommunityCommentTime(value) {
 }
 
 function openCommunityPublishPage(postType = selectedCircleCommunityTab.value) {
+  const now = Date.now()
+  if (now - lastCommunityPublishNavigationAt < 700) return
+  lastCommunityPublishNavigationAt = now
+
   const normalizedPostType = postType === 'experience' ? 'experience' : 'chat'
-  uni.navigateTo({ url: `/pages/circle/publish?type=${normalizedPostType}` })
+  const url = `/pages/circle/publish?type=${normalizedPostType}`
+  uni.navigateTo({
+    url,
+    fail() {
+      // Some H5 webviews can reject a deep navigation when their page stack is full.
+      uni.redirectTo({
+        url,
+        fail() {
+          uni.reLaunch({ url })
+        }
+      })
+    }
+  })
 }
 
 function selectCircleCommunityTab(tab) {
@@ -3749,7 +4052,9 @@ function selectCircleCommunityTab(tab) {
   selectedCircleCommunityTab.value = tab
   selectedCirclePost.value = null
   closeCommunityPost()
-  loadCircleCommunityPosts(tab)
+  const shouldRefreshTab = consumeCircleCommunityFeedRefresh(tab)
+  hydrateCircleCommunityFeed(tab)
+  loadCircleCommunityPosts(tab, { force: shouldRefreshTab })
   resetCircleTabbar()
 }
 
@@ -3808,10 +4113,7 @@ function logout() {
 }
 
 function openProfileTab() {
-  activeTab.value = 'profile'
-  // #ifdef MP-WEIXIN
-  uni.pageScrollTo({ scrollTop: 0, duration: 0 })
-  // #endif
+  handleAccountEntry()
 }
 
 function openMistakes() {
@@ -4082,7 +4384,36 @@ function buildFilterOptions(items, field, constraints = {}) {
   return ['', ...Array.from(new Set(values))]
 }
 
+function toWrongFilterPickerOptions(values, allLabel) {
+  return values.map((value) => ({
+    value,
+    label: value || allLabel
+  }))
+}
+
+function getWrongFilterPickerIndex(options, value) {
+  return Math.max(0, options.findIndex((item) => item.value === value))
+}
+
+function getWrongFilterPickerValue(event, options) {
+  const option = options[Number(event?.detail?.value)] || options[0]
+  return option?.value || ''
+}
+
+function onWrongSubjectPickerChange(event) {
+  setWrongFilter('subject', getWrongFilterPickerValue(event, wrongSubjectPickerOptions.value))
+}
+
+function onWrongModulePickerChange(event) {
+  setWrongFilter('module', getWrongFilterPickerValue(event, wrongModulePickerOptions.value))
+}
+
+function onWrongSubmodulePickerChange(event) {
+  setWrongFilter('submodule', getWrongFilterPickerValue(event, wrongSubmodulePickerOptions.value))
+}
+
 function setWrongFilter(field, value) {
+  if (wrongFilters.value[field] === value) return
   wrongFilters.value = {
     ...wrongFilters.value,
     [field]: value
@@ -4391,14 +4722,21 @@ function formatDateTime(value) {
   --circle-screen-gutter: 16px;
   --circle-space: 12px;
   --circle-shadow: 0 16px 38px rgba(30, 55, 56, 0.1);
-  --circle-glass-surface: rgba(250, 253, 252, 0.66);
-  --circle-glass-surface-strong: rgba(249, 252, 251, 0.82);
-  --circle-glass-border: rgba(255, 255, 255, 0.78);
+  --circle-glass-surface: rgba(250, 253, 252, 0.46);
+  --circle-glass-surface-strong: rgba(249, 252, 251, 0.62);
+  --circle-glass-border: rgba(255, 255, 255, 0.58);
+  --circle-glass-card: rgba(251, 253, 252, 0.58);
+  --circle-glass-card-mint: rgba(240, 248, 245, 0.58);
+  --circle-glass-control: rgba(248, 251, 250, 0.42);
+  --circle-glass-selected: rgba(225, 242, 237, 0.62);
+  --circle-glass-active: rgba(255, 255, 255, 0.48);
   --circle-glass-blur: 20px;
   --circle-glass-press: 0.98;
   --circle-insight-slide-gap: 8px;
   --circle-insight-slide-offset: 4px;
-  --circle-tab-bg: rgba(247, 250, 249, 0.58);
+  --circle-route-duration: 300ms;
+  --circle-route-ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --circle-tab-bg: rgba(247, 250, 249, 0.38);
   --circle-tab-shadow: 0 14px 34px rgba(30, 55, 56, 0.16);
   --circle-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
   position: relative;
@@ -4428,6 +4766,250 @@ function formatDateTime(value) {
   z-index: 1;
 }
 
+/* 首页沿用研圈的背景，但维持资讯门户所需的阅读对比度。 */
+.landing-glass-page::before {
+  background:
+    linear-gradient(180deg, rgba(224, 236, 232, 0.82) 0%, rgba(237, 245, 242, 0.8) 50%, rgba(221, 234, 229, 0.84) 100%),
+    url('/static/circle-study-sky.jpg') center center / cover no-repeat;
+  filter: saturate(62%) contrast(86%) blur(1px);
+  transform: scale(1.015);
+}
+
+.landing-glass-page .landing-dashboard {
+  position: relative;
+  z-index: 1;
+}
+
+.landing-glass-page .home-header {
+  padding-right: 4rpx;
+  padding-left: 4rpx;
+}
+
+.landing-glass-page .brand-badge,
+.landing-glass-page .message-bell,
+.landing-glass-page .profile-entry {
+  border: 1rpx solid var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: rgba(248, 251, 250, 0.38);
+  box-shadow: 0 10rpx 24rpx rgba(30, 55, 56, 0.09);
+  -webkit-backdrop-filter: blur(16px) saturate(118%);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+.landing-glass-page .brand-badge {
+  color: #16786f;
+}
+
+.landing-glass-page .message-bell {
+  color: #2d3d3b;
+}
+
+.landing-glass-page .profile-entry {
+  color: #16786f;
+}
+
+.landing-glass-page .landing-focus-swiper {
+  border: 1rpx solid var(--circle-glass-border, rgba(255, 255, 255, 0.68));
+  box-shadow: 0 18rpx 40rpx rgba(30, 55, 56, 0.13);
+}
+
+.landing-glass-page .landing-focus-slide {
+  -webkit-backdrop-filter: blur(16px) saturate(118%);
+  backdrop-filter: blur(16px) saturate(118%);
+}
+
+.landing-glass-page .landing-focus-slide.is-blue {
+  background: linear-gradient(135deg, rgba(44, 104, 119, 0.82), rgba(70, 145, 146, 0.74));
+}
+
+.landing-glass-page .landing-focus-slide.is-violet {
+  background: linear-gradient(135deg, rgba(88, 76, 144, 0.82), rgba(126, 103, 174, 0.74));
+}
+
+.landing-glass-page .landing-focus-slide.is-mint {
+  background: linear-gradient(135deg, rgba(31, 112, 104, 0.84), rgba(83, 165, 145, 0.74));
+}
+
+.landing-glass-page .landing-focus-art {
+  border-color: rgba(255, 255, 255, 0.56);
+  background: rgba(249, 252, 251, 0.82);
+  box-shadow: 0 14rpx 28rpx rgba(30, 55, 56, 0.16);
+}
+
+.landing-glass-page .landing-focus-art-card {
+  border-color: rgba(22, 120, 111, 0.14);
+  color: #16786f;
+}
+
+.landing-glass-page .landing-focus-art-label {
+  color: #597470;
+}
+
+.landing-glass-page .landing-focus-art-line {
+  background: #dbece8;
+}
+
+.landing-glass-page .landing-focus-dot {
+  background: rgba(255, 255, 255, 0.5);
+  box-shadow: 0 3rpx 8rpx rgba(30, 55, 56, 0.08);
+}
+
+.landing-glass-page .landing-focus-dot.active {
+  background: #16786f;
+}
+
+.landing-glass-page .landing-section-title {
+  color: #1c2423;
+}
+
+.landing-glass-page .landing-more-button {
+  color: #16786f;
+}
+
+.landing-glass-page .landing-news-card {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.72));
+  background: rgba(249, 252, 251, 0.66);
+  box-shadow: 0 12rpx 28rpx rgba(30, 55, 56, 0.085);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+}
+
+.landing-glass-page .landing-news-source {
+  color: #16786f;
+}
+
+.landing-glass-page .landing-news-title {
+  color: #1f2b2a;
+}
+
+.landing-glass-page .landing-news-date {
+  color: #71817f;
+}
+
+.landing-glass-page .landing-news-cover {
+  border: 1rpx solid rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.55);
+}
+
+.landing-glass-page .landing-service-card {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.7));
+  box-shadow: 0 10rpx 24rpx rgba(30, 55, 56, 0.075);
+  -webkit-backdrop-filter: blur(17px) saturate(116%);
+  backdrop-filter: blur(17px) saturate(116%);
+}
+
+.landing-glass-page .landing-service-card.is-school {
+  background: rgba(241, 248, 251, 0.58);
+}
+
+.landing-glass-page .landing-service-card.is-major {
+  background: rgba(247, 244, 252, 0.58);
+}
+
+.landing-glass-page .landing-service-card.is-guide {
+  background: rgba(241, 250, 247, 0.58);
+}
+
+.landing-glass-page .landing-service-card.is-school .landing-service-icon {
+  background: transparent;
+  box-shadow: none;
+}
+
+.landing-glass-page .landing-service-card.is-major .landing-service-icon {
+  background: transparent;
+  box-shadow: none;
+}
+
+.landing-glass-page .landing-service-card.is-guide .landing-service-icon {
+  background: transparent;
+  box-shadow: none;
+}
+
+.landing-glass-page .landing-service-title {
+  color: #263937;
+}
+
+.landing-glass-page :deep(.icp-footer.inline),
+.landing-glass-page :deep(.icp-footer.inline .icp-link) {
+  color: #657875;
+}
+
+.landing-glass-page :deep(.tabbar.glass) {
+  border-color: rgba(255, 255, 255, 0.7);
+  background: rgba(247, 251, 250, 0.46);
+  box-shadow: 0 14px 34px rgba(30, 55, 56, 0.15);
+}
+
+
+/* 方案一：将研圈玻璃质感延展到首页、刷题、报告和我的的主卡片。 */
+.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask) {
+  position: relative;
+  z-index: 1;
+}
+
+.glass-theme-page:not(.landing-glass-page) .welcome-card,
+.glass-theme-page:not(.landing-glass-page) .stats-card,
+.glass-theme-page:not(.landing-glass-page) :deep(.module-card),
+.glass-theme-page:not(.landing-glass-page) .mock-exam-card,
+.glass-theme-page:not(.landing-glass-page) .report-overview-card,
+.glass-theme-page:not(.landing-glass-page) .subject-report-card,
+.glass-theme-page:not(.landing-glass-page) .learning-advice-card,
+.glass-theme-page:not(.landing-glass-page) .account-card,
+.glass-theme-page:not(.landing-glass-page) .member-card,
+.glass-theme-page:not(.landing-glass-page) .profile-section-card,
+.glass-theme-page:not(.landing-glass-page) .logout-card,
+.glass-theme-page:not(.landing-glass-page) :deep(.section-card) {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.66));
+  background: rgba(250, 253, 252, 0.62);
+  box-shadow: 0 16rpx 38rpx rgba(30, 55, 56, 0.11);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+}
+
+.glass-theme-page:not(.landing-glass-page) .stats-card,
+.glass-theme-page:not(.landing-glass-page) :deep(.module-card) .divider,
+.glass-theme-page:not(.landing-glass-page) .stat-divider,
+.glass-theme-page:not(.landing-glass-page) .menu-row {
+  border-color: rgba(255, 255, 255, 0.44);
+}
+
+.glass-theme-page:not(.landing-glass-page) .stats-card,
+.glass-theme-page:not(.landing-glass-page) .member-card.active {
+  background: rgba(249, 253, 252, 0.56);
+}
+
+.glass-theme-page:not(.landing-glass-page) .welcome-title,
+.glass-theme-page:not(.landing-glass-page) .mock-exam-title,
+.glass-theme-page:not(.landing-glass-page) .account-name,
+.glass-theme-page:not(.landing-glass-page) .member-title,
+.glass-theme-page:not(.landing-glass-page) .profile-section-title {
+  color: #1c2423;
+}
+
+.glass-theme-page:not(.landing-glass-page) .welcome-subtitle,
+.glass-theme-page:not(.landing-glass-page) .mock-exam-sub,
+.glass-theme-page:not(.landing-glass-page) .account-desc,
+.glass-theme-page:not(.landing-glass-page) .member-subtitle,
+.glass-theme-page:not(.landing-glass-page) .stat-label {
+  color: #657473;
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .landing-glass-page .landing-news-card,
+  .landing-glass-page .landing-service-card,
+  .glass-theme-page:not(.landing-glass-page) .welcome-card,
+  .glass-theme-page:not(.landing-glass-page) .stats-card,
+  .glass-theme-page:not(.landing-glass-page) .mock-exam-card,
+  .glass-theme-page:not(.landing-glass-page) .report-overview-card,
+  .glass-theme-page:not(.landing-glass-page) .subject-report-card,
+  .glass-theme-page:not(.landing-glass-page) .learning-advice-card,
+  .glass-theme-page:not(.landing-glass-page) .account-card,
+  .glass-theme-page:not(.landing-glass-page) .member-card,
+  .glass-theme-page:not(.landing-glass-page) .profile-section-card,
+  .glass-theme-page:not(.landing-glass-page) .logout-card {
+    background: #f8fbfa;
+  }
+}
+
 .home-page.no-tab-page {
   padding-bottom: calc(env(safe-area-inset-bottom) + 36rpx);
 }
@@ -4443,11 +5025,656 @@ function formatDateTime(value) {
   overflow-x: hidden;
 }
 
+.landing-dashboard {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 760rpx;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+  overflow-x: hidden;
+}
+
+/* #ifdef H5 */
+.landing-dashboard {
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 198rpx);
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 198rpx);
+}
+
+.landing-glass-page .landing-dashboard {
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 208rpx);
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 208rpx);
+}
+
+.landing-dashboard :deep(.icp-footer.inline) {
+  margin-top: auto;
+}
+/* #endif */
+
 .home-dashboard view,
 .home-dashboard text,
 .home-dashboard button,
 .home-dashboard scroll-view {
   box-sizing: border-box;
+}
+
+.landing-dashboard view,
+.landing-dashboard text,
+.landing-dashboard button,
+.landing-dashboard swiper,
+.landing-dashboard swiper-item {
+  box-sizing: border-box;
+}
+
+.landing-focus-block {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  gap: 8rpx;
+}
+
+.landing-focus-swiper {
+  min-height: 0;
+  height: clamp(240rpx, 21.5dvh, 320rpx);
+  flex: none;
+  border-radius: 34rpx;
+  overflow: hidden;
+  box-shadow: 0 20rpx 44rpx rgba(31, 76, 145, 0.14);
+}
+
+.landing-focus-slide {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 28rpx;
+  overflow: hidden;
+  color: #ffffff;
+  display: flex;
+  align-items: stretch;
+}
+
+.landing-focus-slide::before,
+.landing-focus-slide::after {
+  content: '';
+  position: absolute;
+  border-radius: 50%;
+  pointer-events: none;
+}
+
+.landing-focus-slide::before {
+  right: -62rpx;
+  top: -84rpx;
+  width: 266rpx;
+  height: 266rpx;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.landing-focus-slide::after {
+  right: 126rpx;
+  bottom: -84rpx;
+  width: 164rpx;
+  height: 164rpx;
+  background: rgba(255, 255, 255, 0.08);
+}
+
+.landing-focus-slide.is-blue {
+  background: linear-gradient(135deg, #307cf4 0%, #5795f5 56%, #779ff6 100%);
+}
+
+.landing-focus-slide.is-violet {
+  background: linear-gradient(135deg, #725bc9 0%, #8c70df 54%, #ae94ee 100%);
+}
+
+.landing-focus-slide.is-mint {
+  background: linear-gradient(135deg, #177e85 0%, #32a6a3 55%, #69c6b8 100%);
+}
+
+.landing-focus-copy {
+  position: relative;
+  z-index: 1;
+  max-width: calc(100% - 178rpx);
+  display: flex;
+  flex-direction: column;
+  align-self: stretch;
+  padding: 2rpx 0;
+}
+
+.landing-focus-copy-main {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+  margin-top: 30rpx;
+}
+
+.landing-focus-badge {
+  align-self: flex-start;
+  padding: 7rpx 12rpx;
+  border: 1rpx solid rgba(255, 255, 255, 0.34);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.15);
+  color: #ffffff;
+  font-size: 19rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.landing-focus-title {
+  color: #ffffff;
+  font-size: 35rpx;
+  line-height: 1.24;
+  font-weight: 900;
+}
+
+.landing-focus-subtitle {
+  color: rgba(255, 255, 255, 0.84);
+  font-size: 22rpx;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.landing-focus-art {
+  position: absolute;
+  z-index: 1;
+  right: 28rpx;
+  top: 50%;
+  width: 140rpx;
+  height: 178rpx;
+  padding: 14rpx;
+  border: 2rpx solid rgba(255, 255, 255, 0.32);
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 14rpx 24rpx rgba(10, 47, 108, 0.16);
+  transform: translateY(-50%) rotate(6deg);
+}
+
+.landing-focus-art-card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 17rpx 13rpx;
+  border: 2rpx solid rgba(32, 93, 184, 0.12);
+  border-radius: 12rpx;
+  color: #2d73d9;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.landing-focus-art-year {
+  font-size: 30rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.landing-focus-art-label {
+  color: #5575a7;
+  font-size: 19rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.landing-focus-art-line {
+  width: 100%;
+  height: 7rpx;
+  border-radius: 999rpx;
+  background: #dce9fc;
+}
+
+.landing-focus-art-line.short {
+  width: 62%;
+}
+
+.landing-focus-pagination {
+  display: flex;
+  justify-content: center;
+  gap: 10rpx;
+}
+
+.landing-focus-dot {
+  width: 13rpx;
+  min-width: 13rpx;
+  height: 13rpx;
+  min-height: 13rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: #d3dceb;
+  transition: width 180ms ease, background-color 180ms ease;
+}
+
+.landing-focus-dot::after,
+.landing-more-button::after,
+.landing-service-card::after {
+  border: 0;
+}
+
+.landing-focus-dot.active {
+  width: 34rpx;
+  background: var(--gyt-primary, #3478f6);
+}
+
+.landing-section {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.landing-section-heading {
+  min-height: 52rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+  padding: 0 4rpx;
+}
+
+.landing-section-heading > view {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7rpx;
+}
+
+.landing-section-title {
+  color: #182235;
+  font-size: 32rpx;
+  line-height: 1.1;
+  font-weight: 900;
+}
+
+.landing-more-button {
+  min-height: 52rpx;
+  margin: 0;
+  padding: 0 4rpx;
+  border: 0;
+  background: transparent;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 23rpx;
+  line-height: 1;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.landing-more-button text {
+  margin-left: 2rpx;
+  font-size: 34rpx;
+  font-weight: 500;
+  vertical-align: -2rpx;
+}
+
+.landing-news-list {
+  flex: none;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.landing-news-card {
+  flex: none;
+  min-height: 0;
+  height: clamp(160rpx, 13dvh, 200rpx);
+  padding: 16rpx;
+  border: 2rpx solid #e7edf7;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12rpx 30rpx rgba(30, 55, 93, 0.06);
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.landing-news-card:active,
+.landing-service-card:active {
+  transform: scale(0.985);
+}
+
+.landing-news-copy {
+  min-width: 0;
+  flex: 1;
+  padding-top: 8rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.landing-news-source {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.landing-news-title {
+  overflow: hidden;
+  color: #263044;
+  font-size: 25rpx;
+  line-height: 1.42;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.landing-news-date {
+  margin-top: auto;
+  color: #98a2b3;
+  font-size: 19rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.landing-news-cover {
+  box-sizing: border-box;
+  width: 174rpx;
+  min-width: 174rpx;
+  height: 134rpx;
+  flex: 0 0 auto;
+  padding: 10rpx;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+}
+
+.landing-news-cover.is-blue {
+  background: linear-gradient(145deg, #e3efff, #bcd5ff);
+}
+
+.landing-news-cover.is-orange {
+  background: linear-gradient(145deg, #fff0dc, #f8cc8c);
+}
+
+.landing-news-cover.is-mint {
+  background: linear-gradient(145deg, #dff6ef, #a9dfcd);
+}
+
+.landing-news-document {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  padding: 11rpx;
+  border-radius: 10rpx;
+  background: rgba(255, 255, 255, 0.9);
+  box-shadow: 0 8rpx 18rpx rgba(37, 72, 117, 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 8rpx;
+  overflow: hidden;
+}
+
+.landing-news-document-top {
+  color: #5276ac;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 4rpx;
+  font-size: 14rpx;
+  line-height: 1.1;
+  font-weight: 800;
+}
+
+.landing-news-document-top text:last-child {
+  color: #95a7c0;
+  font-size: 12rpx;
+}
+
+.landing-news-document-title {
+  color: #32466c;
+  font-size: 20rpx;
+  line-height: 1.32;
+  font-weight: 900;
+}
+
+.landing-news-document-lines {
+  display: flex;
+  flex-direction: column;
+  gap: 5rpx;
+}
+
+.landing-news-document-lines view {
+  width: 100%;
+  height: 4rpx;
+  border-radius: 999rpx;
+  background: #dfe7f2;
+}
+
+.landing-news-document-lines view:nth-child(2) {
+  width: 82%;
+}
+
+.landing-news-document-lines view:nth-child(3) {
+  width: 66%;
+}
+
+.landing-service-grid {
+  flex: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.landing-news-section {
+  flex: none;
+}
+
+.landing-services-section {
+  flex: none;
+}
+
+.landing-service-card {
+  position: relative;
+  min-width: 0;
+  min-height: 0;
+  height: clamp(140rpx, 12dvh, 180rpx);
+  margin: 0;
+  padding: 16rpx 16rpx 14rpx;
+  border: 2rpx solid transparent;
+  border-radius: 26rpx;
+  background: #ffffff;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  justify-content: center;
+  gap: 0;
+  overflow: hidden;
+  transition: transform 180ms ease, box-shadow 180ms ease;
+}
+
+.landing-service-card.is-school {
+  border-color: #dce9ff;
+  background: linear-gradient(160deg, #f8fbff, #edf5ff);
+}
+
+.landing-service-card.is-major {
+  border-color: #e6dcff;
+  background: linear-gradient(160deg, #fbfaff, #f2eeff);
+}
+
+.landing-service-card.is-guide {
+  border-color: #d7f0e9;
+  background: linear-gradient(160deg, #f7fcfb, #eaf8f3);
+}
+
+.landing-service-icon {
+  width: 52rpx;
+  height: 52rpx;
+  margin: 0 auto;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 25rpx;
+  line-height: 1;
+  font-weight: 900;
+  overflow: hidden;
+}
+
+.landing-service-icon-image {
+  display: block;
+  width: 100%;
+  height: 100%;
+  transform: scale(1.62);
+  transform-origin: center;
+}
+
+.landing-service-card.is-school .landing-service-icon {
+  color: #377ce7;
+}
+
+.landing-service-card.is-major .landing-service-icon {
+  color: #7759c7;
+}
+
+.landing-service-card.is-guide .landing-service-icon {
+  color: #2a9b78;
+}
+
+.landing-service-row {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  min-height: 28rpx;
+  margin-top: 16rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.landing-service-title {
+  display: block;
+  width: 100%;
+  color: #273149;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  text-align: center;
+  white-space: nowrap;
+}
+
+@media (max-width: 600px) and (max-height: 900px) {
+  .landing-dashboard {
+    gap: 14rpx;
+  }
+
+  .landing-focus-swiper {
+    height: clamp(240rpx, 21.5dvh, 320rpx);
+  }
+
+  .landing-focus-slide {
+    height: 100%;
+  }
+
+  .landing-focus-slide {
+    padding: 22rpx 24rpx;
+  }
+
+  .landing-focus-copy {
+    padding-top: 2rpx;
+  }
+
+  .landing-focus-copy-main {
+    gap: 9rpx;
+    margin-top: 26rpx;
+  }
+
+  .landing-focus-title {
+    font-size: 32rpx;
+  }
+
+  .landing-focus-art {
+    right: 22rpx;
+    top: 50%;
+    width: 126rpx;
+    height: 164rpx;
+  }
+
+  .landing-section {
+    gap: 10rpx;
+  }
+
+  .landing-section-heading {
+    min-height: 48rpx;
+  }
+
+  .landing-news-card {
+    padding: 12rpx 14rpx;
+  }
+
+  .landing-news-title {
+    font-size: 22rpx;
+  }
+
+  .landing-news-cover {
+    width: 150rpx;
+    min-width: 150rpx;
+    height: 116rpx;
+    padding: 8rpx;
+  }
+
+  .landing-service-card {
+    padding: 10rpx 8rpx;
+  }
+
+  .landing-service-icon {
+    width: 48rpx;
+    height: 48rpx;
+    font-size: 21rpx;
+  }
+
+  .landing-service-row {
+    margin-top: 14rpx;
+  }
+
+}
+
+@media (max-width: 350px) {
+  .landing-focus-slide {
+    padding-right: 22rpx;
+    padding-left: 22rpx;
+  }
+
+  .landing-focus-copy {
+    max-width: calc(100% - 158rpx);
+  }
+
+  .landing-focus-title {
+    font-size: 31rpx;
+  }
+
+  .landing-focus-art {
+    right: 18rpx;
+    width: 126rpx;
+  }
+
+  .landing-news-card {
+    gap: 12rpx;
+    padding: 15rpx;
+  }
+
+  .landing-news-cover {
+    width: 152rpx;
+    min-width: 152rpx;
+  }
+
+  .landing-service-card {
+    padding-right: 8rpx;
+    padding-left: 8rpx;
+  }
+
+  .landing-service-title {
+    font-size: 23rpx;
+  }
 }
 
 .circle-dashboard {
@@ -4459,6 +5686,79 @@ function formatDateTime(value) {
   flex-direction: column;
   gap: 0;
   overflow-x: hidden;
+}
+
+.circle-view-stage {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  isolation: isolate;
+  contain: paint;
+  overflow-x: hidden;
+  overflow-x: clip;
+}
+
+.circle-view-panel {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  isolation: isolate;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform: translateZ(0);
+}
+
+.circle-section-forward-enter-active,
+.circle-section-forward-leave-active,
+.circle-section-back-enter-active,
+.circle-section-back-leave-active {
+  transition: transform var(--circle-route-duration) var(--circle-route-ease);
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+  transform-style: preserve-3d;
+}
+
+.circle-section-forward-enter-active,
+.circle-section-back-enter-active {
+  position: relative;
+  z-index: 2;
+}
+
+.circle-section-forward-leave-active,
+.circle-section-back-leave-active {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    linear-gradient(180deg, rgba(10, 41, 42, 0.22) 0%, rgba(18, 49, 49, 0.12) 48%, rgba(18, 43, 43, 0.32) 100%),
+    url('/static/circle-study-sky.jpg') center center / cover no-repeat;
+  background-attachment: fixed;
+}
+
+.circle-section-forward-leave-active {
+  z-index: 1;
+  visibility: hidden;
+}
+
+.circle-section-back-leave-active {
+  z-index: 2;
+}
+
+.circle-section-forward-enter-from {
+  transform: translate3d(100%, 0, 0);
+}
+
+.circle-section-forward-leave-to {
+  transform: translate3d(-12%, 0, 0);
+}
+
+.circle-section-back-enter-from {
+  transform: translate3d(0, 0, 0);
+}
+
+.circle-section-back-leave-to {
+  transform: translate3d(100%, 0, 0);
 }
 
 .circle-dashboard view,
@@ -4486,7 +5786,9 @@ function formatDateTime(value) {
   border: 1px solid var(--circle-card-border, rgba(255, 255, 255, 0.62));
   border-radius: var(--circle-radius-card, 24px);
   background: var(--circle-card, rgba(255, 255, 255, 0.8));
-  box-shadow: var(--circle-shadow, 0 10px 28px rgba(45, 66, 93, 0.1));
+  box-shadow: none;
+  overflow: hidden;
+  isolation: isolate;
   flex-shrink: 0;
 }
 
@@ -4649,30 +5951,32 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   gap: 14px;
-  box-shadow: var(--circle-shadow, 0 10px 28px rgba(45, 66, 93, 0.1));
+  box-shadow: none;
+  overflow: hidden;
+  isolation: isolate;
   text-align: left;
 }
 
 .circle-entry:nth-child(1) {
-  --circle-entry-bg: rgba(255, 255, 255, 0.82);
+  --circle-entry-bg: rgba(255, 255, 255, 0.62);
   --circle-entry-icon-bg: rgba(91, 143, 223, 0.12);
   --circle-entry-icon-color: #5b8fdf;
 }
 
 .circle-entry:nth-child(2) {
-  --circle-entry-bg: rgba(248, 251, 255, 0.82);
+  --circle-entry-bg: rgba(248, 251, 255, 0.62);
   --circle-entry-icon-bg: rgba(115, 150, 204, 0.12);
   --circle-entry-icon-color: #6e91bf;
 }
 
 .circle-entry:nth-child(3) {
-  --circle-entry-bg: rgba(250, 253, 253, 0.82);
+  --circle-entry-bg: rgba(250, 253, 253, 0.62);
   --circle-entry-icon-bg: var(--circle-mint-soft, rgba(116, 189, 173, 0.14));
   --circle-entry-icon-color: #69aa9c;
 }
 
 .circle-entry:nth-child(4) {
-  --circle-entry-bg: rgba(250, 252, 255, 0.82);
+  --circle-entry-bg: rgba(250, 252, 255, 0.62);
   --circle-entry-icon-bg: rgba(127, 144, 179, 0.11);
   --circle-entry-icon-color: #778db5;
 }
@@ -4703,8 +6007,8 @@ function formatDateTime(value) {
 }
 
 .circle-entry-icon-mask {
-  width: 24px;
-  height: 24px;
+  width: 100%;
+  height: 100%;
   background: currentColor;
   -webkit-mask-position: center;
   mask-position: center;
@@ -4748,7 +6052,7 @@ function formatDateTime(value) {
 .circle-glass-page .circle-entry {
   -webkit-backdrop-filter: blur(16px) saturate(108%);
   backdrop-filter: blur(16px) saturate(108%);
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  transition: transform 180ms ease;
   animation: circle-overview-enter 400ms ease-out both;
 }
 
@@ -4899,7 +6203,7 @@ function formatDateTime(value) {
   border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
   border-radius: 30px;
   background: var(--circle-glass-surface-strong, rgba(249, 252, 251, 0.82));
-  box-shadow: 0 18px 40px rgba(30, 55, 56, 0.1);
+  box-shadow: none;
   -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
   backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
 }
@@ -4982,33 +6286,33 @@ function formatDateTime(value) {
   border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
   border-radius: 28px;
   background: var(--circle-entry-bg, var(--circle-glass-surface, rgba(250, 253, 252, 0.66)));
-  box-shadow: 0 10px 24px rgba(30, 55, 56, 0.075);
+  box-shadow: none;
   -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(120%);
   backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(120%);
-  transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+  transition: transform 180ms ease, background-color 180ms ease;
 }
 
 .circle-glass-page .circle-entry:nth-child(1) {
-  --circle-entry-bg: rgba(248, 253, 251, 0.68);
-  --circle-entry-icon-bg: #e5f0ed;
+  --circle-entry-bg: rgba(248, 253, 251, 0.48);
+  --circle-entry-icon-bg: rgba(221, 241, 236, 0.42);
   --circle-entry-icon-color: #16786f;
 }
 
 .circle-glass-page .circle-entry:nth-child(2) {
-  --circle-entry-bg: rgba(249, 251, 253, 0.68);
-  --circle-entry-icon-bg: #e8eef4;
+  --circle-entry-bg: rgba(249, 251, 253, 0.48);
+  --circle-entry-icon-bg: rgba(226, 236, 247, 0.42);
   --circle-entry-icon-color: #55738f;
 }
 
 .circle-glass-page .circle-entry:nth-child(3) {
-  --circle-entry-bg: rgba(253, 251, 247, 0.68);
-  --circle-entry-icon-bg: #f3eadc;
+  --circle-entry-bg: rgba(253, 251, 247, 0.48);
+  --circle-entry-icon-bg: rgba(247, 232, 209, 0.42);
   --circle-entry-icon-color: #a56c3b;
 }
 
 .circle-glass-page .circle-entry:nth-child(4) {
-  --circle-entry-bg: rgba(250, 250, 253, 0.68);
-  --circle-entry-icon-bg: #ece9f3;
+  --circle-entry-bg: rgba(250, 250, 253, 0.48);
+  --circle-entry-icon-bg: rgba(235, 230, 247, 0.42);
   --circle-entry-icon-color: #756491;
 }
 
@@ -5016,11 +6320,15 @@ function formatDateTime(value) {
   width: 52px;
   height: 52px;
   border-radius: 18px;
+  border: 1px solid rgba(255, 255, 255, 0.58);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.34);
+  -webkit-backdrop-filter: blur(12px) saturate(116%);
+  backdrop-filter: blur(12px) saturate(116%);
 }
 
 .circle-glass-page .circle-entry-icon-mask {
-  width: 23px;
-  height: 23px;
+  width: 100%;
+  height: 100%;
 }
 
 .circle-glass-page .circle-entry-label {
@@ -5034,7 +6342,7 @@ function formatDateTime(value) {
   height: 38px;
   border: 1px solid rgba(255, 255, 255, 0.76);
   border-radius: 999px;
-  background: rgba(255, 255, 255, 0.58);
+  background: rgba(255, 255, 255, 0.38);
   color: #536967;
   font-size: 25px;
   -webkit-backdrop-filter: blur(14px) saturate(118%);
@@ -5043,7 +6351,6 @@ function formatDateTime(value) {
 
 .circle-glass-page .circle-entry:active {
   transform: scale(var(--circle-glass-press, 0.98));
-  box-shadow: 0 6px 16px rgba(30, 55, 56, 0.075);
 }
 
 .circle-score-card {
@@ -5051,7 +6358,9 @@ function formatDateTime(value) {
   border: 1px solid var(--circle-glass-border, rgba(255, 255, 255, 0.78));
   border-radius: 30px;
   background: var(--circle-glass-surface-strong, rgba(249, 252, 251, 0.82));
-  box-shadow: 0 18px 40px rgba(30, 55, 56, 0.1);
+  box-shadow: none;
+  overflow: hidden;
+  isolation: isolate;
   display: flex;
   flex-direction: column;
   -webkit-backdrop-filter: blur(var(--circle-glass-blur, 20px)) saturate(125%);
@@ -5182,7 +6491,6 @@ function formatDateTime(value) {
 @media (hover: hover) {
   .circle-glass-page .circle-entry:hover {
     background: rgba(255, 255, 255, 0.76);
-    box-shadow: 0 14px 28px rgba(30, 55, 56, 0.11);
   }
 }
 
@@ -5995,12 +7303,31 @@ function formatDateTime(value) {
 .community-publish-button image {
   width: 100%;
   height: 100%;
+  display: block;
+  pointer-events: none;
 }
 
 .community-publish-button:active {
   transform: scale(0.94);
   box-shadow: 0 7px 16px rgba(52, 120, 246, 0.2);
   background: #2867DE;
+}
+
+.circle-reader-enter-active,
+.circle-reader-leave-active {
+  transition: transform var(--circle-route-duration) var(--circle-route-ease);
+  will-change: transform;
+  contain: paint;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.circle-reader-enter-from {
+  transform: translate3d(100%, 0, 0);
+}
+
+.circle-reader-leave-to {
+  transform: translate3d(100%, 0, 0);
 }
 
 .community-reader {
@@ -6018,6 +7345,9 @@ function formatDateTime(value) {
   height: 100dvh;
   margin: 0 auto;
   overflow: hidden;
+  isolation: isolate;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
   background:
     linear-gradient(180deg, rgba(224, 239, 237, 0.96) 0%, rgba(245, 249, 247, 0.98) 38%, rgba(232, 241, 239, 0.98) 100%),
     url('/static/circle-study-sky.jpg') center / cover;
@@ -6273,20 +7603,6 @@ function formatDateTime(value) {
   text-align: center;
 }
 
-.community-reader-post-meta {
-  margin-top: 28rpx;
-  padding: 20rpx 0;
-  border-top: 2rpx solid rgba(85, 116, 112, 0.14);
-  border-bottom: 2rpx solid rgba(85, 116, 112, 0.14);
-  color: #71837f;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  font-size: 21rpx;
-  line-height: 1.25;
-  font-weight: 700;
-}
-
 .community-reader-comments-section {
   box-sizing: border-box;
   min-height: calc(100dvh - 320rpx);
@@ -6329,7 +7645,6 @@ function formatDateTime(value) {
 
 .community-reader-comments-tab::after,
 .community-reader-sort button::after,
-.community-reader-inline-composer button::after,
 .community-reader-actions button::after {
   border: 0;
 }
@@ -6375,48 +7690,8 @@ function formatDateTime(value) {
   box-shadow: 0 3rpx 10rpx rgba(53, 84, 80, 0.08);
 }
 
-.community-reader-inline-composer {
-  min-height: 78rpx;
-  margin-top: 24rpx;
-  padding: 0 10rpx 0 22rpx;
-  border-radius: 24rpx;
-  background: rgba(231, 240, 238, 0.96);
-  display: flex;
-  align-items: center;
-  gap: 12rpx;
-}
-
-.community-reader-inline-composer input {
-  min-width: 0;
-  color: #25413d;
-  font-size: 25rpx;
-  font-weight: 600;
-  flex: 1;
-}
-
 .community-reader-comment-placeholder {
   color: #9aa9a6;
-}
-
-.community-reader-inline-composer button {
-  min-width: 92rpx;
-  min-height: 58rpx;
-  margin: 0;
-  padding: 0 16rpx;
-  border: 0;
-  border-radius: 18rpx;
-  background: #3478f6;
-  color: #ffffff;
-  font-size: 22rpx;
-  line-height: 1;
-  font-weight: 800;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.community-reader-inline-composer button[disabled] {
-  opacity: 0.44;
 }
 
 .community-reader-empty {
@@ -6486,6 +7761,60 @@ function formatDateTime(value) {
   font-weight: 600;
 }
 
+.community-reader-comment-like {
+  width: 88rpx;
+  min-width: 88rpx;
+  min-height: 96rpx;
+  margin: 0;
+  padding: 8rpx 0;
+  border: 0;
+  background: transparent;
+  color: #81918e;
+  display: flex;
+  flex: 0 0 88rpx;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4rpx;
+}
+
+.community-reader-comment-like::after {
+  border: 0;
+}
+
+.community-reader-comment-like-icon {
+  width: 42rpx;
+  height: 42rpx;
+  background: #879895;
+  -webkit-mask: url('/static/ui-icons/community-comment-heart.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/community-comment-heart.svg') center / contain no-repeat;
+  transition: background-color 180ms ease, transform 180ms ease;
+}
+
+.community-reader-comment-like text {
+  min-width: 100%;
+  color: currentColor;
+  font-size: 21rpx;
+  line-height: 1.1;
+  font-weight: 800;
+  text-align: center;
+}
+
+.community-reader-comment-like.active {
+  color: #eb5964;
+}
+
+.community-reader-comment-like.active .community-reader-comment-like-icon {
+  background: #eb5964;
+  -webkit-mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
+  transform: scale(1.06);
+}
+
+.community-reader-comment-like.pending {
+  opacity: 0.58;
+}
+
 .community-reader-actions {
   box-sizing: border-box;
   min-height: 104rpx;
@@ -6525,10 +7854,12 @@ function formatDateTime(value) {
   flex: 0 0 28rpx;
 }
 
-.community-reader-comment-entry text {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
+.community-reader-comment-entry input {
+  min-width: 0;
+  color: #25413d;
+  font-size: 23rpx;
+  font-weight: 700;
+  flex: 1;
 }
 
 .community-reader-action {
@@ -6916,7 +8247,7 @@ function formatDateTime(value) {
 }
 
 .community-comments-count.active {
-  background: rgba(255, 255, 255, 0.76);
+  background: rgba(255, 255, 255, 0.56);
   color: #1c2423;
 }
 
@@ -7489,25 +8820,7 @@ function formatDateTime(value) {
 .brand-line {
   min-width: 0;
   flex: 1;
-  gap: 18rpx;
-}
-
-.brand-title {
-  position: relative;
-  width: 170rpx;
-  height: 60rpx;
-  flex-shrink: 0;
-  overflow: hidden;
-}
-
-.brand-title-image {
-  position: absolute;
-  left: -37rpx;
-  top: -38rpx;
-  display: block;
-  width: 244rpx;
-  height: auto;
-  mix-blend-mode: multiply;
+  gap: 0;
 }
 
 .brand-badge {
@@ -7710,8 +9023,11 @@ function formatDateTime(value) {
 
 .mock-exam-card {
   position: relative;
+  box-sizing: border-box;
+  min-height: 200rpx;
   margin-top: 18rpx;
-  padding: 26rpx 28rpx;
+  margin-bottom: 24rpx;
+  padding: 20rpx 24rpx;
   border-radius: 28rpx;
   background:
     linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(245, 248, 255, 0.96)),
@@ -7723,13 +9039,13 @@ function formatDateTime(value) {
 .mock-exam-main {
   display: flex;
   align-items: center;
-  gap: 20rpx;
+  gap: 18rpx;
   padding-right: 46rpx;
 }
 
 .mock-exam-icon {
-  width: 76rpx;
-  height: 76rpx;
+  width: 72rpx;
+  height: 72rpx;
   border-radius: 24rpx;
   background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
@@ -7753,7 +9069,7 @@ function formatDateTime(value) {
 }
 
 .mock-exam-sub {
-  margin-top: 8rpx;
+  margin-top: 6rpx;
   color: #667085;
   font-size: 23rpx;
   line-height: 1.45;
@@ -7763,11 +9079,11 @@ function formatDateTime(value) {
   display: flex;
   flex-wrap: wrap;
   gap: 10rpx;
-  margin-top: 20rpx;
+  margin-top: 14rpx;
 }
 
 .mock-exam-meta text {
-  padding: 8rpx 12rpx;
+  padding: 6rpx 10rpx;
   border-radius: 999rpx;
   background: var(--gyt-primary-tint);
   color: var(--gyt-primary);
@@ -7777,11 +9093,43 @@ function formatDateTime(value) {
 
 .mock-exam-arrow {
   position: absolute;
-  right: 28rpx;
-  top: 34rpx;
+  right: 24rpx;
+  top: 28rpx;
   color: var(--gyt-primary);
   font-size: 44rpx;
   font-weight: 700;
+}
+
+/* 手机浏览器可视区较短时，让刷题入口、三科练习和模拟测试同屏可见。 */
+@media (max-width: 500px) and (max-height: 820px) {
+  .practice-dashboard {
+    gap: 14rpx;
+  }
+
+  .practice-dashboard .welcome-card {
+    padding: 28rpx 26rpx 24rpx;
+  }
+
+  .practice-dashboard .stats-card {
+    margin-top: 20rpx;
+    padding-top: 20rpx;
+    padding-bottom: 20rpx;
+  }
+
+  .practice-dashboard .module-grid {
+    gap: 14rpx;
+  }
+
+  .practice-dashboard :deep(.module-card) {
+    min-height: 200rpx;
+    padding-top: 18rpx;
+    padding-bottom: 18rpx;
+  }
+
+  .practice-dashboard .mock-exam-card {
+    margin-top: 10rpx;
+    margin-bottom: 22rpx;
+  }
 }
 
 .state-box {
@@ -7833,40 +9181,82 @@ function formatDateTime(value) {
   color: #667085;
 }
 
-.filter-card {
-  position: sticky;
-  top: calc(env(safe-area-inset-top) + 12rpx);
-  z-index: 24;
-  margin: -8rpx -12rpx 16rpx;
-  padding: 14rpx 12rpx 12rpx;
-  display: flex;
-  flex-direction: column;
-  gap: 10rpx;
-  background: #ffffff;
-  border-bottom: 2rpx solid rgba(230, 235, 245, 0.96);
-  box-shadow: 0 10rpx 22rpx rgba(20, 31, 66, 0.05);
+.wrong-filter-card {
+  margin: -2rpx 0 18rpx;
+  padding: 14rpx;
+  border: 2rpx solid rgba(221, 230, 246, 0.92);
+  border-radius: 24rpx;
+  background: rgba(247, 250, 255, 0.96);
 }
 
-.filter-scroll {
+.wrong-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.wrong-filter-select {
+  display: block;
+  min-width: 0;
+}
+
+.wrong-filter-select.is-submodule {
+  grid-column: 1 / -1;
+}
+
+.wrong-filter-select-control {
+  display: flex;
+  align-items: center;
+  gap: 8rpx;
+  min-height: 64rpx;
+  padding: 0 16rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 16rpx;
+  box-sizing: border-box;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.wrong-filter-select-name {
+  flex: 0 0 auto;
+  color: #69778c;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 780;
+}
+
+.wrong-filter-select-value {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  color: #253047;
+  font-size: 21rpx;
+  line-height: 1.3;
+  font-weight: 760;
+  text-align: right;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.filter-chip {
-  display: inline-flex;
-  margin-right: 12rpx;
-  padding: 12rpx 18rpx;
-  border: 2rpx solid var(--gyt-primary-border);
-  border-radius: 999rpx;
-  background: var(--gyt-primary-tint);
-  color: #476089;
-  font-size: 21rpx;
-  font-weight: 700;
+.wrong-filter-select-value.muted {
+  color: #9aa5b6;
 }
 
-.filter-chip.active {
-  border-color: var(--gyt-primary, #2563eb);
-  background: var(--gyt-primary-soft, #edf3ff);
-  color: var(--gyt-primary, #2563eb);
+.wrong-filter-select-arrow-icon {
+  width: 18rpx;
+  height: 11rpx;
+  flex: 0 0 auto;
+  background: var(--gyt-primary, #2563eb);
+  -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+}
+
+.wrong-filter-select.disabled .wrong-filter-select-control {
+  border-color: #e5eaf3;
+  background: rgba(245, 247, 251, 0.92);
+}
+
+.wrong-filter-select.disabled .wrong-filter-select-arrow-icon {
+  background: #b2bac7;
 }
 
 .list-load-state {
@@ -9137,6 +10527,8 @@ function formatDateTime(value) {
   background: #ffffff;
   box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
   box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .theme-modal-handle {
@@ -9185,9 +10577,12 @@ function formatDateTime(value) {
 }
 
 .theme-option-list {
+  min-height: 0;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
+  overflow-y: auto;
+  overscroll-behavior: contain;
 }
 
 .theme-option {
@@ -9426,7 +10821,7 @@ function formatDateTime(value) {
   top: var(--status-bar-height, env(safe-area-inset-top));
   right: 0;
   left: 0;
-  z-index: 24;
+  z-index: 80;
   width: auto;
   max-width: none;
   min-height: 124rpx;
@@ -9435,6 +10830,9 @@ function formatDateTime(value) {
   box-sizing: border-box;
   background: rgba(248, 250, 255, var(--mistake-header-opacity, 0.2));
   box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--mistake-header-shadow-opacity, 0));
+  isolation: isolate;
+  overflow: hidden;
+  transform: translateZ(0);
   backdrop-filter: blur(18rpx);
   -webkit-backdrop-filter: blur(18rpx);
   transition: background 180ms ease, box-shadow 180ms ease;
@@ -10078,15 +11476,6 @@ function formatDateTime(value) {
   overflow-x: hidden;
 }
 
-.profile-top-title {
-  padding: 2rpx 0 4rpx;
-  color: #101828;
-  text-align: center;
-  font-size: 30rpx;
-  line-height: 1.3;
-  font-weight: 900;
-}
-
 .account-card,
 .member-card,
 .profile-section-card,
@@ -10581,6 +11970,31 @@ function formatDateTime(value) {
   font-weight: 650;
 }
 
+.circle-glass-page .circle-community-tabs {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: var(--circle-glass-surface);
+}
+
+.circle-glass-page .circle-community-tab.active {
+  background: var(--circle-glass-active);
+}
+
+.circle-glass-page .community-filter-chip {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: var(--circle-glass-control);
+}
+
+.circle-glass-page .community-filter-chip.active,
+.circle-glass-page .community-topic {
+  background: var(--circle-glass-selected);
+}
+
+.circle-glass-page .community-post-card {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: var(--circle-glass-card);
+  box-shadow: 0 16rpx 38rpx rgba(30, 55, 56, 0.09);
+}
+
 .circle-glass-page .circle-section-subtitle,
 .circle-glass-page .experience-summary,
 .circle-glass-page .material-desc,
@@ -10591,9 +12005,9 @@ function formatDateTime(value) {
 }
 
 .circle-glass-page .circle-back-button {
-  border: 1px solid rgba(255, 255, 255, 0.72);
+  border: 1px solid var(--circle-glass-border, rgba(255, 255, 255, 0.58));
   border-radius: 20px;
-  background: rgba(255, 255, 255, 0.54);
+  background: rgba(255, 255, 255, 0.34);
   box-shadow: 0 8px 20px rgba(30, 55, 56, 0.1);
   -webkit-backdrop-filter: blur(18px) saturate(120%);
   backdrop-filter: blur(18px) saturate(120%);
@@ -10601,8 +12015,8 @@ function formatDateTime(value) {
 }
 
 .circle-glass-page .experience-search {
-  border: 1px solid rgba(255, 255, 255, 0.72);
-  background: rgba(249, 252, 251, 0.58);
+  border: 1px solid var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: rgba(249, 252, 251, 0.38);
   box-shadow: 0 10px 24px rgba(30, 55, 56, 0.08);
   -webkit-backdrop-filter: blur(16px) saturate(118%);
   backdrop-filter: blur(16px) saturate(118%);
@@ -10628,8 +12042,8 @@ function formatDateTime(value) {
 .circle-glass-page .material-action,
 .circle-glass-page .circle-post-close,
 .circle-glass-page .circle-post-action-row button {
-  border-color: rgba(255, 255, 255, 0.72);
-  background: rgba(248, 251, 250, 0.62);
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: var(--circle-glass-control);
   color: #60716f;
   -webkit-backdrop-filter: blur(16px) saturate(118%);
   backdrop-filter: blur(16px) saturate(118%);
@@ -10639,7 +12053,7 @@ function formatDateTime(value) {
 .circle-glass-page .experience-filter-chip.active,
 .circle-glass-page .material-subject-chip.active {
   border-color: rgba(22, 120, 111, 0.16);
-  background: rgba(225, 242, 237, 0.82);
+  background: var(--circle-glass-selected);
   color: #16786f;
 }
 
@@ -10649,14 +12063,14 @@ function formatDateTime(value) {
 .circle-glass-page .circle-empty-card,
 .circle-glass-page .circle-post-sheet {
   border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.78));
-  background: rgba(251, 253, 252, 0.78);
+  background: var(--circle-glass-card);
   box-shadow: 0 16px 38px rgba(30, 55, 56, 0.09);
   -webkit-backdrop-filter: blur(18px) saturate(118%);
   backdrop-filter: blur(18px) saturate(118%);
 }
 
 .circle-glass-page .material-subject-card {
-  background: rgba(240, 248, 245, 0.78);
+  background: var(--circle-glass-card-mint);
 }
 
 .circle-glass-page .experience-avatar,
@@ -10699,6 +12113,8 @@ function formatDateTime(value) {
 @supports not (backdrop-filter: blur(1px)) {
   .circle-glass-page .circle-back-button,
   .circle-glass-page .experience-search,
+  .circle-glass-page .circle-community-tabs,
+  .circle-glass-page .community-filter-chip,
   .circle-glass-page .circle-section-count,
   .circle-glass-page .experience-filter-chip,
   .circle-glass-page .material-subject-chip,
@@ -10712,8 +12128,13 @@ function formatDateTime(value) {
   .circle-glass-page .material-card,
   .circle-glass-page .material-subject-card,
   .circle-glass-page .circle-empty-card,
+  .circle-glass-page .community-post-card,
   .circle-glass-page .circle-post-sheet {
     background: #fbfcfb;
+  }
+
+  .circle-glass-page .circle-community-tab.active {
+    background: #ffffff;
   }
 }
 
@@ -10790,6 +12211,127 @@ function formatDateTime(value) {
   }
 }
 
+/* 普通外观主题下，研圈沿用当前主题的配色与页面背景；方案一继续使用天空玻璃。 */
+.home-page.circle-glass-page.circle-themed-page {
+  --circle-bg: var(--gyt-primary-tint, #f4f8ff);
+  --circle-bg-muted: var(--gyt-primary-soft, #edf4ff);
+  --circle-card: #ffffff;
+  --circle-card-muted: #ffffff;
+  --circle-card-border: var(--gyt-primary-border, #d7e5ff);
+  --circle-line: rgba(20, 31, 66, 0.1);
+  --circle-text: #172033;
+  --circle-muted: #667085;
+  --circle-brand: var(--gyt-primary, #3478f6);
+  --circle-brand-soft: var(--gyt-primary-soft, #edf4ff);
+  --circle-mint: var(--gyt-primary, #3478f6);
+  --circle-mint-soft: var(--gyt-primary-soft, #edf4ff);
+  --circle-shadow: 0 16rpx 38rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.16));
+  --circle-glass-surface: var(--gyt-panel-bg, #ffffff);
+  --circle-glass-surface-strong: var(--gyt-panel-bg, #ffffff);
+  --circle-glass-border: var(--gyt-primary-border, #d7e5ff);
+  --circle-glass-card: var(--gyt-panel-bg, #ffffff);
+  --circle-glass-card-mint: var(--gyt-panel-bg, #ffffff);
+  --circle-glass-control: var(--gyt-primary-soft, #edf4ff);
+  --circle-glass-selected: var(--gyt-primary-soft, #edf4ff);
+  --circle-glass-active: var(--gyt-primary-tint, #f4f8ff);
+  --circle-tab-bg: rgba(255, 255, 255, 0.94);
+  --circle-tab-shadow: 0 20rpx 52rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
+  --circle-font: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  background: var(--gyt-page-bg);
+  color: #172033;
+}
+
+.home-page.circle-glass-page.circle-themed-page::before {
+  content: none;
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-insight-dot {
+  background: var(--gyt-primary-border, #d7e5ff);
+  box-shadow: none;
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-insight-dot.active {
+  background: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-trend-peak-value,
+.home-page.circle-glass-page.circle-themed-page .circle-score-total text {
+  color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-trend-bar,
+.home-page.circle-glass-page.circle-themed-page .circle-trend-bar.latest {
+  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #68a0ff));
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-score-line,
+.home-page.circle-glass-page.circle-themed-page .circle-score-point {
+  stroke: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-entry:nth-child(n) {
+  --circle-entry-bg: var(--gyt-panel-bg, #ffffff);
+  --circle-entry-icon-bg: var(--gyt-primary-soft, #edf4ff);
+  --circle-entry-icon-color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-entry-arrow {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-back-button,
+.home-page.circle-glass-page.circle-themed-page .experience-search,
+.home-page.circle-glass-page.circle-themed-page .circle-community-tabs,
+.home-page.circle-glass-page.circle-themed-page .community-filter-chip,
+.home-page.circle-glass-page.circle-themed-page .experience-filter-chip,
+.home-page.circle-glass-page.circle-themed-page .material-subject-chip,
+.home-page.circle-glass-page.circle-themed-page .material-action,
+.home-page.circle-glass-page.circle-themed-page .circle-post-close,
+.home-page.circle-glass-page.circle-themed-page .circle-post-action-row button {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-panel-bg, #ffffff);
+  color: #667085;
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-community-tab.active,
+.home-page.circle-glass-page.circle-themed-page .community-filter-chip.active,
+.home-page.circle-glass-page.circle-themed-page .experience-filter-chip.active,
+.home-page.circle-glass-page.circle-themed-page .material-subject-chip.active {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .experience-search-clear,
+.home-page.circle-glass-page.circle-themed-page .circle-section-count,
+.home-page.circle-glass-page.circle-themed-page .material-action,
+.home-page.circle-glass-page.circle-themed-page .circle-post-close,
+.home-page.circle-glass-page.circle-themed-page .circle-post-action-row button {
+  color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .experience-avatar,
+.home-page.circle-glass-page.circle-themed-page .material-subject-mark,
+.home-page.circle-glass-page.circle-themed-page .circle-post-stat-row,
+.home-page.circle-glass-page.circle-themed-page .circle-post-checklist {
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .experience-tag,
+.home-page.circle-glass-page.circle-themed-page .material-badge,
+.home-page.circle-glass-page.circle-themed-page .experience-points text,
+.home-page.circle-glass-page.circle-themed-page .material-tags text,
+.home-page.circle-glass-page.circle-themed-page .experience-exam,
+.home-page.circle-glass-page.circle-themed-page .community-topic {
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+
+
 /* #ifdef MP-WEIXIN */
 .home-page {
   padding-top: var(--mp-page-content-top, 96px);
@@ -10801,19 +12343,7 @@ function formatDateTime(value) {
 }
 
 .brand-line {
-  gap: 12rpx;
-}
-
-.brand-title {
-  width: 190rpx;
-  height: 64rpx;
-}
-
-.brand-title-image {
-  left: -34rpx;
-  top: -36rpx;
-  width: 244rpx;
-  mix-blend-mode: multiply;
+  gap: 0;
 }
 
 .brand-badge {
@@ -10859,4 +12389,15 @@ function formatDateTime(value) {
   flex-basis: calc(var(--mp-page-header-height, 40px) + 22rpx);
 }
 /* #endif */
+
+@media (prefers-reduced-motion: reduce) {
+  .circle-section-forward-enter-active,
+  .circle-section-forward-leave-active,
+  .circle-section-back-enter-active,
+  .circle-section-back-leave-active,
+  .circle-reader-enter-active,
+  .circle-reader-leave-active {
+    transition-duration: 1ms !important;
+  }
+}
 </style>

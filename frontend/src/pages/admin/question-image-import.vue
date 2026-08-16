@@ -902,11 +902,11 @@ function showImportHistory() {
 }
 
 function downloadImportTemplate() {
-  downloadStaticFile('/static/templates/港澳台考研题库导入模板.xlsx', '港澳台考研题库导入模板.xlsx')
+  downloadStaticFile('/static/templates/question-import-template.xlsx', '港澳台考研题库导入模板.xlsx')
 }
 
 function downloadImportGuide() {
-  downloadStaticFile('/static/templates/港澳台考研题库导入填写说明.txt', '港澳台考研题库导入填写说明.txt')
+  downloadStaticFile('/static/templates/question-import-instructions.txt', '港澳台考研题库导入填写说明.txt')
 }
 
 function downloadStaticFile(fileUrl, fileName) {

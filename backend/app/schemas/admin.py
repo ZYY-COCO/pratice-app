@@ -255,4 +255,59 @@ class QuestionAdminDashboardResponse(BaseModel):
     today_practicing_users: int = 0
     online_members: int = 0
     online_window_minutes: int = 15
+    difficult_questions_count: int = 0
+    difficult_questions_page: int = 1
+    difficult_questions_page_size: int = 20
     difficult_questions: list[QuestionAdminDashboardQuestionItem] = Field(default_factory=list)
+
+
+class AdminCommunityOverviewResponse(BaseModel):
+    total_posts: int = 0
+    published_posts: int = 0
+    archived_posts: int = 0
+    today_posts: int = 0
+
+
+class AdminCommunityPostItem(BaseModel):
+    id: str
+    author_id: str | None = None
+    author_name: str = "研友"
+    author_avatar: str = "研"
+    category: str = "备考日常"
+    post_type: str = "chat"
+    title: str = ""
+    content: str = ""
+    media: list[dict] = Field(default_factory=list)
+    like_count: int = 0
+    comment_count: int = 0
+    view_count: int = 0
+    is_published: bool = True
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class AdminCommunityPostListResponse(BaseModel):
+    items: list[AdminCommunityPostItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminCommunityPostDetailResponse(BaseModel):
+    post: AdminCommunityPostItem
+    comments: list[dict] = Field(default_factory=list)
+
+
+class AdminCommunityPostVisibilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_published: bool
+
+
+class AdminCommunityBulkVisibilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_published: bool
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class AdminCommunityBulkVisibilityResponse(BaseModel):
+    updated_count: int

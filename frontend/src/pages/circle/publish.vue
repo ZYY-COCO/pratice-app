@@ -1,8 +1,13 @@
 <template>
-  <view class="publish-page">
+  <view
+    class="publish-page"
+    :class="{ 'is-leaving': isLeaving }"
+    @touchstart="beginPublishEdgeSwipe"
+    @touchend="finishPublishEdgeSwipe"
+  >
     <view class="publish-header">
       <button class="publish-back" aria-label="返回" @tap="goBack">
-        <text class="publish-back-icon">‹</text>
+        <image src="/static/ui-icons/back.svg" mode="aspectFit" />
       </button>
       <view class="publish-header-title">{{ postType === 'experience' ? '发布经验贴' : '发布话题' }}</view>
       <view class="publish-header-placeholder"></view>
@@ -10,10 +15,6 @@
 
     <scroll-view class="publish-scroll" scroll-y>
       <view class="publish-content">
-        <view class="publish-intro">
-          <view class="publish-eyebrow">{{ postType === 'experience' ? '经验贴' : '研友聊' }}</view>
-        </view>
-
         <view class="publish-card">
           <view class="publish-field-label">话题分类</view>
           <view class="publish-topic-grid">
@@ -42,12 +43,12 @@
 
           <view class="publish-field-row">
             <view class="publish-field-label">内容</view>
-            <text class="publish-counter">{{ content.length }}/2000</text>
+            <text class="publish-counter">{{ content.length }}/3000</text>
           </view>
           <textarea
             v-model="content"
             class="publish-textarea"
-            maxlength="2000"
+            maxlength="3000"
             placeholder="分享你的问题、计划或心得"
             placeholder-class="publish-placeholder"
             auto-height
@@ -91,32 +92,68 @@ import { onLoad } from '@dcloudio/uni-app'
 import { createCommunityPost, uploadCommunityImage } from '../../api/community'
 import { isLoggedIn } from '../../utils/auth'
 
+const communityChatTopics = ['中华文化', '数学基础', '英语运用', '逻辑推理']
+const communityExperienceTopics = ['Z001', 'Z002']
 const topicSets = {
-  chat: ['备考日常', '择校答疑', '复习打卡', '资料互助'],
-  experience: ['备考节奏', '中华文化', '数学基础', '英语运用', '逻辑推理']
+  chat: communityChatTopics,
+  experience: communityExperienceTopics
 }
 const MAX_IMAGE_COUNT = 9
 const postType = ref('chat')
 const topics = computed(() => topicSets[postType.value])
-const selectedTopic = ref(topicSets.chat[0])
+const selectedTopic = ref('')
 const title = ref('')
 const content = ref('')
 const selectedImages = ref([])
 const submitting = ref(false)
+const isLeaving = ref(false)
+const publishEdgeSwipeStart = ref(null)
 
-const canPublish = computed(() => Boolean(title.value.trim() && content.value.trim()))
+const canPublish = computed(() => Boolean(selectedTopic.value && title.value.trim() && content.value.trim()))
 
 onLoad((options) => {
   postType.value = options?.type === 'experience' ? 'experience' : 'chat'
-  selectedTopic.value = topics.value[0]
+  selectedTopic.value = ''
+  isLeaving.value = false
 })
 
 function goBack() {
+  if (isLeaving.value) return
+  isLeaving.value = true
+
   uni.navigateBack({
     fail() {
       uni.reLaunch({ url: '/pages/home/index?tab=circle' })
     }
   })
+}
+
+function getTouchPoint(event) {
+  return event?.touches?.[0] || event?.changedTouches?.[0] || null
+}
+
+function beginPublishEdgeSwipe(event) {
+  if (isLeaving.value) return
+  const touch = getTouchPoint(event)
+  if (!touch) return
+  publishEdgeSwipeStart.value = {
+    x: Number(touch.clientX ?? touch.pageX ?? 0),
+    y: Number(touch.clientY ?? touch.pageY ?? 0)
+  }
+}
+
+function finishPublishEdgeSwipe(event) {
+  const start = publishEdgeSwipeStart.value
+  publishEdgeSwipeStart.value = null
+  if (!start || isLeaving.value) return
+
+  const touch = getTouchPoint(event)
+  if (!touch) return
+  const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
+  const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
+  if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
+    goBack()
+  }
 }
 
 function goLogin() {
@@ -211,6 +248,7 @@ async function publish() {
       content: content.value.trim(),
       media
     })
+    uni.setStorageSync(`circle-community-feed-refresh-${postType.value}`, Date.now())
     published = true
     uni.showToast({ title: `已发布到${postType.value === 'experience' ? '经验贴' : '研友聊'}`, icon: 'success' })
     setTimeout(goBack, 500)
@@ -234,6 +272,15 @@ function getSafeError(error, fallback) {
   box-sizing: border-box;
   background: #edf4f4;
   color: #1d2928;
+  isolation: isolate;
+  contain: paint;
+  overflow-x: hidden;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.publish-page.is-leaving {
+  pointer-events: none;
 }
 
 .publish-header {
@@ -245,23 +292,23 @@ function getSafeError(error, fallback) {
   border-bottom: 2rpx solid rgba(215, 229, 226, 0.86);
   background: rgba(248, 252, 251, 0.9);
   display: grid;
-  grid-template-columns: 64rpx minmax(0, 1fr) 64rpx;
+  grid-template-columns: 66rpx minmax(0, 1fr) 66rpx;
   align-items: center;
   -webkit-backdrop-filter: blur(18px) saturate(116%);
   backdrop-filter: blur(18px) saturate(116%);
 }
 
 .publish-back {
-  width: 64rpx;
-  height: 64rpx;
-  min-width: 64rpx;
-  min-height: 64rpx;
+  width: 66rpx;
+  height: 66rpx;
+  min-width: 66rpx;
+  min-height: 66rpx;
   margin: 0;
-  padding: 0;
+  padding: 16rpx;
   border: 0;
   border-radius: 50%;
-  background: rgba(52, 120, 246, 0.08);
-  color: #3478f6;
+  background: rgba(255, 255, 255, 0.72);
+  color: #2d8580;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -275,11 +322,9 @@ function getSafeError(error, fallback) {
   border: 0;
 }
 
-.publish-back-icon {
-  margin-top: -4rpx;
-  font-size: 52rpx;
-  line-height: 1;
-  font-weight: 400;
+.publish-back image {
+  width: 100%;
+  height: 100%;
 }
 
 .publish-header-title {
@@ -300,17 +345,6 @@ function getSafeError(error, fallback) {
   margin: 0 auto;
   padding: 40rpx 32rpx calc(env(safe-area-inset-bottom) + 52rpx);
   box-sizing: border-box;
-}
-
-.publish-intro {
-  padding: 4rpx 8rpx 24rpx;
-}
-
-.publish-eyebrow {
-  color: #3478f6;
-  font-size: 21rpx;
-  line-height: 1.2;
-  font-weight: 800;
 }
 
 .publish-card {
@@ -530,4 +564,5 @@ function getSafeError(error, fallback) {
     padding-right: 48rpx;
   }
 }
+
 </style>
