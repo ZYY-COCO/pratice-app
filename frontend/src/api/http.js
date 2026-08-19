@@ -5,6 +5,7 @@ import {
   getAuthUser,
   getRefreshToken,
   isAccessTokenExpiring,
+  isUsableRefreshToken,
   saveAuthSession
 } from '../utils/auth'
 
@@ -110,7 +111,7 @@ export async function getRequestAccessToken(options = {}) {
 function shouldRefreshBeforeRequest(options, token) {
   if (!token) return false
   if (options.header?.Authorization === '') return false
-  return Boolean(getRefreshToken() && isAccessTokenExpiring(token))
+  return isAccessTokenExpiring(token)
 }
 
 function createHttpError(data, statusCode) {
@@ -141,8 +142,9 @@ function refreshAuthSession() {
   if (refreshPromise) return refreshPromise
 
   const refreshToken = getRefreshToken()
-  if (!refreshToken) {
-    return Promise.reject({ detail: '登录已过期，请重新登录', code: 'AUTH_REFRESH_UNAVAILABLE' })
+  if (!isUsableRefreshToken(refreshToken)) {
+    clearAuthSession()
+    return Promise.reject({ detail: '登录状态已失效，请重新登录', code: 'AUTH_REFRESH_REJECTED' })
   }
 
   refreshPromise = refreshAuthSessionOnce(refreshToken)
@@ -176,15 +178,15 @@ function refreshAuthSessionOnce(refreshToken) {
           resolve(response.data)
           return
         }
-        const rejectedByAuthServer = response.statusCode === 401 || response.statusCode === 403
+        const rejectedByAuthServer = [400, 401, 403, 422].includes(response.statusCode)
         const retryable = [408, 429, 502, 503, 504].includes(response.statusCode)
         reject({
           ...(response.data || {}),
-          detail: response.data?.detail || (
+          detail: getRefreshErrorDetail(response.data, (
             response.statusCode === 429
               ? '登录状态刷新请求过于频繁，请稍后重试'
               : '登录状态刷新失败，请稍后重试'
-          ),
+          )),
           statusCode: response.statusCode,
           code: rejectedByAuthServer ? 'AUTH_REFRESH_REJECTED' : 'AUTH_REFRESH_FAILED',
           retryable: !rejectedByAuthServer && retryable
@@ -201,6 +203,12 @@ function refreshAuthSessionOnce(refreshToken) {
       }
     })
   })
+}
+
+function getRefreshErrorDetail(data, fallback) {
+  if (typeof data?.detail === 'string' && data.detail.trim()) return data.detail
+  if (Array.isArray(data?.detail)) return '登录状态已失效，请重新登录'
+  return fallback
 }
 
 function handleAuthFailure() {

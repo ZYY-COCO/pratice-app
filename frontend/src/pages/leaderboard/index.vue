@@ -129,10 +129,16 @@ async function loadLeaderboard() {
     leaderboard.value = response.items || []
     totalUsers.value = response.total_users || leaderboard.value.length
   } catch (err) {
-    error.value = err?.detail || '排行榜加载失败，请稍后重试'
+    error.value = getLeaderboardErrorMessage(err)
   } finally {
     loading.value = false
   }
+}
+
+function getLeaderboardErrorMessage(err) {
+  if (Array.isArray(err?.detail)) return '登录状态已失效，请重新登录'
+  if (typeof err?.detail === 'string' && err.detail.trim()) return err.detail
+  return '排行榜加载失败，请稍后重试'
 }
 
 function goBack() {

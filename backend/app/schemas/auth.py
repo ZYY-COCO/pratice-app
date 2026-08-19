@@ -15,7 +15,7 @@ class LoginRequest(BaseModel):
 
 
 class RefreshTokenRequest(BaseModel):
-    refresh_token: str = Field(min_length=16)
+    refresh_token: str
 
 
 class SendEmailCodeRequest(BaseModel):

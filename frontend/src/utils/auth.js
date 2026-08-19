@@ -4,15 +4,20 @@ const AUTH_USER_KEY = 'authUser'
 const AUTH_EXPIRES_AT_KEY = 'authExpiresAt'
 const SESSION_TTL_DAYS = 30
 const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60 * 1000
+const MIN_REFRESH_TOKEN_LENGTH = 16
 
 export function saveAuthSession(session) {
-  const accessToken = session?.accessToken || ''
-  const refreshToken = session?.refreshToken || ''
+  const accessToken = String(session?.accessToken || '').trim()
+  const refreshToken = String(session?.refreshToken || '').trim()
   const user = session?.user || null
   const expiresAt = Date.now() + SESSION_TTL_DAYS * 24 * 60 * 60 * 1000
 
   uni.setStorageSync(ACCESS_TOKEN_KEY, accessToken)
-  uni.setStorageSync(REFRESH_TOKEN_KEY, refreshToken)
+  if (isUsableRefreshToken(refreshToken)) {
+    uni.setStorageSync(REFRESH_TOKEN_KEY, refreshToken)
+  } else {
+    uni.removeStorageSync(REFRESH_TOKEN_KEY)
+  }
   uni.setStorageSync(AUTH_USER_KEY, user)
   uni.setStorageSync(AUTH_EXPIRES_AT_KEY, expiresAt)
 }
@@ -30,7 +35,11 @@ export function getRefreshToken() {
     clearAuthSession()
     return ''
   }
-  return uni.getStorageSync(REFRESH_TOKEN_KEY) || ''
+  return String(uni.getStorageSync(REFRESH_TOKEN_KEY) || '').trim()
+}
+
+export function isUsableRefreshToken(value = '') {
+  return String(value || '').trim().length >= MIN_REFRESH_TOKEN_LENGTH
 }
 
 export function isAccessTokenExpiring(token = '') {
