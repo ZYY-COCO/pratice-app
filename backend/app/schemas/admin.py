@@ -153,7 +153,7 @@ class AdminQuestionImageImportItem(BaseModel):
 
 class AdminQuestionImageImportRequest(BaseModel):
     question_bank_id: str | None = Field(default=None, max_length=80)
-    questions: list[AdminQuestionImageImportItem] = Field(min_length=1, max_length=100)
+    questions: list[AdminQuestionImageImportItem] = Field(min_length=1, max_length=200)
 
 
 class AdminQuestionImageImportResultItem(BaseModel):

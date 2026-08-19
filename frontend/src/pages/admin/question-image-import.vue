@@ -7,7 +7,7 @@
     <view v-if="!editorVisible && !props.embedded" class="import-hero">
       <view class="hero-copy">
         <view class="hero-title">批量导入</view>
-        <view class="hero-subtitle">上传标准 Excel 模板，确认后进入待审核</view>
+        <view class="hero-subtitle">上传 Excel，智能识别字段后进入待审核</view>
         <view v-if="questionBankName" class="target-bank-chip">导入至：{{ questionBankName }}</view>
       </view>
       <view class="hero-actions">
@@ -34,7 +34,7 @@
         </view>
         <view class="drop-title">拖拽 Excel 文件到这里</view>
         <view class="drop-action">或点击选择 .xlsx 文件</view>
-        <view class="drop-formats">仅支持使用“下载模板”创建的 .xlsx 文件</view>
+        <view class="drop-formats">支持下载模板、中文/英文表头及常见字段别名</view>
         <view class="drop-limit">单个文件不超过 20MB</view>
       </view>
 
@@ -642,6 +642,7 @@ function appendImportFiles(files) {
       recognizedQuestions: [],
       recognizing: false,
       recognitionError: '',
+      recognitionHint: '',
       recognitionProvider: '',
       status: '等待读取'
     }
@@ -671,7 +672,10 @@ function fileTypeTone(item) {
 function fileReadyText(item) {
   if (item?.recognizing) return '识别中...'
   if (item?.recognitionError) return `识别失败：${item.recognitionError}`
-  if (Array.isArray(item?.recognizedQuestions) && item.recognizedQuestions.length) return `已读取 ${item.recognizedQuestions.length} 题`
+  if (Array.isArray(item?.recognizedQuestions) && item.recognizedQuestions.length) {
+    return `已读取 ${item.recognizedQuestions.length} 题${item.recognitionHint ? ` · ${item.recognitionHint}` : ''}`
+  }
+  if (item?.recognitionHint) return `${item?.status || '等待读取'} · ${item.recognitionHint}`
   return item?.status || '等待读取'
 }
 
@@ -684,6 +688,7 @@ async function recognizeImportItem(item) {
 
   item.recognizing = true
   item.recognitionError = ''
+  item.recognitionHint = ''
   item.status = '识别中'
   markDryRunDirty()
 
@@ -708,7 +713,7 @@ async function recognizeImportItem(item) {
     item.recognitionProvider = result?.provider || ''
     item.status = item.recognizedQuestions.length ? `已读取 ${item.recognizedQuestions.length} 题` : '模板中未填写题目'
     if (result?.warnings?.length) {
-      item.recognitionError = result.warnings[0]
+      item.recognitionHint = result.warnings.join('；')
     }
   } catch (error) {
     if (!imageItems.value.some((current) => current.id === item.id)) return
@@ -814,7 +819,11 @@ function startRecognition() {
   }
   const readableItems = imageItems.value.filter((item) => Array.isArray(item.recognizedQuestions) && item.recognizedQuestions.length)
   if (!readableItems.length) {
-    uni.showToast({ title: 'Excel 中未读取到题目，请确认从第 2 行开始填写', icon: 'none' })
+    const failedCount = imageItems.value.filter((item) => item.recognitionError).length
+    uni.showToast({
+      title: failedCount ? `有 ${failedCount} 个文件识别失败，请查看文件提示` : '未读取到题目，请查看文件卡片中的识别提示',
+      icon: 'none'
+    })
     return
   }
   const total = readableItems.reduce((sum, item) => sum + parseExcelItem(item), 0)

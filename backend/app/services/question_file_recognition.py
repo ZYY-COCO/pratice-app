@@ -5,6 +5,7 @@ import hmac
 import io
 import json
 import re
+import unicodedata
 import zipfile
 from pathlib import Path, PurePosixPath
 from urllib import error, request
@@ -38,10 +39,98 @@ EXCEL_TEMPLATE_HEADERS = (
     "source_type",
     "source_year",
 )
-MAX_EXCEL_QUESTION_ROWS = 100
+EXCEL_REQUIRED_HEADERS = (
+    "exam_code",
+    "subject",
+    "module",
+    "submodule",
+    "stem",
+    "option_a",
+    "option_b",
+    "option_c",
+    "option_d",
+    "answer",
+    "explanation",
+)
+EXCEL_HEADER_ALIASES = {
+    "exam_code": ("exam_code", "examcode", "考试代码", "试卷代码", "科目代码"),
+    "subject": ("subject", "科目", "学科"),
+    "module": ("module", "模块", "题型模块"),
+    "submodule": ("submodule", "子模块", "考点", "知识点", "细分模块"),
+    "stem": ("stem", "题干", "问题", "题目", "题干内容"),
+    "option_a": ("option_a", "optiona", "a", "选项a", "选项a项", "a选项"),
+    "option_b": ("option_b", "optionb", "b", "选项b", "选项b项", "b选项"),
+    "option_c": ("option_c", "optionc", "c", "选项c", "选项c项", "c选项"),
+    "option_d": ("option_d", "optiond", "d", "选项d", "选项d项", "d选项"),
+    "answer": ("answer", "答案", "正确答案", "答案选项"),
+    "explanation": ("explanation", "解析", "答案解析", "题目解析"),
+    "difficulty": ("difficulty", "难度", "难度等级"),
+    "source_type": ("source_type", "sourcetype", "来源类型", "来源类别"),
+    "source_year": ("source_year", "sourceyear", "来源年份", "年份", "真题年份"),
+}
+MAX_EXCEL_QUESTION_ROWS = 200
+MAX_HEADER_SCAN_ROWS = 10
 XLSX_NAMESPACE = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
 XLSX_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
 PACKAGE_RELATIONSHIPS_NAMESPACE = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+SUBJECT_ALIASES = {
+    "逻辑": "逻辑推理",
+    "逻辑推理": "逻辑推理",
+    "英文": "英语运用",
+    "英语": "英语运用",
+}
+MODULE_ALIASES = {
+    "概念": "概念判断",
+    "判断": "概念判断",
+    "概念判断": "概念判断",
+    "推理": "推理规则",
+    "推理规则": "推理规则",
+    "论证": "论证",
+    "削弱加强": "削弱加强",
+    "加强削弱": "削弱加强",
+}
+SUBMODULE_ALIASES = {
+    "概念": "概念种类",
+    "概念种类": "概念种类",
+    "概念关系": "概念关系",
+    "判断关系": "概念关系",
+    "定义": "定义",
+    "划分": "划分",
+    "加强": "加强",
+    "加强论证": "加强",
+    "支持": "加强",
+    "削弱": "削弱",
+    "削弱论证": "削弱",
+    "质疑": "削弱",
+    "解释": "解释",
+    "谬误": "谬误识别",
+    "谬误识别": "谬误识别",
+    "演绎": "演绎推理",
+    "演绎推理": "演绎推理",
+    "归纳": "归纳推理",
+    "归纳推理": "归纳推理",
+    "类比": "类比推理",
+    "类比推理": "类比推理",
+    "综合": "综合推理",
+    "综合推理": "综合推理",
+}
+SOURCE_TYPE_ALIASES = {
+    "manual": "manual",
+    "手工录入": "manual",
+    "手工": "manual",
+    "人工": "manual",
+    "自编": "manual",
+    "source_extracted": "source_extracted",
+    "sourceextracted": "source_extracted",
+    "资料整理": "source_extracted",
+    "抽取": "source_extracted",
+    "整理": "source_extracted",
+    "real_exam": "real_exam",
+    "realexam": "real_exam",
+    "真题": "real_exam",
+    "历年真题": "real_exam",
+}
 
 
 class FileRecognitionError(RuntimeError):
@@ -57,10 +146,9 @@ def recognize_question_file(filename: str, content: bytes) -> dict:
     if len(content) > MAX_UPLOAD_BYTES:
         raise FileRecognitionError("File exceeds the 20MB upload limit")
 
-    questions = _extract_xlsx_questions(content, filename)
-    warnings: list[str] = []
+    questions, warnings = _extract_xlsx_questions(content, filename)
     if not questions:
-        warnings.append("题目工作表中没有可导入的数据行。请从 Excel 第 2 行开始填写题目。")
+        warnings.append("已识别表头，但没有可导入的数据行。请从表头下一行开始填写题目。")
 
     return {
         "filename": filename,
@@ -110,39 +198,25 @@ def _extract_docx_text(content: bytes) -> str:
     return "\n".join(lines)
 
 
-def _extract_xlsx_questions(content: bytes, filename: str) -> list[dict]:
+def _extract_xlsx_questions(content: bytes, filename: str) -> tuple[list[dict], list[str]]:
     with _validate_zip(content) as archive:
         shared_strings = _xlsx_shared_strings(archive)
-        sheet_path = _xlsx_sheet_path(archive, EXCEL_TEMPLATE_SHEET_NAME)
-        root = ElementTree.fromstring(archive.read(sheet_path))
-
-    namespace = {"x": XLSX_NAMESPACE}
-    rows = root.findall(".//x:sheetData/x:row", namespace)
-    if not rows:
-        raise FileRecognitionError("Excel 模板缺少表头。请使用“下载模板”获取标准文件。")
-
-    headers = _xlsx_row_values(rows[0], shared_strings)
-    headers = [value.replace("\ufeff", "").strip() for value in headers]
-    if headers != list(EXCEL_TEMPLATE_HEADERS):
-        expected = "、".join(EXCEL_TEMPLATE_HEADERS)
-        actual = "、".join(headers) or "（空）"
-        raise FileRecognitionError(
-            f"Excel 首行字段与模板不一致。请保持字段顺序不变。期望：{expected}；当前：{actual}"
-        )
+        selection = _xlsx_discover_import_sheet(archive, shared_strings)
 
     questions: list[dict] = []
-    for offset, row in enumerate(rows[1:], start=2):
+    rows: list[ElementTree.Element] = selection["rows"]
+    header_index: int = selection["header_index"]
+    columns: dict[str, int] = selection["columns"]
+    for offset, row in enumerate(rows[header_index + 1 :], start=header_index + 2):
         row_number = _xlsx_row_number(row, offset)
         values = _xlsx_row_values(row, shared_strings)
-        if len(values) > len(EXCEL_TEMPLATE_HEADERS) and any(values[len(EXCEL_TEMPLATE_HEADERS) :]):
-            raise FileRecognitionError(f"Excel 第 {row_number} 行包含模板以外的内容，请删除多余列后重新上传。")
-        row_values = (values + [""] * len(EXCEL_TEMPLATE_HEADERS))[: len(EXCEL_TEMPLATE_HEADERS)]
-        if not any(value.strip() for value in row_values):
+        raw_question = {
+            field: values[column] if column < len(values) else ""
+            for field, column in columns.items()
+        }
+        if not any(_clean_excel_cell(value) for value in raw_question.values()):
             continue
-        question = dict(zip(EXCEL_TEMPLATE_HEADERS, row_values, strict=True))
-        question["answer"] = question["answer"].strip().upper()
-        question["source_type"] = question["source_type"].strip() or "manual"
-        question["source_year"] = question["source_year"].strip() or None
+        question = _normalize_excel_question(raw_question)
         question["excel_row"] = row_number
         question["image_name"] = Path(filename).name
         question["image_index"] = len(questions)
@@ -151,10 +225,42 @@ def _extract_xlsx_questions(content: bytes, filename: str) -> list[dict]:
             raise FileRecognitionError(
                 f"单次 Excel 最多导入 {MAX_EXCEL_QUESTION_ROWS} 道题，请拆分文件后重新上传。"
             )
-    return questions
+    return questions, _xlsx_recognition_warnings(selection)
 
 
-def _xlsx_sheet_path(archive: zipfile.ZipFile, sheet_name: str) -> str:
+def _xlsx_discover_import_sheet(archive: zipfile.ZipFile, shared_strings: list[str]) -> dict:
+    candidates: list[dict] = []
+    namespace = {"x": XLSX_NAMESPACE}
+    for sheet_name, sheet_path in _xlsx_sheet_entries(archive):
+        root = ElementTree.fromstring(archive.read(sheet_path))
+        rows = root.findall(".//x:sheetData/x:row", namespace)
+        header = _xlsx_find_header_row(rows, shared_strings)
+        if header is not None:
+            candidates.append(
+                {
+                    "name": sheet_name,
+                    "path": sheet_path,
+                    "rows": rows,
+                    **header,
+                }
+            )
+
+    if not candidates:
+        required = "、".join(EXCEL_REQUIRED_HEADERS)
+        raise FileRecognitionError(
+            f"未找到可识别的题目表头。请保留题干、A-D 选项、答案、解析等字段。必填字段：{required}"
+        )
+
+    candidates.sort(key=lambda item: (item["name"] != EXCEL_TEMPLATE_SHEET_NAME, item["name"]))
+    if len(candidates) > 1 and candidates[0]["name"] != EXCEL_TEMPLATE_SHEET_NAME:
+        names = "、".join(item["name"] for item in candidates)
+        raise FileRecognitionError(
+            f"发现多个可识别的题目工作表（{names}）。请仅保留一个，或将目标工作表命名为“{EXCEL_TEMPLATE_SHEET_NAME}”。"
+        )
+    return candidates[0]
+
+
+def _xlsx_sheet_entries(archive: zipfile.ZipFile) -> list[tuple[str, str]]:
     try:
         workbook = ElementTree.fromstring(archive.read("xl/workbook.xml"))
         relationships = ElementTree.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
@@ -165,23 +271,157 @@ def _xlsx_sheet_path(archive: zipfile.ZipFile, sheet_name: str) -> str:
         relationship.attrib.get("Id"): relationship.attrib.get("Target", "")
         for relationship in relationships.findall(f"{{{PACKAGE_RELATIONSHIPS_NAMESPACE}}}Relationship")
     }
+    entries: list[tuple[str, str]] = []
     for sheet in workbook.findall(f".//{{{XLSX_NAMESPACE}}}sheet"):
-        if sheet.attrib.get("name") != sheet_name:
-            continue
+        sheet_name = _clean_excel_cell(sheet.attrib.get("name", ""))
         relationship_id = sheet.attrib.get(f"{{{XLSX_RELATIONSHIPS_NAMESPACE}}}id")
         target = relationship_targets.get(relationship_id, "")
         if not target:
-            break
+            raise FileRecognitionError("Excel 工作表关系缺失。请重新另存为 .xlsx 后再上传。")
         candidate = PurePosixPath(target.lstrip("/"))
         if not str(candidate).startswith("xl/"):
             candidate = PurePosixPath("xl") / candidate
         if ".." in candidate.parts:
-            break
+            raise FileRecognitionError("Excel 工作表路径无效。请重新另存为 .xlsx 后再上传。")
         path = str(candidate)
         if path in archive.namelist():
-            return path
-        break
-    raise FileRecognitionError("Excel 模板缺少“题目”工作表。请使用“下载模板”获取标准文件。")
+            entries.append((sheet_name, path))
+    if not entries:
+        raise FileRecognitionError("Excel 中没有可读取的工作表。请重新另存为 .xlsx 后再上传。")
+    return entries
+
+
+def _xlsx_find_header_row(rows: list[ElementTree.Element], shared_strings: list[str]) -> dict | None:
+    for header_index, row in enumerate(rows[:MAX_HEADER_SCAN_ROWS]):
+        mapping = _xlsx_header_mapping(_xlsx_row_values(row, shared_strings))
+        if not mapping["missing_required"]:
+            if mapping["duplicate_fields"]:
+                fields = "、".join(sorted(set(mapping["duplicate_fields"])))
+                raise FileRecognitionError(f"Excel 表头存在重复字段：{fields}。请保留其中一列。")
+            return {
+                "header_index": header_index,
+                "columns": mapping["columns"],
+                "aliases": mapping["aliases"],
+                "ignored_headers": mapping["ignored_headers"],
+            }
+    return None
+
+
+def _xlsx_header_mapping(headers: list[str]) -> dict:
+    columns: dict[str, int] = {}
+    aliases: list[str] = []
+    ignored_headers: list[str] = []
+    duplicate_fields: list[str] = []
+    for index, header in enumerate(headers):
+        label = _clean_excel_cell(header)
+        if not label:
+            continue
+        field = _canonical_excel_header(label)
+        if not field:
+            ignored_headers.append(label)
+            continue
+        if field in columns:
+            duplicate_fields.append(field)
+            continue
+        columns[field] = index
+        if _normalize_excel_header(label) != _normalize_excel_header(field):
+            aliases.append(label)
+    return {
+        "columns": columns,
+        "aliases": aliases,
+        "ignored_headers": ignored_headers,
+        "duplicate_fields": duplicate_fields,
+        "missing_required": [field for field in EXCEL_REQUIRED_HEADERS if field not in columns],
+    }
+
+
+def _canonical_excel_header(label: str) -> str | None:
+    normalized = _normalize_excel_header(label)
+    for field, aliases in EXCEL_HEADER_ALIASES.items():
+        if any(normalized == _normalize_excel_header(alias) for alias in aliases):
+            return field
+    return None
+
+
+def _xlsx_recognition_warnings(selection: dict) -> list[str]:
+    warnings: list[str] = []
+    if selection["name"] != EXCEL_TEMPLATE_SHEET_NAME:
+        warnings.append(
+            f"已从工作表“{selection['name']}”识别题目。建议后续统一命名为“{EXCEL_TEMPLATE_SHEET_NAME}”。"
+        )
+    if selection["header_index"] > 0:
+        warnings.append(
+            f"已自动跳过前 {selection['header_index']} 行说明文字，从第 {selection['header_index'] + 1} 行识别表头。"
+        )
+    if selection["aliases"]:
+        warnings.append("已兼容中文或别名表头，并自动转换为系统字段。")
+    if selection["ignored_headers"]:
+        warnings.append(f"已忽略 {len(selection['ignored_headers'])} 个备注/辅助列。")
+    return warnings
+
+
+def _normalize_excel_question(raw_question: dict[str, str]) -> dict:
+    question = {field: _clean_excel_cell(raw_question.get(field, "")) for field in EXCEL_TEMPLATE_HEADERS}
+    question["exam_code"] = question["exam_code"].upper()
+    question["subject"] = _normalize_catalog_value(question["subject"], SUBJECT_ALIASES)
+    question["module"] = _normalize_catalog_value(question["module"], MODULE_ALIASES)
+    question["submodule"] = _normalize_catalog_value(question["submodule"], SUBMODULE_ALIASES)
+    question["option_a"] = _normalize_option(question["option_a"], "A")
+    question["option_b"] = _normalize_option(question["option_b"], "B")
+    question["option_c"] = _normalize_option(question["option_c"], "C")
+    question["option_d"] = _normalize_option(question["option_d"], "D")
+    question["answer"] = _normalize_answer(question["answer"])
+    question["difficulty"] = _normalize_difficulty(question["difficulty"])
+    question["source_type"] = _normalize_source_type(question["source_type"])
+    question["source_year"] = question["source_year"] or None
+    return question
+
+
+def _normalize_catalog_value(value: str, aliases: dict[str, str]) -> str:
+    normalized = _normalize_excel_header(value)
+    for alias, canonical in aliases.items():
+        if normalized == _normalize_excel_header(alias):
+            return canonical
+    return _clean_excel_cell(value)
+
+
+def _normalize_answer(value: str) -> str:
+    cleaned = _clean_excel_cell(value)
+    match = re.fullmatch(r"(?:(?:正确)?答案|answer|选项)?\s*[:：]?\s*([A-D])(?:\s*项)?[.、。)）]?\s*", cleaned, re.I)
+    return match.group(1).upper() if match else cleaned.upper()
+
+
+def _normalize_option(value: str, option_letter: str) -> str:
+    cleaned = _clean_excel_cell(value)
+    return re.sub(rf"^(?:选项\s*)?{option_letter}\s*(?:[.、。:：）)])\s*", "", cleaned, flags=re.I)
+
+
+def _normalize_difficulty(value: str) -> int | str:
+    cleaned = _clean_excel_cell(value)
+    if not cleaned:
+        return 2
+    mapping = {"简单": 1, "易": 1, "easy": 1, "中等": 2, "适中": 2, "medium": 2, "困难": 3, "难": 3, "hard": 3}
+    if cleaned.lower() in mapping:
+        return mapping[cleaned.lower()]
+    try:
+        numeric = float(cleaned)
+    except ValueError:
+        return cleaned
+    return int(numeric) if numeric.is_integer() else cleaned
+
+
+def _normalize_source_type(value: str) -> str:
+    cleaned = _clean_excel_cell(value)
+    return _normalize_catalog_value(cleaned, SOURCE_TYPE_ALIASES) or "manual"
+
+
+def _normalize_excel_header(value: str) -> str:
+    normalized = unicodedata.normalize("NFKC", _clean_excel_cell(value)).lower()
+    return re.sub(r"[\s_—–\-:：()（）\[\]【】.。]", "", normalized)
+
+
+def _clean_excel_cell(value: object) -> str:
+    return str(value or "").replace("\ufeff", "", 1).replace("\r\n", "\n").strip()
 
 
 def _xlsx_row_values(row: ElementTree.Element, shared_strings: list[str]) -> list[str]:
