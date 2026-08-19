@@ -19,6 +19,22 @@ class AbilityReportResponse(BaseModel):
     weak_items: list[AbilityStatItem]
 
 
+class LearningTrendPoint(BaseModel):
+    date: str
+    label: str
+    accuracy: float | None = None
+    total_answers: int = 0
+
+
+class SubjectWeeklyChange(BaseModel):
+    subject: str
+    current_answers: int = 0
+    current_accuracy: float | None = None
+    previous_answers: int = 0
+    previous_accuracy: float | None = None
+    accuracy_change: float | None = None
+
+
 class LearningSummaryResponse(BaseModel):
     exam_code: str | None = None
     total_answers: int
@@ -28,6 +44,13 @@ class LearningSummaryResponse(BaseModel):
     weekly_answers: int = 0
     weekly_correct_answers: int = 0
     weekly_accuracy: float = 0
+    previous_week_answers: int = 0
+    previous_week_correct_answers: int = 0
+    previous_week_accuracy: float | None = None
+    weekly_accuracy_change: float | None = None
+    study_streak: int = 0
+    trend: list[LearningTrendPoint] = Field(default_factory=list)
+    subject_weekly_changes: list[SubjectWeeklyChange] = Field(default_factory=list)
 
 
 class LeaderboardItem(BaseModel):

@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 COMMUNITY_CHAT_CATEGORIES = {"中华文化", "数学基础", "英语运用", "逻辑推理"}
-COMMUNITY_EXPERIENCE_CATEGORIES = {"Z001", "Z002"}
+COMMUNITY_EXPERIENCE_CATEGORIES = {"Z001", "Z002", "专业课", "复试"}
 
 
 class CommunityMediaItem(BaseModel):
@@ -99,7 +99,7 @@ class CommunityCreatePostRequest(BaseModel):
         )
         if self.category not in allowed_categories:
             message = (
-                "经验贴分类仅支持 Z001、Z002"
+                "经验贴分类仅支持 Z001、Z002、专业课、复试"
                 if self.post_type == "experience"
                 else "研友聊分类仅支持中华文化、数学基础、英语运用、逻辑推理"
             )
