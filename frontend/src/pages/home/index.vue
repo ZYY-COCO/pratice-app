@@ -6,6 +6,7 @@
       'circle-glass-page': activeTab === 'circle' || isCircleGlassTheme,
       'circle-themed-page': activeTab === 'circle' && !isCircleGlassTheme,
       'landing-glass-page': activeTab === 'landing' && isCircleGlassTheme,
+      'scoreline-browser-page': isScoreLineBrowser,
       'glass-theme-page': isCircleGlassTheme
     }"
     :style="pageInlineStyle"
@@ -34,7 +35,7 @@
           </view>
         </view>
 
-        <view class="landing-focus-block">
+        <view v-if="homeFocusItems.length" class="landing-focus-block">
           <swiper
             class="landing-focus-swiper"
             :current="homeFocusIndex"
@@ -82,7 +83,7 @@
           </view>
         </view>
 
-        <view class="landing-section landing-news-section">
+        <view v-if="homeNewsItems.length" class="landing-section landing-news-section">
           <view class="landing-section-heading">
             <view>
               <text class="landing-section-title">港澳台考研资讯</text>
@@ -221,6 +222,18 @@
     <template v-else-if="activeTab === 'circle'">
       <view class="circle-dashboard">
         <view
+          v-if="isCircleCommunityDetail"
+          class="circle-detail-header circle-detail-header--fixed"
+          :style="circleCommunityHeaderStyle"
+        >
+          <button class="circle-back-button" aria-label="返回研圈首页" @tap="handleCircleDetailBack">
+            <image src="/static/ui-icons/back.svg" mode="aspectFit" />
+          </button>
+          <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
+          <view class="circle-detail-header-spacer"></view>
+        </view>
+
+        <view
           class="circle-view-stage"
           @touchstart="beginCircleEdgeSwipe"
           @touchend="finishCircleEdgeSwipe"
@@ -230,7 +243,7 @@
           <swiper
             class="circle-insight-swiper"
             :current="circleInsightIndex"
-            :autoplay="true"
+            :autoplay="!isCircleScoreSwiperPaused"
             :interval="5000"
             :duration="420"
             circular
@@ -272,26 +285,62 @@
             </swiper-item>
 
             <swiper-item>
-              <view class="circle-score-card circle-glass-surface">
+              <view
+                class="circle-score-card circle-glass-surface"
+                role="button"
+                :aria-label="`查看${activeCircleScoreSchool?.school || ''}历年分数线`"
+                @tap="handleCircleScoreCardTap(activeCircleScoreSchool)"
+              >
                 <view class="circle-score-heading">
                   <view>
-                    <view class="circle-score-title">{{ activeCircleScoreSchool.name }}</view>
+                    <view class="circle-score-title">{{ activeCircleScoreSchool?.school }}</view>
                     <view class="circle-score-subtitle">历年分数线</view>
                   </view>
                   <view class="circle-score-total">总分 <text>150</text></view>
                 </view>
-                <view class="circle-score-chart" :aria-label="`${activeCircleScoreSchool.name}历年分数线`">
+                <view class="circle-score-chart" :aria-label="`${activeCircleScoreSchool?.school || ''}历年分数线`">
                   <view class="circle-score-axis" aria-hidden="true">
-                    <text v-for="label in circleScoreAxis" :key="label">{{ label }}</text>
+                    <text v-for="label in activeCircleScoreChart.axis" :key="label">{{ label }}</text>
                   </view>
                   <svg class="circle-score-svg" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
-                    <line v-for="y in circleScoreGridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
+                    <line v-for="y in activeCircleScoreChart.gridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
                     <polyline :points="circleScoreLinePoints" class="circle-score-line" />
-                    <g v-for="(score, index) in activeCircleScoreSchool.scores" :key="circleScoreYears[index]">
-                      <circle :cx="circleScoreX[index]" :cy="getCircleScoreY(score)" r="4.5" class="circle-score-point" />
-                      <text :x="circleScoreX[index]" :y="getCircleScoreY(score) - 10" class="circle-score-value">{{ score }}</text>
+                    <g v-for="(score, index) in activeCircleScoreValues" :key="circleScoreYears[index]">
+                      <g
+                        class="circle-score-point-hit"
+                        @touchstart.stop="startCircleScorePointHold('overview', index)"
+                        @touchmove.stop="cancelCircleScorePointHold"
+                        @touchend.stop="finishCircleScorePointHold"
+                        @touchcancel.stop="finishCircleScorePointHold"
+                        @mousedown.stop="startCircleScorePointHold('overview', index)"
+                        @mouseup.stop="finishCircleScorePointHold"
+                        @mouseleave.stop="finishCircleScorePointHold"
+                        @tap.stop="showCircleScorePointTooltip('overview', index)"
+                        @click.stop="showCircleScorePointTooltip('overview', index)"
+                        @contextmenu.prevent.stop
+                      >
+                        <circle :cx="circleScoreX[index]" :cy="getCircleScoreY(score, activeCircleScoreChart)" r="13" class="circle-score-point-hit-area" />
+                        <circle
+                          :cx="circleScoreX[index]"
+                          :cy="getCircleScoreY(score, activeCircleScoreChart)"
+                          r="4.5"
+                          class="circle-score-point"
+                          :class="{ 'is-active': isCircleScorePointTooltipVisible('overview', index) }"
+                        />
+                      </g>
                     </g>
                   </svg>
+                  <view class="circle-score-tooltip-layer" aria-hidden="true">
+                    <template v-for="(score, index) in activeCircleScoreValues" :key="circleScoreYears[index]">
+                      <view
+                        v-if="isCircleScorePointTooltipVisible('overview', index)"
+                        class="circle-score-tooltip"
+                        :style="getCircleScoreTooltipStyle(circleScoreX[index], score, activeCircleScoreChart)"
+                      >
+                        {{ score }}分
+                      </view>
+                    </template>
+                  </view>
                   <view class="circle-score-years" aria-hidden="true">
                     <text v-for="year in circleScoreYears" :key="year">{{ year }}</text>
                   </view>
@@ -328,9 +377,18 @@
           </view>
         </view>
 
-        <view v-else key="circle-detail" class="circle-detail-page circle-view-panel">
-          <view class="circle-detail-header">
-            <button class="circle-back-button" aria-label="返回研圈首页" @tap="returnToCircleOverview">
+        <view
+          v-else
+          key="circle-detail"
+          class="circle-detail-page circle-view-panel"
+          :class="{ 'circle-detail-page--with-fixed-header': isCircleCommunityDetail }"
+        >
+          <view v-if="!isCircleCommunityDetail" class="circle-detail-header">
+            <button
+              class="circle-back-button"
+              :aria-label="selectedScoreLineRecord ? (selectedScoreLineRecordEntry === 'overview' ? '返回研圈首页' : '返回分数线列表') : '返回研圈首页'"
+              @tap="handleCircleDetailBack"
+            >
               <image src="/static/ui-icons/back.svg" mode="aspectFit" />
             </button>
             <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
@@ -351,7 +409,68 @@
               </button>
             </view>
 
-            <template v-if="selectedCircleCommunityTab">
+            <template v-if="selectedCircleCommunityTab === 'mentor'">
+              <view class="experience-search circle-glass-group mentor-search">
+                <text class="experience-search-icon">⌕</text>
+                <input
+                  v-model="mentorSearchKeyword"
+                  class="experience-search-input"
+                  placeholder="搜索院校、专业或前辈"
+                  placeholder-class="experience-search-placeholder"
+                  confirm-type="search"
+                />
+                <button
+                  v-if="mentorSearchKeyword"
+                  class="experience-search-clear"
+                  aria-label="清除前辈搜索"
+                  @tap.stop="mentorSearchKeyword = ''"
+                >
+                  <CloseIcon />
+                </button>
+                <picker
+                  class="community-post-sort-picker"
+                  mode="selector"
+                  :range="mentorSortOptions"
+                  range-key="label"
+                  :value="mentorSortIndex"
+                  @change="selectMentorSort"
+                >
+                  <view class="community-post-sort-control mentor-sort-control" role="button" :aria-label="`前辈排序：${activeMentorSortLabel}`">
+                    <text>{{ activeMentorSortLabel }}</text>
+                    <view class="community-post-sort-arrow" aria-hidden="true"></view>
+                  </view>
+                </picker>
+                <button
+                  class="mentor-filter-trigger mentor-search-filter-trigger"
+                  :class="{ 'has-filters': mentorActiveFilterCount > 0 }"
+                  :aria-label="mentorActiveFilterCount ? `筛选前辈，已选 ${mentorActiveFilterCount} 项` : '筛选前辈'"
+                  @tap="openMentorFilterSheet"
+                >
+                  <view class="mentor-filter-trigger-icon" aria-hidden="true"><view></view><view></view><view></view></view>
+                  <text v-if="mentorActiveFilterCount" class="mentor-filter-trigger-count">{{ mentorActiveFilterCount }}</text>
+                </button>
+              </view>
+
+              <view class="mentor-feed">
+                <MentorConsultCard
+                  v-for="mentor in filteredMentors"
+                  :key="mentor.id"
+                  :mentor="mentor"
+                  :favorite="mentorFavoriteIds.includes(mentor.id)"
+                  @open="openMentorDetail(mentor)"
+                  @consult="beginMentorConsultation(mentor)"
+                  @toggle-favorite="toggleMentorFavoriteState(mentor.id)"
+                />
+                <view v-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
+                  <view class="circle-empty-title">暂时没有匹配的前辈</view>
+                  <view class="circle-empty-copy">可以尝试调整搜索关键词或筛选条件。</view>
+                  <button class="mentor-empty-reset" @tap="resetMentorFilters">清除筛选</button>
+                </view>
+              </view>
+
+            </template>
+
+            <template v-else-if="selectedCircleCommunityTab">
               <view class="experience-search circle-glass-group">
                 <text class="experience-search-icon">⌕</text>
                 <input
@@ -369,6 +488,23 @@
                 >
                   <CloseIcon />
                 </button>
+                <picker
+                  class="community-post-sort-picker"
+                  mode="selector"
+                  :range="communityPostSortOptions"
+                  range-key="label"
+                  :value="communityPostSortIndex"
+                  @change="selectCommunityPostSort"
+                >
+                  <view
+                    class="community-post-sort-control"
+                    role="button"
+                    :aria-label="`帖子排序：${activeCommunityPostSortLabel}`"
+                  >
+                    <text>{{ activeCommunityPostSortLabel }}</text>
+                    <view class="community-post-sort-arrow" aria-hidden="true"></view>
+                  </view>
+                </picker>
               </view>
 
               <scroll-view scroll-x class="community-filter-scroll">
@@ -549,6 +685,222 @@
             </template>
           </view>
 
+          <view v-else-if="selectedCircleSection === 'scores'" class="circle-section circle-scoreline-section">
+            <template v-if="selectedScoreLineRecord">
+              <view class="scoreline-detail-toolbar">
+                <text class="scoreline-detail-source">数据来源：2024-2026 年历年分数线</text>
+              </view>
+
+              <view class="scoreline-detail-card circle-glass-surface">
+                <view class="scoreline-detail-school-row">
+                  <view>
+                    <view class="scoreline-detail-school">{{ selectedScoreLineRecord.school }}</view>
+                    <view class="scoreline-detail-meta">
+                      {{ selectedScoreLineRecord.region }}地区
+                      <text v-if="selectedScoreLineRecord.unitName"> · {{ selectedScoreLineRecord.unitName }}</text>
+                    </view>
+                  </view>
+                  <view class="scoreline-detail-region">{{ selectedScoreLineRecord.region }}</view>
+                </view>
+
+                <view v-if="hasCompleteScoreLineTrend(selectedScoreLineRecord)" class="scoreline-detail-chart">
+                  <view class="scoreline-detail-chart-title">三年总分趋势</view>
+                  <view class="scoreline-detail-chart-plot">
+                    <view class="circle-score-axis" aria-hidden="true">
+                      <text v-for="label in selectedScoreLineChart.axis" :key="label">{{ label }}</text>
+                    </view>
+                    <svg class="circle-score-svg" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
+                      <line v-for="y in selectedScoreLineChart.gridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
+                      <polyline :points="scoreLineDetailLinePoints" class="circle-score-line" />
+                      <g v-for="(score, index) in selectedScoreLineValues" :key="circleScoreYears[index]">
+                        <g
+                          class="circle-score-point-hit"
+                          @touchstart.stop="startCircleScorePointHold('detail', index)"
+                          @touchmove.stop="cancelCircleScorePointHold"
+                          @touchend.stop="finishCircleScorePointHold"
+                          @touchcancel.stop="finishCircleScorePointHold"
+                          @mousedown.stop="startCircleScorePointHold('detail', index)"
+                          @mouseup.stop="finishCircleScorePointHold"
+                          @mouseleave.stop="finishCircleScorePointHold"
+                          @tap.stop="showCircleScorePointTooltip('detail', index)"
+                          @click.stop="showCircleScorePointTooltip('detail', index)"
+                          @contextmenu.prevent.stop
+                        >
+                          <circle :cx="circleScoreX[index]" :cy="getCircleScoreY(score, selectedScoreLineChart)" r="13" class="circle-score-point-hit-area" />
+                          <circle
+                            :cx="circleScoreX[index]"
+                            :cy="getCircleScoreY(score, selectedScoreLineChart)"
+                            r="4.5"
+                            class="circle-score-point"
+                            :class="{ 'is-active': isCircleScorePointTooltipVisible('detail', index) }"
+                          />
+                        </g>
+                      </g>
+                    </svg>
+                    <view class="circle-score-tooltip-layer" aria-hidden="true">
+                      <template v-for="(score, index) in selectedScoreLineValues" :key="circleScoreYears[index]">
+                        <view
+                          v-if="isCircleScorePointTooltipVisible('detail', index)"
+                          class="circle-score-tooltip"
+                          :style="getCircleScoreTooltipStyle(circleScoreX[index], score, selectedScoreLineChart)"
+                        >
+                          {{ score }}分
+                        </view>
+                      </template>
+                    </view>
+                    <view class="circle-score-years" aria-hidden="true">
+                      <text v-for="year in circleScoreYears" :key="year">{{ year }}</text>
+                    </view>
+                  </view>
+                </view>
+
+                <view v-else class="scoreline-detail-note">
+                  该校部分年份按专业、院系或学位类型公布，以下保留原始分数线说明。
+                </view>
+
+                <view class="scoreline-history-list">
+                  <view v-for="year in historicalScoreLineDisplayYears" :key="year" class="scoreline-history-item">
+                    <view class="scoreline-history-main">
+                      <text class="scoreline-history-year">{{ year }}</text>
+                      <text
+                        class="scoreline-history-value"
+                        :class="{ 'is-note': getScoreLineValue(selectedScoreLineRecord, year).kind !== 'score' }"
+                      >
+                        {{ getScoreLineDetailValue(selectedScoreLineRecord, year) }}
+                      </text>
+                    </view>
+                    <text
+                      v-if="getScoreLineValue(selectedScoreLineRecord, year).raw && getScoreLineValue(selectedScoreLineRecord, year).kind !== 'score'"
+                      class="scoreline-history-copy"
+                    >
+                      {{ getScoreLineValue(selectedScoreLineRecord, year).raw }}
+                    </text>
+                  </view>
+                </view>
+              </view>
+            </template>
+
+            <view v-else class="scoreline-browser-layout">
+              <view class="scoreline-filter-grid">
+                <picker
+                  class="scoreline-select"
+                  mode="selector"
+                  :range="scoreLineYearPickerOptions"
+                  range-key="label"
+                  :value="scoreLineYearPickerIndex"
+                  @change="onScoreLineYearPickerChange"
+                >
+                  <view class="scoreline-select-control">
+                    <text class="scoreline-select-name">年份</text>
+                    <text class="scoreline-select-value">{{ selectedScoreLineYearCompactLabel }}</text>
+                    <view class="scoreline-select-arrow-icon" aria-hidden="true"></view>
+                  </view>
+                </picker>
+
+                <picker
+                  class="scoreline-select"
+                  mode="selector"
+                  :range="scoreLineRegionPickerOptions"
+                  range-key="label"
+                  :value="scoreLineRegionPickerIndex"
+                  @change="onScoreLineRegionPickerChange"
+                >
+                  <view class="scoreline-select-control">
+                    <text class="scoreline-select-name">地区</text>
+                    <text class="scoreline-select-value">{{ selectedScoreLineRegionCompactLabel }}</text>
+                    <view class="scoreline-select-arrow-icon" aria-hidden="true"></view>
+                  </view>
+                </picker>
+              </view>
+
+              <view class="scoreline-search circle-glass-group">
+                <text class="scoreline-search-icon">⌕</text>
+                <input
+                  v-model="scoreLineSearchKeyword"
+                  class="scoreline-search-input"
+                  placeholder="搜索高校或院系"
+                  placeholder-class="scoreline-search-placeholder"
+                  confirm-type="search"
+                />
+                <button
+                  v-if="scoreLineSearchKeyword"
+                  class="scoreline-search-clear"
+                  hover-class="none"
+                  aria-label="清除搜索"
+                  @tap.stop="clearScoreLineSearch"
+                >
+                  <CloseIcon />
+                </button>
+              </view>
+
+              <view class="scoreline-results-frame">
+                <view class="scoreline-results-heading">
+                  <view class="scoreline-results-heading-copy">
+                    <text class="scoreline-results-title">院校 / 院系</text>
+                    <text class="scoreline-results-count">{{ scoreLineResults.length }} 条结果</text>
+                  </view>
+                  <button
+                    v-if="hasActiveScoreLineFilters"
+                    class="scoreline-results-reset"
+                    hover-class="none"
+                    @tap="resetScoreLineFilters"
+                  >
+                    重置
+                  </button>
+                </view>
+
+                <scroll-view class="scoreline-results-scroll" scroll-y show-scrollbar="false">
+                  <view class="scoreline-results-content">
+                    <view v-if="visibleScoreLineRecords.length" class="scoreline-school-list">
+                      <button
+                        v-for="record in visibleScoreLineRecords"
+                        :key="record.id"
+                        class="scoreline-school-card"
+                        hover-class="none"
+                        @tap="openScoreLineRecord(record)"
+                      >
+                        <view class="scoreline-school-top">
+                          <view class="scoreline-school-copy">
+                            <text class="scoreline-school-name">{{ record.school }}</text>
+                            <text class="scoreline-school-meta">
+                              {{ record.region }}地区 · {{ getScoreLineAvailableYearCount(record) }} 年有数据
+                            </text>
+                          </view>
+                          <text class="scoreline-school-arrow" aria-hidden="true">›</text>
+                        </view>
+                        <view class="scoreline-year-grid">
+                          <view v-for="year in historicalScoreLineDisplayYears" :key="year" class="scoreline-year-cell">
+                            <text class="scoreline-year-label">{{ year }}</text>
+                            <text
+                              class="scoreline-year-value"
+                              :class="{ 'is-note': getScoreLineValue(record, year).kind !== 'score' }"
+                            >
+                              {{ getScoreLineCardValue(record, year) }}
+                            </text>
+                          </view>
+                        </view>
+                      </button>
+                    </view>
+
+                    <view v-else class="circle-empty-card scoreline-empty-card">
+                      <view class="circle-empty-title">没有找到匹配的高校</view>
+                      <view class="circle-empty-copy">尝试更换关键词、地区或年份筛选。</view>
+                    </view>
+
+                    <button
+                      v-if="visibleScoreLineRecords.length < scoreLineResults.length"
+                      class="scoreline-load-more"
+                      hover-class="none"
+                      @tap="loadMoreScoreLineRecords"
+                    >
+                      加载更多（已显示 {{ visibleScoreLineRecords.length }} / {{ scoreLineResults.length }}）
+                    </button>
+                  </view>
+                </scroll-view>
+              </view>
+            </view>
+          </view>
+
           <view v-else-if="selectedCircleSection === 'materials'" class="circle-section">
             <view class="circle-section-head">
               <view>
@@ -613,15 +965,6 @@
         </view>
           </transition>
         </view>
-        <button
-          v-if="showCommunityPublishButton"
-          class="community-publish-button"
-          :aria-label="selectedCircleCommunityTab === 'experience' ? '发布经验贴' : '发布话题'"
-          @tap.stop="openCommunityPublishPage(selectedCircleCommunityTab)"
-          @click.stop="openCommunityPublishPage(selectedCircleCommunityTab)"
-        >
-          <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
-        </button>
       </view>
     </template>
 
@@ -636,7 +979,7 @@
         </button>
         <view class="mistake-head-copy">
           <view class="head-title">{{ retestMode ? '错题重测' : '错题本' }}</view>
-          <view class="head-subtitle">{{ retestMode ? retestScopeText : mistakeSubtitle }}</view>
+          <view v-if="retestMode" class="head-subtitle">{{ retestScopeText }}</view>
         </view>
         <button
           v-if="!retestMode"
@@ -843,38 +1186,81 @@
         <view v-if="reportLoading" class="state-box">正在生成真实学习报告...</view>
         <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
 
-        <view class="report-overview-card">
-          <view class="overview-copy">
-            <view class="overview-title-row">
-              <text class="overview-title">本周学习概览</text>
-              <text class="overview-info">i</text>
-            </view>
-            <view class="overview-subtitle">{{ reportOverview.subtitle }}</view>
-          </view>
-          <view class="overview-art">📈</view>
-          <view class="overview-metrics">
-            <view class="overview-metric">
-              <view class="metric-icon blue">▦</view>
-              <view>
-                <view class="metric-label">本周做题总数</view>
-                <view class="metric-value">{{ reportOverview.weeklyAnswers }}<text>题</text></view>
-              </view>
-            </view>
-            <view class="overview-metric">
-              <view class="metric-icon green">◎</view>
-              <view>
-                <view class="metric-label">整体正确率</view>
-                <view class="metric-value">{{ reportOverview.accuracy }}</view>
-              </view>
-            </view>
-          </view>
-          <view class="overview-trend">{{ reportOverview.trend }}</view>
+        <view v-if="!isAuthed" class="report-empty-card">
+          <view class="report-empty-icon">✦</view>
+          <view class="report-empty-title">尚未形成有效诊断</view>
+          <view class="report-empty-copy">登录并完成第一组练习后，我们会根据真实作答情况生成学习报告。</view>
+          <button class="report-empty-action" @tap="goLogin">登录后开始练习</button>
+        </view>
+        <view v-else-if="report.items.length === 0" class="report-empty-card">
+          <view class="report-empty-icon">✦</view>
+          <view class="report-empty-title">尚未形成有效诊断</view>
+          <view class="report-empty-copy">完成第一组练习后，我们会根据你的真实作答情况生成学习报告。</view>
+          <button class="report-empty-action" @tap="goPractice">开始第一次练习</button>
         </view>
 
-        <view v-if="!isAuthed" class="state-box warning">登录并完成几道题后，这里会显示你的真实能力统计。</view>
-        <view v-else-if="report.items.length === 0" class="state-box">暂无能力统计。先完成一轮专项或综合刷题吧。</view>
+        <template v-else>
+          <view class="report-diagnosis-card">
+            <view class="report-card-heading">
+              <view>
+                <view class="report-card-title">本周学习诊断</view>
+                <view class="report-card-subtitle">根据你的真实练习数据生成</view>
+              </view>
+              <view class="report-diagnosis-icon">⌁</view>
+            </view>
+            <view class="diagnosis-copy">{{ report.diagnosis }}</view>
+            <view class="diagnosis-metrics">
+              <view v-for="metric in reportOverview.metrics" :key="metric.label" class="diagnosis-metric">
+                <view class="diagnosis-metric-value" :class="metric.tone">{{ metric.value }}</view>
+                <view class="diagnosis-metric-label">{{ metric.label }}</view>
+              </view>
+            </view>
+            <view class="diagnosis-footnote">{{ reportOverview.note }}</view>
+          </view>
 
-        <view v-else class="subject-report-list">
+          <view class="report-trend-card">
+            <view class="report-card-heading">
+              <view>
+                <view class="report-card-title">学习趋势</view>
+                <view class="report-card-subtitle">最近 7 天正确率</view>
+              </view>
+              <view class="trend-weekly-badge" :class="trendSummaryTone">{{ trendBadgeText }}</view>
+            </view>
+            <template v-if="trendUnlocked">
+              <view class="trend-chart-wrap">
+                <svg class="trend-chart" viewBox="0 0 320 126" preserveAspectRatio="none" aria-label="近七天正确率趋势">
+                  <line x1="8" x2="312" y1="24" y2="24" class="trend-grid-line" />
+                  <line x1="8" x2="312" y1="66" y2="66" class="trend-grid-line" />
+                  <line x1="8" x2="312" y1="108" y2="108" class="trend-grid-line" />
+                  <path :d="trendAreaPath" class="trend-area-path" />
+                  <path :d="trendPath" class="trend-line-path" />
+                  <circle
+                    v-for="point in trendChartPoints"
+                    :key="point.date"
+                    :cx="point.x"
+                    :cy="point.y"
+                    r="4"
+                    class="trend-point"
+                  />
+                </svg>
+              </view>
+              <view class="trend-axis-labels">
+                <text v-for="item in reportTrend" :key="item.date">{{ item.label }}</text>
+              </view>
+              <view class="trend-conclusion" :class="trendSummaryTone">{{ trendSummary }}</view>
+            </template>
+            <view v-else class="trend-unlock-state">
+              <view class="trend-unlock-title">再完成 {{ trendUnlockRemaining }} 道题，即可解锁学习趋势分析</view>
+              <view class="trend-unlock-meta">{{ trendAnsweredCount }} / 20 题</view>
+              <view class="trend-unlock-track"><view :style="{ width: `${trendUnlockProgress}%` }"></view></view>
+            </view>
+          </view>
+
+          <view class="report-section-heading">
+            <view class="report-section-title">各模块掌握情况</view>
+            <view class="report-section-subtitle">科目卡展示累计作答统计</view>
+          </view>
+          <view class="subject-report-list">
           <view
             v-for="item in subjectReportCards"
             :key="item.subject"
@@ -894,11 +1280,38 @@
                 <view class="subject-status" :class="item.tone">{{ item.status }}</view>
               </view>
               <view class="subject-count-label">做题数量</view>
-              <view class="subject-count">{{ item.total }}<text>题</text></view>
+              <view class="subject-count-row">
+                <view class="subject-count">{{ item.total }}<text>题</text></view>
+                <view class="subject-weekly-change" :class="item.weeklyChange.tone">{{ item.weeklyChange.text }}</view>
+              </view>
               <view class="progress-track">
                 <view class="progress-fill" :class="item.tone" :style="{ width: `${item.accuracy}%` }"></view>
               </view>
-              <view class="subject-trend">{{ item.tip }}</view>
+              <view class="subject-weakness">
+                <text>薄弱知识点</text>
+                <text>{{ item.weakestModule || '继续积累练习样本' }}</text>
+              </view>
+              <view class="subject-trend">{{ item.suggestion }}</view>
+              <button class="subject-report-action" @tap.stop="goTaskPractice(item)">{{ item.action }} <text>›</text></button>
+            </view>
+          </view>
+        </view>
+
+        <view v-if="weeklyBreakthroughs.length" class="weekly-breakthrough-card">
+          <view class="report-card-heading">
+            <view>
+              <view class="report-card-title">本周重点突破</view>
+              <view class="report-card-subtitle">按正确率从低到高排序</view>
+            </view>
+          </view>
+          <view class="breakthrough-list">
+            <view v-for="(item, index) in weeklyBreakthroughs" :key="`${item.subject}-${item.topic}`" class="breakthrough-item">
+              <view class="breakthrough-rank">{{ index + 1 }}</view>
+              <view class="breakthrough-main">
+                <view class="breakthrough-title">{{ item.subject }} · {{ item.topic }}</view>
+                <view class="breakthrough-meta">{{ index === 0 ? '当前最薄弱知识点' : '建议本周安排专项巩固' }}</view>
+              </view>
+              <view class="breakthrough-score" :class="item.tone">{{ item.accuracy }}%</view>
             </view>
           </view>
         </view>
@@ -913,23 +1326,34 @@
               </view>
             </view>
           </view>
-          <view v-if="studyAdviceLoading" class="state-box advice-loading">正在分析你的薄弱点...</view>
-          <view v-else-if="studyAdviceError" class="state-box warning advice-loading">{{ studyAdviceError }}</view>
-          <view class="advice-list">
-            <view v-for="item in reportAdvice" :key="item" class="advice-item">
-              <text class="advice-dot">✓</text>
-              <text>{{ item }}</text>
+          <view class="advice-task-list">
+            <view v-for="(item, index) in reportActionTasks" :key="item.id" class="advice-task-item">
+              <view class="advice-task-index">任务 {{ index + 1 }}</view>
+              <view class="advice-task-title">{{ item.title }}</view>
+              <view class="advice-task-meta">{{ item.meta }}</view>
+              <view class="advice-task-desc">{{ item.desc }}</view>
+              <button class="advice-task-action" @tap.stop="goReportTask(item)">{{ item.actionLabel }} <text>›</text></button>
             </view>
           </view>
           <button v-if="isAuthed" class="advice-detail-btn" @tap="openStudyAdviceDetail">
             查看详细建议
           </button>
-          <!-- #ifndef MP-WEIXIN -->
-          <button v-if="dailyPlan.length" class="report-action-btn" @tap="openRecommendedTrainingSheet">
-            开始推荐训练
-          </button>
-          <!-- #endif -->
         </view>
+
+        <view v-if="todayTraining.items.length" class="today-training-card">
+          <view class="report-card-heading">
+            <view>
+              <view class="report-card-title">今日推荐训练</view>
+              <view class="report-card-subtitle">{{ todayTraining.meta }}</view>
+            </view>
+            <view class="today-training-icon">▶</view>
+          </view>
+          <view class="today-training-list">
+            <text v-for="(item, index) in todayTraining.items" :key="item.subject">{{ index ? '＋' : '' }}{{ item.label }}</text>
+          </view>
+          <button class="report-action-btn" @tap="startTodayTraining">开始今日训练</button>
+        </view>
+        </template>
       </view>
     </template>
 
@@ -1043,7 +1467,7 @@
           <view class="profile-section-title">其他服务</view>
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
-              <view class="menu-icon" :class="item.tone">
+              <view class="menu-icon" :class="[item.tone, item.iconClass]">
                 <!-- #ifdef MP-WEIXIN -->
                 <image
                   v-if="item.iconSrc"
@@ -1051,7 +1475,7 @@
                   :src="getMpThemeIconSrc(item.iconSrc)"
                   mode="aspectFit"
                 />
-                <text v-else>{{ item.icon }}</text>
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
                 <!-- #endif -->
                 <!-- #ifndef MP-WEIXIN -->
                 <view
@@ -1059,7 +1483,7 @@
                   class="menu-icon-img theme-icon-mask"
                   :style="getThemeIconStyle(item.iconSrc)"
                 />
-                <text v-else>{{ item.icon }}</text>
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
                 <!-- #endif -->
               </view>
               <view class="menu-copy">
@@ -1435,7 +1859,7 @@
                       :class="{ active: comment.liked, pending: communityCommentLikeId === comment.id }"
                       :aria-label="comment.liked ? '取消评论点赞' : '点赞评论'"
                       :aria-pressed="comment.liked"
-                      :disabled="communityCommentLikeId === comment.id"
+                      :aria-busy="communityCommentLikeId === comment.id"
                       @tap.stop="toggleCommunityCommentLike(comment)"
                     >
                       <view class="community-reader-comment-like-icon" aria-hidden="true"></view>
@@ -1702,15 +2126,116 @@
       </view>
     </view>
 
+    <view
+      v-if="mentorFilterMounted"
+      class="mentor-filter-mask"
+      :class="{ 'is-visible': mentorFilterVisible, 'is-leaving': mentorFilterClosing }"
+      @tap="closeMentorFilterSheet"
+    >
+        <view class="mentor-filter-sheet" @tap.stop>
+          <view class="mentor-filter-sheet-heading">
+            <view class="mentor-filter-sheet-title">筛选前辈</view>
+            <button class="mentor-filter-sheet-close" aria-label="关闭筛选" @tap="closeMentorFilterSheet">×</button>
+          </view>
+
+          <scroll-view class="mentor-filter-sheet-scroll" scroll-y>
+            <view class="mentor-filter-sheet-body">
+              <view class="mentor-filter-field">
+                <view class="mentor-filter-field-label">考试类型</view>
+                <view class="mentor-filter-option-row">
+                  <button
+                    v-for="item in mentorExamTypeOptions"
+                    :key="item"
+                    :class="{ active: mentorFilterDraft.examType === item }"
+                    @tap="mentorFilterDraft.examType = item"
+                  >{{ item }}</button>
+                </view>
+              </view>
+
+              <view class="mentor-filter-field">
+                <view class="mentor-filter-field-label">录取年份</view>
+                <view class="mentor-filter-option-row">
+                  <button
+                    v-for="item in mentorAdmissionYearOptions"
+                    :key="item"
+                    :class="{ active: mentorFilterDraft.admissionYear === item }"
+                    @tap="mentorFilterDraft.admissionYear = item"
+                  >{{ item }}</button>
+                </view>
+              </view>
+
+              <view class="mentor-filter-field">
+                <view class="mentor-filter-field-label">咨询价格</view>
+                <view class="mentor-filter-option-row">
+                  <button
+                    v-for="item in mentorPriceOptions"
+                    :key="item"
+                    :class="{ active: mentorFilterDraft.price === item }"
+                    @tap="mentorFilterDraft.price = item"
+                  >{{ item }}</button>
+                </view>
+              </view>
+
+              <view class="mentor-filter-field">
+                <view class="mentor-filter-field-label">当前状态</view>
+                <view class="mentor-filter-option-row">
+                  <button
+                    v-for="item in mentorAvailabilityOptions"
+                    :key="item"
+                    :class="{ active: mentorFilterDraft.availability === item }"
+                    @tap="mentorFilterDraft.availability = item"
+                  >{{ item }}</button>
+                </view>
+              </view>
+            </view>
+          </scroll-view>
+
+          <view class="mentor-filter-sheet-actions">
+            <button class="mentor-filter-reset-button" @tap="resetMentorFilters">重置</button>
+            <button class="mentor-filter-confirm-button" @tap="applyMentorFilters">查看结果{{ mentorFilteredResultCount ? `（${mentorFilteredResultCount}）` : '' }}</button>
+          </view>
+        </view>
+    </view>
+
     <!-- #ifdef H5 -->
     <IcpFooter
-      v-if="activeTab !== 'landing'"
+      v-if="activeTab !== 'landing' && !isScoreLineBrowser"
       :compact="showBottomTab"
       :inline="showBottomTab"
       :lower="activeTab === 'home' || activeTab === 'profile'"
       :glass="true"
     />
     <!-- #endif -->
+    <button
+      v-if="showCommunityPublishButton && selectedCircleCommunityTab === 'mentor'"
+      class="community-publish-button"
+      type="button"
+      aria-label="申请成为前辈"
+      @tap.stop="openMentorVerificationEntry"
+      @click.stop="openMentorVerificationEntry"
+    >
+      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+    </button>
+    <button
+      v-else-if="showCommunityPublishButton && selectedCircleCommunityTab === 'experience'"
+      class="community-publish-button"
+      type="button"
+      aria-label="发布经验贴"
+      @tap.stop="openExperiencePublishPage"
+      @click.stop="openExperiencePublishPage"
+    >
+      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+    </button>
+    <button
+      v-else-if="showCommunityPublishButton"
+      class="community-publish-button"
+      type="button"
+      aria-label="发布话题"
+      @tap.stop="openChatPublishPage"
+      @click.stop="openChatPublishPage"
+    >
+      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+    </button>
     <BottomTabBar
       v-if="showBottomTab"
       v-model="activeTab"
@@ -1723,12 +2248,13 @@
 </template>
 
 <script setup>
-import { computed, nextTick, ref, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MistakeList from '../../components/MistakeList.vue'
+import MentorConsultCard from '../../components/MentorConsultCard.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import MathText from '../../components/MathText.vue'
@@ -1744,8 +2270,27 @@ import {
   toggleCommunityPostLike
 } from '../../api/community'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
-import { fetchAbilityReport, fetchLearningSummary, fetchStudyAdvice } from '../../api/reports'
+import { fetchHomeContent, fetchPublishedScorelines } from '../../api/homeContent'
+import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
+import {
+  historicalScoreLineRecords as fallbackHistoricalScoreLineRecords,
+  historicalScoreLineRegions as fallbackHistoricalScoreLineRegions,
+  historicalScoreLineStats as fallbackHistoricalScoreLineStats,
+  historicalScoreLineYears as fallbackHistoricalScoreLineYears
+} from '../../data/historicalScoreLines'
+import {
+  MENTOR_ADMISSION_YEAR_OPTIONS,
+  MENTOR_AVAILABILITY_OPTIONS,
+  MENTOR_EXAM_TYPE_OPTIONS,
+  MENTOR_PRICE_OPTIONS,
+  MENTOR_SORT_OPTIONS,
+  createDefaultMentorFilters,
+  filterMentors,
+  getMentorFavoriteIds,
+  getMentorVerificationStatus,
+  toggleMentorFavorite as toggleStoredMentorFavorite
+} from '../../data/mentorConsultation'
 import {
   getFullMistakes,
   getHomeDashboard,
@@ -1766,6 +2311,20 @@ const themePresets = computed(() => {
   return [glassPreset, ...THEME_PRESETS.filter((item) => item.key !== glassPreset.key)]
 })
 const ENABLE_CIRCLE = true
+const historicalScoreLineYears = reactive([...fallbackHistoricalScoreLineYears])
+const historicalScoreLineRecords = reactive(fallbackHistoricalScoreLineRecords.map((record) => ({
+  ...record,
+  scores: { ...record.scores }
+})))
+const historicalScoreLineRegions = reactive(fallbackHistoricalScoreLineRegions.map((region) => ({ ...region })))
+const historicalScoreLineStats = reactive({
+  ...fallbackHistoricalScoreLineStats,
+  yearAvailability: { ...(fallbackHistoricalScoreLineStats.yearAvailability || {}) }
+})
+const historicalScoreLineDisplayYears = computed(() => [...historicalScoreLineYears].sort().reverse())
+const historicalScoreLineTrendRecords = computed(() => historicalScoreLineRecords.filter((record) => (
+  historicalScoreLineYears.length >= 2 && historicalScoreLineYears.every((year) => record.scores?.[year]?.kind === 'score')
+)))
 const initialAuthUser = getAuthUser()
 const examCode = ref(uni.getStorageSync('examCode') || initialAuthUser?.exam_target || 'Z001')
 const activeTab = ref('landing')
@@ -1804,6 +2363,7 @@ const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
 const mistakeHeaderScrollTop = ref(0)
+const circleCommunityHeaderScrollTop = ref(0)
 const showTrainingSheet = ref(false)
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
@@ -1821,13 +2381,37 @@ const circleSectionTransitionDirection = ref('forward')
 const circleEdgeSwipeStart = ref(null)
 const communityReaderEdgeSwipeStart = ref(null)
 const circleInsightIndex = ref(0)
-const circleScoreSchoolIndex = ref(Math.floor(Math.random() * 4))
+const circleScoreSchoolIndex = ref(
+  historicalScoreLineTrendRecords.value.length > 1
+    ? Math.floor(Math.random() * historicalScoreLineTrendRecords.value.length)
+    : 0
+)
+const circleScoreTooltip = ref({ scope: '', index: -1 })
+const isCircleScoreSwiperPaused = ref(false)
+let circleScorePointHoldTimer = null
+let circleScoreTooltipDismissTimer = null
+const selectedScoreLineRecord = ref(null)
+const selectedScoreLineRecordEntry = ref('list')
+const scoreLineSearchKeyword = ref('')
+const selectedScoreLineRegion = ref('全部')
+const selectedScoreLineYear = ref('全部')
+const visibleScoreLineRecordCount = ref(24)
 const selectedMaterialSubject = ref('中华文化')
 const selectedExperienceCategory = ref('全部')
 const experienceSearchKeyword = ref('')
 const selectedCircleCommunityTab = ref('chat')
 const selectedCommunityCategory = ref('全部')
 const communitySearchKeyword = ref('')
+const selectedCommunityPostSort = ref('latest')
+const mentorSearchKeyword = ref('')
+const selectedMentorSort = ref('recommended')
+const mentorFilters = ref(createDefaultMentorFilters())
+const mentorFilterDraft = ref(createDefaultMentorFilters())
+const mentorFilterMounted = ref(false)
+const mentorFilterVisible = ref(false)
+const mentorFilterClosing = ref(false)
+let mentorFilterCloseTimer = null
+const mentorFavoriteIds = ref(getMentorFavoriteIds())
 const selectedCommunityPost = ref(null)
 const selectedCommunityCommentsPost = ref(null)
 const communityReaderScrollTarget = ref('')
@@ -1847,7 +2431,7 @@ const circleTabCollapsed = ref(false)
 const circleLastScrollTop = ref(0)
 const homeFocusIndex = ref(0)
 
-const homeFocusItems = [
+const homeFocusItems = reactive([
   {
     badge: '考试提醒',
     title: '初试统考准考证打印提醒',
@@ -1869,9 +2453,9 @@ const homeFocusItems = [
     artLabel: '考试指南',
     url: 'https://yankao.neea.edu.cn/html1/report/2512/13-1.htm'
   }
-]
+])
 
-const homeNewsItems = [
+const homeNewsItems = reactive([
   {
     source: '广东省教育考试院',
     title: '2026年面向港澳台地区研究生招生初试统考《准考证》打印提醒及广州报考点考生须知',
@@ -1886,7 +2470,7 @@ const homeNewsItems = [
     date: '2025-12-16',
     coverLabel: '广州报考点',
     coverTone: 'is-orange',
-    url: 'https://www.gatzs.com.cn/gatzsinfo/yzDetailInfo.action?categoryId=858151&infoId=3540991750&schId=858091'
+    url: 'https://eea.gd.gov.cn/yjsks/content/post_4830103.html'
   },
   {
     source: '教育部教育考试院',
@@ -1896,7 +2480,7 @@ const homeNewsItems = [
     coverTone: 'is-mint',
     url: 'https://yankao.neea.edu.cn/html1/report/2512/13-1.htm'
   }
-]
+])
 
 const homeServiceItems = [
   {
@@ -1979,6 +2563,11 @@ const isCircleDetail = computed(() =>
 const showBottomTab = computed(() =>
   !retestMode.value && !['mistakes', 'report'].includes(activeTab.value) && !isCircleDetail.value
 )
+const isScoreLineBrowser = computed(() => (
+  activeTab.value === 'circle' &&
+  selectedCircleSection.value === 'scores' &&
+  !selectedScoreLineRecord.value
+))
 const isCircleTabbarCollapsed = computed(() =>
   activeTab.value === 'circle' && selectedCircleSection.value !== 'overview' && circleTabCollapsed.value
 )
@@ -2014,32 +2603,121 @@ const circlePracticeTrend = [
   { day: '周六', count: 468 },
   { day: '周日', count: 592, latest: true }
 ]
-const circleScoreSchools = [
-  { name: '香港大学', scores: [103, 108, 112] },
-  { name: '香港中文大学', scores: [96, 101, 105] },
-  { name: '香港科技大学', scores: [98, 104, 106] },
-  { name: '香港城市大学', scores: [92, 95, 99] }
-]
-const circleScoreYears = ['2024', '2025', '2026']
-const circleScoreAxis = [150, 100, 50]
-const circleScoreGridY = [18, 54, 90]
+const circleScoreSchools = computed(() => historicalScoreLineTrendRecords.value)
+const circleScoreYears = computed(() => historicalScoreLineYears.slice(-3))
 const circleScoreX = [58, 160, 262]
 const activeCircleScoreSchool = computed(() =>
-  circleScoreSchools[circleScoreSchoolIndex.value] || circleScoreSchools[0]
+  circleScoreSchools.value[circleScoreSchoolIndex.value] || circleScoreSchools.value[0]
+)
+const activeCircleScoreValues = computed(() => (
+  circleScoreYears.value.map((year) => activeCircleScoreSchool.value?.scores?.[year]?.score || 0)
+))
+const activeCircleScoreChart = computed(() =>
+  getCircleScoreChartConfig(activeCircleScoreValues.value)
 )
 const circleScoreLinePoints = computed(() =>
-  activeCircleScoreSchool.value.scores
-    .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score)}`)
+  activeCircleScoreValues.value
+    .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score, activeCircleScoreChart.value)}`)
     .join(' ')
 )
+const scoreLineYearFilterOptions = computed(() => ['全部', ...historicalScoreLineDisplayYears.value])
+const scoreLineRegionFilterOptions = computed(() => [
+  { name: '全部', count: historicalScoreLineStats.recordCount },
+  ...historicalScoreLineRegions
+])
+const scoreLineYearPickerOptions = computed(() => (
+  scoreLineYearFilterOptions.value.map((year) => ({
+    value: year,
+    label: year === '全部' ? '全部年份' : `${year} 年`
+  }))
+))
+const scoreLineRegionPickerOptions = computed(() => (
+  scoreLineRegionFilterOptions.value.map((region) => ({
+    ...region,
+    value: region.name,
+    label: region.name === '全部' ? '全部地区' : region.name
+  }))
+))
+const scoreLineYearPickerIndex = computed(() => Math.max(
+  0,
+  scoreLineYearPickerOptions.value.findIndex((item) => item.value === selectedScoreLineYear.value)
+))
+const scoreLineRegionPickerIndex = computed(() => Math.max(
+  0,
+  scoreLineRegionPickerOptions.value.findIndex((item) => item.value === selectedScoreLineRegion.value)
+))
+const selectedScoreLineYearCompactLabel = computed(() => (
+  selectedScoreLineYear.value === '全部' ? '全部' : selectedScoreLineYear.value
+))
+const selectedScoreLineRegionCompactLabel = computed(() => (
+  selectedScoreLineRegion.value === '全部' ? '全部' : selectedScoreLineRegion.value
+))
+const hasActiveScoreLineFilters = computed(() => (
+  Boolean(scoreLineSearchKeyword.value.trim()) ||
+  selectedScoreLineRegion.value !== '全部' ||
+  selectedScoreLineYear.value !== '全部'
+))
+const scoreLineResults = computed(() => {
+  const keyword = normalizeScoreLineSearch(scoreLineSearchKeyword.value)
+
+  return historicalScoreLineRecords.filter((record) => {
+    if (selectedScoreLineRegion.value !== '全部' && record.region !== selectedScoreLineRegion.value) {
+      return false
+    }
+
+    if (selectedScoreLineYear.value !== '全部' && !getScoreLineValue(record, selectedScoreLineYear.value).raw) {
+      return false
+    }
+
+    if (!keyword) return true
+    const searchable = [
+      record.school,
+      record.schoolName,
+      record.unitName,
+      record.region,
+      ...historicalScoreLineYears.map((year) => getScoreLineValue(record, year).raw)
+    ].join(' ')
+    return normalizeScoreLineSearch(searchable).includes(keyword)
+  })
+})
+const visibleScoreLineRecords = computed(() => (
+  scoreLineResults.value.slice(0, visibleScoreLineRecordCount.value)
+))
+const selectedScoreLineValues = computed(() => (
+  circleScoreYears.value.map((year) => getScoreLineValue(selectedScoreLineRecord.value, year).score || 0)
+))
+const selectedScoreLineChart = computed(() =>
+  getCircleScoreChartConfig(selectedScoreLineValues.value)
+)
+const scoreLineDetailLinePoints = computed(() => (
+  selectedScoreLineValues.value
+    .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score, selectedScoreLineChart.value)}`)
+    .join(' ')
+))
+watch(
+  [scoreLineSearchKeyword, selectedScoreLineRegion, selectedScoreLineYear],
+  () => {
+    visibleScoreLineRecordCount.value = 24
+  }
+)
+watch([activeCircleScoreSchool, selectedScoreLineRecord], () => {
+  clearCircleScoreTooltip()
+})
 const circleCommunityTabs = [
   { key: 'chat', label: '研友聊' },
-  { key: 'experience', label: '经验贴' }
+  { key: 'experience', label: '经验贴' },
+  { key: 'mentor', label: '前辈咨询' }
+]
+const communityPostSortOptions = [
+  { value: 'latest', label: '最新' },
+  { value: 'hot', label: '热门' },
+  { value: 'featured', label: '精选' }
 ]
 const circleCommunityCategories = ['全部', '中华文化', '数学基础', '英语运用', '逻辑推理']
 const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
 const circleCommunityPosts = ref([])
-const circleExperienceCategories = ['全部', 'Z001', 'Z002']
+const circleExperienceCategories = ['全部', 'Z001', 'Z002', '专业课', '复试']
+const circleExperiencePostCategories = circleExperienceCategories.slice(1)
 const circleExperienceCommunityPosts = ref([])
 const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
 const circleMaterialSummaries = {
@@ -2168,10 +2846,10 @@ const communityReaderPostTypeLabel = computed(() => (
 const filteredCircleExperiencePosts = computed(() => {
   const keyword = experienceSearchKeyword.value.trim().toLowerCase()
   return circleExperienceCommunityPosts.value.filter((item) => {
-    const itemExamCode = getExperienceExamCode(item)
-    const matchesExamCode = selectedExperienceCategory.value === '全部'
-      || itemExamCode === selectedExperienceCategory.value
-    if (!matchesExamCode || !keyword) return matchesExamCode
+    const itemCategory = getExperienceCategory(item)
+    const matchesCategory = selectedExperienceCategory.value === '全部'
+      || itemCategory === selectedExperienceCategory.value
+    if (!matchesCategory || !keyword) return matchesCategory
     return [
       item.author,
       item.category,
@@ -2185,6 +2863,47 @@ const filteredCircleExperiencePosts = computed(() => {
       .includes(keyword)
   })
 })
+const activeCommunityPostSortOption = computed(() => (
+  communityPostSortOptions.find((item) => item.value === selectedCommunityPostSort.value)
+  || communityPostSortOptions[0]
+))
+const activeCommunityPostSortLabel = computed(() => activeCommunityPostSortOption.value.label)
+const communityPostSortIndex = computed(() => Math.max(
+  0,
+  communityPostSortOptions.findIndex((item) => item.value === activeCommunityPostSortOption.value.value)
+))
+const mentorSortOptions = MENTOR_SORT_OPTIONS
+const mentorExamTypeOptions = MENTOR_EXAM_TYPE_OPTIONS
+const mentorAdmissionYearOptions = MENTOR_ADMISSION_YEAR_OPTIONS
+const mentorPriceOptions = MENTOR_PRICE_OPTIONS
+const mentorAvailabilityOptions = MENTOR_AVAILABILITY_OPTIONS
+const activeMentorSortOption = computed(() => (
+  mentorSortOptions.find((item) => item.value === selectedMentorSort.value) || mentorSortOptions[0]
+))
+const activeMentorSortLabel = computed(() => activeMentorSortOption.value.label)
+const mentorSortIndex = computed(() => Math.max(
+  0,
+  mentorSortOptions.findIndex((item) => item.value === activeMentorSortOption.value.value)
+))
+const filteredMentors = computed(() => filterMentors({
+  keyword: mentorSearchKeyword.value,
+  filters: mentorFilters.value,
+  sort: selectedMentorSort.value
+}))
+const mentorActiveFilterCount = computed(() => {
+  const filters = mentorFilters.value
+  return [
+    filters.examType !== '不限' ? filters.examType : '',
+    filters.admissionYear !== '不限' ? filters.admissionYear : '',
+    filters.price !== '不限' ? filters.price : '',
+    filters.availability !== '不限' ? filters.availability : ''
+  ].filter(Boolean).length
+})
+const mentorFilteredResultCount = computed(() => filterMentors({
+  keyword: mentorSearchKeyword.value,
+  filters: mentorFilterDraft.value,
+  sort: selectedMentorSort.value
+}).length)
 const activeCommunitySearchKeyword = computed({
   get: () => (
     selectedCircleCommunityTab.value === 'experience'
@@ -2209,11 +2928,12 @@ const activeCommunityCategory = computed(() => (
     ? selectedExperienceCategory.value
     : selectedCommunityCategory.value
 ))
-const filteredActiveCommunityPosts = computed(() => (
-  selectedCircleCommunityTab.value === 'experience'
+const filteredActiveCommunityPosts = computed(() => {
+  const posts = selectedCircleCommunityTab.value === 'experience'
     ? filteredCircleExperiencePosts.value
     : filteredCircleCommunityPosts.value
-))
+  return sortCommunityPosts(posts, selectedCommunityPostSort.value)
+})
 const showCommunityPublishButton = computed(() => (
   activeTab.value === 'circle'
   && selectedCircleSection.value === 'community'
@@ -2448,6 +3168,19 @@ const reportHeaderStyle = computed(() => {
   }
 })
 
+const isCircleCommunityDetail = computed(() => (
+  activeTab.value === 'circle' && selectedCircleSection.value === 'community'
+))
+
+const circleCommunityHeaderStyle = computed(() => {
+  const progress = Math.min(1, Math.max(0, circleCommunityHeaderScrollTop.value / 220))
+
+  return {
+    '--circle-community-header-opacity': String(0.2 + progress * 0.78),
+    '--circle-community-header-shadow-opacity': String(progress * 0.11)
+  }
+})
+
 // #ifdef MP-WEIXIN
 function syncMpSafeLayout() {
   mpLayoutStyle.value = buildMpPageSafeStyle()
@@ -2472,6 +3205,14 @@ const isAdminUser = computed(() => {
 })
 const serviceTools = computed(() => {
   const items = [
+    {
+      label: '我的钱包',
+      desc: '余额、账单与咨询收入',
+      icon: '',
+      iconClass: 'wallet-icon',
+      tone: 'blue',
+      action: 'wallet'
+    },
     {
       label: '外观主题',
       desc: `当前：${currentThemeName.value}`,
@@ -2578,29 +3319,7 @@ const retestButtonText = computed(() => {
   if (!isAuthed.value || !wrongFilterScopeParts.value.length) return '重测错题'
   return `重测${wrongFilters.value.subject ? '本科目' : '当前范围'}`
 })
-const mistakeSubtitle = computed(() => `已同步 ${examMistakes.value.length} 道错题`)
 const report = computed(() => buildReportView())
-const dailyPlan = computed(() => report.value.tasks.slice(0, 3).map((item, index) => ({
-  ...item,
-  title: `今日任务 ${index + 1}：${item.subject} - ${item.submodule || item.module}`,
-  desc: `建议先做 10 题。${item.desc}`
-})))
-const reportOverview = computed(() => {
-  const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
-  const totalAnswers = Number(learningSummary.value?.total_answers || 0)
-  const summaryAccuracy = Number(learningSummary.value?.accuracy || 0)
-  const cardAccuracy = subjectReportCards.value.length
-    ? Math.round(subjectReportCards.value.reduce((sum, item) => sum + item.accuracy, 0) / subjectReportCards.value.length)
-    : 0
-  const accuracyValue = totalAnswers ? Math.round(summaryAccuracy) : cardAccuracy
-
-  return {
-    weeklyAnswers,
-    accuracy: accuracyValue ? `${accuracyValue}%` : '--',
-    subtitle: totalAnswers ? '坚持学习，稳步提升！' : '完成练习后，这里会生成你的真实学习概览。',
-    trend: totalAnswers ? '真实数据已同步，继续保持刷题节奏 ↗' : '暂无趋势数据，先完成一轮练习吧'
-  }
-})
 const subjectReportCards = computed(() => {
   const groups = new Map()
   report.value.items.forEach((item) => {
@@ -2632,14 +3351,17 @@ const subjectReportCards = computed(() => {
   return Array.from(groups.values())
     .map((item) => {
       const accuracy = item.total ? Math.round((item.correct / item.total) * 100) : 0
+      const mastery = getMasteryLevel(accuracy)
       return {
         ...item,
         accuracy,
         icon: getSubjectIcon(item.subject),
-        status: getSubjectStatus(accuracy),
-        tone: getSubjectTone(accuracy),
-        tip: item.weakestModule ? `优先关注：${item.weakestModule}` : '当前表现稳定',
-        action: '去练习'
+        status: mastery.label,
+        tone: mastery.tone,
+        weeklyChange: getSubjectWeeklyChange(item.subject),
+        suggestion: getSubjectSuggestion(item.subject, item.weakestModule, accuracy),
+        action: accuracy < 80 ? '去补强' : '开始训练',
+        questionCount: 10
       }
     })
     .sort((a, b) => {
@@ -2647,6 +3369,162 @@ const subjectReportCards = computed(() => {
       const bIndex = subjectOrder.indexOf(b.subject)
       return (aIndex === -1 ? 99 : aIndex) - (bIndex === -1 ? 99 : bIndex)
     })
+})
+const reportOverview = computed(() => {
+  const total = subjectReportCards.value.reduce((sum, item) => sum + Number(item.total || 0), 0)
+  const correct = subjectReportCards.value.reduce((sum, item) => sum + Number(item.correct || 0), 0)
+  const accuracy = total ? Math.round((correct / total) * 100) : 0
+  const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
+  const weeklyChange = learningSummary.value?.weekly_accuracy_change
+  const hasWeeklyChange = weeklyChange !== null && weeklyChange !== undefined
+  const streak = Number(learningSummary.value?.study_streak || 0)
+  const countLabel = weeklyAnswers ? '本周做题' : '累计做题'
+  const changeValue = hasWeeklyChange
+    ? formatAccuracyChange(weeklyChange)
+    : '—'
+
+  return {
+    metrics: [
+      { label: countLabel, value: `${weeklyAnswers || total}题`, tone: 'blue' },
+      { label: '整体正确率', value: `${accuracy}%`, tone: getMasteryLevel(accuracy).tone },
+      { label: hasWeeklyChange ? '较上周' : '对比积累中', value: changeValue, tone: getChangeTone(weeklyChange) },
+      { label: '连续学习', value: streak ? `${streak}天` : '—', tone: streak ? 'green' : 'muted' }
+    ],
+    note: weeklyAnswers
+      ? `本周完成 ${weeklyAnswers} 题；下方科目卡展示累计作答统计。`
+      : '当前未取得本周答题记录，本页诊断与科目卡均按累计作答统计。'
+  }
+})
+const reportTrend = computed(() => {
+  const trend = learningSummary.value?.trend
+  if (!Array.isArray(trend)) return []
+  return trend.map((item, index) => ({
+    date: item?.date || String(index),
+    label: item?.label || `第${index + 1}天`,
+    accuracy: Number.isFinite(Number(item?.accuracy)) ? Number(item.accuracy) : null,
+    total: Number(item?.total_answers || 0)
+  }))
+})
+const trendAnsweredCount = computed(() => reportTrend.value.reduce((sum, item) => sum + item.total, 0))
+const trendUnlocked = computed(() => (
+  trendAnsweredCount.value >= 20 && reportTrend.value.filter((item) => item.accuracy !== null).length >= 2
+))
+const trendUnlockRemaining = computed(() => Math.max(0, 20 - trendAnsweredCount.value))
+const trendUnlockProgress = computed(() => Math.min(100, Math.round((trendAnsweredCount.value / 20) * 100)))
+const trendChartPoints = computed(() => {
+  const points = reportTrend.value
+    .map((item, index) => ({ ...item, index }))
+    .filter((item) => item.accuracy !== null)
+  if (!points.length) return []
+
+  const values = points.map((item) => item.accuracy)
+  const lower = Math.max(0, Math.min(...values) - 8)
+  const upper = Math.min(100, Math.max(...values) + 8)
+  const range = Math.max(12, upper - lower)
+  return points.map((item) => ({
+    ...item,
+    x: 16 + (item.index / Math.max(1, reportTrend.value.length - 1)) * 288,
+    y: 108 - ((item.accuracy - lower) / range) * 84
+  }))
+})
+const trendPath = computed(() => trendChartPoints.value
+  .map((item, index) => `${index ? 'L' : 'M'} ${item.x.toFixed(2)} ${item.y.toFixed(2)}`)
+  .join(' '))
+const trendAreaPath = computed(() => {
+  const points = trendChartPoints.value
+  if (!points.length) return ''
+  const first = points[0]
+  const last = points[points.length - 1]
+  return `${trendPath.value} L ${last.x.toFixed(2)} 112 L ${first.x.toFixed(2)} 112 Z`
+})
+const trendSummaryTone = computed(() => getChangeTone(learningSummary.value?.weekly_accuracy_change))
+const trendBadgeText = computed(() => {
+  const change = learningSummary.value?.weekly_accuracy_change
+  return change === null || change === undefined ? '趋势积累中' : formatAccuracyChange(change)
+})
+const trendSummary = computed(() => {
+  const change = learningSummary.value?.weekly_accuracy_change
+  if (change === null || change === undefined) {
+    return '已形成近 7 天趋势，继续完成本周练习即可解锁周度对比。'
+  }
+  if (change > 0) return `本周正确率较上周提升 ${Math.abs(Math.round(change))}%`
+  if (change < 0) return `本周正确率较上周下降 ${Math.abs(Math.round(change))}%，建议优先复盘近期错题。`
+  return '本周正确率与上周持平，建议保持练习节奏。'
+})
+const weeklyBreakthroughs = computed(() => report.value.items
+  .filter((item) => Number(item.total_count || 0) > 0 && (item.submodule || item.module))
+  .slice()
+  .sort((a, b) => Number(a.accuracy || 0) - Number(b.accuracy || 0))
+  .slice(0, 3)
+  .map((item) => {
+    const accuracy = Math.round(Number(item.accuracy || 0))
+    return {
+      subject: item.subject,
+      topic: item.submodule || item.module,
+      accuracy,
+      tone: getMasteryLevel(accuracy).tone,
+      module: item.module,
+      submodule: item.submodule
+    }
+  }))
+const reportActionTasks = computed(() => {
+  const ranked = subjectReportCards.value.slice().sort((a, b) => a.accuracy - b.accuracy)
+  const first = ranked[0]
+  const second = ranked[1]
+  if (!first) return []
+
+  const tasks = [
+    {
+      id: `train-${first.subject}`,
+      title: `${first.subject} · ${first.weakestModule || '基础专项'}训练`,
+      meta: '10题 · 约8分钟',
+      desc: first.suggestion,
+      actionLabel: '开始训练',
+      type: 'practice',
+      subject: first.subject,
+      module: first.module,
+      submodule: first.submodule,
+      questionCount: 10
+    },
+    {
+      id: `review-${first.subject}`,
+      title: `复盘${first.subject}错题`,
+      meta: `${examMistakes.value.filter((item) => item.subject === first.subject).length}题待复盘`,
+      desc: `先查看 ${first.weakestModule || first.subject} 的错题解析，再完成同类练习。`,
+      actionLabel: '查看错题',
+      type: 'mistakes',
+      subject: first.subject,
+      module: first.module,
+      submodule: first.submodule
+    }
+  ]
+  if (second) {
+    tasks.push({
+      id: `train-${second.subject}`,
+      title: `${second.subject} · ${second.weakestModule || '专项'}巩固`,
+      meta: '10题 · 约8分钟',
+      desc: second.suggestion,
+      actionLabel: '开始训练',
+      type: 'practice',
+      subject: second.subject,
+      module: second.module,
+      submodule: second.submodule,
+      questionCount: 10
+    })
+  }
+  return tasks
+})
+const todayTraining = computed(() => {
+  const trainingTasks = reportActionTasks.value.filter((item) => item.type === 'practice').slice(0, 2)
+  const total = trainingTasks.reduce((sum, item) => sum + Number(item.questionCount || 10), 0)
+  return {
+    items: trainingTasks.map((item) => ({
+      ...item,
+      label: `${item.subject}${item.submodule ? ` · ${item.submodule}` : ''} ${item.questionCount || 10}题`
+    })),
+    primary: trainingTasks[0] || null,
+    meta: `共${total}题 · 预计${Math.max(8, Math.round(total * 0.8))}分钟`
+  }
 })
 const fallbackReportAdvice = computed(() => buildFallbackReportAdvice())
 const reportAdvice = computed(() => {
@@ -2770,9 +3648,6 @@ watch(examCode, (value) => {
   if (isAuthed.value) {
     loadAbilityReport()
     loadLearningSummary()
-    if (activeTab.value === 'report') {
-      loadStudyAdvice({ force: true })
-    }
   }
 })
 
@@ -2795,9 +3670,6 @@ watch(activeTab, (value) => {
   } else {
     resetMistakeVisibleCount()
   }
-  if (value === 'report') {
-    loadStudyAdvice()
-  }
   if (value !== 'circle') {
     selectedCirclePost.value = null
     closeCommunityPost()
@@ -2813,21 +3685,138 @@ watch(wrongItems, () => {
 })
 
 onLoad((options) => {
+  const launchOptions = resolveHomeLaunchOptions(options)
   // #ifdef MP-WEIXIN
   syncMpSafeLayout()
   // #endif
-  if (options?.tab === 'circle' && ENABLE_CIRCLE) {
+  if (launchOptions?.tab === 'circle' && ENABLE_CIRCLE) {
     activeTab.value = 'circle'
-  } else if (options?.tab === 'landing') {
+    if (launchOptions?.section === 'community') {
+      const requestedCommunityTab = String(launchOptions?.communityTab || '')
+      const restoreCommunityDeepLink = () => {
+        selectedCircleSection.value = 'community'
+        if (circleCommunityTabs.some((item) => item.key === requestedCommunityTab)) {
+          selectedCircleCommunityTab.value = requestedCommunityTab
+        }
+        resetCircleTabbar()
+      }
+      nextTick(() => {
+        // activeTab 的既有监听会先复位到研圈首页；冷启动 H5 时该监听可能在挂载后补跑一次。
+        restoreCommunityDeepLink()
+        setTimeout(restoreCommunityDeepLink, 0)
+      })
+    }
+  } else if (launchOptions?.tab === 'landing') {
     activeTab.value = 'landing'
-  } else if (options?.tab === 'home') {
+  } else if (launchOptions?.tab === 'home') {
     activeTab.value = 'home'
-  } else if (options?.tab === 'profile') {
+  } else if (launchOptions?.tab === 'profile') {
     activeTab.value = 'profile'
   }
 
   warmCircleCommunityFeeds()
 })
+
+async function loadPublishedOperationContent() {
+  const [homeContentResult, scorelineResult] = await Promise.allSettled([
+    fetchHomeContent(),
+    fetchPublishedScorelines()
+  ])
+
+  if (homeContentResult.status === 'fulfilled') {
+    const payload = homeContentResult.value || {}
+    const focus = (payload.focus || []).filter((item) => item?.title)
+    const news = (payload.news || []).filter((item) => item?.title)
+    const managedSlots = payload.managedSlots || {}
+    if (managedSlots.focus === true || focus.length) {
+      homeFocusItems.splice(0, homeFocusItems.length, ...focus.map((item) => ({
+        badge: item.badge || '官方资讯',
+        title: item.title,
+        subtitle: item.subtitle || '',
+        artLabel: item.artLabel || '资讯',
+        url: item.url || '',
+        routeKey: item.routeKey || ''
+      })))
+      homeFocusIndex.value = Math.min(homeFocusIndex.value, Math.max(0, homeFocusItems.length - 1))
+    }
+    if (managedSlots.news === true || news.length) {
+      homeNewsItems.splice(0, homeNewsItems.length, ...news.map((item) => ({
+        source: item.source || '港研通',
+        title: item.title,
+        date: item.date || '',
+        coverLabel: item.coverLabel || '资讯',
+        coverTone: item.coverTone || 'is-blue',
+        url: item.url || '',
+        routeKey: item.routeKey || ''
+      })))
+    }
+  }
+
+  if (scorelineResult.status === 'fulfilled') {
+    const payload = scorelineResult.value || {}
+    const records = Array.isArray(payload.records) ? payload.records : []
+    const years = Array.isArray(payload.years) ? payload.years.filter((year) => /^20\d{2}$/.test(String(year))) : []
+    if (payload.managed === true || (records.length && years.length)) {
+      const orderedYears = [...years].sort()
+      historicalScoreLineYears.splice(0, historicalScoreLineYears.length, ...orderedYears)
+      historicalScoreLineRecords.splice(0, historicalScoreLineRecords.length, ...records.map((record) => ({
+        ...record,
+        scores: { ...(record.scores || {}) }
+      })))
+      historicalScoreLineRegions.splice(0, historicalScoreLineRegions.length, ...(payload.regions || []).map((region) => ({ ...region })))
+      const yearAvailability = orderedYears.reduce((result, year) => {
+        result[year] = records.filter((record) => Boolean(record?.scores?.[year]?.raw)).length
+        return result
+      }, {})
+      Object.keys(historicalScoreLineStats).forEach((key) => {
+        delete historicalScoreLineStats[key]
+      })
+      Object.assign(historicalScoreLineStats, {
+        ...(payload.statistics || {}),
+        recordCount: records.length,
+        regionCount: historicalScoreLineRegions.length,
+        yearAvailability,
+        threeYearTrendCount: historicalScoreLineTrendRecords.value.length
+      })
+      if (selectedScoreLineYear.value !== '全部' && !orderedYears.includes(selectedScoreLineYear.value)) {
+        selectedScoreLineYear.value = '全部'
+      }
+      if (selectedScoreLineRegion.value !== '全部' && !historicalScoreLineRegions.some((item) => item.name === selectedScoreLineRegion.value)) {
+        selectedScoreLineRegion.value = '全部'
+      }
+      if (selectedScoreLineRecord.value && !historicalScoreLineRecords.some((item) => item.id === selectedScoreLineRecord.value.id)) {
+        selectedScoreLineRecord.value = null
+        selectedScoreLineRecordEntry.value = 'list'
+      }
+      circleScoreSchoolIndex.value = 0
+    }
+  }
+}
+
+function resolveHomeLaunchOptions(options = {}) {
+  const resolved = { ...(options || {}) }
+  if (typeof window === 'undefined') return resolved
+
+  const hash = String(window.location?.hash || '')
+  const query = hash.includes('?') ? hash.slice(hash.indexOf('?') + 1) : ''
+  if (!query) return resolved
+
+  query.split('&').forEach((pair) => {
+    const separator = pair.indexOf('=')
+    const rawKey = separator >= 0 ? pair.slice(0, separator) : pair
+    const rawValue = separator >= 0 ? pair.slice(separator + 1) : ''
+    if (!rawKey) return
+    try {
+      const key = decodeURIComponent(rawKey)
+      if (resolved[key] !== undefined && resolved[key] !== '') return
+      resolved[key] = decodeURIComponent(rawValue.replace(/\+/g, ' '))
+    } catch (error) {
+      // 路由参数异常时保留 uni-app 已提供的参数，不影响主页正常打开。
+    }
+  })
+
+  return resolved
+}
 
 onShow(() => {
   // #ifdef MP-WEIXIN
@@ -2835,21 +3824,32 @@ onShow(() => {
   // #endif
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
+  mentorFavoriteIds.value = getMentorFavoriteIds()
   refreshLearningData()
   loadOfficialMessages(true)
+  loadPublishedOperationContent()
   if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
     const postType = selectedCircleCommunityTab.value
-    loadCircleCommunityPosts(postType, { force: consumeCircleCommunityFeedRefresh(postType) })
+    if (postType !== 'mentor') {
+      loadCircleCommunityPosts(postType, { force: consumeCircleCommunityFeedRefresh(postType) })
+    }
   }
 })
 
 onHide(() => {
   clearCommunityViewTimer()
+  clearCircleScoreTooltip()
+})
+
+onBeforeUnmount(() => {
+  clearCircleScoreTooltip()
+  clearMentorFilterMotionTimers()
 })
 
 onPageScroll(({ scrollTop }) => {
   const nextScrollTop = Number(scrollTop) || 0
   mistakeHeaderScrollTop.value = nextScrollTop
+  circleCommunityHeaderScrollTop.value = nextScrollTop
   updateCircleTabbarOnScroll(nextScrollTop)
 })
 
@@ -2903,18 +3903,38 @@ function selectHomeFocus(index) {
 }
 
 function openHomeFocus(item) {
-  openHomeExternalLink(item?.url)
+  openHomeContentTarget(item)
 }
 
 function openHomeNews(item) {
+  openHomeContentTarget(item)
+}
+
+function openHomeContentTarget(item) {
+  if (item?.routeKey === 'school-announcements') {
+    uni.navigateTo({ url: '/pages/school-announcements/index' })
+    return
+  }
+  if (item?.routeKey === 'major-catalog') {
+    uni.navigateTo({ url: '/pages/major-catalog/index' })
+    return
+  }
+  if (item?.routeKey === 'application-guide') {
+    openNewsArchive()
+    return
+  }
   openHomeExternalLink(item?.url)
 }
 
 function openNewsArchive() {
-  openHomeExternalLink('https://www.gatzs.com.cn/')
+  openHomeExternalLink('https://www.gatzs.com.cn/z/gatyz/')
 }
 
 function openHomeService(item) {
+  if (item?.key === 'school-notices') {
+    uni.navigateTo({ url: '/pages/school-announcements/index' })
+    return
+  }
   if (item?.key === 'major-catalog') {
     uni.navigateTo({ url: '/pages/major-catalog/index' })
     return
@@ -2987,6 +4007,27 @@ function goTaskPractice(task) {
     return
   }
   goPractice()
+}
+
+function goReportTask(task) {
+  if (task?.type === 'mistakes') {
+    wrongFilters.value = {
+      subject: task.subject || '',
+      module: task.module || '',
+      submodule: task.submodule || ''
+    }
+    activeTab.value = 'mistakes'
+    return
+  }
+  goTaskPractice(task)
+}
+
+function startTodayTraining() {
+  if (!todayTraining.value.primary) {
+    goPractice()
+    return
+  }
+  goTaskPractice(todayTraining.value.primary)
 }
 
 function getTrainingSubjectLabel(subject) {
@@ -3283,7 +4324,10 @@ function openCircleSection(key) {
   circleSectionTransitionDirection.value = 'forward'
   scrollCircleContentToTop()
   resetCircleTabbar()
+  clearCircleScoreTooltip()
   selectedCircleSection.value = key
+  selectedScoreLineRecord.value = null
+  selectedScoreLineRecordEntry.value = 'list'
   selectedCirclePost.value = null
   closeCommunityPost()
   if (key === 'community') {
@@ -3303,12 +4347,91 @@ function returnToCircleOverview() {
   circleSectionTransitionDirection.value = 'back'
   scrollCircleContentToTop()
   resetCircleTabbar()
+  clearCircleScoreTooltip()
   selectedCircleSection.value = 'overview'
+  selectedScoreLineRecord.value = null
+  selectedScoreLineRecordEntry.value = 'list'
   selectedCirclePost.value = null
   closeCommunityPost()
 }
 
+function handleCircleDetailBack() {
+  if (selectedCircleSection.value === 'scores' && selectedScoreLineRecord.value) {
+    closeScoreLineRecord()
+    return
+  }
+  returnToCircleOverview()
+}
+
+function openCircleScoreLineRecord(record) {
+  if (!record) return
+  circleSectionTransitionDirection.value = 'forward'
+  scrollCircleContentToTop()
+  resetCircleTabbar()
+  clearCircleScoreTooltip()
+  selectedCircleSection.value = 'scores'
+  selectedScoreLineRecord.value = record
+  selectedScoreLineRecordEntry.value = 'overview'
+  selectedCirclePost.value = null
+  closeCommunityPost()
+}
+
+function openScoreLineRecord(record) {
+  if (!record) return
+  scrollCircleContentToTop()
+  clearCircleScoreTooltip()
+  selectedScoreLineRecord.value = record
+  selectedScoreLineRecordEntry.value = 'list'
+}
+
+function closeScoreLineRecord() {
+  if (!selectedScoreLineRecord.value) return
+  if (selectedScoreLineRecordEntry.value === 'overview') {
+    returnToCircleOverview()
+    return
+  }
+  clearCircleScoreTooltip()
+  selectedScoreLineRecord.value = null
+  selectedScoreLineRecordEntry.value = 'list'
+  scrollCircleContentToTop()
+}
+
+function selectScoreLineYear(year) {
+  if (!scoreLineYearFilterOptions.value.includes(year)) return
+  selectedScoreLineYear.value = year
+}
+
+function selectScoreLineRegion(region) {
+  if (!scoreLineRegionFilterOptions.value.some((item) => item.name === region)) return
+  selectedScoreLineRegion.value = region
+}
+
+function onScoreLineYearPickerChange(event) {
+  const option = scoreLineYearPickerOptions.value[Number(event?.detail?.value)]
+  if (option) selectScoreLineYear(option.value)
+}
+
+function onScoreLineRegionPickerChange(event) {
+  const option = scoreLineRegionPickerOptions.value[Number(event?.detail?.value)]
+  if (option) selectScoreLineRegion(option.value)
+}
+
+function clearScoreLineSearch() {
+  scoreLineSearchKeyword.value = ''
+}
+
+function resetScoreLineFilters() {
+  scoreLineSearchKeyword.value = ''
+  selectedScoreLineRegion.value = '全部'
+  selectedScoreLineYear.value = '全部'
+}
+
+function loadMoreScoreLineRecords() {
+  visibleScoreLineRecordCount.value += 24
+}
+
 function scrollCircleContentToTop() {
+  circleCommunityHeaderScrollTop.value = 0
   uni.pageScrollTo({
     scrollTop: 0,
     duration: 0
@@ -3343,6 +4466,10 @@ function finishCircleEdgeSwipe(event) {
   const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
   const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
   if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
+    if (selectedCircleSection.value === 'scores' && selectedScoreLineRecord.value) {
+      closeScoreLineRecord()
+      return
+    }
     returnToCircleOverview()
   }
 }
@@ -3385,16 +4512,160 @@ function getCircleTrendHeight(count) {
   return `${Math.max(7, Math.round(ratio * 100))}%`
 }
 
-function getCircleScoreY(score) {
-  const safeScore = Math.min(150, Math.max(50, Number(score) || 50))
-  return 18 + ((150 - safeScore) / 100) * 72
+function getCircleScoreChartConfig(values = []) {
+  const scores = values
+    .map((value) => Number(value))
+    .filter((value) => Number.isFinite(value))
+  const min = scores.some((score) => score < 50) ? 0 : 50
+  const max = scores.some((score) => score > 120)
+    ? 150
+    : scores.some((score) => score > 100)
+      ? 120
+      : 100
+  const axis = min === 50 && max === 100
+    ? [100, 90, 80, 70, 60, 50]
+    : min === 50 && max === 120
+      ? [120, 100, 80, 60, 50]
+      : min === 50
+        ? [150, 125, 100, 75, 50]
+        : max === 100
+          ? [100, 75, 50, 25, 0]
+          : max === 120
+            ? [120, 90, 60, 30, 0]
+            : [150, 100, 50, 0]
+  const chart = { min, max }
+
+  return {
+    ...chart,
+    axis,
+    gridY: axis.map((score) => getCircleScoreY(score, chart))
+  }
+}
+
+function getCircleScoreY(score, chart = {}) {
+  const min = Number(chart.min)
+  const max = Number(chart.max)
+  const safeMin = Number.isFinite(min) ? min : 0
+  const safeMax = Number.isFinite(max) && max > safeMin ? max : 150
+  const safeScore = Math.min(safeMax, Math.max(safeMin, Number(score) || safeMin))
+  const top = 18
+  const bottom = 90
+  return top + ((safeMax - safeScore) / (safeMax - safeMin)) * (bottom - top)
+}
+
+function handleCircleScoreCardTap(record) {
+  openCircleScoreLineRecord(record)
+}
+
+function startCircleScorePointHold(scope, index) {
+  cancelCircleScorePointHold()
+  if (scope === 'overview') {
+    isCircleScoreSwiperPaused.value = true
+  }
+  circleScorePointHoldTimer = setTimeout(() => {
+    circleScorePointHoldTimer = null
+    showCircleScorePointTooltip(scope, index)
+  }, 360)
+}
+
+function cancelCircleScorePointHold() {
+  if (circleScorePointHoldTimer === null) return
+  clearTimeout(circleScorePointHoldTimer)
+  circleScorePointHoldTimer = null
+  if (circleScoreTooltip.value.scope !== 'overview') {
+    isCircleScoreSwiperPaused.value = false
+  }
+}
+
+function finishCircleScorePointHold() {
+  cancelCircleScorePointHold()
+}
+
+function showCircleScorePointTooltip(scope, index) {
+  cancelCircleScorePointHold()
+  if (!['overview', 'detail'].includes(scope) || !Number.isInteger(index)) return
+  if (scope === 'overview') {
+    isCircleScoreSwiperPaused.value = true
+  }
+  clearCircleScoreTooltipDismissTimer()
+  circleScoreTooltip.value = { scope, index }
+  circleScoreTooltipDismissTimer = setTimeout(() => {
+    circleScoreTooltip.value = { scope: '', index: -1 }
+    isCircleScoreSwiperPaused.value = false
+    circleScoreTooltipDismissTimer = null
+  }, 2600)
+}
+
+function clearCircleScoreTooltip() {
+  cancelCircleScorePointHold()
+  clearCircleScoreTooltipDismissTimer()
+  isCircleScoreSwiperPaused.value = false
+  circleScoreTooltip.value = { scope: '', index: -1 }
+}
+
+function clearCircleScoreTooltipDismissTimer() {
+  if (circleScoreTooltipDismissTimer === null) return
+  clearTimeout(circleScoreTooltipDismissTimer)
+  circleScoreTooltipDismissTimer = null
+}
+
+function isCircleScorePointTooltipVisible(scope, index) {
+  return circleScoreTooltip.value.scope === scope && circleScoreTooltip.value.index === index
+}
+
+function getCircleScoreTooltipStyle(x, score, chart) {
+  const pointY = getCircleScoreY(score, chart)
+  const tooltipY = pointY <= 32 ? pointY + 18 : pointY - 18
+  const left = Math.min(86, Math.max(14, (Number(x) || 150) / 3))
+  const top = Math.min(94, Math.max(6, (tooltipY / 112) * 100))
+
+  return {
+    left: `${left}%`,
+    top: `${top}%`
+  }
+}
+
+function getScoreLineValue(record, year) {
+  return record?.scores?.[year] || { raw: '', score: null, kind: 'missing' }
+}
+
+function normalizeScoreLineSearch(value) {
+  return String(value || '').trim().toLocaleLowerCase()
+}
+
+function getScoreLineAvailableYearCount(record) {
+  return historicalScoreLineYears.filter((year) => Boolean(getScoreLineValue(record, year).raw)).length
+}
+
+function hasCompleteScoreLineTrend(record) {
+  return historicalScoreLineYears.every((year) => getScoreLineValue(record, year).kind === 'score')
+}
+
+function getScoreLineCardValue(record, year) {
+  const value = getScoreLineValue(record, year)
+  if (value.kind === 'score') return `${value.score} 分`
+  if (value.kind === 'unavailable') return '无划线'
+  if (value.kind === 'official') return '官网公布'
+  if (value.kind === 'multiple') return '多专业'
+  if (value.kind === 'note') return '详见'
+  return '--'
+}
+
+function getScoreLineDetailValue(record, year) {
+  const value = getScoreLineValue(record, year)
+  if (value.kind === 'score') return `总分 ${value.score} 分`
+  if (value.kind === 'unavailable') return '无统一分数线'
+  if (value.kind === 'official') return '以官网名单为准'
+  if (value.kind === 'multiple') return '按专业/学位区分'
+  if (value.kind === 'note') return '原始说明'
+  return '暂无数据'
 }
 
 function rotateCircleScoreSchool() {
-  if (circleScoreSchools.length < 2) return
+  if (circleScoreSchools.value.length < 2) return
   let nextIndex = circleScoreSchoolIndex.value
   while (nextIndex === circleScoreSchoolIndex.value) {
-    nextIndex = Math.floor(Math.random() * circleScoreSchools.length)
+    nextIndex = Math.floor(Math.random() * circleScoreSchools.value.length)
   }
   circleScoreSchoolIndex.value = nextIndex
 }
@@ -3402,6 +4673,7 @@ function rotateCircleScoreSchool() {
 function handleCircleInsightChange(event) {
   const nextIndex = Number(event?.detail?.current)
   if (!Number.isInteger(nextIndex) || nextIndex === circleInsightIndex.value) return
+  clearCircleScoreTooltip()
   circleInsightIndex.value = nextIndex
   if (nextIndex === 1) {
     rotateCircleScoreSchool()
@@ -3411,6 +4683,7 @@ function handleCircleInsightChange(event) {
 function selectCircleInsight(index) {
   if (index !== 0 && index !== 1) return
   if (circleInsightIndex.value === index) return
+  clearCircleScoreTooltip()
   circleInsightIndex.value = index
   if (index === 1) {
     rotateCircleScoreSchool()
@@ -3447,11 +4720,132 @@ function clearActiveCommunitySearch() {
   clearCommunitySearch()
 }
 
-function getExperienceExamCode(post = {}) {
-  const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
-  if (['Z001', 'Z002'].includes(explicitCode)) return explicitCode
+function selectCommunityPostSort(event) {
+  const selectedIndex = Number(event?.detail?.value)
+  const nextSort = communityPostSortOptions[selectedIndex]?.value
+  if (!nextSort) return
+  selectedCommunityPostSort.value = nextSort
+}
 
-  const category = String(post.category || '')
+function selectMentorSort(event) {
+  const selectedIndex = Number(event?.detail?.value)
+  const nextSort = mentorSortOptions[selectedIndex]?.value
+  if (!nextSort) return
+  selectedMentorSort.value = nextSort
+}
+
+function openMentorFilterSheet() {
+  mentorFilterDraft.value = { ...mentorFilters.value }
+  clearMentorFilterMotionTimers()
+  mentorFilterMounted.value = true
+  mentorFilterClosing.value = false
+  mentorFilterVisible.value = true
+}
+
+function closeMentorFilterSheet() {
+  if (!mentorFilterMounted.value || mentorFilterClosing.value) return
+  clearMentorFilterMotionTimers()
+  mentorFilterVisible.value = false
+  mentorFilterClosing.value = true
+  mentorFilterCloseTimer = setTimeout(() => {
+    mentorFilterMounted.value = false
+    mentorFilterClosing.value = false
+    mentorFilterCloseTimer = null
+  }, 260)
+}
+
+function clearMentorFilterMotionTimers() {
+  if (mentorFilterCloseTimer !== null) {
+    clearTimeout(mentorFilterCloseTimer)
+    mentorFilterCloseTimer = null
+  }
+}
+
+function resetMentorFilters() {
+  const emptyFilters = createDefaultMentorFilters()
+  mentorFilters.value = { ...emptyFilters }
+  mentorFilterDraft.value = { ...emptyFilters }
+}
+
+function applyMentorFilters() {
+  mentorFilters.value = { ...mentorFilterDraft.value }
+  closeMentorFilterSheet()
+}
+
+function toggleMentorFavoriteState(mentorId) {
+  mentorFavoriteIds.value = toggleStoredMentorFavorite(mentorId)
+}
+
+function openMentorDetail(mentor) {
+  if (!mentor?.id) return
+  uni.navigateTo({ url: `/pages/circle/mentor-detail?id=${encodeURIComponent(mentor.id)}` })
+}
+
+function beginMentorConsultation(mentor) {
+  if (!mentor?.id) return
+  const page = mentor.onlineStatus === 'online' ? 'mentor-consult-form' : 'mentor-booking'
+  const suffix = page === 'mentor-consult-form' ? '&mode=instant' : ''
+  uni.navigateTo({ url: `/pages/circle/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
+}
+
+function openMentorVerificationEntry() {
+  const verificationStatus = getMentorVerificationStatus()
+  const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
+  uni.navigateTo({ url: `/pages/circle/mentor-apply?mode=${mode}` })
+}
+
+function getCommunityPostTimestamp(post = {}) {
+  const value = post.createdAt || post.created_at || post.publishedAt || post.published_at || ''
+  const timestamp = Date.parse(value)
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function getCommunityPostHotScore(post = {}) {
+  const stats = post.stats || {}
+  const likes = Math.max(0, Number(stats.likes) || 0)
+  const comments = Math.max(0, Number(stats.comments) || 0)
+  const views = Math.max(0, Number(stats.views) || 0)
+  return likes * 6 + comments * 8 + Math.min(views, 1000) * 0.08
+}
+
+function getCommunityPostFeaturedScore(post = {}) {
+  const explicitlyFeatured = Boolean(post.isFeatured ?? post.is_featured ?? post.featured)
+  const mediaCount = Array.isArray(post.media) ? post.media.length : 0
+  const contentLength = String(post.content || post.summary || '').trim().length
+  return (explicitlyFeatured ? 1000000 : 0)
+    + Math.min(mediaCount, 3) * 16
+    + Math.min(Math.floor(contentLength / 30), 40)
+    + getCommunityPostHotScore(post)
+}
+
+function sortCommunityPosts(posts, sort) {
+  return posts
+    .map((post, index) => ({
+      post,
+      index,
+      timestamp: getCommunityPostTimestamp(post),
+      hotScore: getCommunityPostHotScore(post),
+      featuredScore: getCommunityPostFeaturedScore(post)
+    }))
+    .sort((left, right) => {
+      if (sort === 'hot') {
+        return right.hotScore - left.hotScore || right.timestamp - left.timestamp || left.index - right.index
+      }
+      if (sort === 'featured') {
+        return right.featuredScore - left.featuredScore || right.timestamp - left.timestamp || left.index - right.index
+      }
+      return right.timestamp - left.timestamp || left.index - right.index
+    })
+    .map((item) => item.post)
+}
+
+function getExperienceCategory(post = {}) {
+  const category = String(post.category || '').trim()
+  if (circleExperiencePostCategories.includes(category)) return category
+
+  const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
+  if (circleExperiencePostCategories.includes(explicitCode)) return explicitCode
+
   const text = `${post.title || ''} ${post.summary || ''}`.toUpperCase()
   if (['Z001', 'Z002'].includes(category)) return category
   if (category === 'Z002' || category === '数学基础' || text.includes('Z002')) return 'Z002'
@@ -3486,16 +4880,16 @@ function normalizeCommunityPost(post = {}) {
     .filter((comment) => comment.text)
 
   const postType = post.postType || post.post_type || 'chat'
-  const examCode = getExperienceExamCode(post)
+  const experienceCategory = getExperienceCategory(post)
   const category = postType === 'experience'
-    ? examCode
+    ? experienceCategory
     : getCommunityChatCategory(post)
 
   return {
     ...post,
     id: String(post.id || ''),
     postType,
-    examCode: postType === 'experience' ? examCode : '',
+    examCode: postType === 'experience' ? experienceCategory : '',
     category,
     author: post.author || '研友',
     avatar: post.avatar || '研',
@@ -3555,6 +4949,15 @@ function patchCommunityPost(postId, patch) {
   }
   persistCircleCommunityFeed('chat')
   persistCircleCommunityFeed('experience')
+}
+
+function patchCommunityCommentLike(commentId, patch) {
+  if (!commentId) return
+  communityComments.value = communityComments.value.map((comment) => (
+    comment.id === commentId
+      ? { ...comment, ...patch }
+      : comment
+  ))
 }
 
 function normalizeCircleCommunityPostType(postType) {
@@ -3929,7 +5332,17 @@ async function toggleCommunityLike(post) {
     return
   }
 
+  const previousLiked = Boolean(post.liked)
+  const previousLikeCount = Math.max(0, Number(post.stats?.likes) || 0)
+  const nextLiked = !previousLiked
+  const nextLikeCount = Math.max(0, previousLikeCount + (nextLiked ? 1 : -1))
+
   communityLikePostId.value = post.id
+  patchCommunityPost(post.id, {
+    liked: nextLiked,
+    stats: { likes: nextLikeCount }
+  })
+
   try {
     const response = await toggleCommunityPostLike(post.id)
     patchCommunityPost(post.id, {
@@ -3943,6 +5356,10 @@ async function toggleCommunityLike(post) {
       await loadCommunityPostLikes(post.id)
     }
   } catch (error) {
+    patchCommunityPost(post.id, {
+      liked: previousLiked,
+      stats: { likes: previousLikeCount }
+    })
     uni.showToast({ title: getSafeError(error, '点赞失败，请稍后重试'), icon: 'none' })
   } finally {
     communityLikePostId.value = ''
@@ -3957,19 +5374,29 @@ async function toggleCommunityCommentLike(comment) {
     return
   }
 
+  const currentComment = communityComments.value.find((item) => item.id === comment.id) || comment
+  const previousLiked = Boolean(currentComment.liked)
+  const previousLikeCount = Math.max(0, Number(currentComment.likeCount) || 0)
+  const nextLiked = !previousLiked
+  const nextLikeCount = Math.max(0, previousLikeCount + (nextLiked ? 1 : -1))
+
   communityCommentLikeId.value = comment.id
+  patchCommunityCommentLike(comment.id, {
+    liked: nextLiked,
+    likeCount: nextLikeCount
+  })
+
   try {
     const response = await toggleCommunityCommentLikeRequest(post.id, comment.id)
-    communityComments.value = communityComments.value.map((item) => (
-      item.id === comment.id
-        ? {
-            ...item,
-            liked: Boolean(response?.is_liked),
-            likeCount: Number(response?.like_count || 0)
-          }
-        : item
-    ))
+    patchCommunityCommentLike(comment.id, {
+      liked: Boolean(response?.is_liked),
+      likeCount: Number(response?.like_count || 0)
+    })
   } catch (error) {
+    patchCommunityCommentLike(comment.id, {
+      liked: previousLiked,
+      likeCount: previousLikeCount
+    })
     uni.showToast({ title: getSafeError(error, '评论点赞失败，请稍后重试'), icon: 'none' })
   } finally {
     communityCommentLikeId.value = ''
@@ -4026,7 +5453,15 @@ function formatCommunityCommentTime(value) {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
-function openCommunityPublishPage(postType = selectedCircleCommunityTab.value) {
+function openExperiencePublishPage() {
+  openCommunityPublishPage('experience')
+}
+
+function openChatPublishPage() {
+  openCommunityPublishPage('chat')
+}
+
+function openCommunityPublishPage(postType) {
   const now = Date.now()
   if (now - lastCommunityPublishNavigationAt < 700) return
   lastCommunityPublishNavigationAt = now
@@ -4040,7 +5475,13 @@ function openCommunityPublishPage(postType = selectedCircleCommunityTab.value) {
       uni.redirectTo({
         url,
         fail() {
-          uni.reLaunch({ url })
+          uni.reLaunch({
+            url,
+            fail() {
+              lastCommunityPublishNavigationAt = 0
+              uni.showToast({ title: '发布页打开失败，请重试', icon: 'none' })
+            }
+          })
         }
       })
     }
@@ -4052,6 +5493,11 @@ function selectCircleCommunityTab(tab) {
   selectedCircleCommunityTab.value = tab
   selectedCirclePost.value = null
   closeCommunityPost()
+  if (tab === 'mentor') {
+    mentorFavoriteIds.value = getMentorFavoriteIds()
+    resetCircleTabbar()
+    return
+  }
   const shouldRefreshTab = consumeCircleCommunityFeedRefresh(tab)
   hydrateCircleCommunityFeed(tab)
   loadCircleCommunityPosts(tab, { force: shouldRefreshTab })
@@ -4146,6 +5592,10 @@ function handleMenu(item) {
     openRecommendedTrainingSheet()
     return
   }
+  if (item.action === 'wallet') {
+    uni.navigateTo({ url: '/pages/wallet/index' })
+    return
+  }
   if (item.action === 'theme') {
     handleOpenThemeModal()
     return
@@ -4199,9 +5649,6 @@ async function refreshLearningData() {
   loadWrongQuestions()
   loadAbilityReport()
   loadLearningSummary()
-  if (activeTab.value === 'report') {
-    loadStudyAdvice()
-  }
 }
 
 async function loadWrongQuestions() {
@@ -4241,39 +5688,12 @@ async function loadLearningSummary() {
   }
 }
 
-async function loadStudyAdvice(options = {}) {
-  if (!isAuthed.value) {
-    studyAdvice.value = null
-    studyAdviceError.value = ''
-    studyAdviceExamCode.value = ''
-    return
-  }
-  if (studyAdviceLoading.value) return
-  if (!options.force && studyAdvice.value && studyAdviceExamCode.value === examCode.value) {
-    return
-  }
-
-  studyAdviceLoading.value = true
-  studyAdviceError.value = ''
-  try {
-    studyAdvice.value = await fetchStudyAdvice({ exam_code: examCode.value })
-    studyAdviceExamCode.value = examCode.value
-  } catch (error) {
-    studyAdvice.value = null
-    studyAdviceExamCode.value = ''
-    studyAdviceError.value = getSafeError(error, '学习建议生成失败，已显示本地建议')
-  } finally {
-    studyAdviceLoading.value = false
-  }
-}
-
 function openStudyAdviceDetail() {
   if (!isAuthed.value) {
     goLogin()
     return
   }
   showStudyAdviceDetail.value = true
-  loadStudyAdvice()
 }
 
 function closeStudyAdviceDetail() {
@@ -4355,17 +5775,44 @@ function getSubjectIcon(subject) {
   return iconMap[subject] || '📊'
 }
 
-function getSubjectStatus(accuracy) {
-  if (accuracy >= 80) return '表现优秀'
-  if (accuracy >= 70) return '表现良好'
-  if (accuracy >= 60) return '继续加油'
-  return '重点补强'
+function getMasteryLevel(accuracy) {
+  const value = Number(accuracy || 0)
+  if (value >= 80) return { key: 'good', label: '掌握良好', tone: 'green' }
+  if (value >= 60) return { key: 'improving', label: '稳步提升', tone: 'blue' }
+  if (value >= 40) return { key: 'weak', label: '待加强', tone: 'orange' }
+  return { key: 'critical', label: '重点补强', tone: 'red' }
 }
 
-function getSubjectTone(accuracy) {
-  if (accuracy >= 70) return 'blue'
-  if (accuracy >= 60) return 'orange'
-  return 'red'
+function getSubjectWeeklyChange(subject) {
+  const items = Array.isArray(learningSummary.value?.subject_weekly_changes)
+    ? learningSummary.value.subject_weekly_changes
+    : []
+  const item = items.find((entry) => entry?.subject === subject)
+  const change = item?.accuracy_change
+  if (change === null || change === undefined) {
+    return { text: '本周对比积累中', tone: 'muted' }
+  }
+  if (change > 0) return { text: `↑ ${Math.abs(Math.round(change))}% 较上周`, tone: 'up' }
+  if (change < 0) return { text: `↓ ${Math.abs(Math.round(change))}% 较上周`, tone: 'down' }
+  return { text: '— 与上周持平', tone: 'muted' }
+}
+
+function getChangeTone(change) {
+  if (change === null || change === undefined || Number(change) === 0) return 'muted'
+  return Number(change) > 0 ? 'up' : 'down'
+}
+
+function formatAccuracyChange(change) {
+  if (change === null || change === undefined || Number(change) === 0) return '—'
+  return `${Number(change) > 0 ? '↑' : '↓'}${Math.abs(Math.round(Number(change)))}%`
+}
+
+function getSubjectSuggestion(subject, weakTopic, accuracy) {
+  const focus = weakTopic || subject
+  if (accuracy < 40) return `建议优先复盘 ${focus} 错题，再完成 10 题专项训练。`
+  if (accuracy < 60) return `建议完成 20 题 ${focus} 专项巩固，及时复盘错题。`
+  if (accuracy < 80) return `建议保持 ${focus} 的训练节奏，逐步提升稳定性。`
+  return `当前掌握较好，建议穿插 ${focus} 练习保持题感。`
 }
 
 function getSafeError(error, fallback) {
@@ -4808,11 +6255,12 @@ function formatDateTime(value) {
 }
 
 .landing-glass-page .landing-focus-swiper {
-  border: 1rpx solid var(--circle-glass-border, rgba(255, 255, 255, 0.68));
-  box-shadow: 0 18rpx 40rpx rgba(30, 55, 56, 0.13);
+  box-shadow: none;
 }
 
 .landing-glass-page .landing-focus-slide {
+  border: 1rpx solid var(--circle-glass-border, rgba(255, 255, 255, 0.68));
+  box-shadow: none;
   -webkit-backdrop-filter: blur(16px) saturate(118%);
   backdrop-filter: blur(16px) saturate(118%);
 }
@@ -4941,7 +6389,7 @@ function formatDateTime(value) {
 
 
 /* 方案一：将研圈玻璃质感延展到首页、刷题、报告和我的的主卡片。 */
-.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask) {
+.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask):not(.mentor-filter-mask) {
   position: relative;
   z-index: 1;
 }
@@ -4950,7 +6398,6 @@ function formatDateTime(value) {
 .glass-theme-page:not(.landing-glass-page) .stats-card,
 .glass-theme-page:not(.landing-glass-page) :deep(.module-card),
 .glass-theme-page:not(.landing-glass-page) .mock-exam-card,
-.glass-theme-page:not(.landing-glass-page) .report-overview-card,
 .glass-theme-page:not(.landing-glass-page) .subject-report-card,
 .glass-theme-page:not(.landing-glass-page) .learning-advice-card,
 .glass-theme-page:not(.landing-glass-page) .account-card,
@@ -4999,7 +6446,6 @@ function formatDateTime(value) {
   .glass-theme-page:not(.landing-glass-page) .welcome-card,
   .glass-theme-page:not(.landing-glass-page) .stats-card,
   .glass-theme-page:not(.landing-glass-page) .mock-exam-card,
-  .glass-theme-page:not(.landing-glass-page) .report-overview-card,
   .glass-theme-page:not(.landing-glass-page) .subject-report-card,
   .glass-theme-page:not(.landing-glass-page) .learning-advice-card,
   .glass-theme-page:not(.landing-glass-page) .account-card,
@@ -5068,6 +6514,9 @@ function formatDateTime(value) {
 }
 
 .landing-focus-block {
+  --landing-focus-slide-gap: 8px;
+  --landing-focus-slide-offset: 4px;
+
   display: flex;
   flex-direction: column;
   flex: none;
@@ -5075,24 +6524,32 @@ function formatDateTime(value) {
 }
 
 .landing-focus-swiper {
+  width: calc(100% + var(--landing-focus-slide-gap));
   min-height: 0;
   height: clamp(240rpx, 21.5dvh, 320rpx);
   flex: none;
-  border-radius: 34rpx;
-  overflow: hidden;
-  box-shadow: 0 20rpx 44rpx rgba(31, 76, 145, 0.14);
+  margin-left: calc(0px - var(--landing-focus-slide-offset));
+}
+
+.landing-focus-swiper swiper-item,
+.landing-focus-swiper .landing-focus-slide {
+  box-sizing: border-box;
+  height: 100%;
 }
 
 .landing-focus-slide {
   position: relative;
   box-sizing: border-box;
-  width: 100%;
+  width: calc(100% - var(--landing-focus-slide-gap));
   height: 100%;
+  margin: 0 var(--landing-focus-slide-offset);
   padding: 28rpx;
+  border-radius: 34rpx;
   overflow: hidden;
   color: #ffffff;
   display: flex;
   align-items: stretch;
+  box-shadow: none;
 }
 
 .landing-focus-slide::before,
@@ -5742,7 +7199,9 @@ function formatDateTime(value) {
 }
 
 .circle-section-back-leave-active {
-  z-index: 2;
+  /* 返回总览时不保留离场页，避免它在首页上方短暂叠出。 */
+  z-index: 1;
+  visibility: hidden;
 }
 
 .circle-section-forward-enter-from {
@@ -6046,46 +7505,23 @@ function formatDateTime(value) {
 .circle-glass-page .circle-trend-card {
   -webkit-backdrop-filter: blur(18px) saturate(112%);
   backdrop-filter: blur(18px) saturate(112%);
-  animation: circle-overview-enter 360ms ease-out both;
 }
 
 .circle-glass-page .circle-entry {
   -webkit-backdrop-filter: blur(16px) saturate(108%);
   backdrop-filter: blur(16px) saturate(108%);
   transition: transform 180ms ease;
-  animation: circle-overview-enter 400ms ease-out both;
 }
 
 .circle-glass-page .circle-entry:active {
   transform: scale(0.98);
 }
 
-.circle-glass-page .circle-entry:nth-child(1) {
-  animation-delay: 60ms;
-}
-
-.circle-glass-page .circle-entry:nth-child(2) {
-  animation-delay: 110ms;
-}
-
-.circle-glass-page .circle-entry:nth-child(3) {
-  animation-delay: 160ms;
-}
-
-.circle-glass-page .circle-entry:nth-child(4) {
-  animation-delay: 210ms;
-}
-
-@keyframes circle-overview-enter {
-  from {
-    opacity: 0;
-    transform: translateY(12px);
-  }
-
-  to {
-    opacity: 1;
-    transform: translateY(0);
-  }
+.home-page.circle-glass-page :deep(.tab-active-indicator),
+.home-page.circle-glass-page :deep(.tab-icon),
+.home-page.circle-glass-page :deep(.tab-icon-image),
+.home-page.circle-glass-page :deep(.tab-label) {
+  transition: none;
 }
 
 @supports not (backdrop-filter: blur(1px)) {
@@ -6465,13 +7901,50 @@ function formatDateTime(value) {
   fill: #ffffff;
   stroke: #16786f;
   stroke-width: 3;
+  transition: stroke-width 160ms ease, fill 160ms ease;
 }
 
-.circle-score-value {
-  fill: #314240;
-  font-size: 12px;
-  font-weight: 700;
-  text-anchor: middle;
+.circle-score-point.is-active {
+  stroke-width: 4;
+}
+
+.circle-score-point-hit {
+  cursor: pointer;
+}
+
+.circle-score-point-hit-area {
+  fill: rgba(255, 255, 255, 0.001);
+  stroke: transparent;
+  pointer-events: all;
+}
+
+.circle-score-tooltip-layer {
+  position: absolute;
+  z-index: 3;
+  top: 0;
+  right: 0;
+  bottom: 17px;
+  left: 25px;
+  pointer-events: none;
+}
+
+.circle-score-tooltip {
+  position: absolute;
+  min-width: 58px;
+  height: 24px;
+  padding: 0 9px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transform: translate(-50%, -50%);
+  border-radius: 12px;
+  background: var(--gyt-primary, #3478f6);
+  fill: #ffffff;
+  color: #ffffff;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 750;
+  white-space: nowrap;
 }
 
 .circle-score-years {
@@ -6486,6 +7959,556 @@ function formatDateTime(value) {
   line-height: 1;
   font-weight: 500;
   text-align: center;
+}
+
+.circle-score-card[role='button'] {
+  cursor: pointer;
+  transition: transform 180ms ease;
+}
+
+.circle-score-card[role='button']:active {
+  transform: scale(var(--circle-glass-press, 0.98));
+}
+
+.scoreline-section {
+  gap: 20rpx;
+}
+
+.home-page.scoreline-browser-page {
+  display: flex;
+  min-height: 0;
+  height: 100vh;
+  height: 100dvh;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.home-page.scoreline-browser-page .circle-dashboard,
+.home-page.scoreline-browser-page .circle-view-stage,
+.home-page.scoreline-browser-page .circle-detail-page,
+.home-page.scoreline-browser-page .circle-scoreline-section,
+.home-page.scoreline-browser-page .scoreline-browser-layout {
+  min-height: 0;
+  flex: 1;
+}
+
+.home-page.scoreline-browser-page .circle-dashboard,
+.home-page.scoreline-browser-page .circle-view-stage {
+  display: flex;
+}
+
+.scoreline-search,
+.scoreline-select-control,
+.scoreline-results-frame,
+.scoreline-school-card,
+.scoreline-detail-card,
+.scoreline-load-more {
+  box-sizing: border-box;
+}
+
+.scoreline-search {
+  min-height: 80rpx;
+  padding: 0 20rpx;
+  border: 2rpx solid rgba(215, 229, 255, 0.9);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.78);
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  -webkit-backdrop-filter: blur(16px) saturate(116%);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+.scoreline-search-icon {
+  color: #637682;
+  font-size: 32rpx;
+  line-height: 1;
+}
+
+.scoreline-search-input {
+  min-width: 0;
+  flex: 1;
+  height: 76rpx;
+  color: #1d2d2b;
+  font-size: 26rpx;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.scoreline-search-placeholder {
+  color: #8b9a9b;
+  font-weight: 500;
+}
+
+.scoreline-search-clear {
+  width: 40rpx;
+  height: 40rpx;
+  min-width: 40rpx;
+  min-height: 40rpx;
+  margin: 0;
+  padding: 9rpx;
+  border: 0;
+  border-radius: 50%;
+  background: rgba(22, 120, 111, 0.1);
+  color: #16786f;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.scoreline-search-clear::after,
+.scoreline-results-reset::after,
+.scoreline-school-card::after,
+.scoreline-load-more::after {
+  border: 0;
+}
+
+.scoreline-browser-layout {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.scoreline-filter-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.scoreline-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+}
+
+.scoreline-select-control {
+  display: flex;
+  min-height: 66rpx;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10rpx;
+  padding: 0 16rpx;
+  overflow: hidden;
+  border: 2rpx solid rgba(215, 229, 255, 0.92);
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.78);
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  -webkit-backdrop-filter: blur(16px) saturate(116%);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+.scoreline-select:active .scoreline-select-control {
+  transform: scale(0.985);
+}
+
+.scoreline-select-name {
+  flex: 0 0 auto;
+  color: #637682;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 750;
+}
+
+.scoreline-select-value {
+  min-width: 0;
+  flex: 1;
+  color: var(--gyt-primary, #3478f6);
+  overflow: hidden;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 800;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreline-select-arrow-icon {
+  width: 18rpx;
+  height: 11rpx;
+  flex: 0 0 auto;
+  background: var(--gyt-primary, #3478f6);
+  -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+}
+
+.scoreline-school-card:active,
+.scoreline-load-more:active,
+.scoreline-results-reset:active {
+  transform: scale(0.985);
+}
+
+.scoreline-results-frame {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  overflow: hidden;
+  border: 2rpx solid rgba(215, 229, 255, 0.92);
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.82);
+  -webkit-backdrop-filter: blur(18px) saturate(116%);
+  backdrop-filter: blur(18px) saturate(116%);
+}
+
+.scoreline-results-heading {
+  display: flex;
+  min-height: 78rpx;
+  flex: 0 0 auto;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  padding: 15rpx 20rpx;
+  border-bottom: 2rpx solid rgba(103, 130, 132, 0.12);
+}
+
+.scoreline-results-heading-copy {
+  min-width: 0;
+}
+
+.scoreline-results-title,
+.scoreline-results-count {
+  display: block;
+}
+
+.scoreline-results-title {
+  color: #1c2423;
+  overflow: hidden;
+  font-size: 26rpx;
+  line-height: 1.25;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreline-results-count {
+  margin-top: 4rpx;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 19rpx;
+  line-height: 1.3;
+  font-weight: 750;
+}
+
+.scoreline-results-reset {
+  min-height: 44rpx;
+  margin: 0;
+  padding: 0 8rpx;
+  border: 0;
+  border-radius: 14rpx;
+  background: transparent;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 20rpx;
+  line-height: 44rpx;
+  font-weight: 750;
+  transition: transform 180ms ease;
+}
+
+.scoreline-results-scroll {
+  height: 0;
+  min-height: 0;
+  flex: 1;
+}
+
+.scoreline-results-scroll::-webkit-scrollbar,
+.scoreline-results-scroll ::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
+.scoreline-results-content {
+  min-height: 100%;
+  box-sizing: border-box;
+  padding: 16rpx 16rpx 24rpx;
+}
+
+.scoreline-school-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.scoreline-school-card {
+  width: 100%;
+  margin: 0;
+  padding: 22rpx;
+  border: 2rpx solid rgba(215, 229, 255, 0.92);
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, 0.82);
+  color: inherit;
+  text-align: left;
+  transition: transform 180ms ease, border-color 180ms ease, background-color 180ms ease;
+  -webkit-backdrop-filter: blur(16px) saturate(116%);
+  backdrop-filter: blur(16px) saturate(116%);
+}
+
+.scoreline-school-top {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.scoreline-school-copy {
+  min-width: 0;
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+}
+
+.scoreline-school-name {
+  color: #1c2423;
+  font-size: 28rpx;
+  line-height: 1.35;
+  font-weight: 800;
+  word-break: break-word;
+}
+
+.scoreline-school-meta {
+  margin-top: 7rpx;
+  color: #728284;
+  font-size: 20rpx;
+  line-height: 1.35;
+  font-weight: 600;
+}
+
+.scoreline-school-arrow {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 42rpx;
+  line-height: 0.9;
+  font-weight: 400;
+}
+
+.scoreline-year-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10rpx;
+  margin-top: 18rpx;
+}
+
+.scoreline-year-cell {
+  min-width: 0;
+  min-height: 78rpx;
+  padding: 12rpx;
+  border-radius: 18rpx;
+  background: rgba(240, 246, 253, 0.82);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 5rpx;
+}
+
+.scoreline-year-label {
+  color: #7c8a91;
+  font-size: 18rpx;
+  line-height: 1.1;
+  font-weight: 650;
+}
+
+.scoreline-year-value {
+  color: #16786f;
+  overflow: hidden;
+  font-size: 23rpx;
+  line-height: 1.15;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.scoreline-year-value.is-note {
+  color: #60716f;
+  font-size: 20rpx;
+}
+
+.scoreline-load-more {
+  min-height: 74rpx;
+  margin: 2rpx 0 0;
+  padding: 0 24rpx;
+  border: 2rpx solid rgba(215, 229, 255, 0.92);
+  border-radius: 22rpx;
+  background: rgba(255, 255, 255, 0.72);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22rpx;
+  line-height: 1.3;
+  font-weight: 750;
+  transition: transform 180ms ease;
+}
+
+.scoreline-detail-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 16rpx;
+}
+
+.scoreline-detail-source {
+  min-width: 0;
+  color: #728284;
+  font-size: 19rpx;
+  line-height: 1.3;
+  font-weight: 600;
+  text-align: right;
+}
+
+.scoreline-detail-card {
+  padding: 26rpx;
+  border: 2rpx solid rgba(215, 229, 255, 0.92);
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.84);
+  -webkit-backdrop-filter: blur(18px) saturate(116%);
+  backdrop-filter: blur(18px) saturate(116%);
+}
+
+.scoreline-detail-school-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.scoreline-detail-school {
+  color: #1c2423;
+  font-size: 34rpx;
+  line-height: 1.3;
+  font-weight: 850;
+  word-break: break-word;
+}
+
+.scoreline-detail-meta {
+  margin-top: 9rpx;
+  color: #728284;
+  font-size: 21rpx;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.scoreline-detail-region {
+  flex-shrink: 0;
+  padding: 9rpx 14rpx;
+  border-radius: 999rpx;
+  background: rgba(226, 244, 239, 0.84);
+  color: #16786f;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.scoreline-detail-chart {
+  margin-top: 26rpx;
+  padding-top: 22rpx;
+  border-top: 2rpx solid rgba(103, 130, 132, 0.12);
+}
+
+.scoreline-detail-chart-title {
+  color: #4f6260;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 750;
+}
+
+.scoreline-detail-chart-plot {
+  position: relative;
+  height: 230rpx;
+  margin-top: 12rpx;
+}
+
+.scoreline-detail-note {
+  margin-top: 24rpx;
+  padding: 18rpx;
+  border-radius: 20rpx;
+  background: rgba(240, 246, 253, 0.8);
+  color: #60716f;
+  font-size: 21rpx;
+  line-height: 1.55;
+  font-weight: 600;
+}
+
+.scoreline-history-list {
+  display: flex;
+  flex-direction: column;
+  margin-top: 26rpx;
+  border-top: 2rpx solid rgba(103, 130, 132, 0.12);
+}
+
+.scoreline-history-item {
+  padding: 21rpx 0;
+  border-bottom: 2rpx solid rgba(103, 130, 132, 0.1);
+}
+
+.scoreline-history-main {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 18rpx;
+}
+
+.scoreline-history-year {
+  color: #1d2d2b;
+  font-size: 24rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.scoreline-history-value {
+  color: #16786f;
+  font-size: 24rpx;
+  line-height: 1.25;
+  font-weight: 800;
+  text-align: right;
+}
+
+.scoreline-history-value.is-note {
+  color: #60716f;
+}
+
+.scoreline-history-copy {
+  display: block;
+  margin-top: 11rpx;
+  color: #6f7f81;
+  font-size: 20rpx;
+  line-height: 1.58;
+  font-weight: 550;
+  word-break: break-word;
+}
+
+.circle-glass-page .scoreline-search,
+.circle-glass-page .scoreline-select-control,
+.circle-glass-page .scoreline-results-frame,
+.circle-glass-page .scoreline-school-card,
+.circle-glass-page .scoreline-load-more,
+.circle-glass-page .scoreline-detail-card {
+  border-color: var(--circle-glass-border, rgba(255, 255, 255, 0.58));
+  background: var(--circle-glass-control, rgba(249, 252, 251, 0.52));
+}
+
+.circle-glass-page .scoreline-school-card,
+.circle-glass-page .scoreline-detail-card,
+.circle-glass-page .scoreline-results-frame {
+  background: var(--circle-glass-card, rgba(249, 252, 251, 0.72));
+}
+
+.circle-glass-page .scoreline-results-heading {
+  border-color: rgba(103, 130, 132, 0.12);
+}
+
+.circle-glass-page .scoreline-year-cell,
+.circle-glass-page .scoreline-detail-note {
+  background: rgba(235, 246, 243, 0.52);
+}
+
+@supports not (backdrop-filter: blur(1px)) {
+  .circle-glass-page .scoreline-search,
+  .circle-glass-page .scoreline-select-control,
+  .circle-glass-page .scoreline-results-frame,
+  .circle-glass-page .scoreline-school-card,
+  .circle-glass-page .scoreline-load-more,
+  .circle-glass-page .scoreline-detail-card {
+    background: #f9fbfa;
+  }
 }
 
 @media (hover: hover) {
@@ -6523,28 +8546,57 @@ function formatDateTime(value) {
 }
 
 .circle-detail-header {
-  min-height: 72rpx;
+  min-height: 76rpx;
   display: flex;
   align-items: center;
   justify-content: space-between;
 }
 
+.circle-detail-page--with-fixed-header {
+  padding-top: 88rpx;
+}
+
+.circle-detail-header--fixed {
+  position: fixed;
+  top: var(--status-bar-height, env(safe-area-inset-top));
+  right: 0;
+  left: 0;
+  z-index: 28;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 14rpx 16px;
+  box-sizing: border-box;
+  background: rgba(248, 250, 255, var(--circle-community-header-opacity, 0.2));
+  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--circle-community-header-shadow-opacity, 0));
+  -webkit-backdrop-filter: blur(18rpx);
+  backdrop-filter: blur(18rpx);
+  transition: background 180ms ease, box-shadow 180ms ease;
+}
+
+/* #ifdef MP-WEIXIN */
+.circle-detail-header--fixed {
+  top: var(--mp-page-content-top, 96px);
+}
+/* #endif */
+
 .circle-back-button,
 .circle-detail-header-spacer {
-  width: 64rpx;
-  height: 64rpx;
+  width: 76rpx;
+  height: 76rpx;
   flex-shrink: 0;
 }
 
 .circle-back-button {
   margin: 0;
   padding: 0;
-  border: 2rpx solid #e8edf5;
-  border-radius: 20rpx;
+  border: 0;
+  border-radius: 26rpx;
   background: #ffffff;
+  color: #172033;
   display: flex;
   align-items: center;
   justify-content: center;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
 }
 
 .circle-back-button::after {
@@ -6657,6 +8709,338 @@ function formatDateTime(value) {
 
 .experience-search-clear::after {
   border: 0;
+}
+
+.community-post-sort-picker {
+  display: block;
+  min-width: 116rpx;
+  flex: 0 0 auto;
+}
+
+.community-post-sort-control {
+  box-sizing: border-box;
+  min-height: 48rpx;
+  padding-left: 16rpx;
+  border-left: 2rpx solid rgba(22, 120, 111, 0.14);
+  color: #16786f;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10rpx;
+  font-size: 24rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  transition: transform 180ms ease, color 180ms ease;
+}
+
+.community-post-sort-arrow {
+  width: 0;
+  height: 0;
+  margin-top: 4rpx;
+  border-top: 9rpx solid currentColor;
+  border-right: 6rpx solid transparent;
+  border-left: 6rpx solid transparent;
+  opacity: 0.72;
+}
+
+.community-post-sort-picker:active .community-post-sort-control {
+  transform: scale(0.98);
+}
+
+.mentor-search .community-post-sort-picker {
+  min-width: 142rpx;
+}
+
+.mentor-search .mentor-sort-control {
+  border-left: 0;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 22rpx;
+}
+
+.mentor-filter-trigger,
+.mentor-empty-reset {
+  box-sizing: border-box;
+  margin: 0;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 999rpx;
+  background: rgba(237, 244, 255, 0.82);
+  color: var(--gyt-primary, #3478f6);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  font-size: 22rpx;
+  line-height: 1.2;
+  font-weight: 800;
+}
+
+.mentor-filter-trigger {
+  min-width: 116rpx;
+  min-height: 48rpx;
+  padding: 0 16rpx;
+  flex-shrink: 0;
+}
+
+.mentor-search-filter-trigger {
+  position: relative;
+  width: 102rpx;
+  min-width: 102rpx;
+  min-height: 56rpx;
+  padding: 0;
+  border: 0;
+  border-left: 2rpx solid rgba(52, 120, 246, 0.16);
+  border-radius: 0;
+  background: transparent;
+  flex: 0 0 102rpx;
+  gap: 0;
+  transition: background 160ms ease;
+}
+
+.mentor-search-filter-trigger.has-filters {
+  background: transparent;
+}
+
+.mentor-search-filter-trigger:active {
+  background: rgba(52, 120, 246, 0.06);
+}
+
+.mentor-filter-trigger::after,
+.mentor-empty-reset::after,
+.mentor-filter-sheet button::after {
+  border: 0;
+}
+
+.mentor-filter-trigger-icon {
+  width: 24rpx;
+  height: 22rpx;
+  display: inline-flex;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: space-between;
+  flex-shrink: 0;
+}
+
+.mentor-filter-trigger-icon view {
+  height: 3rpx;
+  border-radius: 999rpx;
+  background: currentColor;
+}
+
+.mentor-filter-trigger-icon view:nth-child(1) { width: 24rpx; }
+.mentor-filter-trigger-icon view:nth-child(2) { width: 17rpx; }
+.mentor-filter-trigger-icon view:nth-child(3) { width: 10rpx; }
+
+.mentor-filter-trigger-icon view::after {
+  border: 0;
+}
+
+.mentor-filter-trigger-count {
+  position: absolute;
+  top: 4rpx;
+  right: 8rpx;
+  min-width: 24rpx;
+  height: 24rpx;
+  padding: 0 4rpx;
+  border: 2rpx solid #ffffff;
+  border-radius: 999rpx;
+  background: var(--gyt-primary, #3478f6);
+  color: #ffffff;
+  font-size: 16rpx;
+  line-height: 20rpx;
+  font-weight: 850;
+  text-align: center;
+}
+
+.mentor-feed {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.mentor-empty-card {
+  align-items: flex-start;
+}
+
+.mentor-empty-reset {
+  margin-top: 18rpx;
+  min-height: 52rpx;
+  padding: 0 22rpx;
+}
+
+.mentor-filter-mask {
+  position: fixed;
+  z-index: 120;
+  inset: 0;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  padding: 36rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));
+  background: rgba(20, 38, 68, 0.32);
+}
+
+.mentor-filter-mask.is-visible {
+  animation: mentor-filter-mask-slide-in 200ms ease-out both;
+}
+
+.mentor-filter-mask.is-leaving {
+  animation: mentor-filter-mask-slide-out 180ms ease-in both;
+}
+
+.mentor-filter-sheet {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 720rpx;
+  max-height: min(1080rpx, 80vh);
+  overflow: hidden;
+  border: 2rpx solid rgba(255, 255, 255, 0.84);
+  border-radius: 34rpx;
+  background: rgba(250, 253, 255, 0.98);
+  box-shadow: 0 -18rpx 60rpx rgba(24, 58, 113, 0.16);
+  display: flex;
+  flex-direction: column;
+  will-change: transform;
+}
+
+.mentor-filter-mask.is-visible .mentor-filter-sheet {
+  animation: mentor-filter-sheet-slide-in 300ms cubic-bezier(0.22, 0.9, 0.32, 1) both;
+}
+
+.mentor-filter-mask.is-leaving .mentor-filter-sheet {
+  animation: mentor-filter-sheet-slide-out 240ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+
+@keyframes mentor-filter-mask-slide-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes mentor-filter-mask-slide-out {
+  from { opacity: 1; }
+  to { opacity: 0; }
+}
+
+@keyframes mentor-filter-sheet-slide-in {
+  from { transform: translate3d(0, 120%, 0); }
+  to { transform: translate3d(0, 0, 0); }
+}
+
+@keyframes mentor-filter-sheet-slide-out {
+  from { transform: translate3d(0, 0, 0); }
+  to { transform: translate3d(0, 120%, 0); }
+}
+
+.mentor-filter-sheet-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  padding: 30rpx 30rpx 18rpx;
+}
+
+.mentor-filter-sheet-title {
+  color: #17233a;
+  font-size: 31rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+.mentor-filter-sheet-close {
+  width: 52rpx;
+  height: 52rpx;
+  min-width: 52rpx;
+  min-height: 52rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #edf4ff;
+  color: #6b85b5;
+  font-size: 34rpx;
+  line-height: 1;
+}
+
+.mentor-filter-sheet-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.mentor-filter-sheet-body {
+  padding: 0 30rpx 20rpx;
+}
+
+.mentor-filter-field + .mentor-filter-field {
+  margin-top: 28rpx;
+}
+
+.mentor-filter-field-label {
+  margin-bottom: 14rpx;
+  color: #2c3b55;
+  font-size: 24rpx;
+  line-height: 1.25;
+  font-weight: 850;
+}
+
+.mentor-filter-option-row button {
+  min-height: 48rpx;
+  margin: 0;
+  padding: 0 16rpx;
+  border: 2rpx solid #e1eafa;
+  border-radius: 14rpx;
+  background: #fff;
+  color: #67768e;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 21rpx;
+  line-height: 1.2;
+  font-weight: 700;
+}
+
+.mentor-filter-option-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10rpx;
+}
+
+.mentor-filter-option-row button.active {
+  border-color: #b8d1ff;
+  background: #edf4ff;
+  color: var(--gyt-primary, #3478f6);
+}
+
+.mentor-filter-sheet-actions {
+  display: grid;
+  grid-template-columns: 1fr 1.6fr;
+  gap: 14rpx;
+  padding: 20rpx 30rpx calc(24rpx + env(safe-area-inset-bottom));
+  border-top: 2rpx solid #edf1f8;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.mentor-filter-reset-button,
+.mentor-filter-confirm-button {
+  min-height: 76rpx;
+  margin: 0;
+  border-radius: 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 24rpx;
+  line-height: 1.2;
+  font-weight: 850;
+}
+
+.mentor-filter-reset-button {
+  border: 2rpx solid #d8e5fb;
+  background: #f7faff;
+  color: #657a9d;
+}
+
+.mentor-filter-confirm-button {
+  border: 2rpx solid var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary, #3478f6);
+  color: #fff;
+  box-shadow: 0 10rpx 24rpx rgba(52, 120, 246, 0.2);
 }
 
 .experience-filter-scroll {
@@ -6899,7 +9283,7 @@ function formatDateTime(value) {
 
 .circle-community-tabs {
   display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
+  grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 8rpx;
   padding: 8rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.74);
@@ -6911,9 +9295,10 @@ function formatDateTime(value) {
 }
 
 .circle-community-tab {
+  min-width: 0;
   min-height: 64rpx;
   margin: 0;
-  padding: 0 16rpx;
+  padding: 0 8rpx;
   border: 0;
   border-radius: 18rpx;
   background: transparent;
@@ -6921,7 +9306,7 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 25rpx;
+  font-size: 22rpx;
   line-height: 1.2;
   font-weight: 800;
   transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
@@ -7262,7 +9647,7 @@ function formatDateTime(value) {
 }
 
 .community-post-action.pending {
-  opacity: 0.56;
+  pointer-events: none;
 }
 
 .community-post-action:active {
@@ -7277,7 +9662,7 @@ function formatDateTime(value) {
 
 .community-publish-button {
   position: fixed;
-  z-index: 24;
+  z-index: 30;
   right: 20px;
   bottom: calc(env(safe-area-inset-bottom) + 22px);
   width: 56px;
@@ -7293,6 +9678,9 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
+  pointer-events: auto;
+  touch-action: manipulation;
+  -webkit-tap-highlight-color: transparent;
   transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
 }
 
@@ -7808,11 +10196,24 @@ function formatDateTime(value) {
   background: #eb5964;
   -webkit-mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
   mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
+  animation: community-comment-like-pop 220ms ease-out;
   transform: scale(1.06);
 }
 
 .community-reader-comment-like.pending {
-  opacity: 0.58;
+  pointer-events: none;
+}
+
+@keyframes community-comment-like-pop {
+  0% {
+    transform: scale(0.88);
+  }
+  68% {
+    transform: scale(1.16);
+  }
+  100% {
+    transform: scale(1.06);
+  }
 }
 
 .community-reader-actions {
@@ -7891,7 +10292,7 @@ function formatDateTime(value) {
 }
 
 .community-reader-action.pending {
-  opacity: 0.56;
+  pointer-events: none;
 }
 
 .community-reader-actions button:active,
@@ -8084,7 +10485,7 @@ function formatDateTime(value) {
 }
 
 .community-detail-like.pending {
-  opacity: 0.56;
+  pointer-events: none;
 }
 
 .community-detail-comments-entry {
@@ -9320,153 +11721,364 @@ function formatDateTime(value) {
   flex: 0 0 74rpx;
 }
 
-.report-overview-card,
+.report-empty-card,
+.report-diagnosis-card,
+.report-trend-card,
+.weekly-breakthrough-card,
+.today-training-card {
+  box-sizing: border-box;
+  border: 2rpx solid #e2ebfa;
+  border-radius: 28rpx;
+  background: rgba(255, 255, 255, 0.97);
+  box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
+}
+
+.report-empty-card {
+  padding: 44rpx 30rpx;
+  text-align: center;
+}
+
+.report-empty-icon,
+.report-diagnosis-icon,
+.today-training-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--gyt-primary, #1677ff);
+  background: var(--gyt-primary-soft, #eef5ff);
+}
+
+.report-empty-icon {
+  width: 72rpx;
+  height: 72rpx;
+  border-radius: 24rpx;
+  font-size: 34rpx;
+  font-weight: 950;
+}
+
+.report-empty-title {
+  margin-top: 18rpx;
+  color: #101828;
+  font-size: 29rpx;
+  font-weight: 950;
+}
+
+.report-empty-copy {
+  margin: 12rpx auto 0;
+  max-width: 520rpx;
+  color: #7b879a;
+  font-size: 22rpx;
+  line-height: 1.55;
+  font-weight: 650;
+}
+
+.report-empty-action {
+  min-width: 280rpx;
+  min-height: 70rpx;
+  margin-top: 24rpx;
+  border: 0;
+  border-radius: 20rpx;
+  background: var(--gyt-primary, #1677ff);
+  color: #fff;
+  font-size: 24rpx;
+  font-weight: 850;
+  box-shadow: 0 12rpx 24rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
+}
+
+.report-empty-action::after,
+.subject-report-action::after,
+.advice-task-action::after {
+  border: 0;
+}
+
+.report-diagnosis-card {
+  padding: 27rpx 24rpx 23rpx;
+  background:
+    radial-gradient(circle at 90% 5%, var(--gyt-primary-shadow, rgba(22, 119, 255, 0.13)), transparent 30%),
+    rgba(255, 255, 255, 0.97);
+}
+
+.report-card-heading {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.report-card-title {
+  color: #101828;
+  font-size: 29rpx;
+  line-height: 1.32;
+  font-weight: 950;
+}
+
+.report-card-subtitle {
+  margin-top: 7rpx;
+  color: #8a95a8;
+  font-size: 20rpx;
+  line-height: 1.4;
+  font-weight: 650;
+}
+
+.report-diagnosis-icon,
+.today-training-icon {
+  width: 52rpx;
+  height: 52rpx;
+  flex: 0 0 52rpx;
+  border-radius: 17rpx;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.diagnosis-copy {
+  margin-top: 20rpx;
+  color: #40506b;
+  font-size: 23rpx;
+  line-height: 1.56;
+  font-weight: 700;
+}
+
+.diagnosis-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  margin-top: 22rpx;
+  padding: 18rpx 8rpx;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.86);
+  box-shadow: inset 0 0 0 2rpx rgba(228, 236, 248, 0.86);
+}
+
+.diagnosis-metric {
+  min-width: 0;
+  padding: 0 10rpx;
+  border-right: 2rpx solid #e8eef7;
+  text-align: center;
+}
+
+.diagnosis-metric:last-child {
+  border-right: 0;
+}
+
+.diagnosis-metric-value {
+  color: var(--gyt-primary, #1677ff);
+  font-size: 27rpx;
+  line-height: 1.16;
+  font-weight: 950;
+  white-space: nowrap;
+}
+
+.diagnosis-metric-value.green,
+.breakthrough-score.green {
+  color: #1b9c67;
+}
+
+.diagnosis-metric-value.orange,
+.breakthrough-score.orange {
+  color: #d88418;
+}
+
+.diagnosis-metric-value.red,
+.breakthrough-score.red {
+  color: #df5a5a;
+}
+
+.diagnosis-metric-value.up {
+  color: #20a06a;
+}
+
+.diagnosis-metric-value.down {
+  color: #df5a5a;
+}
+
+.diagnosis-metric-value.muted {
+  color: #8b98ad;
+}
+
+.diagnosis-metric-label {
+  margin-top: 8rpx;
+  overflow: hidden;
+  color: #8a95a8;
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diagnosis-footnote {
+  margin-top: 16rpx;
+  color: #7c8aa0;
+  font-size: 19rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.report-trend-card,
+.weekly-breakthrough-card,
+.today-training-card {
+  padding: 25rpx 24rpx;
+}
+
+.trend-weekly-badge {
+  padding: 8rpx 13rpx;
+  border-radius: 999rpx;
+  background: #eef5ff;
+  color: var(--gyt-primary, #1677ff);
+  font-size: 19rpx;
+  line-height: 1.2;
+  font-weight: 850;
+  white-space: nowrap;
+}
+
+.trend-weekly-badge.up {
+  background: #ecfaf3;
+  color: #199664;
+}
+
+.trend-weekly-badge.down {
+  background: #fff1f2;
+  color: #dc5a63;
+}
+
+.trend-weekly-badge.muted {
+  background: #f0f4fa;
+  color: #8090a7;
+}
+
+.trend-chart-wrap {
+  height: 188rpx;
+  margin-top: 16rpx;
+  padding: 8rpx 2rpx 0;
+}
+
+.trend-chart {
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.trend-grid-line {
+  stroke: #e9eef7;
+  stroke-width: 1.5;
+}
+
+.trend-area-path {
+  fill: var(--gyt-primary-soft, #eef5ff);
+  opacity: 0.78;
+}
+
+.trend-line-path {
+  fill: none;
+  stroke: var(--gyt-primary, #1677ff);
+  stroke-width: 4;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.trend-point {
+  fill: #fff;
+  stroke: var(--gyt-primary, #1677ff);
+  stroke-width: 3;
+}
+
+.trend-axis-labels {
+  display: grid;
+  grid-template-columns: repeat(7, minmax(0, 1fr));
+  margin-top: 5rpx;
+  color: #97a4b6;
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 650;
+  text-align: center;
+}
+
+.trend-conclusion {
+  margin-top: 18rpx;
+  padding: 14rpx 16rpx;
+  border-radius: 16rpx;
+  background: #f0f5ff;
+  color: var(--gyt-primary, #1677ff);
+  font-size: 21rpx;
+  line-height: 1.45;
+  font-weight: 800;
+}
+
+.trend-conclusion.up {
+  background: #edfaf3;
+  color: #198f61;
+}
+
+.trend-conclusion.down {
+  background: #fff2f3;
+  color: #d2555f;
+}
+
+.trend-conclusion.muted {
+  background: #f2f5f9;
+  color: #728198;
+}
+
+.trend-unlock-state {
+  margin-top: 20rpx;
+  padding: 26rpx 20rpx;
+  border: 2rpx dashed #d7e5fb;
+  border-radius: 20rpx;
+  background: #fafcff;
+}
+
+.trend-unlock-title {
+  color: #4b5f7e;
+  font-size: 23rpx;
+  line-height: 1.5;
+  font-weight: 850;
+}
+
+.trend-unlock-meta {
+  margin-top: 12rpx;
+  color: #8a99ad;
+  font-size: 19rpx;
+  font-weight: 700;
+}
+
+.trend-unlock-track {
+  height: 9rpx;
+  margin-top: 10rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: #e7edf7;
+}
+
+.trend-unlock-track view {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gyt-primary-gradient, linear-gradient(90deg, #1677ff, #63a4ff));
+}
+
+.report-section-heading {
+  padding: 2rpx 6rpx 0;
+}
+
+.report-section-title {
+  color: #1e2b42;
+  font-size: 29rpx;
+  line-height: 1.25;
+  font-weight: 950;
+}
+
+.report-section-subtitle {
+  margin-top: 7rpx;
+  color: #8a95a8;
+  font-size: 20rpx;
+  font-weight: 650;
+}
+
 .subject-report-card,
 .learning-advice-card {
   border: 2rpx solid #e7eefb;
   border-radius: 28rpx;
   background: rgba(255, 255, 255, 0.96);
   box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
-}
-
-.report-overview-card {
-  position: relative;
-  overflow: hidden;
-  padding: 28rpx 24rpx 22rpx;
-  background: var(
-    --gyt-panel-bg,
-    radial-gradient(circle at 86% 10%, var(--gyt-primary-shadow), transparent 30%),
-    linear-gradient(135deg, #ffffff 0%, #eef6ff 100%)
-  );
-}
-
-.overview-copy {
-  position: relative;
-  z-index: 1;
-}
-
-.overview-title-row {
-  display: flex;
-  align-items: center;
-  gap: 8rpx;
-}
-
-.overview-title {
-  color: #1f2a44;
-  font-size: 28rpx;
-  font-weight: 900;
-}
-
-.overview-info {
-  width: 28rpx;
-  height: 28rpx;
-  border-radius: 50%;
-  border: 2rpx solid #cbd5e1;
-  color: #98a2b3;
-  text-align: center;
-  font-size: 18rpx;
-  line-height: 25rpx;
-  font-weight: 800;
-}
-
-.overview-subtitle {
-  margin-top: 12rpx;
-  color: #6b778d;
-  font-size: 24rpx;
-  line-height: 1.5;
-  font-weight: 600;
-}
-
-.overview-art {
-  position: absolute;
-  right: 20rpx;
-  top: 20rpx;
-  width: 106rpx;
-  height: 106rpx;
-  border-radius: 30rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: rgba(255, 255, 255, 0.72);
-  color: var(--gyt-primary, #1677ff);
-  font-size: 56rpx;
-  transform: rotate(-5deg);
-  box-shadow: 0 16rpx 34rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.12));
-}
-
-.overview-metrics {
-  position: relative;
-  z-index: 1;
-  margin-top: 26rpx;
-  padding: 24rpx 10rpx;
-  border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.94);
-  display: flex;
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, 0.07);
-}
-
-.overview-metric {
-  flex: 1;
-  min-width: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 14rpx;
-  border-right: 2rpx solid #e8eef7;
-}
-
-.overview-metric:last-child {
-  border-right: 0;
-}
-
-.metric-icon {
-  width: 56rpx;
-  height: 56rpx;
-  border-radius: 18rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--gyt-primary, #1677ff);
-  background: var(--gyt-primary-soft, #eef5ff);
-  font-size: 28rpx;
-  font-weight: 900;
-}
-
-.metric-icon.green {
-  color: #16a34a;
-  background: #eefbf3;
-}
-
-.metric-copy {
-  min-width: 0;
-}
-
-.metric-label {
-  color: #8a95a8;
-  font-size: 20rpx;
-  font-weight: 700;
-}
-
-.metric-value {
-  margin-top: 4rpx;
-  color: var(--gyt-primary, #1677ff);
-  font-size: 38rpx;
-  line-height: 1;
-  font-weight: 950;
-}
-
-.metric-value text {
-  margin-left: 4rpx;
-  font-size: 20rpx;
-  font-weight: 800;
-}
-
-.overview-trend {
-  margin-top: 16rpx;
-  color: #16a34a;
-  text-align: center;
-  font-size: 21rpx;
-  font-weight: 800;
 }
 
 .subject-report-list {
@@ -9478,7 +12090,7 @@ function formatDateTime(value) {
 .subject-report-card {
   padding: 24rpx;
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 22rpx;
 }
 
@@ -9501,6 +12113,11 @@ function formatDateTime(value) {
   box-shadow: inset 0 0 0 8rpx #fff7ed;
 }
 
+.ring-wrap.green {
+  border-color: #27a778;
+  box-shadow: inset 0 0 0 8rpx #ecfaf3;
+}
+
 .ring-wrap.red {
   border-color: #ef4444;
   box-shadow: inset 0 0 0 8rpx #fff1f2;
@@ -9515,6 +12132,10 @@ function formatDateTime(value) {
 
 .ring-wrap.orange .ring-score {
   color: #f59e0b;
+}
+
+.ring-wrap.green .ring-score {
+  color: #209768;
 }
 
 .ring-wrap.red .ring-score {
@@ -9585,6 +12206,11 @@ function formatDateTime(value) {
   background: #fff7ed;
 }
 
+.subject-status.green {
+  color: #198f61;
+  background: #ecfaf3;
+}
+
 .subject-status.red {
   color: #dc2626;
   background: #fff1f2;
@@ -9611,6 +12237,34 @@ function formatDateTime(value) {
   font-weight: 700;
 }
 
+.subject-count-row {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12rpx;
+}
+
+.subject-weekly-change {
+  padding-bottom: 4rpx;
+  color: #8a95a8;
+  font-size: 18rpx;
+  line-height: 1.3;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.subject-weekly-change.up {
+  color: #209768;
+}
+
+.subject-weekly-change.down {
+  color: #dc5a63;
+}
+
+.subject-weekly-change.muted {
+  color: #8b98aa;
+}
+
 .progress-track {
   margin-top: 16rpx;
   height: 8rpx;
@@ -9629,15 +12283,129 @@ function formatDateTime(value) {
   background: linear-gradient(90deg, #f59e0b, #fbbf24);
 }
 
+.progress-fill.green {
+  background: linear-gradient(90deg, #27a778, #5fc99b);
+}
+
 .progress-fill.red {
   background: linear-gradient(90deg, #ef4444, #fb7185);
 }
 
-.subject-trend {
+.subject-weakness {
+  display: flex;
+  align-items: baseline;
+  gap: 8rpx;
   margin-top: 12rpx;
+  color: #8a95a8;
+  font-size: 19rpx;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.subject-weakness text:last-child {
+  min-width: 0;
+  color: #58677f;
+  font-weight: 850;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subject-trend {
+  margin-top: 8rpx;
   color: #667085;
-  font-size: 22rpx;
+  font-size: 20rpx;
   line-height: 1.45;
+}
+
+.subject-report-action,
+.advice-task-action {
+  width: auto;
+  min-height: 42rpx;
+  margin: 10rpx 0 0;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: var(--gyt-primary, #1677ff);
+  font-size: 20rpx;
+  line-height: 1.35;
+  font-weight: 900;
+  text-align: left;
+}
+
+.subject-report-action::after,
+.advice-task-action::after {
+  border: 0;
+}
+
+.subject-report-action text,
+.advice-task-action text {
+  margin-left: 4rpx;
+  font-size: 25rpx;
+}
+
+.weekly-breakthrough-card {
+  padding-bottom: 14rpx;
+}
+
+.breakthrough-list {
+  margin-top: 16rpx;
+}
+
+.breakthrough-item {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 16rpx 0;
+  border-bottom: 2rpx solid #edf1f7;
+}
+
+.breakthrough-item:last-child {
+  border-bottom: 0;
+}
+
+.breakthrough-rank {
+  width: 40rpx;
+  height: 40rpx;
+  flex: 0 0 40rpx;
+  border-radius: 14rpx;
+  background: #eef5ff;
+  color: var(--gyt-primary, #1677ff);
+  text-align: center;
+  font-size: 21rpx;
+  line-height: 40rpx;
+  font-weight: 900;
+}
+
+.breakthrough-main {
+  min-width: 0;
+  flex: 1;
+}
+
+.breakthrough-title {
+  overflow: hidden;
+  color: #35445c;
+  font-size: 22rpx;
+  line-height: 1.35;
+  font-weight: 850;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.breakthrough-meta {
+  margin-top: 5rpx;
+  color: #96a1b1;
+  font-size: 18rpx;
+  line-height: 1.3;
+  font-weight: 650;
+}
+
+.breakthrough-score {
+  flex: 0 0 auto;
+  color: var(--gyt-primary, #1677ff);
+  font-size: 25rpx;
+  line-height: 1;
+  font-weight: 950;
 }
 
 .learning-advice-card {
@@ -9709,6 +12477,59 @@ function formatDateTime(value) {
   gap: 12rpx;
 }
 
+.advice-task-list {
+  position: relative;
+  z-index: 1;
+  margin-top: 18rpx;
+  display: flex;
+  flex-direction: column;
+}
+
+.advice-task-item {
+  padding: 18rpx 0;
+  border-bottom: 2rpx solid #edf1f7;
+}
+
+.advice-task-item:first-child {
+  padding-top: 0;
+}
+
+.advice-task-item:last-child {
+  padding-bottom: 0;
+  border-bottom: 0;
+}
+
+.advice-task-index {
+  color: var(--gyt-primary, #1677ff);
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.advice-task-title {
+  margin-top: 8rpx;
+  color: #24344e;
+  font-size: 24rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.advice-task-meta {
+  margin-top: 6rpx;
+  color: #7f8da1;
+  font-size: 19rpx;
+  line-height: 1.3;
+  font-weight: 700;
+}
+
+.advice-task-desc {
+  margin-top: 8rpx;
+  color: #64738b;
+  font-size: 20rpx;
+  line-height: 1.5;
+  font-weight: 650;
+}
+
 .advice-item {
   display: flex;
   align-items: flex-start;
@@ -9768,6 +12589,29 @@ function formatDateTime(value) {
   font-size: 26rpx;
   font-weight: 900;
   box-shadow: 0 16rpx 28rpx var(--gyt-primary-shadow, rgba(22, 119, 255, 0.18));
+}
+
+.today-training-card {
+  background:
+    radial-gradient(circle at 90% 12%, var(--gyt-primary-shadow, rgba(22, 119, 255, 0.13)), transparent 31%),
+    rgba(255, 255, 255, 0.97);
+}
+
+.today-training-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 9rpx;
+  margin-top: 20rpx;
+}
+
+.today-training-list text {
+  padding: 10rpx 13rpx;
+  border-radius: 14rpx;
+  background: var(--gyt-primary-soft, #eef5ff);
+  color: #48628e;
+  font-size: 20rpx;
+  line-height: 1.3;
+  font-weight: 800;
 }
 
 .training-sheet-mask {
@@ -11875,6 +14719,30 @@ function formatDateTime(value) {
   display: block;
 }
 
+.menu-icon.wallet-icon {
+  font-size: 0;
+}
+
+.menu-icon.wallet-icon::before {
+  content: '';
+  position: absolute;
+  width: 33rpx;
+  height: 24rpx;
+  border: 3rpx solid currentColor;
+  border-radius: 8rpx;
+  box-sizing: border-box;
+}
+
+.menu-icon.wallet-icon::after {
+  content: '';
+  position: absolute;
+  right: 11rpx;
+  width: 9rpx;
+  height: 9rpx;
+  border-radius: 50%;
+  background: currentColor;
+}
+
 .menu-icon.green {
   background: var(--gyt-primary-soft, #edf4ff);
   color: var(--gyt-primary, #1677ff);
@@ -12005,12 +14873,12 @@ function formatDateTime(value) {
 }
 
 .circle-glass-page .circle-back-button {
-  border: 1px solid var(--circle-glass-border, rgba(255, 255, 255, 0.58));
-  border-radius: 20px;
-  background: rgba(255, 255, 255, 0.34);
-  box-shadow: 0 8px 20px rgba(30, 55, 56, 0.1);
-  -webkit-backdrop-filter: blur(18px) saturate(120%);
-  backdrop-filter: blur(18px) saturate(120%);
+  border: 0;
+  border-radius: 26rpx;
+  background: #ffffff;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
   transition: transform 180ms ease, background-color 180ms ease;
 }
 
@@ -12033,6 +14901,11 @@ function formatDateTime(value) {
 
 .circle-glass-page .experience-search-clear {
   background: rgba(22, 120, 111, 0.1);
+  color: #16786f;
+}
+
+.circle-glass-page .community-post-sort-control {
+  border-color: rgba(22, 120, 111, 0.14);
   color: #16786f;
 }
 
@@ -12111,7 +14984,6 @@ function formatDateTime(value) {
 }
 
 @supports not (backdrop-filter: blur(1px)) {
-  .circle-glass-page .circle-back-button,
   .circle-glass-page .experience-search,
   .circle-glass-page .circle-community-tabs,
   .circle-glass-page .community-filter-chip,
@@ -12285,6 +15157,12 @@ function formatDateTime(value) {
 .home-page.circle-glass-page.circle-themed-page .experience-search,
 .home-page.circle-glass-page.circle-themed-page .circle-community-tabs,
 .home-page.circle-glass-page.circle-themed-page .community-filter-chip,
+.home-page.circle-glass-page.circle-themed-page .scoreline-search,
+.home-page.circle-glass-page.circle-themed-page .scoreline-select-control,
+.home-page.circle-glass-page.circle-themed-page .scoreline-results-frame,
+.home-page.circle-glass-page.circle-themed-page .scoreline-school-card,
+.home-page.circle-glass-page.circle-themed-page .scoreline-load-more,
+.home-page.circle-glass-page.circle-themed-page .scoreline-detail-card,
 .home-page.circle-glass-page.circle-themed-page .experience-filter-chip,
 .home-page.circle-glass-page.circle-themed-page .material-subject-chip,
 .home-page.circle-glass-page.circle-themed-page .material-action,
@@ -12293,6 +15171,14 @@ function formatDateTime(value) {
   border-color: var(--gyt-primary-border, #d7e5ff);
   background: var(--gyt-panel-bg, #ffffff);
   color: #667085;
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-back-button {
+  border: 0;
+  border-radius: 26rpx;
+  background: #ffffff;
+  color: #172033;
+  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
 }
 
 .home-page.circle-glass-page.circle-themed-page .circle-community-tab.active,
@@ -12305,7 +15191,12 @@ function formatDateTime(value) {
 }
 
 .home-page.circle-glass-page.circle-themed-page .experience-search-clear,
+.home-page.circle-glass-page.circle-themed-page .community-post-sort-control,
 .home-page.circle-glass-page.circle-themed-page .circle-section-count,
+.home-page.circle-glass-page.circle-themed-page .scoreline-select-value,
+.home-page.circle-glass-page.circle-themed-page .scoreline-select-arrow-icon,
+.home-page.circle-glass-page.circle-themed-page .scoreline-results-count,
+.home-page.circle-glass-page.circle-themed-page .scoreline-results-reset,
 .home-page.circle-glass-page.circle-themed-page .material-action,
 .home-page.circle-glass-page.circle-themed-page .circle-post-close,
 .home-page.circle-glass-page.circle-themed-page .circle-post-action-row button {

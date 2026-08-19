@@ -77,82 +77,84 @@
       </view>
     </view>
 
-    <view v-if="filterPanelVisible" class="filter-mask" @tap="closeFilterPanel">
-      <view class="filter-panel" @tap.stop>
-        <view class="sheet-handle"></view>
-        <view class="sheet-head">
-          <view>
-            <view class="sheet-title">筛选练习记录</view>
+    <transition name="history-filter-sheet">
+      <view v-if="filterPanelVisible" class="filter-mask" @tap="closeFilterPanel">
+        <view class="filter-panel" @tap.stop>
+          <view class="sheet-handle"></view>
+          <view class="sheet-head">
+            <view>
+              <view class="sheet-title">筛选练习记录</view>
+            </view>
+            <view class="sheet-close" aria-label="关闭" @tap="closeFilterPanel"><CloseIcon /></view>
           </view>
-          <view class="sheet-close" aria-label="关闭" @tap="closeFilterPanel"><CloseIcon /></view>
-        </view>
 
-        <view class="filter-section">
-          <view class="filter-label">答题结果</view>
-          <view class="chip-grid three">
-            <button
-              v-for="item in filters"
-              :key="`status-${item.key}`"
-              class="filter-chip"
-              :class="{ active: activeFilter === item.key }"
-              @tap="changeFilter(item.key)"
-            >
-              {{ item.label }}
-            </button>
+          <view class="filter-section">
+            <view class="filter-label">答题结果</view>
+            <view class="chip-grid three">
+              <button
+                v-for="item in filters"
+                :key="`status-${item.key}`"
+                class="filter-chip"
+                :class="{ active: activeFilter === item.key }"
+                @tap="changeFilter(item.key)"
+              >
+                {{ item.label }}
+              </button>
+            </view>
           </view>
-        </view>
 
-        <view class="filter-section">
-          <view class="filter-label">科目</view>
-          <view class="chip-grid">
-            <button
-              v-for="subject in subjectOptions"
-              :key="`subject-${subject.value}`"
-              class="filter-chip"
-              :class="{ active: advancedFilters.subject === subject.value }"
-              @tap="setSubjectFilter(subject.value)"
-            >
-              {{ subject.label }}
-            </button>
+          <view class="filter-section">
+            <view class="filter-label">科目</view>
+            <view class="chip-grid">
+              <button
+                v-for="subject in subjectOptions"
+                :key="`subject-${subject.value}`"
+                class="filter-chip"
+                :class="{ active: advancedFilters.subject === subject.value }"
+                @tap="setSubjectFilter(subject.value)"
+              >
+                {{ subject.label }}
+              </button>
+            </view>
           </view>
-        </view>
 
-        <view class="filter-section">
-          <view class="filter-label">模块</view>
-          <view class="chip-grid">
-            <button
-              v-for="module in moduleOptions"
-              :key="`module-${module.value}`"
-              class="filter-chip"
-              :class="{ active: advancedFilters.module === module.value }"
-              @tap="advancedFilters.module = module.value"
-            >
-              {{ module.label }}
-            </button>
+          <view class="filter-section">
+            <view class="filter-label">模块</view>
+            <view class="chip-grid">
+              <button
+                v-for="module in moduleOptions"
+                :key="`module-${module.value}`"
+                class="filter-chip"
+                :class="{ active: advancedFilters.module === module.value }"
+                @tap="advancedFilters.module = module.value"
+              >
+                {{ module.label }}
+              </button>
+            </view>
           </view>
-        </view>
 
-        <view class="filter-section">
-          <view class="filter-label">时间范围</view>
-          <view class="chip-grid">
-            <button
-              v-for="time in timeOptions"
-              :key="`time-${time.value}`"
-              class="filter-chip"
-              :class="{ active: advancedFilters.timeRange === time.value }"
-              @tap="advancedFilters.timeRange = time.value"
-            >
-              {{ time.label }}
-            </button>
+          <view class="filter-section">
+            <view class="filter-label">时间范围</view>
+            <view class="chip-grid">
+              <button
+                v-for="time in timeOptions"
+                :key="`time-${time.value}`"
+                class="filter-chip"
+                :class="{ active: advancedFilters.timeRange === time.value }"
+                @tap="advancedFilters.timeRange = time.value"
+              >
+                {{ time.label }}
+              </button>
+            </view>
           </view>
-        </view>
 
-        <view class="sheet-actions">
-          <button class="ghost-action" @tap="resetAllFilters">重置</button>
-          <button class="primary-action" @tap="closeFilterPanel">完成</button>
+          <view class="sheet-actions">
+            <button class="ghost-action" @tap="resetAllFilters">重置</button>
+            <button class="primary-action" @tap="closeFilterPanel">完成</button>
+          </view>
         </view>
       </view>
-    </view>
+    </transition>
 
     <view v-if="selectedItem" class="detail-mask" @tap="closeDetail">
       <view class="detail-panel" @tap.stop>
@@ -842,6 +844,36 @@ function goBack() {
   border-radius: 34rpx;
   background: #ffffff;
   box-shadow: 0 -18rpx 60rpx rgba(15, 23, 42, 0.14);
+}
+
+.history-filter-sheet-enter-active,
+.history-filter-sheet-leave-active {
+  transition: opacity 220ms ease;
+}
+
+.history-filter-sheet-enter-active .filter-panel,
+.history-filter-sheet-leave-active .filter-panel {
+  transition: transform 300ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.history-filter-sheet-enter-from,
+.history-filter-sheet-leave-to {
+  opacity: 0;
+}
+
+.history-filter-sheet-enter-from .filter-panel,
+.history-filter-sheet-leave-to .filter-panel {
+  transform: translate3d(0, calc(100% + env(safe-area-inset-bottom) + 44rpx), 0);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .history-filter-sheet-enter-active,
+  .history-filter-sheet-leave-active,
+  .history-filter-sheet-enter-active .filter-panel,
+  .history-filter-sheet-leave-active .filter-panel {
+    transition-duration: 1ms;
+  }
 }
 
 .sheet-handle {

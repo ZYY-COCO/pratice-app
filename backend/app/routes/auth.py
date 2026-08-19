@@ -232,7 +232,14 @@ def _send_phone_code(phone: str, purpose: str) -> str | None:
     return send_sms_code(normalized_phone, code, purpose)
 
 
+def _require_active_profile(profile: dict) -> dict:
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前账号已停用")
+    return profile
+
+
 def _auth_response_from_profile(profile: dict, password: str) -> AuthResponse:
+    _require_active_profile(profile)
     supabase_auth = get_supabase_anon()
     try:
         auth_response = supabase_auth.auth.sign_in_with_password(
@@ -285,6 +292,7 @@ def _magic_link_session(email: str):
 
 
 def _auth_response_from_magic_link(profile: dict) -> AuthResponse:
+    _require_active_profile(profile)
     session = _magic_link_session(profile["email"])
     return AuthResponse(
         access_token=session.access_token,
@@ -810,6 +818,7 @@ def phone_login(payload: PhoneLoginRequest) -> AuthResponse:
     profile = _get_profile_by_phone(normalized_phone)
     if not profile:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Phone not registered")
+    _require_active_profile(profile)
 
     verify_phone_code_or_raise(
         supabase=supabase_admin,
@@ -857,6 +866,7 @@ def wechat_login(payload: WechatLoginRequest) -> AuthResponse:
     password = make_wechat_password(openid)
 
     if profile:
+        _require_active_profile(profile)
         profile_updates = {}
         if not profile.get("nickname") and wechat_profile.get("nickname"):
             profile_updates["nickname"] = wechat_profile.get("nickname")
@@ -1331,10 +1341,17 @@ def login(payload: LoginRequest) -> AuthResponse:
     supabase_admin = get_supabase_admin()
     try:
         profile_response = supabase_admin.table("users").select("*").eq("id", user.id).limit(1).execute()
-        if profile_response.data:
-            profile = _merge_profile_data(profile, profile_response.data[0])
+        if not profile_response.data:
+            raise RuntimeError("User profile missing after login")
+        profile = _merge_profile_data(profile, profile_response.data[0])
     except Exception as exc:
         logger.warning("Read profile after login failed for user_id=%s: %s", user.id, _safe_error_summary(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="用户状态读取失败，请稍后重试",
+        ) from exc
+
+    _require_active_profile(profile)
 
     return AuthResponse(
         access_token=session.access_token,
@@ -1391,10 +1408,17 @@ def refresh_session(payload: RefreshTokenRequest) -> AuthResponse:
     supabase_admin = get_supabase_admin()
     try:
         profile_response = supabase_admin.table("users").select("*").eq("id", user.id).limit(1).execute()
-        if profile_response.data:
-            profile = _merge_profile_data(profile, profile_response.data[0])
+        if not profile_response.data:
+            raise RuntimeError("User profile missing after token refresh")
+        profile = _merge_profile_data(profile, profile_response.data[0])
     except Exception as exc:
         logger.warning("Read profile after token refresh failed for user_id=%s: %s", user.id, _safe_error_summary(exc))
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="用户状态读取失败，请稍后重试",
+        ) from exc
+
+    _require_active_profile(profile)
 
     return AuthResponse(
         access_token=session.access_token,

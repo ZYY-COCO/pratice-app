@@ -36,6 +36,11 @@ _AUTH_MARKERS = (
     "token has expired",
     "not authenticated",
 )
+_MISSING_RELATION_MARKERS = (
+    "pgrst205",
+    "could not find the table",
+    "schema cache",
+)
 
 
 def _provider_status_code(exc: Exception) -> int | None:
@@ -73,6 +78,16 @@ def is_authentication_error(exc: Exception) -> bool:
         return True
     text = str(exc).lower()
     return any(marker in text for marker in _AUTH_MARKERS)
+
+
+def is_missing_supabase_relation_error(exc: Exception) -> bool:
+    """Whether a compatibility query targets a table not deployed yet."""
+
+    text = str(exc).lower()
+    return (
+        any(marker in text for marker in _MISSING_RELATION_MARKERS)
+        or ("relation" in text and "does not exist" in text)
+    )
 
 
 def call_supabase(operation: Callable[[], Result], *, operation_name: str, attempts: int = 2) -> Result:

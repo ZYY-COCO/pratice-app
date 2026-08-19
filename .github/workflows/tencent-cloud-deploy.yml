@@ -102,6 +102,11 @@ jobs:
             sudo mkdir -p /opt/gangyantong/app/backend
             sudo rsync -a --delete --exclude ".venv" --exclude "__pycache__" "${backend_tmp}/" /opt/gangyantong/app/backend/
             sudo chown -R ubuntu:ubuntu /opt/gangyantong/app/backend
+            if [ ! -x /opt/gangyantong/app/backend/.venv/bin/python ]; then
+              sudo -u ubuntu python3 -m venv /opt/gangyantong/app/backend/.venv
+            fi
+            sudo -u ubuntu /opt/gangyantong/app/backend/.venv/bin/python -m pip install --upgrade pip
+            sudo -u ubuntu /opt/gangyantong/app/backend/.venv/bin/pip install -r /opt/gangyantong/app/backend/requirements.txt
             sudo cp /tmp/gangyantong-nginx.conf /etc/nginx/sites-available/gangyantong
             sudo ln -sfn /etc/nginx/sites-available/gangyantong /etc/nginx/sites-enabled/gangyantong
             sudo rm -f /etc/nginx/sites-enabled/default
