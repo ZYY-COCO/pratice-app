@@ -75,20 +75,28 @@ jobs:
           chmod 700 ~/.ssh
           printf '%s\n' "${TENCENT_SSH_KEY}" > ~/.ssh/tencent_cloud_key
           chmod 600 ~/.ssh/tencent_cloud_key
-          ssh-keyscan -p "${TENCENT_PORT}" -H "${TENCENT_HOST}" >> ~/.ssh/known_hosts
+          timeout 30 ssh-keyscan -T 20 -p "${TENCENT_PORT}" -H "${TENCENT_HOST}" > ~/.ssh/known_hosts
+          test -s ~/.ssh/known_hosts
 
           tar -C frontend/dist/build/h5 -czf /tmp/gangyantong-h5.tgz .
           tar -C backend -czf /tmp/gangyantong-backend.tgz .
           cp deploy/tencent-cloud/nginx.conf /tmp/gangyantong-nginx.conf
 
-          timeout 180 scp -i ~/.ssh/tencent_cloud_key \
-            -o BatchMode=yes \
-            -o ConnectTimeout=20 \
-            -P "${TENCENT_PORT}" \
-            /tmp/gangyantong-h5.tgz \
-            /tmp/gangyantong-backend.tgz \
-            /tmp/gangyantong-nginx.conf \
-            "${TENCENT_USER}@${TENCENT_HOST}:/tmp/"
+          export RSYNC_RSH="ssh -i ~/.ssh/tencent_cloud_key -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${TENCENT_PORT}"
+          for attempt in 1 2; do
+            echo "Uploading deployment archives (attempt ${attempt}/2)..."
+            if timeout 480 rsync -az --partial --append-verify --timeout=60 --info=NAME,STATS2 \
+              /tmp/gangyantong-h5.tgz \
+              /tmp/gangyantong-backend.tgz \
+              /tmp/gangyantong-nginx.conf \
+              "${TENCENT_USER}@${TENCENT_HOST}:/tmp/"; then
+              break
+            fi
+            if [ "${attempt}" = "2" ]; then
+              exit 1
+            fi
+            sleep 5
+          done
 
           timeout 480 ssh -i ~/.ssh/tencent_cloud_key \
             -o BatchMode=yes \
