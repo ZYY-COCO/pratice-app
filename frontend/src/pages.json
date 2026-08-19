@@ -15,66 +15,11 @@
       }
     },
     {
-      "path": "pages/school-announcements/index",
-      "style": {
-        "navigationBarTitleText": "院校公告",
-        "navigationStyle": "custom"
-      }
-    },
-    {
       "path": "pages/circle/publish",
       "style": {
         "navigationBarTitleText": "发布话题",
         "navigationStyle": "custom",
         "backgroundColor": "#edf4f4"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-detail",
-      "style": {
-        "navigationBarTitleText": "前辈详情",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-booking",
-      "style": {
-        "navigationBarTitleText": "预约咨询",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-consult-form",
-      "style": {
-        "navigationBarTitleText": "填写咨询信息",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-waiting",
-      "style": {
-        "navigationBarTitleText": "咨询状态",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-chat",
-      "style": {
-        "navigationBarTitleText": "咨询聊天",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-apply",
-      "style": {
-        "navigationBarTitleText": "申请成为前辈",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
       }
     },
     {
@@ -111,40 +56,7 @@
     {
       "path": "pages/profile/index",
       "style": {
-        "navigationBarTitleText": "个人资料",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/wallet/index",
-      "style": {
-        "navigationBarTitleText": "我的钱包",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/transaction-detail",
-      "style": {
-        "navigationBarTitleText": "账单详情",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/withdraw",
-      "style": {
-        "navigationBarTitleText": "提现",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/withdrawal-records",
-      "style": {
-        "navigationBarTitleText": "提现记录",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "navigationBarTitleText": "个人资料"
       }
     },
     {

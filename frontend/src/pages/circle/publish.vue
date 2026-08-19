@@ -79,7 +79,7 @@
         </view>
 
         <button class="publish-submit" :disabled="!canPublish || submitting" @tap="publish">
-          {{ submitting ? '发布中...' : postType === 'experience' ? '发布经验贴' : '发布话题' }}
+          {{ submitting ? '发布中...' : '发布话题' }}
         </button>
       </view>
     </scroll-view>
@@ -93,7 +93,7 @@ import { createCommunityPost, uploadCommunityImage } from '../../api/community'
 import { isLoggedIn } from '../../utils/auth'
 
 const communityChatTopics = ['中华文化', '数学基础', '英语运用', '逻辑推理']
-const communityExperienceTopics = ['Z001', 'Z002', '专业课', '复试']
+const communityExperienceTopics = ['Z001', 'Z002']
 const topicSets = {
   chat: communityChatTopics,
   experience: communityExperienceTopics

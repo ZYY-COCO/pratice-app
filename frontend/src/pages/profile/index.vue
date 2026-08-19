@@ -1,13 +1,5 @@
 <template>
   <view class="page profile-edit-page" :style="themeInlineStyle">
-    <view class="profile-topbar">
-      <button class="profile-back-button" hover-class="none" aria-label="返回" @tap="goBack">
-        <image src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
-      <text class="profile-topbar-title">个人资料</text>
-      <view class="profile-topbar-spacer"></view>
-    </view>
-
     <view class="profile-card">
       <image
         v-if="isImageAvatar(form.avatar_url)"
@@ -27,6 +19,45 @@
       <view class="field">
         <view class="label">昵称</view>
         <input v-model.trim="form.nickname" class="input" type="text" maxlength="40" placeholder="请输入昵称" />
+      </view>
+
+      <view class="field">
+        <view class="label">头像样式</view>
+        <view class="avatar-grid">
+          <button
+            v-for="item in avatarOptions"
+            :key="item"
+            class="avatar-option"
+            :class="{ active: form.avatar_url === item }"
+            @tap="selectAvatarOption(item)"
+          >
+            {{ item }}
+          </button>
+          <button
+            class="avatar-option upload-avatar-option"
+            :class="{ active: isImageAvatar(form.avatar_url) }"
+            :disabled="uploadingAvatar"
+            aria-label="从相册选择头像"
+            @tap="chooseAvatarImage"
+          >
+            <text class="avatar-upload-plus">{{ uploadingAvatar ? '…' : '+' }}</text>
+          </button>
+        </view>
+      </view>
+
+      <view class="field">
+        <view class="label">性别</view>
+        <view class="gender-row">
+          <button
+            v-for="item in genderOptions"
+            :key="item.value"
+            class="choice-btn"
+            :class="{ active: form.gender === item.value }"
+            @tap="form.gender = item.value"
+          >
+            {{ item.label }}
+          </button>
+        </view>
       </view>
 
       <view class="save-hint">{{ hasProfileChanges ? '保存后会自动返回“我的”页面。' : '当前资料已同步。' }}</view>
@@ -109,13 +140,20 @@ import {
   sendChangeEmailCode,
   sendUnbindWechatCode,
   unbindWechat,
-  updateProfile
+  updateProfile,
+  uploadAvatar
 } from '../../api/auth'
 import { clearAuthSession, getAuthUser, saveAuthSession, updateAuthUser } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
+import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
 
+const avatarOptions = ['测', '学', '研', '文', '英', '数', 'AI']
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const genderOptions = [
+  { label: '男', value: 'male' },
+  { label: '女', value: 'female' }
+]
 
 const user = ref(getAuthUser() || {})
 let IS_MP_WEIXIN = false
@@ -128,6 +166,7 @@ const bindingEmail = ref(false)
 const sendingUnbindCode = ref(false)
 const unbindingWechat = ref(false)
 const deletingAccount = ref(false)
+const uploadingAvatar = ref(false)
 const form = reactive({
   nickname: '',
   avatar_url: '',
@@ -177,17 +216,74 @@ onShow(() => {
   }
 })
 
-function goBack() {
-  uni.navigateBack({
-    fail() {
-      uni.reLaunch({ url: '/pages/home/index' })
+function isImageAvatar(value) {
+  const avatar = String(value || '')
+  return avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:image')
+}
+
+function selectAvatarOption(item) {
+  form.avatar_url = item
+}
+
+async function chooseAvatarImage() {
+  if (uploadingAvatar.value) return
+
+  try {
+    await requireWechatPrivacyAuthorization()
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '需要同意隐私保护指引后才能选择头像', icon: 'none' })
+    return
+  }
+
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: ['album'],
+    success(result) {
+      const selected = result.tempFiles?.[0]
+      const filePath = result.tempFilePaths?.[0] || selected?.path || ''
+      const browserFile =
+        selected?.file ||
+        (typeof File !== 'undefined' && selected instanceof File ? selected : null)
+
+      if (!filePath && !browserFile) {
+        uni.showToast({ title: '未读取到所选图片', icon: 'none' })
+        return
+      }
+
+      uploadSelectedAvatar({
+        filePath,
+        file: browserFile,
+        fileName: selected?.name || browserFile?.name || 'avatar'
+      })
+    },
+    fail(error) {
+      const message = error?.errMsg || ''
+      if (message.toLowerCase().includes('cancel')) return
+      uni.showModal({
+        title: '无法访问相册',
+        content: '请在系统设置中允许港研通访问照片，然后重新选择头像。',
+        showCancel: false,
+        confirmText: '我知道了'
+      })
     }
   })
 }
 
-function isImageAvatar(value) {
-  const avatar = String(value || '')
-  return avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:image')
+async function uploadSelectedAvatar(fileInfo) {
+  uploadingAvatar.value = true
+  try {
+    const nextUser = await uploadAvatar(fileInfo)
+    updateAuthUser(nextUser)
+    user.value = getAuthUser() || nextUser
+    form.avatar_url = nextUser.avatar_url || ''
+    initialProfile.value.avatar_url = form.avatar_url
+    uni.showToast({ title: '头像已更换', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '头像上传失败，请稍后重试', icon: 'none' })
+  } finally {
+    uploadingAvatar.value = false
+  }
 }
 
 function isValidEmail(email) {
@@ -472,53 +568,9 @@ async function deleteCurrentAccount() {
 
 <style scoped>
 .profile-edit-page {
-  padding: calc(env(safe-area-inset-top) + 16rpx) 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
+  padding-bottom: calc(env(safe-area-inset-bottom) + 44rpx);
   background:
     linear-gradient(180deg, rgba(232, 240, 255, 0.86), rgba(246, 248, 252, 0.98) 34%, #f6f8fc 100%);
-}
-
-.profile-topbar {
-  min-height: 76rpx;
-  margin-bottom: 22rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.profile-back-button,
-.profile-topbar-spacer {
-  width: 76rpx;
-  height: 76rpx;
-  flex-shrink: 0;
-}
-
-.profile-back-button {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 26rpx;
-  background: #ffffff;
-  color: #172033;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
-}
-
-.profile-back-button::after {
-  border: 0;
-}
-
-.profile-back-button image {
-  width: 30rpx;
-  height: 30rpx;
-}
-
-.profile-topbar-title {
-  color: #172033;
-  font-size: 32rpx;
-  line-height: 1.2;
-  font-weight: 900;
 }
 
 .profile-card {
@@ -609,6 +661,57 @@ async function deleteCurrentAccount() {
   color: #172033;
   font-size: 26rpx;
   box-sizing: border-box;
+}
+
+.avatar-grid,
+.gender-row {
+  margin-top: 14rpx;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.gender-row {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.avatar-option,
+.choice-btn {
+  min-height: 80rpx;
+  margin: 0;
+  border: 2rpx solid var(--gyt-primary-border);
+  border-radius: 22rpx;
+  background: #ffffff;
+  color: #475467;
+  font-size: 25rpx;
+  line-height: 80rpx;
+  font-weight: 900;
+}
+
+.avatar-option.active,
+.choice-btn.active {
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
+}
+
+.upload-avatar-option {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.upload-avatar-option[disabled] {
+  opacity: 0.6;
+}
+
+.avatar-upload-plus {
+  color: var(--gyt-primary);
+  font-size: 46rpx;
+  line-height: 1;
+  font-weight: 500;
 }
 
 .save-hint {

@@ -10,7 +10,6 @@ from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
 
 from app.db import get_supabase_admin
-from app.services.supabase_resilience import is_missing_supabase_relation_error
 
 
 VALID_EXAM_CODES = {"Z001", "Z002"}
@@ -26,13 +25,6 @@ class MajorCatalogUnavailableError(RuntimeError):
 
 class MajorCatalogDatabaseUnavailableError(MajorCatalogUnavailableError):
     """Raised when Supabase has no completed catalog import yet."""
-
-
-def _can_use_catalog_file_fallback(error: MajorCatalogDatabaseUnavailableError) -> bool:
-    if str(error) == "专业目录尚未完成同步":
-        return True
-    cause = error.__cause__
-    return bool(cause and is_missing_supabase_relation_error(cause))
 
 
 def normalize_exam_code(exam_code: str | None) -> str:
@@ -961,10 +953,8 @@ def _search_catalog_from_file(
 def list_regions(exam_code: str | None = None, catalog_year: str | None = None) -> dict[str, Any]:
     try:
         return _list_regions_from_database(exam_code=exam_code, catalog_year=catalog_year)
-    except MajorCatalogDatabaseUnavailableError as error:
-        if _can_use_catalog_file_fallback(error):
-            return _list_regions_from_file(exam_code=exam_code, catalog_year=catalog_year)
-        raise
+    except MajorCatalogDatabaseUnavailableError:
+        return _list_regions_from_file(exam_code=exam_code, catalog_year=catalog_year)
 
 
 def list_schools(
@@ -980,15 +970,13 @@ def list_schools(
             exam_code=exam_code,
             catalog_year=catalog_year,
         )
-    except MajorCatalogDatabaseUnavailableError as error:
-        if _can_use_catalog_file_fallback(error):
-            return _list_schools_from_file(
-                region=region,
-                keyword=keyword,
-                exam_code=exam_code,
-                catalog_year=catalog_year,
-            )
-        raise
+    except MajorCatalogDatabaseUnavailableError:
+        return _list_schools_from_file(
+            region=region,
+            keyword=keyword,
+            exam_code=exam_code,
+            catalog_year=catalog_year,
+        )
 
 
 def search_catalog(
@@ -1004,15 +992,13 @@ def search_catalog(
             exam_code=exam_code,
             catalog_year=catalog_year,
         )
-    except MajorCatalogDatabaseUnavailableError as error:
-        if _can_use_catalog_file_fallback(error):
-            return _search_catalog_from_file(
-                keyword=keyword,
-                region=region,
-                exam_code=exam_code,
-                catalog_year=catalog_year,
-            )
-        raise
+    except MajorCatalogDatabaseUnavailableError:
+        return _search_catalog_from_file(
+            keyword=keyword,
+            region=region,
+            exam_code=exam_code,
+            catalog_year=catalog_year,
+        )
 
 
 def get_school_programs(
@@ -1028,12 +1014,10 @@ def get_school_programs(
             exam_code=exam_code,
             catalog_year=catalog_year,
         )
-    except MajorCatalogDatabaseUnavailableError as error:
-        if _can_use_catalog_file_fallback(error):
-            return _get_school_programs_from_file(
-                school_id=school_id,
-                keyword=keyword,
-                exam_code=exam_code,
-                catalog_year=catalog_year,
-            )
-        raise
+    except MajorCatalogDatabaseUnavailableError:
+        return _get_school_programs_from_file(
+            school_id=school_id,
+            keyword=keyword,
+            exam_code=exam_code,
+            catalog_year=catalog_year,
+        )

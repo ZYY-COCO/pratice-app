@@ -1,6 +1,6 @@
 import json
 from datetime import datetime, timedelta, timezone
-from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
+from zoneinfo import ZoneInfo
 
 import aiohttp
 from fastapi import APIRouter, Depends, Query
@@ -14,10 +14,8 @@ from app.schemas.reports import (
     LeaderboardItem,
     LeaderboardResponse,
     LearningSummaryResponse,
-    LearningTrendPoint,
     StudyAdviceResponse,
     StudySubjectAdvice,
-    SubjectWeeklyChange,
 )
 from app.services.question_sources import is_ai_generated_question
 from app.services.reports import build_ability_item
@@ -31,17 +29,6 @@ EXAM_SUBJECTS = {
     "Z002": ["中华文化", "英语运用", "数学基础"],
 }
 PAGE_SIZE = 1000
-LEARNING_ACTIVITY_LIMIT = 5000
-
-
-def get_app_timezone():
-    try:
-        return ZoneInfo("Asia/Shanghai")
-    except ZoneInfoNotFoundError:
-        return timezone(timedelta(hours=8))
-
-
-APP_TIMEZONE = get_app_timezone()
 
 
 def belongs_to_exam(question: dict | None, exam_code: str | None) -> bool:
@@ -74,85 +61,6 @@ def compact_text(value: object, max_length: int = 240) -> str:
 
 def normalize_exam_code(exam_code: str | None) -> str:
     return exam_code if exam_code in EXAM_SUBJECTS else "Z001"
-
-
-def to_local_datetime(value: object) -> datetime | None:
-    if not value:
-        return None
-    try:
-        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
-    except ValueError:
-        return None
-    if parsed.tzinfo is None:
-        parsed = parsed.replace(tzinfo=timezone.utc)
-    return parsed.astimezone(APP_TIMEZONE)
-
-
-def calculate_accuracy(rows: list[dict]) -> float | None:
-    if not rows:
-        return None
-    correct = sum(1 for row in rows if row.get("is_correct"))
-    return round(correct / len(rows) * 100, 2)
-
-
-def filter_learning_activity_rows(rows: list[dict], exam_code: str | None) -> list[dict]:
-    return [
-        row
-        for row in rows
-        if belongs_to_exam(row.get("questions"), exam_code)
-    ]
-
-
-def fetch_learning_activity_rows(supabase, user_id: str, start_at: datetime) -> list[dict]:
-    rows: list[dict] = []
-    offset = 0
-    while len(rows) < LEARNING_ACTIVITY_LIMIT:
-        chunk = (
-            supabase.table("user_answers")
-            .select("is_correct, created_at, questions(exam_code, subject)")
-            .eq("user_id", user_id)
-            .gte("created_at", start_at.isoformat())
-            .order("created_at", desc=True)
-            .range(offset, min(offset + PAGE_SIZE - 1, LEARNING_ACTIVITY_LIMIT - 1))
-            .execute()
-            .data
-            or []
-        )
-        rows.extend(chunk)
-        if len(chunk) < PAGE_SIZE:
-            break
-        offset += PAGE_SIZE
-    return rows
-
-
-def fetch_recent_learning_days(supabase, user_id: str, exam_code: str | None) -> set:
-    rows = (
-        supabase.table("user_answers")
-        .select("created_at, questions(exam_code, subject)")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(LEARNING_ACTIVITY_LIMIT)
-        .execute()
-        .data
-        or []
-    )
-    learning_dates = set()
-    for row in filter_learning_activity_rows(rows, exam_code):
-        local_time = to_local_datetime(row.get("created_at"))
-        if local_time:
-            learning_dates.add(local_time.date())
-    return learning_dates
-
-
-def calculate_study_streak(learning_dates: set, today) -> int:
-    if not learning_dates:
-        return 0
-    current = today if today in learning_dates else today - timedelta(days=1)
-    streak = 0
-    while current in learning_dates:
-        streak += 1
-        current -= timedelta(days=1)
-    return streak
 
 
 def get_display_name(profile: dict) -> str:
@@ -574,96 +482,26 @@ def learning_summary(
     correct_answers = sum(int(row.get("correct_count") or 0) for row in ability_response.data)
     accuracy = round(correct_answers / total_answers * 100, 2) if total_answers else 0
 
-    now = datetime.now(APP_TIMEZONE)
+    now = datetime.now(ZoneInfo("Asia/Shanghai"))
     week_start = datetime.combine(
         (now - timedelta(days=now.weekday())).date(),
         datetime.min.time(),
-        tzinfo=APP_TIMEZONE,
+        tzinfo=ZoneInfo("Asia/Shanghai"),
     ).astimezone(timezone.utc)
-    previous_week_start = week_start - timedelta(days=7)
-    trend_start_date = now.date() - timedelta(days=6)
-    trend_start = datetime.combine(trend_start_date, datetime.min.time(), tzinfo=APP_TIMEZONE).astimezone(timezone.utc)
-    activity_start = min(previous_week_start, trend_start)
-    activity_rows = filter_learning_activity_rows(
-        fetch_learning_activity_rows(supabase, user_id, activity_start),
-        exam_code,
+    weekly_response = (
+        supabase.table("user_answers")
+        .select("id, is_correct, questions(exam_code, subject)")
+        .eq("user_id", user_id)
+        .gte("created_at", week_start.isoformat())
+        .limit(1000)
+        .execute()
     )
-
-    weekly_rows = []
-    previous_week_rows = []
-    daily_rows: dict = {}
-    subject_rows: dict = {}
-    for row in activity_rows:
-        local_time = to_local_datetime(row.get("created_at"))
-        if not local_time:
-            continue
-        question = row.get("questions") or {}
-        subject = question.get("subject") or ""
-        local_date = local_time.date()
-        if local_date >= trend_start_date:
-            daily_rows.setdefault(local_date, []).append(row)
-        if local_date >= week_start.astimezone(APP_TIMEZONE).date():
-            weekly_rows.append(row)
-            if subject:
-                subject_rows.setdefault(subject, {"current": [], "previous": []})["current"].append(row)
-        elif local_date >= previous_week_start.astimezone(APP_TIMEZONE).date():
-            previous_week_rows.append(row)
-            if subject:
-                subject_rows.setdefault(subject, {"current": [], "previous": []})["previous"].append(row)
-
+    weekly_rows = weekly_response.data
+    if exam_code:
+        weekly_rows = [row for row in weekly_rows if belongs_to_exam(row.get("questions"), exam_code)]
     weekly_answers = len(weekly_rows)
     weekly_correct_answers = sum(1 for row in weekly_rows if row.get("is_correct"))
     weekly_accuracy = round(weekly_correct_answers / weekly_answers * 100, 2) if weekly_answers else 0
-    previous_week_answers = len(previous_week_rows)
-    previous_week_correct_answers = sum(1 for row in previous_week_rows if row.get("is_correct"))
-    previous_week_accuracy = calculate_accuracy(previous_week_rows)
-    weekly_accuracy_change = (
-        round(weekly_accuracy - previous_week_accuracy, 2)
-        if weekly_answers and previous_week_accuracy is not None
-        else None
-    )
-
-    trend = []
-    for offset in range(7):
-        current_date = trend_start_date + timedelta(days=offset)
-        rows = daily_rows.get(current_date, [])
-        trend.append(
-            LearningTrendPoint(
-                date=current_date.isoformat(),
-                label=f"周{'一二三四五六日'[current_date.weekday()]}",
-                accuracy=calculate_accuracy(rows),
-                total_answers=len(rows),
-            )
-        )
-
-    allowed_subjects = EXAM_SUBJECTS.get(exam_code, []) if exam_code else []
-    subject_names = allowed_subjects or sorted(subject_rows)
-    subject_weekly_changes = []
-    for subject in subject_names:
-        rows = subject_rows.get(subject, {"current": [], "previous": []})
-        current_rows = rows["current"]
-        previous_rows = rows["previous"]
-        current_accuracy = calculate_accuracy(current_rows)
-        subject_previous_accuracy = calculate_accuracy(previous_rows)
-        subject_weekly_changes.append(
-            SubjectWeeklyChange(
-                subject=subject,
-                current_answers=len(current_rows),
-                current_accuracy=current_accuracy,
-                previous_answers=len(previous_rows),
-                previous_accuracy=subject_previous_accuracy,
-                accuracy_change=(
-                    round(current_accuracy - subject_previous_accuracy, 2)
-                    if current_accuracy is not None and subject_previous_accuracy is not None
-                    else None
-                ),
-            )
-        )
-
-    study_streak = calculate_study_streak(
-        fetch_recent_learning_days(supabase, user_id, exam_code),
-        now.date(),
-    )
 
     wrong_response = (
         supabase.table("wrong_questions")
@@ -686,13 +524,6 @@ def learning_summary(
         weekly_answers=weekly_answers,
         weekly_correct_answers=weekly_correct_answers,
         weekly_accuracy=weekly_accuracy,
-        previous_week_answers=previous_week_answers,
-        previous_week_correct_answers=previous_week_correct_answers,
-        previous_week_accuracy=previous_week_accuracy,
-        weekly_accuracy_change=weekly_accuracy_change,
-        study_streak=study_streak,
-        trend=trend,
-        subject_weekly_changes=subject_weekly_changes,
     )
 
 
