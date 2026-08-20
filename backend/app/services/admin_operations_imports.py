@@ -128,7 +128,6 @@ SCORELINE_HEADERS = {
     "school_name": {"院校", "学校", "招生单位", "school", "school_name"},
     "unit_name": {"院系", "学院", "培养单位", "单位", "unit", "department", "unit_name"},
     "score_raw": {"分数线", "原始分数", "分数", "score", "score_raw"},
-    "score_value": {"数值分数", "分值", "score_value", "numeric_score"},
     "score_kind": {"分数类型", "score_kind", "状态"},
     "source_url": {"来源链接", "链接", "网址", "source_url", "url"},
     "source_note": {"说明", "来源说明", "备注", "source_note", "note"},
@@ -219,8 +218,8 @@ def _score_kind(value: str, raw: str, numeric: float | None) -> str:
 def parse_scoreline_xlsx(content: bytes) -> ParsedImport:
     rows = _load_rows(content)
     header_row_number, mapping, data_rows = _locate_header(rows, SCORELINE_HEADERS, REQUIRED_SCORELINE_FIELDS)
-    if "score_raw" not in mapping and "score_value" not in mapping:
-        raise OperationsImportError("历年分数线至少需要“分数线”或“数值分数”列")
+    if "score_raw" not in mapping:
+        raise OperationsImportError("历年分数线需要“分数线”列")
 
     records: list[dict[str, Any]] = []
     errors: list[dict[str, Any]] = []
@@ -233,9 +232,7 @@ def parse_scoreline_xlsx(content: bytes) -> ParsedImport:
         school_name = _value(row, mapping, "school_name")
         unit_name = _value(row, mapping, "unit_name")
         raw = _value(row, mapping, "score_raw")
-        numeric = _number(_value(row, mapping, "score_value"))
-        if numeric is None:
-            numeric = _number(raw)
+        numeric = _number(raw)
         row_errors: list[str] = []
         if not year:
             row_errors.append("年份必须为 20xx")

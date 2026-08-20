@@ -47,6 +47,11 @@ def get_announcement_index() -> dict[str, Any]:
     return _load_announcement_index(_announcement_data_signature())
 
 
+def get_bundled_announcement_index() -> dict[str, Any]:
+    """Return the local generated snapshot without consulting published data."""
+    return _load_announcement_index(_announcement_data_signature())
+
+
 def _database_school_id(region: str, school_name: str) -> str:
     digest = sha1(f"{region}\n{school_name}".encode("utf-8")).hexdigest()[:16]
     return f"ops-{digest}"

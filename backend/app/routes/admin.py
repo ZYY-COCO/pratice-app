@@ -1,6 +1,9 @@
+import json
 import logging
+import re
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
+from hashlib import sha256
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
 from pydantic import ValidationError
@@ -53,6 +56,9 @@ from app.schemas.admin import (
     AdminOperationsImportPreviewResponse,
     AdminOperationsImportRunItem,
     AdminOperationsImportRunListResponse,
+    AdminScorelineBootstrapRequest,
+    AdminScorelineRecordListResponse,
+    AdminScorelineRecordUpdateRequest,
     QuestionAdminDashboardQuestionItem,
     QuestionAdminDashboardResponse,
     QuestionAdminPortalMeResponse,
@@ -81,8 +87,10 @@ from app.services.admin_operations_imports import (
     import_run_statistics,
     parse_operations_xlsx,
 )
+from app.services.major_catalog import get_major_catalog
 from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
+from app.services.school_announcements import get_bundled_announcement_index
 from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -114,6 +122,10 @@ COMMUNITY_ADMIN_POST_SORTS = {
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 OPERATIONS_IMPORT_BATCH_SIZE = 500
+SCORELINE_RECORD_KINDS = {"score", "missing", "unavailable", "official", "multiple", "note"}
+SCORELINE_NUMERIC_PATTERN = re.compile(r"^\d+(?:\.\d+)?\s*(?:分)?$")
+ANNOUNCEMENT_NOTICE_TYPES = {"brochure", "scoreline_retest"}
+MAJOR_CATALOG_EXAM_CODES = {"Z001", "Z002"}
 OPERATIONS_IMPORT_DATASETS = {
     "scorelines": {
         "run_table": "historical_scoreline_import_runs",
@@ -1113,6 +1125,392 @@ def _operations_run_item(row: dict | None, *, record_count: int | None = None) -
     )
 
 
+def _scoreline_numeric_value(score_raw: str, score_kind: str) -> float | None:
+    if score_kind != "score":
+        return None
+    normalized = score_raw.strip()
+    if not SCORELINE_NUMERIC_PATTERN.fullmatch(normalized):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="数字分数需要填写纯数字，例如 90 或 90.5",
+        )
+    numeric_text = normalized[:-1].strip() if normalized.endswith("分") else normalized
+    value = float(numeric_text)
+    if value > 99_999.99:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="分数数值超出允许范围")
+    return value
+
+
+def _normalize_scoreline_bootstrap_records(payload: AdminScorelineBootstrapRequest) -> list[dict]:
+    records_by_key: dict[tuple[str, str, str, str], dict] = {}
+    for index, source in enumerate(payload.records, start=1):
+        item = source.model_dump()
+        score_year = str(item.get("score_year") or "").strip()
+        region = str(item.get("region") or "").strip()
+        school_name = str(item.get("school_name") or "").strip()
+        unit_name = str(item.get("unit_name") or "").strip()
+        score_raw = str(item.get("score_raw") or "").strip()
+        score_kind = str(item.get("score_kind") or "").strip()
+        if not re.fullmatch(r"20\d{2}", score_year):
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"第 {index} 条记录的年份不正确")
+        if not region or not school_name or not score_raw or score_kind not in SCORELINE_RECORD_KINDS:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"第 {index} 条记录字段不完整")
+        key = (score_year, region, school_name, unit_name)
+        existing = records_by_key.get(key)
+        if existing:
+            existing["score_raw"] = f"{existing['score_raw']}；{score_raw}"
+            existing["score_value"] = None
+            existing["score_kind"] = "multiple"
+            continue
+        records_by_key[key] = {
+            "score_year": score_year,
+            "region": region,
+            "school_name": school_name,
+            "unit_name": unit_name,
+            "score_raw": score_raw,
+            "score_value": _scoreline_numeric_value(score_raw, score_kind),
+            "score_kind": score_kind,
+            "source_url": None,
+            "source_note": None,
+            "is_published": False,
+        }
+    return list(records_by_key.values())
+
+
+def _snapshot_source_sha256(records: list[dict]) -> str:
+    canonical_records = sorted(
+        records,
+        key=lambda item: json.dumps(item, ensure_ascii=False, sort_keys=True, separators=(",", ":")),
+    )
+    return sha256(
+        json.dumps(canonical_records, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+
+
+def _bundled_announcement_snapshot() -> tuple[str, str, dict, list[dict]]:
+    announcement_index = get_bundled_announcement_index()
+    announcements = announcement_index.get("announcements")
+    if not isinstance(announcements, dict) or not announcements:
+        raise ValueError("本地院校公告快照为空")
+    if any(not isinstance(item, dict) for item in announcements.values()):
+        raise ValueError("本地院校公告快照格式不正确")
+
+    source_items = list(announcements.values())
+    records: list[dict] = []
+    identities: set[tuple[str, ...]] = set()
+    for item in sorted(
+        source_items,
+        key=lambda source: (
+            str(source.get("year") or ""),
+            str(source.get("region") or ""),
+            str(source.get("school_name") or ""),
+            str(source.get("notice_type") or ""),
+            str(source.get("notice_date") or ""),
+            str(source.get("title") or ""),
+        ),
+    ):
+        notice_year = str(item.get("year") or "").strip()
+        region = str(item.get("region") or "").strip()
+        school_name = str(item.get("school_name") or "").strip()
+        unit_name = str(item.get("unit_name") or "").strip()
+        notice_type = str(item.get("notice_type") or "").strip()
+        title = str(item.get("title") or "").strip()
+        summary = str(item.get("summary") or "").strip()
+        notice_date = str(item.get("notice_date") or "").strip() or None
+        source_url = str(item.get("source_url") or "").strip() or None
+        content_text = str(item.get("content_text") or "").strip()
+        if (
+            not re.fullmatch(r"20\d{2}", notice_year)
+            or not region
+            or not school_name
+            or not title
+            or notice_type not in ANNOUNCEMENT_NOTICE_TYPES
+        ):
+            raise ValueError("本地院校公告存在字段不完整或类型错误的记录")
+        record = {
+            "notice_year": notice_year,
+            "region": region,
+            "school_name": school_name,
+            "unit_name": unit_name,
+            "notice_type": notice_type,
+            "title": title,
+            "summary": summary,
+            "notice_date": notice_date,
+            "source_url": source_url,
+            "content_text": content_text,
+            "is_published": False,
+            "status": "draft",
+        }
+        identity = tuple(str(record.get(field) or "") for field in record if field not in {"is_published", "status"})
+        if identity in identities:
+            continue
+        identities.add(identity)
+        records.append(record)
+
+    if not records:
+        raise ValueError("本地院校公告没有可接入的记录")
+    years = sorted({record["notice_year"] for record in records})
+    statistics = {
+        "dataset": "announcements",
+        "total_rows": len(source_items),
+        "valid_rows": len(records),
+        "invalid_rows": 0,
+        "duplicate_rows": len(source_items) - len(records),
+        "origin": "student_bundled_snapshot",
+        "source_version": str(announcement_index.get("version") or ""),
+        "year_count": len(years),
+        "school_count": len({(record["region"], record["school_name"]) for record in records}),
+        "region_count": len({record["region"] for record in records}),
+    }
+    source_filename = f"学生端院校公告（{'、'.join(years)}）"
+    return source_filename, _snapshot_source_sha256(records), statistics, records
+
+
+def _bundled_major_catalog_snapshot() -> tuple[str, str, dict, list[dict]]:
+    catalog = get_major_catalog()
+    catalog_year = str(catalog.get("target_year") or "").strip()
+    if not re.fullmatch(r"20\d{2}", catalog_year):
+        raise ValueError("本地专业目录缺少有效年份")
+
+    schools = catalog.get("schools")
+    regions = catalog.get("regions")
+    if not isinstance(schools, dict) or not isinstance(regions, list) or not regions:
+        raise ValueError("本地专业目录快照格式不正确")
+
+    # The bundled file is the student's default comprehensive 2026 directory.
+    # Its year filter is an optional verified-overlay view, not the snapshot
+    # that backs the default "全部目录" experience.
+    expected_school_ids = {
+        str(school_id or "").strip()
+        for region_item in regions
+        if isinstance(region_item, dict)
+        for school_id in (region_item.get("school_ids") or [])
+    }
+    if not expected_school_ids or "" in expected_school_ids or expected_school_ids != set(schools):
+        raise ValueError("本地专业目录院校范围不正确")
+    seen_school_ids: set[str] = set()
+    department_keys: set[tuple[str, str, str]] = set()
+    program_keys: set[tuple[str, str, str, str, str]] = set()
+    records: list[dict] = []
+    source_row = 0
+    for region_item in regions:
+        if not isinstance(region_item, dict):
+            raise ValueError("本地专业目录地区格式不正确")
+        region = str(region_item.get("name") or "").strip()
+        region_school_ids = region_item.get("school_ids")
+        if not region or not isinstance(region_school_ids, list):
+            raise ValueError("本地专业目录地区信息不完整")
+        for school_id in region_school_ids:
+            normalized_school_id = str(school_id or "").strip()
+            if normalized_school_id not in expected_school_ids:
+                raise ValueError("本地专业目录地区包含未知院校")
+            if normalized_school_id in seen_school_ids:
+                raise ValueError("本地专业目录院校重复归属地区")
+            school = schools.get(normalized_school_id)
+            if not isinstance(school, dict):
+                raise ValueError("本地专业目录存在找不到的院校")
+            school_name = str(school.get("name") or "").strip()
+            departments = school.get("departments")
+            if not school_name or not isinstance(departments, list) or not departments:
+                raise ValueError("本地专业目录院校信息不完整")
+            seen_school_ids.add(normalized_school_id)
+            for department in departments:
+                if not isinstance(department, dict):
+                    raise ValueError("本地专业目录院系格式不正确")
+                department_name = str(department.get("name") or "").strip() or "未区分院系所"
+                programs = department.get("programs")
+                if not isinstance(programs, list) or not programs:
+                    raise ValueError("本地专业目录院系缺少专业")
+                department_keys.add((region, school_name, department_name))
+                for program in programs:
+                    if not isinstance(program, dict):
+                        raise ValueError("本地专业目录专业格式不正确")
+                    program_name = str(program.get("name") or "").strip()
+                    program_code = str(program.get("code") or "").strip()
+                    directions = program.get("directions")
+                    if not program_name or not isinstance(directions, list) or not directions:
+                        raise ValueError("本地专业目录专业缺少研究方向")
+                    program_keys.add((region, school_name, department_name, program_name, program_code))
+                    for direction in directions:
+                        if not isinstance(direction, dict):
+                            raise ValueError("本地专业目录研究方向格式不正确")
+                        direction_name = str(direction.get("name") or "").strip() or "不区分研究方向"
+                        exam_code = str(direction.get("exam_code") or "").strip()
+                        if exam_code not in MAJOR_CATALOG_EXAM_CODES:
+                            raise ValueError("本地专业目录存在无效考试代码")
+                        source_row += 1
+                        records.append({
+                            "catalog_year": catalog_year,
+                            "region": region,
+                            "school_name": school_name,
+                            "department_name": department_name,
+                            "program_name": program_name,
+                            "program_code": program_code,
+                            "direction_name": direction_name,
+                            "tutor": str(direction.get("tutor") or "").strip(),
+                            "exam_code": exam_code,
+                            "degree": str(direction.get("degree") or "").strip(),
+                            "study_mode": str(direction.get("study_mode") or "").strip(),
+                            "source_row": source_row,
+                        })
+
+    if seen_school_ids != expected_school_ids:
+        raise ValueError("本地专业目录存在未归属地区的院校")
+    if not records:
+        raise ValueError("本地专业目录没有可接入的记录")
+    statistics = {
+        "dataset": "major-catalog",
+        "total_rows": len(records),
+        "valid_rows": len(records),
+        "invalid_rows": 0,
+        "catalog_year": catalog_year,
+        "origin": "student_bundled_snapshot",
+        "source_version": str(catalog.get("version") or ""),
+        "region_count": len({record["region"] for record in records}),
+        "school_count": len(seen_school_ids),
+        "department_count": len(department_keys),
+        "program_count": len(program_keys),
+        "direction_count": len(records),
+    }
+    source_filename = f"学生端专业目录（{catalog_year}）"
+    return source_filename, _snapshot_source_sha256(records), statistics, records
+
+
+def _bootstrap_existing_admission_snapshot(
+    *,
+    dataset: str,
+    source_filename: str,
+    source_sha256: str,
+    statistics: dict,
+    records: list[dict],
+    action: str,
+    target_type: str,
+    admin_profile: dict,
+) -> AdminOperationsImportCommitResponse:
+    tables = _operations_dataset_tables(dataset)
+    supabase = get_supabase_admin()
+    run: dict | None = None
+    retrying_failed_run = False
+    try:
+        existing_response = call_supabase(
+            lambda: (
+                supabase.table(tables["run_table"])
+                .select("*")
+                .eq("source_sha256", source_sha256)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal bundled snapshot duplicate check",
+        )
+        existing_rows = existing_response.data or []
+        if existing_rows:
+            existing_run = existing_rows[0]
+            if str(existing_run.get("status") or "draft") != "failed":
+                return AdminOperationsImportCommitResponse(
+                    run=_operations_run_item(existing_run),
+                    created=False,
+                )
+            retrying_failed_run = True
+            run = existing_run
+            call_supabase(
+                lambda: (
+                    supabase.table(tables["record_table"])
+                    .delete()
+                    .eq("import_run_id", run.get("id"))
+                    .execute()
+                ),
+                operation_name="question portal bundled snapshot failed cleanup",
+            )
+
+        run_data = {
+            "source_filename": source_filename,
+            "source_sha256": source_sha256,
+            "statistics": statistics,
+            "status": "draft",
+            "created_by": admin_profile.get("id"),
+        }
+        if dataset == "major-catalog":
+            run_data["catalog_year"] = str(statistics.get("catalog_year") or "")
+        if retrying_failed_run:
+            run_data.update({"published_by": None, "published_at": None})
+            run_response = call_supabase(
+                lambda: (
+                    supabase.table(tables["run_table"])
+                    .update(run_data)
+                    .eq("id", run.get("id"))
+                    .execute()
+                ),
+                operation_name="question portal bundled snapshot failed retry",
+            )
+        else:
+            run_response = call_supabase(
+                lambda: supabase.table(tables["run_table"]).insert(run_data).execute(),
+                operation_name="question portal bundled snapshot run create",
+            )
+        if not run_response.data:
+            raise RuntimeError("现有数据版本创建失败")
+        run = run_response.data[0]
+        record_rows = [{**record, "import_run_id": run.get("id")} for record in records]
+        for start in range(0, len(record_rows), OPERATIONS_IMPORT_BATCH_SIZE):
+            batch = record_rows[start:start + OPERATIONS_IMPORT_BATCH_SIZE]
+            call_supabase(
+                lambda batch=batch: supabase.table(tables["record_table"]).insert(batch).execute(),
+                operation_name="question portal bundled snapshot record insert",
+            )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action=action,
+            target_type=target_type,
+            target_id=str(run.get("id") or ""),
+            details={**statistics, "record_count": len(records)},
+        )
+        return AdminOperationsImportCommitResponse(
+            run=_operations_run_item(run, record_count=len(records)),
+            created=True,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if run and run.get("id"):
+            try:
+                supabase.table(tables["run_table"]).update({"status": "failed"}).eq("id", run["id"]).execute()
+            except Exception:
+                pass
+        logger.warning("Question portal bundled snapshot bootstrap failed (dataset=%s error_type=%s)", dataset, type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="现有数据接入失败，请稍后重试",
+        ) from exc
+
+
+def _scoreline_update_data(payload: AdminScorelineRecordUpdateRequest, current: dict) -> dict:
+    update_data = payload.model_dump(exclude_none=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="没有需要更新的字段")
+
+    for field in ("score_year", "region", "school_name", "unit_name", "score_raw", "score_kind"):
+        if field not in update_data:
+            continue
+        update_data[field] = str(update_data[field] or "").strip()
+    if "score_year" in update_data and not re.fullmatch(r"20\d{2}", update_data["score_year"]):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="年份必须为 20xx")
+    for field, label in (("region", "地区"), ("school_name", "院校"), ("score_raw", "分数线")):
+        if field in update_data and not update_data[field]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{label}不能为空")
+    if "score_kind" in update_data and update_data["score_kind"] not in SCORELINE_RECORD_KINDS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的分数状态")
+    for field in ("source_url", "source_note"):
+        if field in update_data:
+            update_data[field] = str(update_data[field] or "").strip() or None
+
+    resolved_raw = str(update_data.get("score_raw", current.get("score_raw")) or "").strip()
+    resolved_kind = str(update_data.get("score_kind", current.get("score_kind")) or "").strip()
+    if "score_raw" in update_data or "score_kind" in update_data:
+        update_data["score_value"] = _scoreline_numeric_value(resolved_raw, resolved_kind)
+    return update_data
+
+
 def _portal_user_item(row: dict) -> QuestionAdminPortalUserItem:
     return QuestionAdminPortalUserItem(
         id=str(row.get("id") or ""),
@@ -1973,6 +2371,294 @@ async def question_admin_portal_admission_commit(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="导入提交失败，请稍后重试",
         ) from exc
+
+
+@router.post(
+    "/question-portal/admission/scorelines/bootstrap",
+    response_model=AdminOperationsImportCommitResponse,
+)
+def question_admin_portal_bootstrap_scorelines(
+    payload: AdminScorelineBootstrapRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminOperationsImportCommitResponse:
+    """Bring the pre-existing student scoreline dataset under version control."""
+    input_record_count = len(payload.records)
+    records = _normalize_scoreline_bootstrap_records(payload)
+    canonical_records = sorted(
+        records,
+        key=lambda item: (
+            item["score_year"],
+            item["region"],
+            item["school_name"],
+            item["unit_name"],
+            item["score_raw"],
+        ),
+    )
+    source_sha256 = sha256(
+        json.dumps(canonical_records, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+    ).hexdigest()
+    years = sorted({item["score_year"] for item in records})
+    source_filename = f"学生端历史分数线（{years[0]}-{years[-1]}）" if years else "学生端历史分数线"
+    supabase = get_supabase_admin()
+    run: dict | None = None
+    retrying_failed_run = False
+    try:
+        existing_response = call_supabase(
+            lambda: (
+                supabase.table("historical_scoreline_import_runs")
+                .select("*")
+                .eq("source_sha256", source_sha256)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal legacy scoreline duplicate check",
+        )
+        existing_rows = existing_response.data or []
+        if existing_rows:
+            existing_run = existing_rows[0]
+            if str(existing_run.get("status") or "draft") != "failed":
+                return AdminOperationsImportCommitResponse(
+                    run=_operations_run_item(existing_run),
+                    created=False,
+                )
+            retrying_failed_run = True
+            run = existing_run
+            call_supabase(
+                lambda: (
+                    supabase.table("historical_scoreline_records")
+                    .delete()
+                    .eq("import_run_id", run.get("id"))
+                    .execute()
+                ),
+                operation_name="question portal legacy scoreline failed cleanup",
+            )
+
+        statistics = {
+            "dataset": "scorelines",
+            "total_rows": input_record_count,
+            "valid_rows": len(records),
+            "invalid_rows": 0,
+            "merged_rows": input_record_count - len(records),
+            "origin": "student_static_dataset",
+        }
+        run_data = {
+            "source_filename": source_filename,
+            "source_sha256": source_sha256,
+            "statistics": statistics,
+            "status": "draft",
+            "created_by": admin_profile.get("id"),
+        }
+        if retrying_failed_run:
+            run_data.update({"published_by": None, "published_at": None})
+            run_response = call_supabase(
+                lambda: (
+                    supabase.table("historical_scoreline_import_runs")
+                    .update(run_data)
+                    .eq("id", run.get("id"))
+                    .execute()
+                ),
+                operation_name="question portal legacy scoreline retry",
+            )
+        else:
+            run_response = call_supabase(
+                lambda: supabase.table("historical_scoreline_import_runs").insert(run_data).execute(),
+                operation_name="question portal legacy scoreline run create",
+            )
+        if not run_response.data:
+            raise RuntimeError("历史分数线版本创建失败")
+        run = run_response.data[0]
+        record_rows = [{**record, "import_run_id": run.get("id")} for record in records]
+        for start in range(0, len(record_rows), OPERATIONS_IMPORT_BATCH_SIZE):
+            batch = record_rows[start:start + OPERATIONS_IMPORT_BATCH_SIZE]
+            call_supabase(
+                lambda batch=batch: supabase.table("historical_scoreline_records").insert(batch).execute(),
+                operation_name="question portal legacy scoreline record insert",
+            )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="bootstrap_legacy_scorelines",
+            target_type="admission_scorelines",
+            target_id=str(run.get("id") or ""),
+            details={"input_record_count": input_record_count, "record_count": len(records), "years": years},
+        )
+        return AdminOperationsImportCommitResponse(
+            run=_operations_run_item(run, record_count=len(records)),
+            created=True,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if run and run.get("id"):
+            try:
+                supabase.table("historical_scoreline_import_runs").update({"status": "failed"}).eq("id", run["id"]).execute()
+            except Exception:
+                pass
+        logger.warning("Question portal legacy scoreline bootstrap failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="现有分数线接入失败，请稍后重试",
+        ) from exc
+
+
+@router.post(
+    "/question-portal/admission/announcements/bootstrap",
+    response_model=AdminOperationsImportCommitResponse,
+)
+def question_admin_portal_bootstrap_announcements(
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminOperationsImportCommitResponse:
+    """Bring the bundled student announcement snapshot under version control."""
+    try:
+        source_filename, source_sha256, statistics, records = _bundled_announcement_snapshot()
+        return _bootstrap_existing_admission_snapshot(
+            dataset="announcements",
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            statistics=statistics,
+            records=records,
+            action="bootstrap_bundled_school_announcements",
+            target_type="admission_announcements",
+            admin_profile=admin_profile,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal announcement snapshot unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="现有院校公告暂时不可接入",
+        ) from exc
+
+
+@router.post(
+    "/question-portal/admission/major-catalog/bootstrap",
+    response_model=AdminOperationsImportCommitResponse,
+)
+def question_admin_portal_bootstrap_major_catalog(
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminOperationsImportCommitResponse:
+    """Bring the bundled student major-catalog snapshot under version control."""
+    try:
+        source_filename, source_sha256, statistics, records = _bundled_major_catalog_snapshot()
+        return _bootstrap_existing_admission_snapshot(
+            dataset="major-catalog",
+            source_filename=source_filename,
+            source_sha256=source_sha256,
+            statistics=statistics,
+            records=records,
+            action="bootstrap_bundled_major_catalog",
+            target_type="admission_major_catalog",
+            admin_profile=admin_profile,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal major-catalog snapshot unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="现有专业目录暂时不可接入",
+        ) from exc
+
+
+@router.get(
+    "/question-portal/admission/scorelines/records",
+    response_model=AdminScorelineRecordListResponse,
+)
+def question_admin_portal_scoreline_records(
+    import_run_id: str | None = Query(default=None, max_length=80),
+    score_year: str | None = Query(default=None, max_length=4),
+    region: str | None = Query(default=None, max_length=60),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminScorelineRecordListResponse:
+    normalized_year = (score_year or "").strip()
+    if normalized_year and not re.fullmatch(r"20\d{2}", normalized_year):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="年份必须为 20xx")
+    normalized_region = (region or "").strip()
+    normalized_keyword = (keyword or "").strip()
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("historical_scoreline_records").select("*", count="exact")
+        if import_run_id:
+            query = query.eq("import_run_id", import_run_id)
+        if normalized_year:
+            query = query.eq("score_year", normalized_year)
+        if normalized_region:
+            query = query.ilike("region", f"%{normalized_region}%")
+        if normalized_keyword:
+            query = query.ilike("school_name", f"%{normalized_keyword}%")
+        response = call_supabase(
+            lambda: (
+                query.order("score_year", desc=True)
+                .order("region")
+                .order("school_name")
+                .order("unit_name")
+                .range(offset, offset + limit - 1)
+                .execute()
+            ),
+            operation_name="question portal scoreline record list",
+        )
+        return AdminScorelineRecordListResponse(
+            items=response.data or [],
+            count=max(0, _safe_int(response.count, 0)),
+        )
+    except Exception as exc:
+        logger.warning("Question portal scoreline record list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="分数线记录暂时不可用",
+        ) from exc
+
+
+@router.patch("/question-portal/admission/scorelines/records/{record_id}", response_model=dict)
+def question_admin_portal_update_scoreline_record(
+    record_id: str,
+    payload: AdminScorelineRecordUpdateRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> dict:
+    supabase = get_supabase_admin()
+    try:
+        current_response = call_supabase(
+            lambda: (
+                supabase.table("historical_scoreline_records")
+                .select("*")
+                .eq("id", record_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal scoreline record lookup",
+        )
+        if not current_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该分数线记录")
+        update_data = _scoreline_update_data(payload, current_response.data[0])
+        response = call_supabase(
+            lambda: (
+                supabase.table("historical_scoreline_records")
+                .update(update_data)
+                .eq("id", record_id)
+                .execute()
+            ),
+            operation_name="question portal scoreline record update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该分数线记录")
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="update_historical_scoreline_record",
+            target_type="historical_scoreline",
+            target_id=record_id,
+            details={"fields": sorted(update_data)},
+        )
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal scoreline record update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="分数线更新失败") from exc
 
 
 @router.get(

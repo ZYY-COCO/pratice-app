@@ -538,22 +538,14 @@
             <view class="operations-status-chip"><text class="badge-dot"></text> {{ operationsMetricValue('published_announcements') }} 条公告已发布</view>
           </view>
           <view class="operations-tab-strip">
-            <button v-for="item in admissionDatasets" :key="item.key" class="operations-tab" :class="{ active: admissionDataset === item.key }" @tap="switchAdmissionDataset(item.key)"><text>{{ item.label }}</text><small>{{ admissionDatasetDraftLabel(item.key) }}</small></button>
+            <view v-for="item in admissionDatasets" :key="item.key" class="operations-tab" :class="{ active: admissionDataset === item.key }">
+              <view class="operations-tab-copy" role="button" :aria-label="`查看${item.label}数据`" @tap="switchAdmissionDataset(item.key)"><text>{{ item.label }}</text><small>{{ admissionDatasetDraftLabel(item.key) }}</small></view>
+              <button class="admission-card-import-button" @tap.stop="openAdmissionImport(item.key)">导入数据</button>
+            </view>
           </view>
 
-          <view class="question-workspace admission-import-workspace">
-              <view class="workspace-heading"><view><view class="panel-title">{{ currentAdmissionDataset.label }}导入</view><view class="panel-subtitle">{{ currentAdmissionDataset.description }}</view></view><button class="header-import-button template" @tap="downloadAdmissionTemplate">下载模板</button></view>
-              <view class="admission-import-actions">
-                <label class="admission-file-picker"><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="handleAdmissionFileChange" /><text>{{ admissionFileName || '选择标准 .xlsx 文件' }}</text></label>
-                <button class="secondary-button" :disabled="!admissionFile || admissionPreviewLoading" @tap="previewAdmissionImport">{{ admissionPreviewLoading ? '检查中…' : '导入预览' }}</button>
-                <button class="primary-button" :disabled="!canCommitAdmissionImport || admissionCommitting" @tap="commitAdmissionImport">{{ admissionCommitting ? '提交中…' : '提交待发布' }}</button>
-              </view>
-              <view v-if="admissionPreview" class="admission-preview-summary" :class="{ error: Number(admissionPreview.invalid_rows || 0) > 0 }"><view><strong>{{ admissionPreview.valid_rows || 0 }}</strong><text> 行可提交</text></view><view><strong>{{ admissionPreview.invalid_rows || 0 }}</strong><text> 行需修正</text></view><view><text>文件校验码 {{ String(admissionPreview.source_sha256 || '').slice(0, 12) }}</text></view></view>
-              <view v-if="admissionPreview?.preview_items?.length" class="admission-preview-list"><view v-for="item in admissionPreview.preview_items.slice(0, 6)" :key="`${item.source_row}-${item.title || item.school_name || ''}`" class="admission-preview-row" :class="{ invalid: item.valid === false }"><text>第 {{ item.source_row || '—' }} 行</text><text>{{ item.title || item.school_name || '字段检查' }}</text><text>{{ item.valid === false ? (item.errors || []).join('；') : '字段有效' }}</text></view></view>
-            </view>
-
             <view class="question-workspace admission-run-workspace">
-              <view class="workspace-heading"><view><view class="panel-title">版本记录</view><view class="panel-subtitle">同一类资料同时只有一个公开版本；发布新批次会自动归档上一个版本，可随时回滚。</view></view></view>
+              <view class="workspace-heading"><view><view class="panel-title">数据版本</view><view class="panel-subtitle">同一类资料同时只有一个公开版本；发布新批次会自动归档上一个版本，可随时回滚。</view></view></view>
               <view class="question-table-wrap">
                 <view class="question-table admission-run-table">
                   <view class="admission-run-grid table-head"><view>导入文件</view><view>有效行</view><view>状态</view><view>创建时间</view><view>发布时间</view><view>操作</view></view>
@@ -565,10 +557,10 @@
                     v-for="run in admissionRuns"
                     :key="run.id"
                     class="admission-run-grid admission-run-row"
-                    :class="{ selected: admissionDataset === 'announcements' && selectedAdmissionRunId === run.id }"
+                    :class="{ selected: ['scorelines', 'announcements'].includes(admissionDataset) && selectedAdmissionRunId === run.id }"
                     @tap="selectAdmissionRun(run)"
                   >
-                    <view><strong>{{ run.source_filename }}</strong><text>{{ shortId(run.id) }}{{ admissionDataset === 'announcements' && selectedAdmissionRunId === run.id ? ' · 正在查看' : '' }}</text></view>
+                    <view><strong>{{ run.source_filename }}</strong><text>{{ shortId(run.id) }}{{ ['scorelines', 'announcements'].includes(admissionDataset) && selectedAdmissionRunId === run.id ? ' · 正在查看' : '' }}</text></view>
                     <view>{{ formatCount(run.record_count || run.statistics?.valid_rows) }}</view>
                     <view><text class="status-pill" :class="run.status === 'published' ? 'published' : run.status === 'failed' ? 'archived' : 'pending'">{{ admissionRunStatusText(run.status) }}</text></view>
                     <view>{{ formatDateTime(run.created_at) }}</view>
@@ -583,10 +575,46 @@
               </view>
             </view>
 
+            <view v-if="admissionDataset === 'scorelines'" class="question-workspace scoreline-record-workspace">
+              <view class="workspace-heading scoreline-workspace-heading">
+                <view><view class="panel-title">分数线逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前版本：${selectedAdmissionRun.source_filename}` : '请先在版本记录中选择一个批次' }}</view></view>
+                <view class="scoreline-heading-tools"><text>{{ formatCount(scorelineRecordCount) }} 条</text><button v-if="!admissionRunsLoading && !admissionRuns.length" class="row-action" :disabled="scorelineRecordBootstrapLoading" @tap="bootstrapExistingScorelineRecords">{{ scorelineRecordBootstrapLoading ? '接入中…' : '接入现有数据' }}</button></view>
+              </view>
+              <view v-if="selectedAdmissionRun" class="scoreline-filter-toolbar">
+                <input v-model.trim="scorelineFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="100" placeholder="搜索院校" confirm-type="search" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
+                <input v-model.trim="scorelineFilters.score_year" class="scoreline-filter-input scoreline-filter-year" type="number" maxlength="4" placeholder="年份" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
+                <input v-model.trim="scorelineFilters.region" class="scoreline-filter-input scoreline-filter-region" maxlength="60" placeholder="地区" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
+                <button v-if="scorelineFilters.keyword || scorelineFilters.score_year || scorelineFilters.region" class="scoreline-filter-clear" @tap="clearScorelineFilters">×</button>
+              </view>
+              <view class="question-table-wrap">
+                <view class="question-table scoreline-record-table">
+                  <view class="scoreline-record-grid table-head"><view>年份</view><view>地区</view><view>招生单位</view><view>分数线</view><view>来源与备注</view><view>更新时间</view><view>操作</view></view>
+                  <view v-if="!selectedAdmissionRun" class="table-state">{{ admissionRuns.length ? '请选择一个分数线版本后查看记录' : '尚无受管分数线版本' }}</view>
+                  <view v-else-if="scorelineRecordsLoading" class="table-state">正在读取分数线…</view>
+                  <view v-else-if="scorelineRecordsError" class="table-state error"><view>分数线记录读取失败。</view><button @tap="loadScorelineRecords">重新加载</button></view>
+                  <view v-else-if="!scorelineRecords.length" class="table-state">该版本在当前筛选下没有分数线记录</view>
+                  <view v-else v-for="item in scorelineRecords" :key="item.id" class="scoreline-record-grid scoreline-record-row">
+                    <view class="scoreline-year-cell">{{ item.score_year }}</view>
+                    <view>{{ item.region }}</view>
+                    <view><strong>{{ item.school_name }}</strong><text>{{ item.unit_name || '招生单位' }}</text></view>
+                    <view><strong class="scoreline-value">{{ item.score_raw }}</strong><text class="scoreline-kind" :class="`is-${item.score_kind || 'note'}`">{{ scorelineKindText(item.score_kind) }}</text></view>
+                    <view class="scoreline-source-cell"><strong v-if="item.source_note">{{ item.source_note }}</strong><text v-else>—</text><small v-if="item.source_url">已附来源链接</small></view>
+                    <view>{{ formatDateTime(item.updated_at || item.created_at) }}</view>
+                    <view><button class="row-action" :disabled="scorelineRecordSaving && scorelineRecordEditingId === item.id" @tap="openScorelineRecordEditor(item)">编辑</button></view>
+                  </view>
+                </view>
+              </view>
+              <view v-if="selectedAdmissionRun" class="pagination-row scoreline-pagination"><view class="pagination-info">共 {{ formatCount(scorelineRecordCount) }} 条，每页 {{ scorelineRecordPageSize }} 条</view><view class="pagination-actions"><button :disabled="scorelineRecordPage <= 1 || scorelineRecordsLoading" @tap="changeScorelineRecordPage(scorelineRecordPage - 1)">‹</button><view class="page-current">{{ scorelineRecordPage }}</view><view class="page-total">/ {{ scorelineRecordTotalPages }}</view><button :disabled="scorelineRecordPage >= scorelineRecordTotalPages || scorelineRecordsLoading" @tap="changeScorelineRecordPage(scorelineRecordPage + 1)">›</button></view></view>
+            </view>
+
             <view v-if="admissionDataset === 'announcements'" class="question-workspace announcement-record-workspace">
               <view class="workspace-heading announcement-workspace-heading">
                 <view><view class="panel-title">公告逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前版本：${selectedAdmissionRun.source_filename}` : '请先在版本记录中选择一个批次' }}</view></view>
-                <view class="announcement-heading-tools"><text>{{ formatCount(announcementRecordCount) }} 条</text><AdminSelect class="question-admin-select" :options="announcementRecordStatusOptions.map((item) => item.label)" :value-index="announcementRecordStatusIndex" aria-label="公告状态" @change="handleAnnouncementRecordStatusChange" /></view>
+                <view class="announcement-heading-tools">
+                  <text>{{ formatCount(announcementRecordCount) }} 条</text>
+                  <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('announcements')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
+                  <AdminSelect class="question-admin-select" :options="announcementRecordStatusOptions.map((item) => item.label)" :value-index="announcementRecordStatusIndex" aria-label="公告状态" @change="handleAnnouncementRecordStatusChange" />
+                </view>
               </view>
               <view class="question-table-wrap">
                 <view class="question-table announcement-record-table">
@@ -603,6 +631,23 @@
                     <view><text class="status-pill" :class="item.status === 'published' ? 'published' : item.status === 'archived' ? 'archived' : 'pending'">{{ admissionRunStatusText(item.status) }}</text></view>
                     <view class="announcement-record-actions"><template v-if="canManageSelectedAnnouncementRecords"><button class="row-action" :disabled="announcementUpdatingId === item.id" @tap="setAnnouncementRecordStatus(item, item.status === 'published' ? 'archived' : 'published')">{{ announcementUpdatingId === item.id ? '处理中' : item.status === 'published' ? '归档' : '发布' }}</button><button class="row-action" :disabled="item.status !== 'published' || announcementUpdatingId === item.id" @tap="toggleAnnouncementPinned(item)">{{ item.is_pinned ? '取消置顶' : '置顶' }}</button></template><text v-else class="row-unavailable-copy">随版本发布</text></view>
                   </view>
+                </view>
+              </view>
+            </view>
+
+            <view v-if="admissionDataset === 'major-catalog'" class="question-workspace major-catalog-workspace">
+              <view class="workspace-heading major-catalog-workspace-heading">
+                <view><view class="panel-title">专业目录版本管理</view><view class="panel-subtitle">按完整年度快照维护，发布时会原子切换学生端目录。</view></view>
+                <view class="major-catalog-heading-tools">
+                  <text v-if="admissionRuns.length">{{ formatCount(admissionRuns.length) }} 个版本</text>
+                  <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('major-catalog')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
+                </view>
+              </view>
+              <view class="major-catalog-guard">
+                <view class="major-catalog-guard-mark">目录</view>
+                <view>
+                  <view class="major-catalog-guard-title">{{ admissionRuns.length ? '目录版本已纳入管理' : '当前 2026 专业目录尚未接入' }}</view>
+                  <view class="major-catalog-guard-copy">{{ admissionRuns.length ? '请在上方版本记录中发布或回滚目录快照。' : '接入后将先创建草稿版本，确认发布前不会影响学生端。' }}</view>
                 </view>
               </view>
             </view>
@@ -937,6 +982,53 @@
         </section>
       </template>
     </main>
+
+    <view v-if="admissionImportVisible" class="drawer-backdrop admission-import-backdrop" @tap="closeAdmissionImport()">
+      <view class="admission-import-modal" @tap.stop>
+        <view class="drawer-header">
+          <view><view class="drawer-kicker">IMPORT DATA</view><view class="drawer-title">{{ currentAdmissionDataset.label }}导入</view></view>
+          <button class="drawer-close" :disabled="admissionCommitting || admissionPreviewLoading" @tap="closeAdmissionImport()">×</button>
+        </view>
+        <scroll-view scroll-y class="admission-import-scroll">
+          <view class="admission-import-content">
+            <view class="admission-import-intro"><view><view class="panel-title">导入前字段检查</view><view class="panel-subtitle">{{ currentAdmissionDataset.description }}</view></view><button class="header-import-button template" @tap="downloadAdmissionTemplate">下载模板</button></view>
+            <view class="admission-import-actions">
+              <label class="admission-file-picker"><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="handleAdmissionFileChange" /><text>{{ admissionFileName || '选择标准 .xlsx 文件' }}</text></label>
+              <button class="secondary-button" :disabled="!admissionFile || admissionPreviewLoading" @tap="previewAdmissionImport">{{ admissionPreviewLoading ? '检查中…' : '导入预览' }}</button>
+              <button class="primary-button" :disabled="!canCommitAdmissionImport || admissionCommitting" @tap="commitAdmissionImport">{{ admissionCommitting ? '提交中…' : '提交待发布' }}</button>
+            </view>
+            <view v-if="admissionPreview" class="admission-preview-summary" :class="{ error: Number(admissionPreview.invalid_rows || 0) > 0 }"><view><strong>{{ admissionPreview.valid_rows || 0 }}</strong><text> 行可提交</text></view><view><strong>{{ admissionPreview.invalid_rows || 0 }}</strong><text> 行需修正</text></view><view><text>文件校验码 {{ String(admissionPreview.source_sha256 || '').slice(0, 12) }}</text></view></view>
+            <view v-if="admissionPreview?.preview_items?.length" class="admission-preview-list"><view v-for="item in admissionPreview.preview_items.slice(0, 6)" :key="`${item.source_row}-${item.title || item.school_name || ''}`" class="admission-preview-row" :class="{ invalid: item.valid === false }"><text>第 {{ item.source_row || '—' }} 行</text><text>{{ item.title || item.school_name || '字段检查' }}</text><text>{{ item.valid === false ? (item.errors || []).join('；') : '字段有效' }}</text></view></view>
+          </view>
+        </scroll-view>
+        <view class="drawer-footer admission-import-footer"><button class="footer-button secondary" :disabled="admissionCommitting || admissionPreviewLoading" @tap="closeAdmissionImport()">关闭</button></view>
+      </view>
+    </view>
+
+    <view v-if="scorelineRecordEditorVisible" class="drawer-backdrop scoreline-editor-backdrop" @tap="closeScorelineRecordEditor">
+      <view class="scoreline-editor-modal" @tap.stop>
+        <view class="drawer-header">
+          <view><view class="drawer-kicker">SCORELINE RECORD</view><view class="drawer-title">编辑分数线</view></view>
+          <button class="drawer-close" :disabled="scorelineRecordSaving" @tap="closeScorelineRecordEditor">×</button>
+        </view>
+        <scroll-view scroll-y class="scoreline-editor-scroll">
+          <view class="scoreline-editor-content">
+            <view class="scoreline-editor-status" :class="{ published: selectedAdmissionRun?.status === 'published' }">{{ selectedAdmissionRun?.status === 'published' ? '当前版本已发布，保存后将同步学生端。' : '当前版本尚未发布。' }}</view>
+            <view class="scoreline-editor-grid">
+              <view class="form-field"><view class="form-label">年份</view><input v-model.trim="scorelineRecordForm.score_year" class="form-input" type="number" maxlength="4" placeholder="例如 2026" /></view>
+              <view class="form-field"><view class="form-label">地区</view><input v-model.trim="scorelineRecordForm.region" class="form-input" maxlength="60" placeholder="例如 广东" /></view>
+              <view class="form-field"><view class="form-label">院校</view><input v-model.trim="scorelineRecordForm.school_name" class="form-input" maxlength="160" placeholder="填写院校名称" /></view>
+              <view class="form-field"><view class="form-label">院系（选填）</view><input v-model.trim="scorelineRecordForm.unit_name" class="form-input" maxlength="160" placeholder="例如 研究生院" /></view>
+              <view class="form-field full"><view class="form-label">分数线内容</view><textarea v-model.trim="scorelineRecordForm.score_raw" class="form-textarea scoreline-form-textarea" maxlength="1000" placeholder="例如 90 或各专业分数线不同" /></view>
+              <view class="form-field"><view class="form-label">数据状态</view><AdminSelect class="form-admin-select" :options="scorelineKindLabels" :value-index="scorelineKindIndex" aria-label="分数线数据状态" @change="handleScorelineKindChange" /></view>
+              <view class="form-field"><view class="form-label">来源链接（选填）</view><input v-model.trim="scorelineRecordForm.source_url" class="form-input" maxlength="1000" placeholder="https://..." /></view>
+              <view class="form-field full"><view class="form-label">来源备注（选填）</view><textarea v-model.trim="scorelineRecordForm.source_note" class="form-textarea scoreline-form-textarea note" maxlength="2000" placeholder="填写院校、公告或核验说明" /></view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="drawer-footer"><button class="footer-button secondary" :disabled="scorelineRecordSaving" @tap="closeScorelineRecordEditor">取消</button><button class="footer-button primary" :disabled="scorelineRecordSaving" @tap="saveScorelineRecord">{{ scorelineRecordSaving ? '保存中…' : '保存修改' }}</button></view>
+      </view>
+    </view>
 
     <view v-if="portalUserDetailVisible" class="drawer-backdrop portal-user-detail-backdrop" @tap="closePortalUserDetail">
       <view class="portal-user-detail-modal" @tap.stop>
@@ -1318,6 +1410,7 @@ import { onLoad } from '@dcloudio/uni-app'
 import AdminSelect from '../../components/AdminSelect.vue'
 import {
   bulkUpdateQuestionAdminCommunityPostVisibility,
+  bootstrapQuestionAdminScorelines,
   bulkUpdateAdminQuestionStatus,
   createAdminQuestion,
   createAdminQuestionBank,
@@ -1339,6 +1432,8 @@ import {
   fetchQuestionAdminPortalMe,
   fetchQuestionAdminPortalUserDetail,
   fetchQuestionAdminPortalUsers,
+  fetchQuestionAdminScorelineRecords,
+  bootstrapQuestionAdminAdmissionSnapshot,
   previewQuestionAdminAdmissionImport,
   publishQuestionAdminAdmissionRun,
   publishAdminQuestionBankPendingQuestions,
@@ -1350,11 +1445,13 @@ import {
   updateAdminQuestionStatus,
   updateQuestionAdminCommunityPostVisibility,
   updateQuestionAdminPortalUserDisabled,
+  updateQuestionAdminScorelineRecord,
   commitQuestionAdminAdmissionImport
 } from '../../api/admin'
 import MathText from '../../components/MathText.vue'
 import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
 import QuestionImageImport from './question-image-import.vue'
+import { historicalScoreLineRecords as legacyHistoricalScoreLineRecords } from '../../data/historicalScoreLines'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import { downloadReturnedQuestionsWorkbook } from '../../utils/xlsxQuestionExport.mjs'
@@ -1461,10 +1558,38 @@ const admissionRunsError = ref(false)
 const admissionFile = ref(null)
 const admissionFileName = ref('')
 const admissionPreview = ref(null)
+const admissionImportVisible = ref(false)
 const admissionPreviewLoading = ref(false)
 const admissionCommitting = ref(false)
 const admissionPublishingId = ref('')
+const admissionSnapshotBootstrapLoading = ref(false)
 const selectedAdmissionRunId = ref('')
+const scorelineRecords = ref([])
+const scorelineRecordCount = ref(0)
+const scorelineRecordsLoading = ref(false)
+const scorelineRecordsError = ref(false)
+const scorelineRecordPage = ref(1)
+const scorelineRecordPageSize = 50
+const scorelineRecordBootstrapLoading = ref(false)
+const scorelineRecordEditorVisible = ref(false)
+const scorelineRecordSaving = ref(false)
+const scorelineRecordEditingId = ref('')
+const scorelineFilters = reactive({
+  score_year: '',
+  region: '',
+  keyword: ''
+})
+const scorelineRecordForm = reactive({
+  score_year: '',
+  region: '',
+  school_name: '',
+  unit_name: '',
+  score_raw: '',
+  score_kind: 'score',
+  source_url: '',
+  source_note: ''
+})
+const devPreviewScorelineRecords = ref([])
 const announcementRecords = ref([])
 const announcementRecordCount = ref(0)
 const announcementRecordsLoading = ref(false)
@@ -1543,6 +1668,7 @@ const returnedReviewBatchExported = ref(false)
 let searchTimer = null
 let communitySearchTimer = null
 let portalUserSearchTimer = null
+let scorelineSearchTimer = null
 
 const filters = reactive({
   subject: '',
@@ -1668,6 +1794,14 @@ const announcementRecordStatusOptions = [
   { label: '已发布', value: 'published' },
   { label: '待发布', value: 'draft' },
   { label: '已归档', value: 'archived' }
+]
+const scorelineKindOptions = [
+  { label: '数字分数', value: 'score' },
+  { label: '暂无数据', value: 'missing' },
+  { label: '未划线', value: 'unavailable' },
+  { label: '详见官网', value: 'official' },
+  { label: '多套标准', value: 'multiple' },
+  { label: '文字说明', value: 'note' }
 ]
 const answerOptions = ['A', 'B', 'C', 'D']
 const previewQuestions = [
@@ -1971,6 +2105,16 @@ const canCommitAdmissionImport = computed(() => (
 const selectedAdmissionRun = computed(() => (
   admissionRuns.value.find((item) => item.id === selectedAdmissionRunId.value) || null
 ))
+const canBootstrapExistingAdmissionSnapshot = computed(() => (
+  ['announcements', 'major-catalog'].includes(admissionDataset.value)
+  && !admissionRunsLoading.value
+  && !admissionRunsError.value
+  && !admissionRuns.value.some((item) => item.status !== 'failed')
+))
+const scorelineRecordTotalPages = computed(() => Math.max(1, Math.ceil(scorelineRecordCount.value / scorelineRecordPageSize)))
+const scorelineKindLabels = computed(() => scorelineKindOptions.map((item) => item.label))
+const scorelineKindIndex = computed(() => optionIndex(scorelineKindOptions, scorelineRecordForm.score_kind))
+const legacyScorelineImportRecords = computed(() => buildLegacyScorelineImportRecords())
 const canManageSelectedAnnouncementRecords = computed(() => selectedAdmissionRun.value?.status === 'published')
 const announcementRecordStatusIndex = computed(() => optionIndex(announcementRecordStatusOptions, announcementRecordStatus.value))
 const homeFocusContentItems = computed(() => sortHomeContentItems(homeContentItems.value.filter((item) => item.slot === 'focus')))
@@ -2078,6 +2222,7 @@ onUnmounted(() => {
   if (searchTimer) clearTimeout(searchTimer)
   if (communitySearchTimer) clearTimeout(communitySearchTimer)
   if (portalUserSearchTimer) clearTimeout(portalUserSearchTimer)
+  if (scorelineSearchTimer) clearTimeout(scorelineSearchTimer)
   if (homeContentClockTimer) clearInterval(homeContentClockTimer)
 })
 
@@ -3494,6 +3639,12 @@ function loadDevPreview() {
   } else if (activeSection.value === 'admission') {
     loadDevPreviewOperations()
     loadDevPreviewAdmission()
+    ensureSelectedAdmissionRun()
+    if (admissionDataset.value === 'scorelines') {
+      loadScorelineRecords()
+    } else if (admissionDataset.value === 'announcements') {
+      loadAnnouncementRecords()
+    }
   } else if (activeSection.value === 'homeOps') {
     loadDevPreviewOperations()
     loadDevPreviewHomeContent()
@@ -3767,7 +3918,9 @@ async function togglePortalUserDisabled(item) {
 
 async function loadAdmissionWorkspace() {
   await loadAdmissionRuns()
-  if (admissionDataset.value === 'announcements') {
+  if (admissionDataset.value === 'scorelines') {
+    await loadScorelineRecords()
+  } else if (admissionDataset.value === 'announcements') {
     await loadAnnouncementRecords()
   }
 }
@@ -3780,13 +3933,38 @@ async function switchAdmissionDataset(dataset) {
   admissionPreview.value = null
   admissionRuns.value = []
   selectedAdmissionRunId.value = ''
+  scorelineRecordPage.value = 1
+  scorelineFilters.score_year = ''
+  scorelineFilters.region = ''
+  scorelineFilters.keyword = ''
+  scorelineRecords.value = []
+  scorelineRecordCount.value = 0
+  scorelineRecordsError.value = false
   announcementRecordStatus.value = 'all'
   announcementRecords.value = []
   await loadAdmissionWorkspace()
 }
 
+async function openAdmissionImport(dataset = admissionDataset.value) {
+  if (dataset !== admissionDataset.value) {
+    await switchAdmissionDataset(dataset)
+  }
+  admissionFile.value = null
+  admissionFileName.value = ''
+  admissionPreview.value = null
+  admissionImportVisible.value = true
+}
+
+function closeAdmissionImport(force = false) {
+  if ((admissionCommitting.value || admissionPreviewLoading.value) && !force) return
+  admissionImportVisible.value = false
+  admissionFile.value = null
+  admissionFileName.value = ''
+  admissionPreview.value = null
+}
+
 function ensureSelectedAdmissionRun(preferredRunId = '') {
-  if (admissionDataset.value !== 'announcements') {
+  if (!['scorelines', 'announcements'].includes(admissionDataset.value)) {
     selectedAdmissionRunId.value = ''
     return
   }
@@ -3816,6 +3994,250 @@ async function loadAdmissionRuns(preferredRunId = '') {
     admissionRunsError.value = true
   } finally {
     admissionRunsLoading.value = false
+  }
+}
+
+function buildLegacyScorelineImportRecords() {
+  const rowsByKey = new Map()
+  legacyHistoricalScoreLineRecords.forEach((record) => {
+    Object.entries(record?.scores || {}).forEach(([scoreYear, score]) => {
+      const scoreRaw = String(score?.raw || '').trim()
+      if (!scoreRaw) return
+      const row = {
+        score_year: String(scoreYear),
+        region: String(record?.region || '').trim(),
+        school_name: String(record?.schoolName || record?.school || '').trim(),
+        unit_name: String(record?.unitName || '').trim(),
+        score_raw: scoreRaw,
+        score_kind: String(score?.kind || 'note')
+      }
+      const key = [row.score_year, row.region, row.school_name, row.unit_name].join('|')
+      const existing = rowsByKey.get(key)
+      if (existing) {
+        existing.score_raw = `${existing.score_raw}；${row.score_raw}`
+        existing.score_kind = 'multiple'
+        return
+      }
+      rowsByKey.set(key, row)
+    })
+  })
+  return [...rowsByKey.values()]
+}
+
+function scorelineNumericValue(scoreRaw, scoreKind) {
+  if (scoreKind !== 'score') return null
+  const normalized = String(scoreRaw || '').trim().replace(/分$/, '').trim()
+  return /^\d+(?:\.\d+)?$/.test(normalized) ? Number(normalized) : null
+}
+
+function ensureDevPreviewScorelineRecords() {
+  if (devPreviewScorelineRecords.value.length) return
+  devPreviewScorelineRecords.value = legacyScorelineImportRecords.value.map((item, index) => ({
+    ...item,
+    id: `preview-scoreline-${index + 1}`,
+    import_run_id: 'preview-score-run-1',
+    score_value: scorelineNumericValue(item.score_raw, item.score_kind),
+    source_url: null,
+    source_note: '',
+    created_at: '2026-08-10T02:00:00Z',
+    updated_at: '2026-08-10T02:00:00Z'
+  }))
+}
+
+async function loadScorelineRecords() {
+  if (!selectedAdmissionRunId.value) {
+    scorelineRecords.value = []
+    scorelineRecordCount.value = 0
+    scorelineRecordsError.value = false
+    return
+  }
+  if (devPreviewMode.value) {
+    ensureDevPreviewScorelineRecords()
+    const keyword = scorelineFilters.keyword.trim().toLowerCase()
+    const region = scorelineFilters.region.trim().toLowerCase()
+    const scoreYear = scorelineFilters.score_year.trim()
+    const filtered = devPreviewScorelineRecords.value.filter((item) => (
+      item.import_run_id === selectedAdmissionRunId.value
+      && (!scoreYear || item.score_year === scoreYear)
+      && (!region || String(item.region || '').toLowerCase().includes(region))
+      && (!keyword || `${item.school_name || ''} ${item.unit_name || ''}`.toLowerCase().includes(keyword))
+    )).sort((left, right) => (
+      String(right.score_year || '').localeCompare(String(left.score_year || ''))
+      || String(left.region || '').localeCompare(String(right.region || ''))
+      || String(left.school_name || '').localeCompare(String(right.school_name || ''))
+    ))
+    scorelineRecordCount.value = filtered.length
+    const maxPage = Math.max(1, Math.ceil(filtered.length / scorelineRecordPageSize))
+    if (scorelineRecordPage.value > maxPage) scorelineRecordPage.value = maxPage
+    const start = (scorelineRecordPage.value - 1) * scorelineRecordPageSize
+    scorelineRecords.value = filtered.slice(start, start + scorelineRecordPageSize).map((item) => ({ ...item }))
+    scorelineRecordsError.value = false
+    return
+  }
+  scorelineRecordsLoading.value = true
+  scorelineRecordsError.value = false
+  try {
+    const response = await fetchQuestionAdminScorelineRecords({
+      import_run_id: selectedAdmissionRunId.value,
+      score_year: scorelineFilters.score_year.trim() || undefined,
+      region: scorelineFilters.region.trim() || undefined,
+      keyword: scorelineFilters.keyword.trim() || undefined,
+      limit: scorelineRecordPageSize,
+      offset: (scorelineRecordPage.value - 1) * scorelineRecordPageSize
+    })
+    scorelineRecords.value = response?.items || []
+    scorelineRecordCount.value = Number(response?.count || 0)
+  } catch (error) {
+    scorelineRecords.value = []
+    scorelineRecordCount.value = 0
+    scorelineRecordsError.value = true
+  } finally {
+    scorelineRecordsLoading.value = false
+  }
+}
+
+function applyScorelineFilters() {
+  scorelineRecordPage.value = 1
+  loadScorelineRecords()
+}
+
+function handleScorelineFilterInput() {
+  if (scorelineSearchTimer) clearTimeout(scorelineSearchTimer)
+  scorelineSearchTimer = setTimeout(applyScorelineFilters, 360)
+}
+
+function clearScorelineFilters() {
+  scorelineFilters.score_year = ''
+  scorelineFilters.region = ''
+  scorelineFilters.keyword = ''
+  applyScorelineFilters()
+}
+
+function changeScorelineRecordPage(page) {
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), scorelineRecordTotalPages.value)
+  if (nextPage === scorelineRecordPage.value) return
+  scorelineRecordPage.value = nextPage
+  loadScorelineRecords()
+}
+
+function scorelineKindText(kind) {
+  return scorelineKindOptions.find((item) => item.value === kind)?.label || '文字说明'
+}
+
+async function bootstrapExistingScorelineRecords() {
+  if (scorelineRecordBootstrapLoading.value || !legacyScorelineImportRecords.value.length) return
+  const confirmed = await confirmAction(
+    '接入现有分数线？',
+    `将 ${formatCount(legacyScorelineImportRecords.value.length)} 条现有分数信息创建为草稿版本，学生端暂不变更。`,
+    '接入数据'
+  )
+  if (!confirmed) return
+  scorelineRecordBootstrapLoading.value = true
+  try {
+    const response = await bootstrapQuestionAdminScorelines({ records: legacyScorelineImportRecords.value })
+    await loadAdmissionRuns(response?.run?.id)
+    await loadScorelineRecords()
+    uni.showToast({ title: response?.created === false ? '现有数据已在版本记录中' : '已接入分数线草稿', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '现有数据接入失败', icon: 'none' })
+  } finally {
+    scorelineRecordBootstrapLoading.value = false
+  }
+}
+
+async function bootstrapExistingAdmissionSnapshot(dataset) {
+  if (!['announcements', 'major-catalog'].includes(dataset) || admissionSnapshotBootstrapLoading.value) return
+  const isAnnouncement = dataset === 'announcements'
+  const confirmed = await confirmAction(
+    isAnnouncement ? '接入现有院校公告？' : '接入现有专业目录？',
+    isAnnouncement
+      ? '将当前学生端院校公告创建为草稿版本，发布前不会影响学生端。'
+      : '将当前学生端 2026 专业目录创建为草稿版本，发布前不会影响学生端。',
+    '接入数据'
+  )
+  if (!confirmed) return
+  admissionSnapshotBootstrapLoading.value = true
+  try {
+    const response = await bootstrapQuestionAdminAdmissionSnapshot(dataset)
+    if (admissionDataset.value === dataset) {
+      await loadAdmissionRuns(response?.run?.id)
+      if (dataset === 'announcements') await loadAnnouncementRecords()
+    }
+    await loadOperationsOverview()
+    uni.showToast({ title: response?.created === false ? '现有数据已在版本记录中' : isAnnouncement ? '已接入公告草稿' : '已接入目录草稿', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || (isAnnouncement ? '院校公告接入失败' : '专业目录接入失败'), icon: 'none' })
+  } finally {
+    admissionSnapshotBootstrapLoading.value = false
+  }
+}
+
+function openScorelineRecordEditor(item) {
+  if (!item?.id) return
+  scorelineRecordEditingId.value = item.id
+  scorelineRecordForm.score_year = String(item.score_year || '')
+  scorelineRecordForm.region = String(item.region || '')
+  scorelineRecordForm.school_name = String(item.school_name || '')
+  scorelineRecordForm.unit_name = String(item.unit_name || '')
+  scorelineRecordForm.score_raw = String(item.score_raw || '')
+  scorelineRecordForm.score_kind = String(item.score_kind || 'note')
+  scorelineRecordForm.source_url = String(item.source_url || '')
+  scorelineRecordForm.source_note = String(item.source_note || '')
+  scorelineRecordEditorVisible.value = true
+}
+
+function closeScorelineRecordEditor(force = false) {
+  if (scorelineRecordSaving.value && !force) return
+  scorelineRecordEditorVisible.value = false
+  scorelineRecordEditingId.value = ''
+}
+
+function handleScorelineKindChange(event) {
+  scorelineRecordForm.score_kind = scorelineKindOptions[Number(event?.detail?.value || 0)]?.value || 'note'
+}
+
+async function saveScorelineRecord() {
+  if (!scorelineRecordEditingId.value || scorelineRecordSaving.value) return
+  const payload = {
+    score_year: scorelineRecordForm.score_year.trim(),
+    region: scorelineRecordForm.region.trim(),
+    school_name: scorelineRecordForm.school_name.trim(),
+    unit_name: scorelineRecordForm.unit_name.trim(),
+    score_raw: scorelineRecordForm.score_raw.trim(),
+    score_kind: scorelineRecordForm.score_kind,
+    source_url: scorelineRecordForm.source_url.trim(),
+    source_note: scorelineRecordForm.source_note.trim()
+  }
+  if (!/^20\d{2}$/.test(payload.score_year) || !payload.region || !payload.school_name || !payload.score_raw) {
+    uni.showToast({ title: '请完整填写年份、地区、院校和分数线', icon: 'none' })
+    return
+  }
+  const syncsStudentView = selectedAdmissionRun.value?.status === 'published'
+  const confirmed = await confirmAction(
+    '保存分数线修改？',
+    syncsStudentView ? '当前版本已发布，保存后将立即同步学生端。' : '修改会保存在当前草稿版本中。',
+    '保存修改'
+  )
+  if (!confirmed) return
+  scorelineRecordSaving.value = true
+  try {
+    if (devPreviewMode.value) {
+      const updatedAt = new Date().toISOString()
+      devPreviewScorelineRecords.value = devPreviewScorelineRecords.value.map((item) => (
+        item.id === scorelineRecordEditingId.value
+          ? { ...item, ...payload, score_value: scorelineNumericValue(payload.score_raw, payload.score_kind), updated_at: updatedAt }
+          : item
+      ))
+    } else {
+      await updateQuestionAdminScorelineRecord(scorelineRecordEditingId.value, payload)
+    }
+    closeScorelineRecordEditor(true)
+    await loadScorelineRecords()
+    uni.showToast({ title: '分数线已保存', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '分数线保存失败', icon: 'none' })
+  } finally {
+    scorelineRecordSaving.value = false
   }
 }
 
@@ -3859,9 +4281,14 @@ async function loadAnnouncementRecords() {
 }
 
 async function selectAdmissionRun(run) {
-  if (admissionDataset.value !== 'announcements' || !run?.id || selectedAdmissionRunId.value === run.id) return
+  if (!['scorelines', 'announcements'].includes(admissionDataset.value) || !run?.id || selectedAdmissionRunId.value === run.id) return
   selectedAdmissionRunId.value = run.id
-  await loadAnnouncementRecords()
+  scorelineRecordPage.value = 1
+  if (admissionDataset.value === 'scorelines') {
+    await loadScorelineRecords()
+  } else {
+    await loadAnnouncementRecords()
+  }
 }
 
 function handleAnnouncementRecordStatusChange(event) {
@@ -3929,6 +4356,8 @@ async function commitAdmissionImport() {
     admissionFile.value = null
     admissionFileName.value = ''
     await loadAdmissionRuns(response?.run?.id)
+    if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
+    closeAdmissionImport(true)
     uni.showToast({ title: response?.created === false ? '该文件已存在于版本记录' : '已提交待发布', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '导入提交失败', icon: 'none' })
@@ -3971,10 +4400,12 @@ async function publishAdmissionRun(run) {
         }))
       }
       ensureSelectedAdmissionRun(run.id)
+      if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
       if (admissionDataset.value === 'announcements') await loadAnnouncementRecords()
     } else {
       await publishQuestionAdminAdmissionRun(admissionDataset.value, run.id)
       await loadAdmissionRuns(run.id)
+      if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
       if (admissionDataset.value === 'announcements') await loadAnnouncementRecords()
     }
     await loadOperationsOverview()
@@ -4396,7 +4827,7 @@ function loadDevPreviewAdmission() {
   if (!devPreviewAdmissionRuns[dataset].length) {
     if (dataset === 'scorelines') {
       devPreviewAdmissionRuns[dataset] = [
-        { id: 'preview-score-run-1', source_filename: '2026历年分数线完整快照.xlsx', record_count: 202, status: 'published', created_at: '2026-08-10T02:00:00Z', published_at: '2026-08-10T03:00:00Z', statistics: { valid_rows: 202 } },
+        { id: 'preview-score-run-1', source_filename: '学生端历史分数线（2024-2026）', record_count: legacyScorelineImportRecords.value.length, status: 'published', created_at: '2026-08-10T02:00:00Z', published_at: '2026-08-10T03:00:00Z', statistics: { valid_rows: legacyScorelineImportRecords.value.length } },
         { id: 'preview-score-run-2', source_filename: '2026历年分数线补充.xlsx', record_count: 18, status: 'draft', created_at: '2026-08-18T09:20:00Z', statistics: { valid_rows: 18 } },
         { id: 'preview-score-run-3', source_filename: '格式错误示例.xlsx', record_count: 0, status: 'failed', created_at: '2026-08-18T06:20:00Z', statistics: { valid_rows: 0 } }
       ]
@@ -7797,8 +8228,8 @@ button {
 }
 
 .user-workspace,
-.admission-import-workspace,
 .admission-run-workspace,
+.scoreline-record-workspace,
 .announcement-record-workspace,
 .major-catalog-workspace,
 .home-content-editor,
@@ -7868,6 +8299,7 @@ button {
 
 .portal-user-table,
 .admission-run-table,
+.scoreline-record-table,
 .announcement-record-table {
   min-width: 100%;
 }
@@ -7883,6 +8315,7 @@ button {
 
 .portal-user-grid.table-head,
 .admission-run-grid.table-head,
+.scoreline-record-grid.table-head,
 .announcement-record-grid.table-head {
   box-sizing: border-box;
   min-height: 42px;
@@ -7908,6 +8341,7 @@ button {
 
 .portal-user-row:hover,
 .admission-run-row:hover,
+.scoreline-record-row:hover,
 .announcement-record-row:hover {
   background: #f8fcfb;
 }
@@ -8029,27 +8463,35 @@ button {
 }
 
 .operations-tab {
-  width: 100%;
+  display: flex;
   min-height: 70px;
-  margin: 0;
-  padding: 13px 16px;
   border: 1px solid #dfe8ec;
   border-radius: 8px;
   box-sizing: border-box;
   color: #607388;
-  line-height: 1.3;
-  text-align: left;
   background: #ffffff;
 }
 
-.operations-tab text {
+.operations-tab-copy {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  justify-content: center;
+  padding: 13px 8px 13px 16px;
+  line-height: 1.3;
+  text-align: left;
+  cursor: pointer;
+}
+
+.operations-tab-copy text {
   display: block;
   color: inherit;
   font-size: 13px;
   font-weight: 700;
 }
 
-.operations-tab small {
+.operations-tab-copy small {
   display: block;
   margin-top: 7px;
   color: #9aa9b8;
@@ -8063,11 +8505,154 @@ button {
   box-shadow: inset 0 0 0 1px rgba(79, 203, 176, 0.12);
 }
 
+.operations-tab.active .operations-tab-copy small {
+  color: #5c968a;
+}
+
+.admission-card-import-button {
+  width: 82px;
+  height: 32px;
+  flex: 0 0 82px;
+  align-self: center;
+  margin: 0 13px 0 8px;
+  padding: 0;
+  border: 1px solid #b9ddd5;
+  border-radius: 6px;
+  color: #287d70;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 30px;
+  background: #f6fcfa;
+}
+
+.operations-tab.active .admission-card-import-button {
+  border-color: #7bcfbd;
+  color: #176f62;
+  background: #ffffff;
+}
+
+.admission-import-backdrop {
+  z-index: 108;
+  padding: 36px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.admission-import-modal {
+  display: flex;
+  width: min(760px, calc(100vw - 72px));
+  max-height: min(680px, calc(100vh - 72px));
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(27, 43, 60, 0.2);
+}
+
+.admission-import-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.admission-import-content {
+  padding: 22px 24px 28px;
+}
+
+.admission-import-intro {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+.admission-import-intro > view {
+  min-width: 0;
+}
+
+.admission-import-intro .panel-subtitle {
+  max-width: 560px;
+}
+
+.admission-import-footer {
+  min-height: 64px;
+}
+
+.scoreline-editor-backdrop {
+  z-index: 109;
+  padding: 36px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.scoreline-editor-modal {
+  display: flex;
+  width: min(760px, calc(100vw - 72px));
+  max-height: min(720px, calc(100vh - 72px));
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(27, 43, 60, 0.2);
+}
+
+.scoreline-editor-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.scoreline-editor-content {
+  padding: 22px 24px 28px;
+}
+
+.scoreline-editor-status {
+  margin-bottom: 18px;
+  padding: 10px 12px;
+  border: 1px solid #d8e7ec;
+  border-radius: 7px;
+  color: #718499;
+  font-size: 11px;
+  background: #f8fbfc;
+}
+
+.scoreline-editor-status.published {
+  border-color: #bfe6dc;
+  color: #247969;
+  background: #f1fbf8;
+}
+
+.scoreline-editor-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14px;
+}
+
+.scoreline-editor-grid .form-field.full {
+  grid-column: 1 / -1;
+  margin-top: 0;
+}
+
+.scoreline-editor-grid .form-label {
+  color: #64778b;
+  font-size: 11px;
+}
+
+.scoreline-editor-grid .form-input,
+.scoreline-editor-grid .form-textarea {
+  font-size: 12px;
+}
+
+.scoreline-form-textarea {
+  min-height: 72px;
+  resize: vertical;
+}
+
 .admission-import-actions {
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 0 20px 18px;
 }
 
 .admission-file-picker {
@@ -8102,7 +8687,7 @@ button {
   display: flex;
   align-items: center;
   gap: 24px;
-  margin: 0 20px 14px;
+  margin: 18px 0 0;
   padding: 12px 14px;
   border: 1px solid #ccebe3;
   border-radius: 7px;
@@ -8124,7 +8709,7 @@ button {
 }
 
 .admission-preview-list {
-  margin: 0 20px 20px;
+  margin: 14px 0 0;
   border: 1px solid #e6ecee;
   border-radius: 7px;
   overflow: hidden;
@@ -8180,6 +8765,7 @@ button {
 }
 
 .admission-run-row strong,
+.scoreline-record-row strong,
 .announcement-record-row strong {
   display: block;
   overflow: hidden;
@@ -8190,6 +8776,7 @@ button {
 }
 
 .admission-run-row text,
+.scoreline-record-row text,
 .announcement-record-row text {
   display: block;
   margin-top: 4px;
@@ -8200,6 +8787,142 @@ button {
 .row-published-copy {
   color: #2aa58d;
   font-size: 10px;
+}
+
+.scoreline-record-grid {
+  display: grid;
+  grid-template-columns: 58px 74px minmax(180px, 1.15fr) minmax(130px, 0.9fr) minmax(180px, 1.2fr) 124px 64px;
+  min-width: 1040px;
+  align-items: center;
+  gap: 12px;
+}
+
+.scoreline-record-row {
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 8px 18px;
+  border-top: 1px solid #edf1f3;
+  color: #64768b;
+  font-size: 11px;
+}
+
+.scoreline-record-row > view {
+  min-width: 0;
+}
+
+.scoreline-year-cell {
+  color: #3e5872;
+  font-weight: 700;
+}
+
+.scoreline-record-row .scoreline-value {
+  color: #1e6f63;
+  font-size: 13px;
+}
+
+.scoreline-record-row .scoreline-kind {
+  margin-top: 3px;
+  color: #8d9eaf;
+}
+
+.scoreline-record-row .scoreline-kind.is-score {
+  color: #28967f;
+}
+
+.scoreline-record-row .scoreline-kind.is-multiple,
+.scoreline-record-row .scoreline-kind.is-note {
+  color: #9b7a52;
+}
+
+.scoreline-record-row .scoreline-kind.is-missing,
+.scoreline-record-row .scoreline-kind.is-unavailable {
+  color: #a7afb8;
+}
+
+.scoreline-source-cell strong {
+  max-width: 100%;
+}
+
+.scoreline-source-cell small {
+  display: block;
+  margin-top: 3px;
+  color: #4c9b8b;
+  font-size: 9px;
+}
+
+.scoreline-workspace-heading {
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 12px;
+}
+
+.scoreline-workspace-heading > view:first-child {
+  min-width: 240px;
+  flex: 1;
+}
+
+.scoreline-heading-tools {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.scoreline-heading-tools > text {
+  color: #8d9bab;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.scoreline-filter-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 0 20px 14px;
+}
+
+.scoreline-filter-input {
+  height: 34px;
+  padding: 0 10px;
+  border: 1px solid #dce6e9;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #40566d;
+  font-size: 10px;
+  background: #ffffff;
+}
+
+.scoreline-filter-input:focus {
+  border-color: #71cbb9;
+}
+
+.scoreline-filter-search {
+  min-width: 180px;
+  flex: 1;
+}
+
+.scoreline-filter-year {
+  width: 86px;
+}
+
+.scoreline-filter-region {
+  width: 108px;
+}
+
+.scoreline-filter-clear {
+  width: 30px;
+  height: 30px;
+  margin: 0;
+  padding: 0;
+  flex: 0 0 30px;
+  border-radius: 6px;
+  color: #7f90a2;
+  font-size: 15px;
+  line-height: 28px;
+  background: #f2f6f7;
+}
+
+.scoreline-pagination {
+  margin: 0 20px 14px;
 }
 
 .announcement-record-grid {
@@ -8219,24 +8942,28 @@ button {
   font-size: 11px;
 }
 
-.announcement-workspace-heading {
+.announcement-workspace-heading,
+.major-catalog-workspace-heading {
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
 }
 
-.announcement-workspace-heading > view:first-child {
+.announcement-workspace-heading > view:first-child,
+.major-catalog-workspace-heading > view:first-child {
   min-width: 240px;
   flex: 1;
 }
 
-.announcement-heading-tools {
+.announcement-heading-tools,
+.major-catalog-heading-tools {
   display: flex;
   align-items: center;
   gap: 10px;
 }
 
-.announcement-heading-tools > text {
+.announcement-heading-tools > text,
+.major-catalog-heading-tools > text {
   color: #8d9bab;
   font-size: 10px;
   white-space: nowrap;
@@ -8913,16 +9640,19 @@ button {
     flex-direction: column;
   }
 
-  .announcement-workspace-heading {
+  .announcement-workspace-heading,
+  .major-catalog-workspace-heading {
     align-items: flex-start;
   }
 
-  .announcement-workspace-heading > view:first-child {
+  .announcement-workspace-heading > view:first-child,
+  .major-catalog-workspace-heading > view:first-child {
     width: 100%;
     min-width: 0;
   }
 
-  .announcement-heading-tools {
+  .announcement-heading-tools,
+  .major-catalog-heading-tools {
     width: 100%;
     flex-wrap: wrap;
     justify-content: space-between;
@@ -8931,6 +9661,29 @@ button {
   .announcement-heading-tools .question-admin-select {
     min-width: 132px;
     flex: 1;
+  }
+
+  .scoreline-workspace-heading {
+    align-items: flex-start;
+  }
+
+  .scoreline-workspace-heading > view:first-child,
+  .scoreline-heading-tools {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .scoreline-heading-tools {
+    justify-content: space-between;
+  }
+
+  .scoreline-filter-toolbar {
+    flex-wrap: wrap;
+  }
+
+  .scoreline-filter-search {
+    min-width: 100%;
+    flex-basis: 100%;
   }
 
   .home-preview-counts {
@@ -8962,6 +9715,62 @@ button {
   .admission-file-picker {
     width: 100%;
     min-width: 0;
+  }
+
+  .admission-import-backdrop {
+    padding: 16px;
+  }
+
+  .admission-import-modal {
+    width: 100%;
+    max-height: calc(100vh - 32px);
+  }
+
+  .admission-import-content {
+    padding: 18px 18px 22px;
+  }
+
+  .scoreline-editor-backdrop {
+    padding: 16px;
+  }
+
+  .scoreline-editor-modal {
+    width: 100%;
+    max-height: calc(100vh - 32px);
+  }
+
+  .scoreline-editor-content {
+    padding: 18px 18px 22px;
+  }
+
+  .scoreline-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .scoreline-editor-grid .form-field.full {
+    grid-column: auto;
+  }
+
+  .admission-import-intro {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .admission-import-intro .header-import-button {
+    align-self: flex-start;
+  }
+
+  .admission-preview-summary {
+    flex-wrap: wrap;
+    gap: 12px;
+  }
+
+  .admission-preview-row {
+    grid-template-columns: 68px minmax(0, 1fr);
+  }
+
+  .admission-preview-row text:last-child {
+    grid-column: 2;
   }
 
   .portal-user-detail-modal {

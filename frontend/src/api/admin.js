@@ -91,6 +91,39 @@ export function publishQuestionAdminAdmissionRun(dataset, runId) {
   })
 }
 
+export function bootstrapQuestionAdminScorelines(payload) {
+  return request({
+    url: '/admin/question-portal/admission/scorelines/bootstrap',
+    method: 'POST',
+    data: payload,
+    timeout: 90000
+  })
+}
+
+export function bootstrapQuestionAdminAdmissionSnapshot(dataset) {
+  return request({
+    url: `/admin/question-portal/admission/${encodeURIComponent(dataset)}/bootstrap`,
+    method: 'POST',
+    timeout: 180000
+  })
+}
+
+export function fetchQuestionAdminScorelineRecords(params = {}) {
+  return request({
+    url: '/admin/question-portal/admission/scorelines/records',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function updateQuestionAdminScorelineRecord(recordId, payload) {
+  return request({
+    url: `/admin/question-portal/admission/scorelines/records/${encodeURIComponent(recordId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchQuestionAdminAnnouncementRecords(params = {}) {
   return request({
     url: '/admin/question-portal/admission/announcements/records',

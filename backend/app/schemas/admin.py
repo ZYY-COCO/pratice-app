@@ -409,6 +409,44 @@ class AdminAnnouncementRecordUpdateRequest(BaseModel):
     sort_order: int | None = Field(default=None, ge=-10000, le=10000)
 
 
+class AdminScorelineRecordListResponse(BaseModel):
+    items: list[dict] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminScorelineRecordUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    score_year: str | None = Field(default=None, pattern="^20\\d{2}$")
+    region: str | None = Field(default=None, min_length=1, max_length=60)
+    school_name: str | None = Field(default=None, min_length=1, max_length=160)
+    unit_name: str | None = Field(default=None, max_length=160)
+    score_raw: str | None = Field(default=None, min_length=1, max_length=1000)
+    score_kind: str | None = Field(
+        default=None,
+        pattern="^(score|missing|unavailable|official|multiple|note)$",
+    )
+    source_url: str | None = Field(default=None, max_length=1000)
+    source_note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminScorelineBootstrapRecord(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    score_year: str = Field(pattern="^20\\d{2}$")
+    region: str = Field(min_length=1, max_length=60)
+    school_name: str = Field(min_length=1, max_length=160)
+    unit_name: str = Field(default="", max_length=160)
+    score_raw: str = Field(min_length=1, max_length=1000)
+    score_kind: str = Field(pattern="^(score|missing|unavailable|official|multiple|note)$")
+
+
+class AdminScorelineBootstrapRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    records: list[AdminScorelineBootstrapRecord] = Field(min_length=1, max_length=1000)
+
+
 class AdminHomeContentItem(BaseModel):
     id: str
     slot: str
