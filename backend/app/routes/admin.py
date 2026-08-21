@@ -17,6 +17,8 @@ from app.dependencies import (
     require_question_admin_user,
 )
 from app.schemas.admin import (
+    AdminCommunityBulkFeaturedRequest,
+    AdminCommunityBulkFeaturedResponse,
     AdminCommunityBulkVisibilityRequest,
     AdminCommunityBulkVisibilityResponse,
     AdminCommunityOverviewResponse,
@@ -52,6 +54,8 @@ from app.schemas.admin import (
     AdminHomeContentItem,
     AdminHomeContentListResponse,
     AdminHomeContentUpsertRequest,
+    AdminMajorCatalogRecordListResponse,
+    AdminMajorCatalogRecordUpdateRequest,
     AdminOperationsImportCommitResponse,
     AdminOperationsImportPreviewResponse,
     AdminOperationsImportRunItem,
@@ -62,6 +66,7 @@ from app.schemas.admin import (
     QuestionAdminDashboardQuestionItem,
     QuestionAdminDashboardResponse,
     QuestionAdminPortalMeResponse,
+    QuestionAdminPortalMembershipRenewRequest,
     QuestionAdminPortalOperationsOverviewResponse,
     QuestionAdminPortalUserDetailResponse,
     QuestionAdminPortalUserDisableRequest,
@@ -112,7 +117,7 @@ COMMUNITY_ADMIN_POST_LIMIT = 20
 COMMUNITY_ADMIN_POST_MAX_LIMIT = 50
 COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT = 5_000
 COMMUNITY_ADMIN_POST_TYPES = {"all", "chat", "experience"}
-COMMUNITY_ADMIN_POST_STATUSES = {"all", "published", "archived"}
+COMMUNITY_ADMIN_POST_STATUSES = {"all", "published", "archived", "featured"}
 COMMUNITY_ADMIN_POST_SORTS = {
     "newest": ("created_at", True),
     "views": ("view_count", True),
@@ -204,11 +209,40 @@ def _normalize_question_admin_dashboard(raw: object) -> QuestionAdminDashboardRe
         online_window_minutes=int(
             payload.get("online_window_minutes") or QUESTION_ADMIN_ONLINE_WINDOW_MINUTES
         ),
+        registered_users=int(payload.get("registered_users") or 0),
+        today_registered_users=int(payload.get("today_registered_users") or 0),
         difficult_questions_count=max(0, difficult_questions_count),
         difficult_questions_page=difficult_questions_page,
         difficult_questions_page_size=difficult_questions_page_size,
         difficult_questions=difficult_questions,
     )
+
+
+def _apply_question_admin_registration_metrics(
+    supabase,
+    dashboard: QuestionAdminDashboardResponse,
+) -> QuestionAdminDashboardResponse:
+    """Attach registration totals without requiring a dashboard RPC migration."""
+    current = _now()
+    local_now = current.astimezone(CHINA_STANDARD_TIME)
+    today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0)
+    tomorrow_start = today_start + timedelta(days=1)
+
+    try:
+        registered_users = _count_table(supabase, "users")
+        today_registered_users = _count_query(
+            supabase.table("users")
+            .select("id", count="exact")
+            .gte("created_at", _to_iso(today_start.astimezone(timezone.utc)))
+            .lt("created_at", _to_iso(tomorrow_start.astimezone(timezone.utc)))
+        )
+    except Exception as exc:
+        logger.warning("Registration metrics unavailable (error_type=%s)", type(exc).__name__)
+        return dashboard
+
+    dashboard.registered_users = registered_users
+    dashboard.today_registered_users = today_registered_users
+    return dashboard
 
 
 def _dashboard_question_sort_key(
@@ -401,7 +435,7 @@ def _load_question_admin_dashboard(
                 "p_offset": (normalized_page - 1) * normalized_page_size,
             },
         ).execute()
-        return _normalize_question_admin_dashboard(response.data)
+        dashboard = _normalize_question_admin_dashboard(response.data)
     except Exception:
         fallback = _question_admin_dashboard_fallback(
             supabase,
@@ -423,7 +457,8 @@ def _load_question_admin_dashboard(
             fallback.online_window_minutes = legacy_dashboard.online_window_minutes
         except Exception:
             pass
-        return fallback
+        dashboard = fallback
+    return _apply_question_admin_registration_metrics(supabase, dashboard)
 
 
 def _apply_admin_question_filters(
@@ -509,6 +544,7 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
         comment_count=_safe_int(row.get("comment_count"), 0),
         view_count=_safe_int(row.get("view_count"), 0),
         is_published=bool(row.get("is_published")),
+        is_featured=bool(row.get("is_featured")),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
     )
@@ -525,6 +561,8 @@ def _apply_admin_community_post_filters(
         query = query.eq("is_published", True)
     elif post_status == "archived":
         query = query.eq("is_published", False)
+    elif post_status == "featured":
+        query = query.eq("is_featured", True)
     if post_type != "all":
         query = query.eq("post_type", post_type)
     if search:
@@ -1550,11 +1588,12 @@ def _portal_user_list_fallback(
     registered_from: str | None,
     registered_to: str | None,
     sort_by: str,
+    sort_direction: str,
     limit: int,
     offset: int,
 ) -> QuestionAdminPortalUserListResponse:
     """Small compatibility path while the operations SQL migration is pending."""
-    if activity != "all" or sort_by != "created_at":
+    if activity != "all" or sort_by not in {"created_at", "exam_target"}:
         raise RuntimeError("Aggregated user filters require the operations migration")
 
     query = supabase.table("users").select("*", count="exact")
@@ -1583,8 +1622,12 @@ def _portal_user_list_fallback(
             query = query.or_(
                 f"email.ilike.%{term}%,phone.ilike.%{term}%,nickname.ilike.%{term}%"
             )
+    if sort_by == "exam_target":
+        query = query.order("exam_target", desc=sort_direction == "desc").order("created_at", desc=True)
+    else:
+        query = query.order("created_at", desc=sort_direction == "desc")
     response = call_supabase(
-        lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+        lambda: query.range(offset, offset + limit - 1).execute(),
         operation_name="question portal user fallback list",
     )
     rows = response.data or []
@@ -2069,6 +2112,7 @@ def question_admin_portal_users(
     registered_from: str | None = Query(default=None, max_length=40),
     registered_to: str | None = Query(default=None, max_length=40),
     sort_by: str = Query(default="created_at", max_length=20),
+    sort_direction: str = Query(default="desc", max_length=4),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_question_admin_portal_user),
@@ -2076,12 +2120,15 @@ def question_admin_portal_users(
     normalized_activity = (activity or "all").strip().lower()
     normalized_account_status = (account_status or "all").strip().lower()
     normalized_sort = (sort_by or "created_at").strip().lower()
+    normalized_sort_direction = (sort_direction or "desc").strip().lower()
     normalized_exam_target = (exam_target or "").strip().upper()
     normalized_membership_status = (membership_status or "").strip().lower()
     if normalized_activity not in {"all", "active_7d", "inactive"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的活跃度筛选")
-    if normalized_sort not in {"created_at", "accuracy", "answer_count", "last_active"}:
+    if normalized_sort not in {"created_at", "exam_target", "accuracy", "answer_count", "last_active"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方式")
+    if normalized_sort_direction not in {"asc", "desc"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方向")
     if normalized_account_status not in {"all", "active", "disabled"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的账号状态筛选")
     if normalized_exam_target not in {"", "Z001", "Z002"}:
@@ -2108,6 +2155,7 @@ def question_admin_portal_users(
                         "p_registered_from": registered_from,
                         "p_registered_to": registered_to,
                         "p_sort_by": normalized_sort,
+                        "p_sort_direction": normalized_sort_direction,
                         "p_limit": limit,
                         "p_offset": offset,
                     },
@@ -2131,6 +2179,7 @@ def question_admin_portal_users(
                 registered_from=registered_from,
                 registered_to=registered_to,
                 sort_by=normalized_sort,
+                sort_direction=normalized_sort_direction,
                 limit=limit,
                 offset=offset,
             )
@@ -2373,6 +2422,106 @@ async def question_admin_portal_admission_commit(
         ) from exc
 
 
+@router.patch("/question-portal/users/{user_id}/membership", response_model=QuestionAdminPortalUserItem)
+def question_admin_portal_renew_membership(
+    user_id: str,
+    payload: QuestionAdminPortalMembershipRenewRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> QuestionAdminPortalUserItem:
+    supabase = get_supabase_admin()
+    try:
+        profile = _get_user_or_404(supabase, user_id)
+        current = _now()
+        current_expires = _parse_datetime(profile.get("membership_expires_at"))
+        base_time = current_expires if current_expires and current_expires > current else current
+        expires_at = base_time + timedelta(days=payload.months * 30)
+        response = call_supabase(
+            lambda: (
+                supabase.table("users")
+                .update(
+                    {
+                        "membership_status": "active",
+                        "membership_plan": "admin_grant",
+                        "membership_started_at": profile.get("membership_started_at") or _to_iso(current),
+                        "membership_expires_at": _to_iso(expires_at),
+                        "membership_updated_at": _to_iso(current),
+                    }
+                )
+                .eq("id", user_id)
+                .execute()
+            ),
+            operation_name="question portal membership renewal",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该用户")
+        invalidate_user_access_cache(user_id)
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="grant_membership",
+            target_type="user",
+            target_id=user_id,
+            details={"months": payload.months, "plan": "admin_grant"},
+        )
+        return _portal_user_item(response.data[0])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal membership renewal failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="会员有效期更新失败",
+        ) from exc
+
+
+@router.delete("/question-portal/users/{user_id}/membership", response_model=QuestionAdminPortalUserItem)
+def question_admin_portal_cancel_membership(
+    user_id: str,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> QuestionAdminPortalUserItem:
+    supabase = get_supabase_admin()
+    try:
+        _get_user_or_404(supabase, user_id)
+        current = _now()
+        response = call_supabase(
+            lambda: (
+                supabase.table("users")
+                .update(
+                    {
+                        "membership_status": "inactive",
+                        "membership_plan": None,
+                        "membership_started_at": None,
+                        "membership_expires_at": None,
+                        "membership_updated_at": _to_iso(current),
+                    }
+                )
+                .eq("id", user_id)
+                .execute()
+            ),
+            operation_name="question portal membership cancellation",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该用户")
+        invalidate_user_access_cache(user_id)
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="cancel_membership",
+            target_type="user",
+            target_id=user_id,
+            details={"reason": "admin_manual_cancel"},
+        )
+        return _portal_user_item(response.data[0])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal membership cancellation failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="会员取消失败",
+        ) from exc
+
+
 @router.post(
     "/question-portal/admission/scorelines/bootstrap",
     response_model=AdminOperationsImportCommitResponse,
@@ -2601,9 +2750,19 @@ def question_admin_portal_scoreline_records(
             ),
             operation_name="question portal scoreline record list",
         )
+        filter_query = supabase.table("historical_scoreline_records").select("score_year,region")
+        if import_run_id:
+            filter_query = filter_query.eq("import_run_id", import_run_id)
+        filter_response = call_supabase(
+            lambda: filter_query.order("score_year", desc=True).order("region").limit(1000).execute(),
+            operation_name="question portal scoreline record filter options",
+        )
+        filter_rows = filter_response.data or []
         return AdminScorelineRecordListResponse(
             items=response.data or [],
             count=max(0, _safe_int(response.count, 0)),
+            filter_years=sorted({str(item.get("score_year") or "").strip() for item in filter_rows if item.get("score_year")}, reverse=True),
+            filter_regions=sorted({str(item.get("region") or "").strip() for item in filter_rows if item.get("region")}),
         )
     except Exception as exc:
         logger.warning("Question portal scoreline record list unavailable (error_type=%s)", type(exc).__name__)
@@ -2659,6 +2818,164 @@ def question_admin_portal_update_scoreline_record(
     except Exception as exc:
         logger.warning("Question portal scoreline record update failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="分数线更新失败") from exc
+
+
+@router.get(
+    "/question-portal/admission/major-catalog/records",
+    response_model=AdminMajorCatalogRecordListResponse,
+)
+def question_admin_portal_major_catalog_records(
+    import_run_id: str | None = Query(default=None, max_length=80),
+    catalog_year: str | None = Query(default=None, max_length=4),
+    region: str | None = Query(default=None, max_length=60),
+    exam_code: str | None = Query(default=None, max_length=4),
+    keyword: str | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=200),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminMajorCatalogRecordListResponse:
+    normalized_year = (catalog_year or "").strip()
+    if normalized_year and not re.fullmatch(r"20\d{2}", normalized_year):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="年份必须为 20xx")
+    normalized_region = (region or "").strip()
+    normalized_exam_code = (exam_code or "").strip().upper()
+    if normalized_exam_code and normalized_exam_code not in MAJOR_CATALOG_EXAM_CODES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="考试类型仅支持 Z001 或 Z002")
+    normalized_keyword = (keyword or "").strip()
+    search_keyword = " ".join(re.sub(r"[,%().]", " ", normalized_keyword).split())
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("major_catalog_staging_records").select("*", count="exact")
+        if import_run_id:
+            query = query.eq("import_run_id", import_run_id)
+        if normalized_year:
+            query = query.eq("catalog_year", normalized_year)
+        if normalized_region:
+            query = query.eq("region", normalized_region)
+        if normalized_exam_code:
+            query = query.eq("exam_code", normalized_exam_code)
+        if search_keyword:
+            pattern = f"%{search_keyword}%"
+            query = query.or_(
+                ",".join(
+                    f"{field}.ilike.{pattern}"
+                    for field in ("school_name", "department_name", "program_name", "program_code", "direction_name")
+                )
+            )
+        response = call_supabase(
+            lambda: (
+                query.order("catalog_year", desc=True)
+                .order("region")
+                .order("school_name")
+                .order("department_name")
+                .order("program_name")
+                .order("source_row")
+                .range(offset, offset + limit - 1)
+                .execute()
+            ),
+            operation_name="question portal major catalog record list",
+        )
+        filter_query = supabase.table("major_catalog_staging_records").select("region,exam_code")
+        if import_run_id:
+            filter_query = filter_query.eq("import_run_id", import_run_id)
+        filter_response = call_supabase(
+            lambda: filter_query.order("region").limit(60_000).execute(),
+            operation_name="question portal major catalog filter options",
+        )
+        filter_rows = filter_response.data or []
+        return AdminMajorCatalogRecordListResponse(
+            items=response.data or [],
+            count=max(0, _safe_int(response.count, 0)),
+            filter_regions=sorted({str(item.get("region") or "").strip() for item in filter_rows if item.get("region")}),
+            filter_exam_codes=sorted({str(item.get("exam_code") or "").strip() for item in filter_rows if item.get("exam_code")}),
+        )
+    except Exception as exc:
+        logger.warning("Question portal major catalog record list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="专业目录记录暂时不可用",
+        ) from exc
+
+
+@router.patch("/question-portal/admission/major-catalog/records/{record_id}", response_model=dict)
+def question_admin_portal_update_major_catalog_record(
+    record_id: str,
+    payload: AdminMajorCatalogRecordUpdateRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> dict:
+    update_data = payload.model_dump(exclude_none=True)
+    if not update_data:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="没有需要更新的字段")
+    for field in ("region", "school_name", "department_name", "program_name", "program_code", "direction_name", "tutor", "exam_code", "degree", "study_mode"):
+        if field in update_data:
+            update_data[field] = str(update_data[field] or "").strip()
+    for field, label in (("region", "地区"), ("school_name", "院校"), ("department_name", "院系"), ("program_name", "专业"), ("direction_name", "研究方向")):
+        if field in update_data and not update_data[field]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{label}不能为空")
+    if "exam_code" in update_data and update_data["exam_code"] not in MAJOR_CATALOG_EXAM_CODES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="考试类型仅支持 Z001 或 Z002")
+
+    supabase = get_supabase_admin()
+    try:
+        current_response = call_supabase(
+            lambda: (
+                supabase.table("major_catalog_staging_records")
+                .select("id,import_run_id")
+                .eq("id", record_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal major catalog record lookup",
+        )
+        if not current_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该专业目录记录")
+        current_record = current_response.data[0]
+        response = call_supabase(
+            lambda: (
+                supabase.table("major_catalog_staging_records")
+                .update(update_data)
+                .eq("id", record_id)
+                .execute()
+            ),
+            operation_name="question portal major catalog record update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该专业目录记录")
+
+        run_id = str(current_record.get("import_run_id") or "")
+        run_response = call_supabase(
+            lambda: (
+                supabase.table("major_catalog_staging_runs")
+                .select("status")
+                .eq("id", run_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal major catalog run lookup",
+        )
+        run_status = str((run_response.data or [{}])[0].get("status") or "")
+        if run_status == "published":
+            call_supabase(
+                lambda: supabase.rpc(
+                    "question_admin_portal_publish_import_run",
+                    {"p_dataset": "major-catalog", "p_run_id": run_id, "p_actor_id": admin_profile.get("id")},
+                ).execute(),
+                operation_name="question portal major catalog resync",
+            )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="update_major_catalog_record",
+            target_type="major_catalog_record",
+            target_id=record_id,
+            details={"fields": sorted(update_data), "resynced_student_view": run_status == "published"},
+        )
+        return response.data[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Question portal major catalog record update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="专业目录更新失败") from exc
 
 
 @router.get(
@@ -2768,8 +3085,7 @@ def question_admin_portal_announcement_records(
             query = query.eq("status", record_status)
         response = call_supabase(
             lambda: (
-                query.order("is_pinned", desc=True)
-                .order("sort_order")
+                query.order("sort_order")
                 .order("notice_date", desc=True)
                 .range(offset, offset + limit - 1)
                 .execute()
@@ -2824,17 +3140,13 @@ def question_admin_portal_update_announcement_record(
             run_status = str((run_response.data or [{}])[0].get("status") or "")
             if run_status != "published":
                 raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="请先发布该公告导入版本")
-        effective_status = str(update_data.get("status") or current_record.get("status") or "")
-        if update_data.get("is_pinned") is True and effective_status != "published":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅已发布公告可以置顶")
-
         current = _to_iso(_now())
         if update_data.get("status") == "published":
             update_data.update({"is_published": True, "published_at": current, "published_by": admin_profile.get("id"), "archived_at": None, "archived_by": None})
         elif update_data.get("status") == "archived":
-            update_data.update({"is_published": False, "archived_at": current, "archived_by": admin_profile.get("id"), "is_pinned": False})
+            update_data.update({"is_published": False, "archived_at": current, "archived_by": admin_profile.get("id")})
         elif update_data.get("status") == "draft":
-            update_data.update({"is_published": False, "is_pinned": False})
+            update_data.update({"is_published": False})
         response = call_supabase(
             lambda: (
                 supabase.table("school_announcement_records")
@@ -3172,6 +3484,47 @@ def question_admin_bulk_update_community_post_visibility(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="社区帖子状态更新失败",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/posts/bulk-featured",
+    response_model=AdminCommunityBulkFeaturedResponse,
+)
+def question_admin_bulk_update_community_post_featured(
+    payload: AdminCommunityBulkFeaturedRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityBulkFeaturedResponse:
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .update({"is_featured": payload.is_featured, "updated_at": _to_iso(_now())})
+                .in_("id", payload.ids)
+                .execute()
+            ),
+            operation_name="admin community bulk featured update",
+        )
+        updated_count = len(response.data or [])
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="feature_community_posts" if payload.is_featured else "unfeature_community_posts",
+            target_type="community_post",
+            target_id=None,
+            details={
+                "post_ids": payload.ids,
+                "is_featured": payload.is_featured,
+                "updated_count": updated_count,
+            },
+        )
+        return AdminCommunityBulkFeaturedResponse(updated_count=updated_count)
+    except Exception as exc:
+        logger.warning("Admin community bulk featured update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区精选状态更新失败",
         ) from exc
 
 

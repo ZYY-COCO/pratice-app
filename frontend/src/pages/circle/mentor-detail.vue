@@ -27,7 +27,7 @@
           <view class="mentor-detail-facts">
             <view><text>初试成绩</text><strong>{{ mentor.score }} 分</strong></view>
             <view><text>考试类别</text><strong>{{ mentor.examType }}</strong></view>
-            <view><text>用户评分</text><strong class="rating">★ {{ Number(mentor.rating).toFixed(1) }}</strong></view>
+            <view><text>用户评分</text><strong class="rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating).toFixed(1)}` : '暂无评分' }}</strong></view>
             <view><text>已咨询</text><strong>{{ mentor.consultCount }} 人</strong></view>
           </view>
         </view>
@@ -52,7 +52,7 @@
         <view class="mentor-detail-section mentor-detail-review-section">
           <view class="mentor-detail-section-heading">
             <view class="mentor-detail-section-title">用户评价</view>
-            <text>共 {{ mentor.consultCount }} 条咨询反馈</text>
+            <text>共 {{ mentor.reviews?.length || 0 }} 条公开评价</text>
           </view>
           <view v-for="review in mentor.reviews" :key="review.id" class="mentor-review-card">
             <view class="mentor-review-head">
@@ -62,9 +62,13 @@
             </view>
             <view class="mentor-review-copy">{{ review.content }}</view>
           </view>
+          <view v-if="!mentor.reviews?.length" class="mentor-review-empty">暂无公开评价</view>
         </view>
       </view>
 
+      <view v-else-if="detailLoading" class="mentor-detail-missing">
+        <view>正在加载前辈资料…</view>
+      </view>
       <view v-else class="mentor-detail-missing">
         <view>该前辈信息暂时不可用</view>
         <button @tap="goHome">返回前辈咨询</button>
@@ -79,7 +83,7 @@
       </button>
       <view class="mentor-detail-price">
         <strong>{{ mentor.priceLabel }} / 次</strong>
-        <text>60分钟咨询窗口</text>
+        <text>{{ mentor.consultationWindowMinutes || 60 }}分钟咨询窗口</text>
       </view>
       <button class="mentor-detail-primary" @tap="startConsultation">{{ mentor.actionLabel }}</button>
     </view>
@@ -91,36 +95,101 @@ import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
+  fetchMentorProfile,
+  fetchMyMentorFavorites,
+  toggleMentorFavoriteRequest
+} from '../../api/mentorConsultation'
+import {
+  cacheMentors,
   getMentorById,
   getMentorFavoriteIds,
-  toggleMentorFavorite
+  normalizeMentorDetailResponse,
+  setMentorFavoriteIds
 } from '../../data/mentorConsultation'
+import { isLoggedIn } from '../../utils/auth'
 
 const mentor = ref(null)
 const favoriteIds = ref([])
+const detailLoading = ref(false)
 
 const isFavorite = computed(() => mentor.value && favoriteIds.value.includes(mentor.value.id))
 
 onLoad((options) => {
-  mentor.value = getMentorById(options?.id)
   favoriteIds.value = getMentorFavoriteIds()
+  void loadFavoriteIds()
+  void loadMentorDetail(options?.id)
 })
 
 onShow(() => {
   favoriteIds.value = getMentorFavoriteIds()
+  void loadFavoriteIds({ silent: true })
 })
 
 function detailSkillLabel(skill) {
   return skill === '初试备考' ? '初试规划' : skill
 }
 
-function toggleFavorite() {
+async function loadMentorDetail(mentorId) {
+  const id = String(mentorId || '')
+  if (!id) return
+
+  mentor.value = getMentorById(id)
+  detailLoading.value = true
+  try {
+    const payload = await fetchMentorProfile(id)
+    const profile = normalizeMentorDetailResponse(payload)
+    if (!profile) throw new Error('前辈详情数据不完整')
+    mentor.value = profile
+    cacheMentors([profile])
+  } catch (error) {
+    if (error?.statusCode === 404) {
+      mentor.value = null
+    } else if (!mentor.value) {
+      mentor.value = getMentorById(id)
+    }
+  } finally {
+    detailLoading.value = false
+  }
+}
+
+async function loadFavoriteIds({ silent = false } = {}) {
+  if (!isLoggedIn()) return
+  try {
+    const payload = await fetchMyMentorFavorites()
+    favoriteIds.value = setMentorFavoriteIds(
+      Array.isArray(payload?.items)
+        ? payload.items.map((item) => item?.mentor_id || item?.mentorId).filter(Boolean)
+        : []
+    )
+  } catch (error) {
+    if (!silent) uni.showToast({ title: error?.detail || '收藏状态加载失败', icon: 'none' })
+  }
+}
+
+async function toggleFavorite() {
   if (!mentor.value) return
-  favoriteIds.value = toggleMentorFavorite(mentor.value.id)
+  if (!isLoggedIn()) {
+    uni.showToast({ title: '请先登录后再收藏前辈', icon: 'none' })
+    return
+  }
+  try {
+    const result = await toggleMentorFavoriteRequest(mentor.value.id)
+    const isFavorited = result?.is_favorited ?? result?.isFavorited
+    const nextFavoriteIds = isFavorited
+      ? [...favoriteIds.value, mentor.value.id]
+      : favoriteIds.value.filter((id) => id !== mentor.value.id)
+    favoriteIds.value = setMentorFavoriteIds(nextFavoriteIds)
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '收藏操作失败，请稍后重试', icon: 'none' })
+  }
 }
 
 function startConsultation() {
   if (!mentor.value) return
+  if (mentor.value.onlineStatus !== 'online' && mentor.value.acceptsBooking === false) {
+    uni.showToast({ title: '该前辈暂未开放预约', icon: 'none' })
+    return
+  }
   const mentorId = encodeURIComponent(mentor.value.id)
   const url = mentor.value.onlineStatus === 'online'
     ? `/pages/circle/mentor-consult-form?mentorId=${mentorId}&mode=instant`
@@ -142,6 +211,8 @@ function goHome() {
 <style scoped>
 .mentor-detail-page {
   height: 100vh;
+  /* Safari 的 100vh 会延伸到展开的底部地址栏下方；动态视口让固定操作栏始终停在可视区域上沿。 */
+  height: 100dvh;
   overflow: hidden;
   background: #f4f8ff;
   display: flex;
@@ -351,6 +422,7 @@ function goHome() {
 .mentor-review-rating { color: #d78a22; }
 
 .mentor-review-copy { margin-top: 12rpx; color: #5e6d82; font-size: 23rpx; line-height: 1.6; font-weight: 600; }
+.mentor-review-empty { padding: 34rpx 0 12rpx; color: #92a0b3; text-align: center; font-size: 21rpx; line-height: 1.4; font-weight: 650; }
 
 .mentor-detail-missing { padding: 130rpx 48rpx; color: #718197; text-align: center; font-size: 26rpx; font-weight: 750; }
 .mentor-detail-missing button { margin-top: 28rpx; border: 0; border-radius: 18rpx; background: #3478f6; color: #fff; font-size: 23rpx; font-weight: 800; }
@@ -358,7 +430,7 @@ function goHome() {
 .mentor-detail-bottom-space { height: calc(170rpx + env(safe-area-inset-bottom)); }
 
 .mentor-detail-action-bar {
-  padding: 18rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));
+  padding: 18rpx 24rpx calc(24rpx + env(safe-area-inset-bottom));
   border-top: 2rpx solid rgba(215, 229, 255, 0.92);
   background: rgba(255, 255, 255, 0.96);
   display: grid;
@@ -396,6 +468,9 @@ function goHome() {
 .mentor-detail-price text { display: block; margin-top: 5rpx; color: #8a98aa; font-size: 18rpx; line-height: 1.2; font-weight: 650; }
 
 .mentor-detail-primary {
+  box-sizing: border-box;
+  width: 100%;
+  height: 74rpx;
   min-height: 74rpx;
   margin: 0;
   padding: 0 14rpx;
@@ -403,9 +478,14 @@ function goHome() {
   border-radius: 20rpx;
   background: #3478f6;
   color: #fff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-size: 24rpx;
-  line-height: 1.2;
+  line-height: 1;
   font-weight: 900;
+  white-space: nowrap;
   box-shadow: 0 10rpx 22rpx rgba(52, 120, 246, 0.2);
 }
 

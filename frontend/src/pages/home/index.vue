@@ -255,11 +255,18 @@
                   <view class="circle-trend-title">近 7 天刷题人数</view>
                   <view class="circle-trend-peak">
                     <text>峰值 </text>
-                    <text class="circle-trend-peak-value">{{ circleTrendPeak }}</text>
+                    <text class="circle-trend-peak-value">{{ circleTrendPeakLabel }}</text>
                     <text> 人</text>
                   </view>
                 </view>
-                <view class="circle-trend-chart" aria-label="近 7 天刷题人数统计图">
+                <view v-if="circleTrendLoading && !circleTrendLoaded" class="circle-trend-state">
+                  正在同步真实刷题人数…
+                </view>
+                <view v-else-if="circleTrendError && !circleTrendLoaded" class="circle-trend-state is-error">
+                  <text>{{ circleTrendError }}</text>
+                  <button hover-class="none" @tap="loadCirclePracticeTrend({ force: true })">重新加载</button>
+                </view>
+                <view v-else class="circle-trend-chart" aria-label="近 7 天刷题人数统计图">
                   <view class="circle-trend-grid" aria-hidden="true">
                     <view v-for="label in circleTrendAxis" :key="label" class="circle-trend-grid-line"></view>
                   </view>
@@ -271,7 +278,7 @@
                       <view class="circle-trend-bar-space">
                         <view
                           class="circle-trend-bar"
-                          :class="{ latest: item.latest }"
+                          :class="{ latest: item.latest, empty: item.count <= 0 }"
                           :style="{ height: getCircleTrendHeight(item.count) }"
                         >
                           <text class="circle-trend-value">{{ item.count }}</text>
@@ -461,7 +468,11 @@
                   @consult="beginMentorConsultation(mentor)"
                   @toggle-favorite="toggleMentorFavoriteState(mentor.id)"
                 />
-                <view v-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
+                <view v-if="mentorProfilesLoading && mentorProfiles.length === 0" class="circle-empty-card mentor-empty-card">
+                  <view class="circle-empty-title">正在加载前辈资料</view>
+                  <view class="circle-empty-copy">正在从港研通数据库获取已认证前辈。</view>
+                </view>
+                <view v-else-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
                   <view class="circle-empty-title">暂时没有匹配的前辈</view>
                   <view class="circle-empty-copy">可以尝试调整搜索关键词或筛选条件。</view>
                   <button class="mentor-empty-reset" @tap="resetMentorFilters">清除筛选</button>
@@ -1464,6 +1475,26 @@
         </view>
 
         <view class="profile-section-card">
+          <view class="profile-section-title">研圈互动</view>
+          <view class="menu-list">
+            <view
+              v-for="item in communityTools"
+              :key="item.label"
+              class="menu-row"
+              @tap="handleMenu(item)"
+            >
+              <view class="menu-icon" :class="[item.tone, item.iconClass]">
+                <text v-if="!item.iconClass">{{ item.icon }}</text>
+              </view>
+              <view class="menu-copy">
+                <view class="menu-title">{{ item.label }}</view>
+              </view>
+              <view class="menu-arrow">›</view>
+            </view>
+          </view>
+        </view>
+
+        <view class="profile-section-card">
           <view class="profile-section-title">其他服务</view>
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
@@ -2134,8 +2165,9 @@
     >
         <view class="mentor-filter-sheet" @tap.stop>
           <view class="mentor-filter-sheet-heading">
-            <view class="mentor-filter-sheet-title">筛选前辈</view>
-            <button class="mentor-filter-sheet-close" aria-label="关闭筛选" @tap="closeMentorFilterSheet">×</button>
+            <button class="mentor-filter-sheet-close" aria-label="关闭筛选" @tap="closeMentorFilterSheet">
+              <text class="mentor-filter-sheet-close-icon" aria-hidden="true">×</text>
+            </button>
           </view>
 
           <scroll-view class="mentor-filter-sheet-scroll" scroll-y>
@@ -2191,8 +2223,12 @@
           </scroll-view>
 
           <view class="mentor-filter-sheet-actions">
-            <button class="mentor-filter-reset-button" @tap="resetMentorFilters">重置</button>
-            <button class="mentor-filter-confirm-button" @tap="applyMentorFilters">查看结果{{ mentorFilteredResultCount ? `（${mentorFilteredResultCount}）` : '' }}</button>
+            <button class="mentor-filter-reset-button" @tap="resetMentorFilters">
+              <text class="mentor-filter-action-label">重置</text>
+            </button>
+            <button class="mentor-filter-confirm-button" @tap="applyMentorFilters">
+              <text class="mentor-filter-action-label">查看结果{{ mentorFilteredResultCount ? `（${mentorFilteredResultCount}）` : '' }}</text>
+            </button>
           </view>
         </view>
     </view>
@@ -2209,12 +2245,23 @@
     <button
       v-if="showCommunityPublishButton && selectedCircleCommunityTab === 'mentor'"
       class="community-publish-button"
+      :class="{
+        'mentor-console-entry': mentorEntryStatus === 'verified',
+        'mentor-pending-entry': mentorEntryStatus === 'pending'
+      }"
       type="button"
-      aria-label="申请成为前辈"
+      :aria-label="mentorEntryAriaLabel"
       @tap.stop="openMentorVerificationEntry"
       @click.stop="openMentorVerificationEntry"
     >
-      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+      <view v-if="mentorEntryLabel" class="mentor-entry-content">
+        <view v-if="mentorEntryStatus === 'verified'" class="mentor-entry-grid-icon" aria-hidden="true">
+          <view></view><view></view><view></view><view></view>
+        </view>
+        <view v-else class="mentor-entry-pending-dot" aria-hidden="true"></view>
+        <text>{{ mentorEntryLabel }}</text>
+      </view>
+      <image v-else src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
     </button>
     <button
       v-else-if="showCommunityPublishButton && selectedCircleCommunityTab === 'experience'"
@@ -2271,7 +2318,14 @@ import {
 } from '../../api/community'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
 import { fetchHomeContent, fetchPublishedScorelines } from '../../api/homeContent'
-import { fetchAbilityReport, fetchLearningSummary } from '../../api/reports'
+import {
+  fetchMentorProfiles,
+  fetchMyMentorFavorites,
+  fetchMyMentorProfile,
+  fetchMyMentorVerificationApplication,
+  toggleMentorFavoriteRequest
+} from '../../api/mentorConsultation'
+import { fetchAbilityReport, fetchLearningSummary, fetchPlatformPracticeTrend } from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
   historicalScoreLineRecords as fallbackHistoricalScoreLineRecords,
@@ -2285,11 +2339,15 @@ import {
   MENTOR_EXAM_TYPE_OPTIONS,
   MENTOR_PRICE_OPTIONS,
   MENTOR_SORT_OPTIONS,
+  cacheMentors,
   createDefaultMentorFilters,
   filterMentors,
+  getFallbackMentors,
   getMentorFavoriteIds,
   getMentorVerificationStatus,
-  toggleMentorFavorite as toggleStoredMentorFavorite
+  normalizeMentorListResponse,
+  setMentorVerificationStatus,
+  setMentorFavoriteIds
 } from '../../data/mentorConsultation'
 import {
   getFullMistakes,
@@ -2405,6 +2463,13 @@ const communitySearchKeyword = ref('')
 const selectedCommunityPostSort = ref('latest')
 const mentorSearchKeyword = ref('')
 const selectedMentorSort = ref('recommended')
+const mentorProfiles = ref([])
+const mentorProfilesLoading = ref(false)
+const mentorProfilesLoaded = ref(false)
+const mentorProfilesError = ref('')
+const mentorEntryStatus = ref(isLoggedIn() ? getMentorVerificationStatus() : 'unverified')
+const mentorEntryStatusLoaded = ref(false)
+let mentorEntryStatusRequest = null
 const mentorFilters = ref(createDefaultMentorFilters())
 const mentorFilterDraft = ref(createDefaultMentorFilters())
 const mentorFilterMounted = ref(false)
@@ -2594,15 +2659,13 @@ const circleSections = [
     iconSrc: '/static/ui-icons/circle-courses.svg'
   }
 ]
-const circlePracticeTrend = [
-  { day: '周一', count: 356 },
-  { day: '周二', count: 418 },
-  { day: '周三', count: 472 },
-  { day: '周四', count: 439 },
-  { day: '周五', count: 516 },
-  { day: '周六', count: 468 },
-  { day: '周日', count: 592, latest: true }
-]
+const CIRCLE_PRACTICE_TREND_DAYS = 7
+const CIRCLE_PRACTICE_TREND_REFRESH_MS = 60 * 1000
+const circlePracticeTrend = ref(createCirclePracticeTrend())
+const circleTrendLoading = ref(false)
+const circleTrendLoaded = ref(false)
+const circleTrendError = ref('')
+const circleTrendLastLoadedAt = ref(0)
 const circleScoreSchools = computed(() => historicalScoreLineTrendRecords.value)
 const circleScoreYears = computed(() => historicalScoreLineYears.slice(-3))
 const circleScoreX = [58, 160, 262]
@@ -2716,9 +2779,11 @@ const communityPostSortOptions = [
 const circleCommunityCategories = ['全部', '中华文化', '数学基础', '英语运用', '逻辑推理']
 const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
 const circleCommunityPosts = ref([])
+const circleFeaturedCommunityPosts = ref([])
 const circleExperienceCategories = ['全部', 'Z001', 'Z002', '专业课', '复试']
 const circleExperiencePostCategories = circleExperienceCategories.slice(1)
 const circleExperienceCommunityPosts = ref([])
+const circleFeaturedExperiencePosts = ref([])
 const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
 const circleMaterialSummaries = {
   中华文化: '文学、历史、哲学、艺术和古代科技常识资料包。',
@@ -2813,7 +2878,10 @@ const filteredCircleMaterials = computed(() =>
 )
 const filteredCircleCommunityPosts = computed(() => {
   const keyword = communitySearchKeyword.value.trim().toLowerCase()
-  return circleCommunityPosts.value.filter((item) => {
+  const sourcePosts = selectedCommunityPostSort.value === 'featured'
+    ? circleFeaturedCommunityPosts.value
+    : circleCommunityPosts.value
+  return sourcePosts.filter((item) => {
     const matchesCategory = selectedCommunityCategory.value === '全部' || item.category === selectedCommunityCategory.value
     if (!matchesCategory || !keyword) return matchesCategory
     return [
@@ -2845,7 +2913,10 @@ const communityReaderPostTypeLabel = computed(() => (
 ))
 const filteredCircleExperiencePosts = computed(() => {
   const keyword = experienceSearchKeyword.value.trim().toLowerCase()
-  return circleExperienceCommunityPosts.value.filter((item) => {
+  const sourcePosts = selectedCommunityPostSort.value === 'featured'
+    ? circleFeaturedExperiencePosts.value
+    : circleExperienceCommunityPosts.value
+  return sourcePosts.filter((item) => {
     const itemCategory = getExperienceCategory(item)
     const matchesCategory = selectedExperienceCategory.value === '全部'
       || itemCategory === selectedExperienceCategory.value
@@ -2886,6 +2957,7 @@ const mentorSortIndex = computed(() => Math.max(
   mentorSortOptions.findIndex((item) => item.value === activeMentorSortOption.value.value)
 ))
 const filteredMentors = computed(() => filterMentors({
+  mentors: mentorProfiles.value,
   keyword: mentorSearchKeyword.value,
   filters: mentorFilters.value,
   sort: selectedMentorSort.value
@@ -2900,6 +2972,7 @@ const mentorActiveFilterCount = computed(() => {
   ].filter(Boolean).length
 })
 const mentorFilteredResultCount = computed(() => filterMentors({
+  mentors: mentorProfiles.value,
   keyword: mentorSearchKeyword.value,
   filters: mentorFilterDraft.value,
   sort: selectedMentorSort.value
@@ -2934,6 +3007,16 @@ const filteredActiveCommunityPosts = computed(() => {
     : filteredCircleCommunityPosts.value
   return sortCommunityPosts(posts, selectedCommunityPostSort.value)
 })
+const mentorEntryLabel = computed(() => {
+  if (mentorEntryStatus.value === 'verified') return '咨询主页'
+  if (mentorEntryStatus.value === 'pending') return '审核中'
+  return ''
+})
+const mentorEntryAriaLabel = computed(() => {
+  if (mentorEntryStatus.value === 'verified') return '打开我的咨询主页'
+  if (mentorEntryStatus.value === 'pending') return '查看认证审核状态'
+  return '申请成为前辈'
+})
 const showCommunityPublishButton = computed(() => (
   activeTab.value === 'circle'
   && selectedCircleSection.value === 'community'
@@ -2941,8 +3024,15 @@ const showCommunityPublishButton = computed(() => (
   && !selectedCommunityPost.value
   && !selectedCommunityCommentsPost.value
 ))
-const circleTrendPeak = computed(() => Math.max(...circlePracticeTrend.map((item) => item.count)))
-const circleTrendScaleMax = computed(() => Math.ceil(circleTrendPeak.value / 100) * 100)
+const circleTrendPeak = computed(() => Math.max(0, ...circlePracticeTrend.value.map((item) => item.count)))
+const circleTrendPeakLabel = computed(() => (circleTrendLoaded.value ? circleTrendPeak.value : '—'))
+const circleTrendScaleMax = computed(() => {
+  const peak = circleTrendPeak.value
+  if (peak <= 0) return 0
+  if (peak < 10) return Math.max(2, peak)
+  const step = peak < 100 ? 10 : 100
+  return Math.ceil(peak / step) * step
+})
 const circleTrendAxis = computed(() => [circleTrendScaleMax.value, Math.round(circleTrendScaleMax.value / 2), 0])
 const selectedCircleSectionLabel = computed(() =>
   circleSections.find((item) => item.key === selectedCircleSection.value)?.label || '研圈'
@@ -3147,6 +3237,15 @@ const practiceTools = computed(() => {
   // #endif
   return items
 })
+const communityTools = [
+  {
+    label: '赞过的帖子',
+    desc: '查看我在研圈点赞的内容',
+    icon: '赞',
+    tone: 'violet',
+    action: 'liked-posts'
+  }
+]
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const isCircleGlassTheme = computed(() => currentTheme.value.circleGlass === true)
@@ -3693,17 +3792,33 @@ onLoad((options) => {
     activeTab.value = 'circle'
     if (launchOptions?.section === 'community') {
       const requestedCommunityTab = String(launchOptions?.communityTab || '')
+      const requestedCommunityPostId = String(launchOptions?.postId || '').trim()
       const restoreCommunityDeepLink = () => {
         selectedCircleSection.value = 'community'
         if (circleCommunityTabs.some((item) => item.key === requestedCommunityTab)) {
           selectedCircleCommunityTab.value = requestedCommunityTab
         }
+        if (requestedCommunityTab === 'mentor') {
+          void loadMentorEntryStatus()
+          void loadMentorProfiles()
+        }
         resetCircleTabbar()
+      }
+      const openRequestedCommunityPost = () => {
+        if (!requestedCommunityPostId || selectedCommunityPost.value?.id === requestedCommunityPostId) return
+        void openCommunityPost({
+          id: requestedCommunityPostId,
+          post_type: requestedCommunityTab === 'experience' ? 'experience' : 'chat',
+          title: '正在加载帖子…'
+        })
       }
       nextTick(() => {
         // activeTab 的既有监听会先复位到研圈首页；冷启动 H5 时该监听可能在挂载后补跑一次。
         restoreCommunityDeepLink()
-        setTimeout(restoreCommunityDeepLink, 0)
+        setTimeout(() => {
+          restoreCommunityDeepLink()
+          openRequestedCommunityPost()
+        }, 0)
       })
     }
   } else if (launchOptions?.tab === 'landing') {
@@ -3715,6 +3830,7 @@ onLoad((options) => {
   }
 
   warmCircleCommunityFeeds()
+  void loadCirclePracticeTrend()
 })
 
 async function loadPublishedOperationContent() {
@@ -3818,6 +3934,77 @@ function resolveHomeLaunchOptions(options = {}) {
   return resolved
 }
 
+function createCirclePracticeTrend(now = new Date()) {
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate())
+  const lastIndex = CIRCLE_PRACTICE_TREND_DAYS - 1
+
+  return Array.from({ length: CIRCLE_PRACTICE_TREND_DAYS }, (_, index) => {
+    const date = new Date(today)
+    date.setDate(today.getDate() - (lastIndex - index))
+    return {
+      date: `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`,
+      day: `${date.getMonth() + 1}/${date.getDate()}`,
+      count: 0,
+      latest: index === lastIndex
+    }
+  })
+}
+
+function getCircleTrendDateText(value) {
+  const matched = String(value || '').match(/^(\d{4})-(\d{2})-(\d{2})/)
+  return matched ? matched[0] : ''
+}
+
+function getCircleTrendDayLabel(dateText) {
+  const matched = String(dateText || '').match(/^\d{4}-(\d{2})-(\d{2})$/)
+  if (!matched) return ''
+  return `${Number(matched[1])}/${Number(matched[2])}`
+}
+
+function normalizeCirclePracticeTrend(payload = {}) {
+  const rows = Array.isArray(payload?.items) ? payload.items : []
+  const normalized = rows
+    .map((row) => {
+      const date = getCircleTrendDateText(row?.date)
+      return {
+        date,
+        day: getCircleTrendDayLabel(date),
+        count: Math.max(0, Math.round(Number(row?.practice_users ?? row?.user_count ?? 0) || 0))
+      }
+    })
+    .filter((row) => row.date && row.day)
+    .sort((left, right) => left.date.localeCompare(right.date))
+    .slice(-CIRCLE_PRACTICE_TREND_DAYS)
+
+  if (normalized.length !== CIRCLE_PRACTICE_TREND_DAYS) {
+    throw new Error('近七天刷题人数数据不完整')
+  }
+
+  return normalized.map((row, index) => ({
+    ...row,
+    latest: index === normalized.length - 1
+  }))
+}
+
+async function loadCirclePracticeTrend({ force = false } = {}) {
+  const cacheIsFresh = circleTrendLoaded.value
+    && Date.now() - circleTrendLastLoadedAt.value < CIRCLE_PRACTICE_TREND_REFRESH_MS
+  if (circleTrendLoading.value || (!force && cacheIsFresh)) return
+
+  circleTrendLoading.value = true
+  circleTrendError.value = ''
+  try {
+    const response = await fetchPlatformPracticeTrend()
+    circlePracticeTrend.value = normalizeCirclePracticeTrend(response)
+    circleTrendLoaded.value = true
+    circleTrendLastLoadedAt.value = Date.now()
+  } catch (error) {
+    circleTrendError.value = getSafeError(error, '刷题人数统计暂时不可用')
+  } finally {
+    circleTrendLoading.value = false
+  }
+}
+
 onShow(() => {
   // #ifdef MP-WEIXIN
   syncMpSafeLayout()
@@ -3825,13 +4012,21 @@ onShow(() => {
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
   mentorFavoriteIds.value = getMentorFavoriteIds()
+  if (authed.value) void loadMentorFavoriteIds({ silent: true })
   refreshLearningData()
   loadOfficialMessages(true)
   loadPublishedOperationContent()
+  void loadCirclePracticeTrend()
   if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
     const postType = selectedCircleCommunityTab.value
-    if (postType !== 'mentor') {
-      loadCircleCommunityPosts(postType, { force: consumeCircleCommunityFeedRefresh(postType) })
+    if (postType === 'mentor') {
+      void loadMentorEntryStatus({ force: true })
+      void loadMentorProfiles({ force: mentorProfilesLoaded.value })
+    } else {
+      loadCircleCommunityPosts(postType, {
+        force: consumeCircleCommunityFeedRefresh(postType),
+        featuredOnly: selectedCommunityPostSort.value === 'featured'
+      })
     }
   }
 })
@@ -4507,6 +4702,7 @@ function updateCircleTabbarOnScroll(scrollTop) {
 }
 
 function getCircleTrendHeight(count) {
+  if (Number(count) <= 0) return '0%'
   const scaleMax = Math.max(1, Number(circleTrendScaleMax.value) || 1)
   const ratio = (Number(count) || 0) / scaleMax
   return `${Math.max(7, Math.round(ratio * 100))}%`
@@ -4725,6 +4921,95 @@ function selectCommunityPostSort(event) {
   const nextSort = communityPostSortOptions[selectedIndex]?.value
   if (!nextSort) return
   selectedCommunityPostSort.value = nextSort
+  if (nextSort === 'featured' && selectedCircleCommunityTab.value !== 'mentor') {
+    void loadCircleCommunityPosts(selectedCircleCommunityTab.value, { force: true, featuredOnly: true })
+  }
+}
+
+async function loadMentorProfiles({ force = false } = {}) {
+  if (mentorProfilesLoading.value || (mentorProfilesLoaded.value && !force)) return
+
+  mentorProfilesLoading.value = true
+  mentorProfilesError.value = ''
+  try {
+    const payload = await fetchMentorProfiles({ limit: 100 })
+    const profiles = normalizeMentorListResponse(payload)
+    mentorProfiles.value = profiles
+    mentorProfilesLoaded.value = true
+    cacheMentors(profiles, { replace: true })
+  } catch (error) {
+    mentorProfilesError.value = error?.detail || '前辈资料加载失败'
+    if (!mentorProfilesLoaded.value || mentorProfiles.value.length === 0) {
+      mentorProfiles.value = getFallbackMentors()
+    }
+  } finally {
+    mentorProfilesLoading.value = false
+  }
+}
+
+function setMentorEntryStatus(status) {
+  mentorEntryStatus.value = setMentorVerificationStatus(status)
+  return mentorEntryStatus.value
+}
+
+function loadMentorEntryStatus({ force = false } = {}) {
+  if (!isLoggedIn()) {
+    mentorEntryStatus.value = 'unverified'
+    mentorEntryStatusLoaded.value = false
+    return Promise.resolve(mentorEntryStatus.value)
+  }
+  if (mentorEntryStatusRequest) return mentorEntryStatusRequest
+  if (mentorEntryStatusLoaded.value && !force) return Promise.resolve(mentorEntryStatus.value)
+
+  const cachedStatus = getMentorVerificationStatus()
+  mentorEntryStatus.value = cachedStatus
+  mentorEntryStatusRequest = (async () => {
+    try {
+      try {
+        const profilePayload = await fetchMyMentorProfile()
+        if (profilePayload?.mentor?.id) {
+          return setMentorEntryStatus('verified')
+        }
+      } catch (error) {
+        // 未绑定档案时接口返回 404，继续读取当前账号的认证申请状态。
+        if (error?.statusCode && Number(error.statusCode) !== 404) throw error
+      }
+
+      const applicationPayload = await fetchMyMentorVerificationApplication()
+      const applicationStatus = String(applicationPayload?.application?.application_status || '').trim().toLowerCase()
+      if (applicationStatus === 'pending') return setMentorEntryStatus('pending')
+      if (applicationStatus === 'approved') return setMentorEntryStatus('verified')
+      if (applicationStatus === 'rejected') return setMentorEntryStatus('rejected')
+      return setMentorEntryStatus('unverified')
+    } catch (error) {
+      // 接口暂时不可用时保留已知状态，避免入口在页面回显时反复跳变。
+      mentorEntryStatus.value = cachedStatus
+      return mentorEntryStatus.value
+    } finally {
+      mentorEntryStatusLoaded.value = true
+    }
+  })()
+
+  return mentorEntryStatusRequest.finally(() => {
+    mentorEntryStatusRequest = null
+  })
+}
+
+async function loadMentorFavoriteIds({ silent = false } = {}) {
+  if (!isLoggedIn()) {
+    mentorFavoriteIds.value = getMentorFavoriteIds()
+    return
+  }
+  try {
+    const payload = await fetchMyMentorFavorites()
+    const favoriteIds = Array.isArray(payload?.items)
+      ? payload.items.map((item) => item?.mentor_id || item?.mentorId).filter(Boolean)
+      : []
+    mentorFavoriteIds.value = setMentorFavoriteIds(favoriteIds)
+  } catch (error) {
+    mentorFavoriteIds.value = getMentorFavoriteIds()
+    if (!silent) uni.showToast({ title: error?.detail || '收藏状态加载失败', icon: 'none' })
+  }
 }
 
 function selectMentorSort(event) {
@@ -4772,8 +5057,22 @@ function applyMentorFilters() {
   closeMentorFilterSheet()
 }
 
-function toggleMentorFavoriteState(mentorId) {
-  mentorFavoriteIds.value = toggleStoredMentorFavorite(mentorId)
+async function toggleMentorFavoriteState(mentorId) {
+  if (!isLoggedIn()) {
+    uni.showToast({ title: '请先登录后再收藏前辈', icon: 'none' })
+    return
+  }
+  try {
+    const result = await toggleMentorFavoriteRequest(mentorId)
+    const nextFavoriteIds = result?.is_favorited ?? result?.isFavorited
+      ? [...mentorFavoriteIds.value, String(mentorId)]
+      : mentorFavoriteIds.value.filter((id) => id !== String(mentorId))
+    mentorFavoriteIds.value = setMentorFavoriteIds(nextFavoriteIds)
+  } catch (error) {
+    // 保留本地缓存用于接口短暂失败时的页面回显，不把失败操作伪装成已同步。
+    mentorFavoriteIds.value = getMentorFavoriteIds()
+    uni.showToast({ title: error?.detail || '收藏操作失败，请稍后重试', icon: 'none' })
+  }
 }
 
 function openMentorDetail(mentor) {
@@ -4788,8 +5087,9 @@ function beginMentorConsultation(mentor) {
   uni.navigateTo({ url: `/pages/circle/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
 }
 
-function openMentorVerificationEntry() {
-  const verificationStatus = getMentorVerificationStatus()
+async function openMentorVerificationEntry() {
+  await loadMentorEntryStatus()
+  const verificationStatus = mentorEntryStatus.value
   const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
   uni.navigateTo({ url: `/pages/circle/mentor-apply?mode=${mode}` })
 }
@@ -4808,31 +5108,35 @@ function getCommunityPostHotScore(post = {}) {
   return likes * 6 + comments * 8 + Math.min(views, 1000) * 0.08
 }
 
-function getCommunityPostFeaturedScore(post = {}) {
-  const explicitlyFeatured = Boolean(post.isFeatured ?? post.is_featured ?? post.featured)
-  const mediaCount = Array.isArray(post.media) ? post.media.length : 0
-  const contentLength = String(post.content || post.summary || '').trim().length
-  return (explicitlyFeatured ? 1000000 : 0)
-    + Math.min(mediaCount, 3) * 16
-    + Math.min(Math.floor(contentLength / 30), 40)
-    + getCommunityPostHotScore(post)
+function isCommunityPostFeatured(post = {}) {
+  return Boolean(post.isFeatured ?? post.is_featured ?? post.featured)
+}
+
+function shuffleCommunityPosts(posts) {
+  const shuffled = [...posts]
+  for (let index = shuffled.length - 1; index > 0; index -= 1) {
+    const swapIndex = Math.floor(Math.random() * (index + 1))
+    const current = shuffled[index]
+    shuffled[index] = shuffled[swapIndex]
+    shuffled[swapIndex] = current
+  }
+  return shuffled
 }
 
 function sortCommunityPosts(posts, sort) {
+  if (sort === 'featured') {
+    return shuffleCommunityPosts(posts.filter(isCommunityPostFeatured))
+  }
   return posts
     .map((post, index) => ({
       post,
       index,
       timestamp: getCommunityPostTimestamp(post),
-      hotScore: getCommunityPostHotScore(post),
-      featuredScore: getCommunityPostFeaturedScore(post)
+      hotScore: getCommunityPostHotScore(post)
     }))
     .sort((left, right) => {
       if (sort === 'hot') {
         return right.hotScore - left.hotScore || right.timestamp - left.timestamp || left.index - right.index
-      }
-      if (sort === 'featured') {
-        return right.featuredScore - left.featuredScore || right.timestamp - left.timestamp || left.index - right.index
       }
       return right.timestamp - left.timestamp || left.index - right.index
     })
@@ -4902,6 +5206,7 @@ function normalizeCommunityPost(post = {}) {
     media: Array.isArray(post.media) ? post.media.slice(0, 9) : [],
     commentPreviews,
     commentPreview: commentPreviews[0] || null,
+    isFeatured: isCommunityPostFeatured(post),
     liked: Boolean(post.liked || post.is_liked),
     stats: {
       likes: Number(stats.likes ?? post.like_count ?? 0),
@@ -4938,7 +5243,13 @@ function patchCommunityPost(postId, patch) {
   circleCommunityPosts.value = circleCommunityPosts.value.map((post) => (
     post.id === postId ? applyPatch(post) : post
   ))
+  circleFeaturedCommunityPosts.value = circleFeaturedCommunityPosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
   circleExperienceCommunityPosts.value = circleExperienceCommunityPosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
+  circleFeaturedExperiencePosts.value = circleFeaturedExperiencePosts.value.map((post) => (
     post.id === postId ? applyPatch(post) : post
   ))
   if (selectedCommunityPost.value?.id === postId) {
@@ -4985,21 +5296,28 @@ function consumeCircleCommunityFeedRefresh(postType) {
   }
 }
 
-function getCircleCommunityFeedPosts(postType) {
-  return normalizeCircleCommunityPostType(postType) === 'experience'
-    ? circleExperienceCommunityPosts.value
-    : circleCommunityPosts.value
+function getCircleCommunityFeedPosts(postType, { featuredOnly = false } = {}) {
+  if (normalizeCircleCommunityPostType(postType) === 'experience') {
+    return featuredOnly ? circleFeaturedExperiencePosts.value : circleExperienceCommunityPosts.value
+  }
+  return featuredOnly ? circleFeaturedCommunityPosts.value : circleCommunityPosts.value
 }
 
-function setCircleCommunityFeedPosts(postType, posts, { persist = true } = {}) {
+function setCircleCommunityFeedPosts(postType, posts, { persist = true, featuredOnly = false } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
   const nextPosts = Array.isArray(posts) ? posts : []
   if (normalizedPostType === 'experience') {
-    circleExperienceCommunityPosts.value = nextPosts
+    if (featuredOnly) {
+      circleFeaturedExperiencePosts.value = nextPosts
+    } else {
+      circleExperienceCommunityPosts.value = nextPosts
+    }
+  } else if (featuredOnly) {
+    circleFeaturedCommunityPosts.value = nextPosts
   } else {
     circleCommunityPosts.value = nextPosts
   }
-  if (persist) {
+  if (persist && !featuredOnly) {
     persistCircleCommunityFeed(normalizedPostType)
   }
 }
@@ -5062,26 +5380,31 @@ function warmCircleCommunityFeeds() {
   }
 }
 
-async function loadCircleCommunityPosts(postType = 'chat', { force = false } = {}) {
+async function loadCircleCommunityPosts(postType = 'chat', { force = false, featuredOnly = false } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
-  const cacheIsFresh = hydrateCircleCommunityFeed(normalizedPostType)
-  if (cacheIsFresh && !force) return
-  if (communityPostsLoadingTypes.has(normalizedPostType)) return
-  communityPostsLoadingTypes.add(normalizedPostType)
+  const cacheIsFresh = featuredOnly ? false : hydrateCircleCommunityFeed(normalizedPostType)
+  if (!featuredOnly && cacheIsFresh && !force) return
+  const requestKey = `${normalizedPostType}:${featuredOnly ? 'featured' : 'all'}`
+  if (communityPostsLoadingTypes.has(requestKey)) return
+  communityPostsLoadingTypes.add(requestKey)
   communityPostsLoading.value = true
   try {
     const response = await fetchCommunityPosts({
       limit: COMMUNITY_FEED_PAGE_SIZE,
-      post_type: normalizedPostType
+      post_type: normalizedPostType,
+      featured_only: featuredOnly
     })
     if (Array.isArray(response?.items)) {
       const posts = response.items.map((post) => normalizeCommunityPost(post))
-      setCircleCommunityFeedPosts(normalizedPostType, posts)
+      setCircleCommunityFeedPosts(normalizedPostType, posts, {
+        persist: !featuredOnly,
+        featuredOnly
+      })
     }
   } catch (error) {
     // 请求失败时保留已经读取到的真实缓存，不再回退到示例帖子。
   } finally {
-    communityPostsLoadingTypes.delete(normalizedPostType)
+    communityPostsLoadingTypes.delete(requestKey)
     communityPostsLoading.value = communityPostsLoadingTypes.size > 0
   }
 }
@@ -5495,12 +5818,16 @@ function selectCircleCommunityTab(tab) {
   closeCommunityPost()
   if (tab === 'mentor') {
     mentorFavoriteIds.value = getMentorFavoriteIds()
+    void loadMentorEntryStatus()
+    void loadMentorProfiles()
+    void loadMentorFavoriteIds({ silent: true })
     resetCircleTabbar()
     return
   }
   const shouldRefreshTab = consumeCircleCommunityFeedRefresh(tab)
-  hydrateCircleCommunityFeed(tab)
-  loadCircleCommunityPosts(tab, { force: shouldRefreshTab })
+  const featuredOnly = selectedCommunityPostSort.value === 'featured'
+  if (!featuredOnly) hydrateCircleCommunityFeed(tab)
+  loadCircleCommunityPosts(tab, { force: shouldRefreshTab || featuredOnly, featuredOnly })
   resetCircleTabbar()
 }
 
@@ -5586,6 +5913,14 @@ function handleMenu(item) {
   }
   if (item.action === 'favorites') {
     uni.navigateTo({ url: '/pages/favorites/index' })
+    return
+  }
+  if (item.action === 'liked-posts') {
+    if (!isAuthed.value) {
+      goLogin()
+      return
+    }
+    uni.navigateTo({ url: '/pages/circle/liked-posts' })
     return
   }
   if (item.action === 'ai-generator') {
@@ -7290,6 +7625,42 @@ function formatDateTime(value) {
   margin-top: 10px;
 }
 
+.circle-trend-state {
+  height: 110px;
+  margin-top: 10px;
+  color: var(--circle-muted, #718096);
+  font-size: 13px;
+  line-height: 1.55;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.circle-trend-state.is-error {
+  flex-direction: column;
+  gap: 10px;
+  color: #b66b24;
+}
+
+.circle-trend-state button {
+  min-width: 88px;
+  height: 30px;
+  margin: 0;
+  padding: 0 12px;
+  border: 0;
+  border-radius: 999px;
+  background: var(--circle-brand-soft, #edf4ff);
+  color: var(--circle-brand, #5b8fdf);
+  font-size: 12px;
+  line-height: 30px;
+  font-weight: 700;
+}
+
+.circle-trend-state button::after {
+  border: 0;
+}
+
 .circle-trend-grid,
 .circle-trend-axis {
   position: absolute;
@@ -7367,6 +7738,10 @@ function formatDateTime(value) {
 
 .circle-trend-bar.latest {
   background: linear-gradient(180deg, #b6e5dc 0%, #83cabc 100%);
+}
+
+.circle-trend-bar.empty {
+  min-height: 0;
 }
 
 .circle-trend-value {
@@ -8783,15 +9158,16 @@ function formatDateTime(value) {
 
 .mentor-search-filter-trigger {
   position: relative;
-  width: 102rpx;
-  min-width: 102rpx;
+  width: 82rpx;
+  min-width: 82rpx;
   min-height: 56rpx;
-  padding: 0;
+  padding: 0 18rpx 0 0;
   border: 0;
   border-left: 2rpx solid rgba(52, 120, 246, 0.16);
   border-radius: 0;
   background: transparent;
-  flex: 0 0 102rpx;
+  flex: 0 0 82rpx;
+  justify-content: flex-end;
   gap: 0;
   transition: background 160ms ease;
 }
@@ -8931,20 +9307,13 @@ function formatDateTime(value) {
 
 .mentor-filter-sheet-heading {
   display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 18rpx;
-  padding: 30rpx 30rpx 18rpx;
-}
-
-.mentor-filter-sheet-title {
-  color: #17233a;
-  font-size: 31rpx;
-  line-height: 1.25;
-  font-weight: 900;
+  align-items: center;
+  justify-content: flex-end;
+  padding: 18rpx 30rpx 8rpx;
 }
 
 .mentor-filter-sheet-close {
+  box-sizing: border-box;
   width: 52rpx;
   height: 52rpx;
   min-width: 52rpx;
@@ -8954,9 +9323,23 @@ function formatDateTime(value) {
   border: 0;
   border-radius: 50%;
   background: #edf4ff;
-  color: #6b85b5;
-  font-size: 34rpx;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0;
   line-height: 1;
+}
+
+.mentor-filter-sheet-close-icon {
+  color: #6b85b5;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-family: Arial, Helvetica, sans-serif;
+  font-size: 38rpx;
+  font-weight: 400;
+  line-height: 1;
+  transform: translateY(-1rpx);
 }
 
 .mentor-filter-sheet-scroll {
@@ -9011,6 +9394,7 @@ function formatDateTime(value) {
 .mentor-filter-sheet-actions {
   display: grid;
   grid-template-columns: 1fr 1.6fr;
+  align-items: center;
   gap: 14rpx;
   padding: 20rpx 30rpx calc(24rpx + env(safe-area-inset-bottom));
   border-top: 2rpx solid #edf1f8;
@@ -9020,7 +9404,10 @@ function formatDateTime(value) {
 .mentor-filter-reset-button,
 .mentor-filter-confirm-button {
   min-height: 76rpx;
+  height: 76rpx;
+  box-sizing: border-box;
   margin: 0;
+  padding: 0 16rpx;
   border-radius: 20rpx;
   display: flex;
   align-items: center;
@@ -9028,6 +9415,18 @@ function formatDateTime(value) {
   font-size: 24rpx;
   line-height: 1.2;
   font-weight: 850;
+}
+
+.mentor-filter-action-label {
+  width: 100%;
+  height: 100%;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  transform: translateY(-1rpx);
 }
 
 .mentor-filter-reset-button {
@@ -9682,6 +10081,59 @@ function formatDateTime(value) {
   touch-action: manipulation;
   -webkit-tap-highlight-color: transparent;
   transition: transform 180ms ease, box-shadow 180ms ease, background-color 180ms ease;
+}
+
+.mentor-console-entry,
+.mentor-pending-entry {
+  width: auto;
+  height: 50px;
+  min-height: 50px;
+  padding: 0 16px;
+  border-radius: 999px;
+}
+
+.mentor-console-entry {
+  min-width: 108px;
+}
+
+.mentor-pending-entry {
+  min-width: 88px;
+  background: #6687ba;
+  box-shadow: 0 10px 22px rgba(69, 103, 154, 0.24);
+}
+
+.mentor-entry-content {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  color: #fff;
+  font-size: 14px;
+  line-height: 1;
+  font-weight: 760;
+  white-space: nowrap;
+}
+
+.mentor-entry-grid-icon {
+  width: 13px;
+  height: 13px;
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 2px;
+}
+
+.mentor-entry-grid-icon view {
+  border-radius: 2px;
+  background: currentColor;
+}
+
+.mentor-entry-pending-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #dceaff;
+  box-shadow: 0 0 0 3px rgba(220, 234, 255, 0.18);
 }
 
 .community-publish-button::after {

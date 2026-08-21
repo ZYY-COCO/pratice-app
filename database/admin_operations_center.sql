@@ -231,7 +231,7 @@ as $$
 $$;
 
 drop function if exists public.question_admin_portal_user_list(
-  text, text, text, text, timestamptz, timestamptz, text, integer, integer
+  text, text, text, text, text, timestamptz, timestamptz, text, integer, integer
 );
 
 create or replace function public.question_admin_portal_user_list(
@@ -243,6 +243,7 @@ create or replace function public.question_admin_portal_user_list(
   p_registered_from timestamptz default null,
   p_registered_to timestamptz default null,
   p_sort_by text default 'created_at',
+  p_sort_direction text default 'desc',
   p_limit integer default 20,
   p_offset integer default 0
 )
@@ -316,9 +317,16 @@ as $$
     select *
     from filtered
     order by
-      case when p_sort_by = 'accuracy' then accuracy end desc,
-      case when p_sort_by = 'answer_count' then answer_count end desc,
-      case when p_sort_by = 'last_active' then last_answer_at end desc nulls last,
+      case when p_sort_by = 'exam_target' and p_sort_direction = 'asc' then exam_target end asc nulls last,
+      case when p_sort_by = 'exam_target' and p_sort_direction = 'desc' then exam_target end desc nulls last,
+      case when p_sort_by = 'answer_count' and p_sort_direction = 'asc' then answer_count end asc,
+      case when p_sort_by = 'answer_count' and p_sort_direction = 'desc' then answer_count end desc,
+      case when p_sort_by = 'accuracy' and p_sort_direction = 'asc' then accuracy end asc,
+      case when p_sort_by = 'accuracy' and p_sort_direction = 'desc' then accuracy end desc,
+      case when p_sort_by = 'last_active' and p_sort_direction = 'asc' then last_answer_at end asc nulls last,
+      case when p_sort_by = 'last_active' and p_sort_direction = 'desc' then last_answer_at end desc nulls last,
+      case when p_sort_by = 'created_at' and p_sort_direction = 'asc' then created_at end asc,
+      case when p_sort_by = 'created_at' and p_sort_direction = 'desc' then created_at end desc,
       created_at desc,
       id
     limit greatest(1, least(coalesce(p_limit, 20), 100))
@@ -345,9 +353,16 @@ as $$
         'accuracy', accuracy,
         'last_answer_at', last_answer_at
       ) order by
-        case when p_sort_by = 'accuracy' then accuracy end desc,
-        case when p_sort_by = 'answer_count' then answer_count end desc,
-        case when p_sort_by = 'last_active' then last_answer_at end desc nulls last,
+        case when p_sort_by = 'exam_target' and p_sort_direction = 'asc' then exam_target end asc nulls last,
+        case when p_sort_by = 'exam_target' and p_sort_direction = 'desc' then exam_target end desc nulls last,
+        case when p_sort_by = 'answer_count' and p_sort_direction = 'asc' then answer_count end asc,
+        case when p_sort_by = 'answer_count' and p_sort_direction = 'desc' then answer_count end desc,
+        case when p_sort_by = 'accuracy' and p_sort_direction = 'asc' then accuracy end asc,
+        case when p_sort_by = 'accuracy' and p_sort_direction = 'desc' then accuracy end desc,
+        case when p_sort_by = 'last_active' and p_sort_direction = 'asc' then last_answer_at end asc nulls last,
+        case when p_sort_by = 'last_active' and p_sort_direction = 'desc' then last_answer_at end desc nulls last,
+        case when p_sort_by = 'created_at' and p_sort_direction = 'asc' then created_at end asc,
+        case when p_sort_by = 'created_at' and p_sort_direction = 'desc' then created_at end desc,
         created_at desc,
         id
       ) from ordered
@@ -357,8 +372,8 @@ $$;
 
 revoke all on function public.question_admin_portal_user_overview() from public, anon, authenticated;
 grant execute on function public.question_admin_portal_user_overview() to service_role;
-revoke all on function public.question_admin_portal_user_list(text, text, text, text, text, timestamptz, timestamptz, text, integer, integer) from public, anon, authenticated;
-grant execute on function public.question_admin_portal_user_list(text, text, text, text, text, timestamptz, timestamptz, text, integer, integer) to service_role;
+revoke all on function public.question_admin_portal_user_list(text, text, text, text, text, timestamptz, timestamptz, text, text, integer, integer) from public, anon, authenticated;
+grant execute on function public.question_admin_portal_user_list(text, text, text, text, text, timestamptz, timestamptz, text, text, integer, integer) to service_role;
 
 -- The user-detail panel has a bounded recent-answer feed, but its totals and
 -- per-subject accuracy are always produced inside PostgreSQL.  This keeps the

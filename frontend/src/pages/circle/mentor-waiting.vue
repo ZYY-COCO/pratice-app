@@ -19,9 +19,9 @@
 
         <view v-else class="mentor-waiting-main">
           <view class="mentor-waiting-icon waiting">⌛</view>
-          <view class="mentor-waiting-title">{{ status === 'accepted' ? '前辈已接单' : '已向前辈发送咨询请求' }}</view>
-          <view class="mentor-waiting-copy">{{ status === 'accepted' ? '正在为你打开咨询窗口。' : '前辈将在 10 分钟内确认是否接受本次咨询。' }}</view>
-          <view v-if="status !== 'accepted'" class="mentor-countdown">{{ countdownText }}</view>
+          <view class="mentor-waiting-title">{{ ['accepted', 'in_progress'].includes(status) ? '前辈已接单' : '已向前辈发送咨询请求' }}</view>
+          <view class="mentor-waiting-copy">{{ ['accepted', 'in_progress'].includes(status) ? '咨询窗口已可进入。' : '前辈将在 10 分钟内确认是否接受本次咨询。' }}</view>
+          <view v-if="!['accepted', 'in_progress'].includes(status)" class="mentor-countdown">{{ countdownText }}</view>
         </view>
 
         <view class="mentor-waiting-person-card">
@@ -44,17 +44,7 @@
 
         <view v-if="isBooking" class="mentor-waiting-notice">
           <text>预约说明</text>
-          <view>这是前辈主动开放的可预约时间，因此不需要再次等待接单。这里提供“进入咨询（演示）”用于本地体验聊天页面。</view>
-        </view>
-
-        <view v-if="!isBooking && !isFailed" class="mentor-demo-card">
-          <view>本地演示控制</view>
-          <text>用于体验接单成功和超时退款两种前端状态，不会发起真实请求。</text>
-          <view class="mentor-demo-actions">
-            <button @tap="acceptConsultation">模拟接单</button>
-            <button class="light" @tap="timeoutConsultation">模拟超时</button>
-            <button class="light" @tap="rejectConsultation">模拟拒绝</button>
-          </view>
+          <view>这是前辈主动开放的可预约时间，因此不需要再次等待接单；到预约开始时间后即可进入咨询。</view>
         </view>
       </view>
       <view class="mentor-waiting-bottom-space"></view>
@@ -62,29 +52,39 @@
 
     <view v-if="mentor" class="mentor-waiting-footer">
       <button v-if="isFailed" @tap="chooseAgain">重新选择前辈</button>
-      <button v-else-if="isBooking" @tap="openChat">进入咨询（演示）</button>
-      <button v-else-if="status === 'accepted'" @tap="openChat">进入聊天</button>
-      <button v-else class="secondary" @tap="goBack">返回填写信息</button>
+      <button v-else-if="isBooking || ['accepted', 'in_progress'].includes(status)" :loading="openingChat" @tap="openChat">进入聊天</button>
+      <button v-else class="secondary" @tap="goBack">返回前辈详情</button>
     </view>
   </view>
 </template>
 
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { onLoad } from '@dcloudio/uni-app'
+import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
+  fetchMentorProfile,
+  fetchMentorConsultationOrder,
+  startMentorConsultationOrder
+} from '../../api/mentorConsultation'
+import {
+  cacheMentors,
   getConsultationDraft,
   getMentorById,
-  setConsultationOrderStatus
+  normalizeMentorDetailResponse,
+  saveConsultationOrder
 } from '../../data/mentorConsultation'
 
 const mentor = ref(null)
 const mode = ref('instant')
 const status = ref('pending_accept')
 const bookingSlot = ref(null)
-const remainingSeconds = ref(598)
+const orderId = ref('')
+const expiresAt = ref('')
+const remainingSeconds = ref(0)
+const openingChat = ref(false)
 let countdownTimer = null
+let orderPollTimer = null
 
 const isBooking = computed(() => mode.value === 'booking')
 const isFailed = computed(() => ['timeout', 'rejected', 'refunded'].includes(status.value))
@@ -96,62 +96,110 @@ const countdownText = computed(() => {
 })
 
 onLoad((options) => {
-  mode.value = options?.mode === 'booking' ? 'booking' : 'instant'
-  mentor.value = getMentorById(options?.mentorId)
   const draft = getConsultationDraft()
-  if (draft?.mentorId === mentor.value?.id) {
-    status.value = draft.orderStatus || (mode.value === 'booking' ? 'booked' : 'pending_accept')
-    bookingSlot.value = draft.bookingSlot || null
+  orderId.value = String(options?.orderId || draft?.orderId || '')
+  const mentorId = options?.mentorId || draft?.mentorId
+  mentor.value = getMentorById(mentorId)
+  bookingSlot.value = draft?.bookingSlot || null
+  mode.value = options?.mode === 'booking' || draft?.consultationType === 'booking' ? 'booking' : 'instant'
+  if (!orderId.value) {
+    uni.showToast({ title: '未找到咨询订单，请重新发起咨询', icon: 'none' })
+    return
   }
-  if (mode.value === 'booking') status.value = 'booked'
-  if (!isBooking.value && !isFailed.value && status.value !== 'accepted') startCountdown()
+  void loadMentor(mentorId)
+  void loadOrder()
 })
 
-onBeforeUnmount(stopCountdown)
+onShow(() => {
+  if (orderId.value) void loadOrder({ silent: true })
+})
+
+onBeforeUnmount(stopOrderTimers)
+
+async function loadOrder({ silent = false } = {}) {
+  if (!orderId.value) return
+  try {
+    const order = await fetchMentorConsultationOrder(orderId.value)
+    applyOrder(order)
+  } catch (error) {
+    if (!silent) uni.showToast({ title: error?.detail || '咨询订单加载失败', icon: 'none' })
+  }
+}
+
+async function loadMentor(mentorId) {
+  const id = String(mentorId || '')
+  if (!id) return
+  try {
+    const profile = normalizeMentorDetailResponse(await fetchMentorProfile(id))
+    if (!profile) return
+    mentor.value = profile
+    cacheMentors([profile])
+  } catch (error) {
+    // 已有缓存或当前订单仍可继续使用时，不用网络短暂失败打断等待页。
+  }
+}
+
+function applyOrder(order) {
+  const draft = saveConsultationOrder(order)
+  status.value = draft.orderStatus || 'pending_accept'
+  mode.value = draft.consultationType === 'booking' ? 'booking' : 'instant'
+  expiresAt.value = draft.expiresAt || ''
+  if (status.value === 'pending_accept') {
+    syncRemainingSeconds()
+    startCountdown()
+    startOrderPolling()
+  } else {
+    stopOrderTimers()
+  }
+}
+
+function syncRemainingSeconds() {
+  const deadline = Date.parse(expiresAt.value || '')
+  remainingSeconds.value = Number.isFinite(deadline)
+    ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
+    : 0
+}
 
 function startCountdown() {
-  stopCountdown()
+  if (countdownTimer) return
   countdownTimer = setInterval(() => {
-    if (remainingSeconds.value <= 1) {
-      timeoutConsultation()
-      return
+    syncRemainingSeconds()
+    if (remainingSeconds.value <= 0) {
+      void loadOrder({ silent: true })
     }
-    remainingSeconds.value -= 1
   }, 1000)
 }
 
-function stopCountdown() {
+function startOrderPolling() {
+  if (orderPollTimer) return
+  orderPollTimer = setInterval(() => {
+    void loadOrder({ silent: true })
+  }, 5000)
+}
+
+function stopOrderTimers() {
   if (countdownTimer) clearInterval(countdownTimer)
+  if (orderPollTimer) clearInterval(orderPollTimer)
   countdownTimer = null
+  orderPollTimer = null
 }
 
-function acceptConsultation() {
-  if (isBooking.value || isFailed.value) return
-  stopCountdown()
-  status.value = 'accepted'
-  setConsultationOrderStatus('accepted')
-}
-
-function timeoutConsultation() {
-  if (isBooking.value || isFailed.value) return
-  stopCountdown()
-  remainingSeconds.value = 0
-  status.value = 'timeout'
-  setConsultationOrderStatus('timeout')
-}
-
-function rejectConsultation() {
-  if (isBooking.value || isFailed.value) return
-  stopCountdown()
-  status.value = 'rejected'
-  setConsultationOrderStatus('rejected')
-}
-
-function openChat() {
-  if (!mentor.value) return
-  stopCountdown()
-  setConsultationOrderStatus('in_progress')
-  uni.navigateTo({ url: `/pages/circle/mentor-chat?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}` })
+async function openChat() {
+  if (!mentor.value || !orderId.value || openingChat.value) return
+  openingChat.value = true
+  try {
+    const order = await startMentorConsultationOrder(orderId.value)
+    const draft = saveConsultationOrder(order)
+    status.value = draft.orderStatus
+    stopOrderTimers()
+    uni.navigateTo({
+      url: `/pages/circle/mentor-chat?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}&orderId=${encodeURIComponent(orderId.value)}`
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
+  } finally {
+    openingChat.value = false
+  }
 }
 
 function chooseAgain() {

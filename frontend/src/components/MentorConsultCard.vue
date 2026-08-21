@@ -36,7 +36,7 @@
 
     <view class="mentor-service-row">
       <view class="mentor-service-meta">
-        <text class="mentor-rating">★ {{ Number(mentor.rating || 0).toFixed(1) }}</text>
+        <text class="mentor-rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating || 0).toFixed(1)}` : '暂无评分' }}</text>
         <text>已咨询 {{ mentor.consultCount || 0 }} 人</text>
       </view>
       <view class="mentor-status" :class="{ online: mentor.onlineStatus === 'online' }">
@@ -48,7 +48,7 @@
     <view class="mentor-card-footer">
       <view class="mentor-price">
         <text>{{ mentor.priceLabel }}</text>
-        <view>60分钟咨询窗口</view>
+        <view>{{ mentor.consultationWindowMinutes || 60 }}分钟咨询窗口</view>
       </view>
       <button class="mentor-consult-button" @tap.stop="emit('consult')">{{ mentor.actionLabel }}</button>
     </view>

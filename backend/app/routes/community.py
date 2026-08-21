@@ -21,6 +21,8 @@ from app.schemas.community import (
     CommunityLikeListResponse,
     CommunityCreatePostRequest,
     CommunityLikeResponse,
+    CommunityLikedPostItem,
+    CommunityLikedPostListResponse,
     CommunityPostDetailResponse,
     CommunityPostItem,
     CommunityPostListResponse,
@@ -272,6 +274,7 @@ def _post_item(
             comments=int(row.get("comment_count") or 0),
             views=int(row.get("view_count") or 0),
         ),
+        is_featured=bool(row.get("is_featured")),
         liked=post_id in liked_post_ids,
     )
 
@@ -610,6 +613,7 @@ def _raise_community_service_error(exc: Exception) -> None:
 def list_community_posts(
     post_type: Literal["chat", "experience"] = Query(default="chat"),
     category: str | None = Query(default=None, max_length=24),
+    featured_only: bool = Query(default=False),
     limit: int = Query(default=12, ge=1, le=30),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostListResponse:
@@ -629,6 +633,8 @@ def list_community_posts(
             )
             if include_post_type:
                 query = query.eq("post_type", post_type)
+            if featured_only:
+                query = query.eq("is_featured", True)
             if category and category != "全部":
                 query = query.eq("category", category)
             return query
@@ -676,6 +682,84 @@ def list_community_posts(
             previews = previews_future.result()
         return CommunityPostListResponse(
             items=[_post_item(row, liked_post_ids, previews, profiles) for row in rows],
+            count=len(rows),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.get("/liked-posts", response_model=CommunityLikedPostListResponse)
+def list_liked_community_posts(
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityLikedPostListResponse:
+    """Return the current user's visible likes, newest like first."""
+
+    supabase = get_supabase_admin()
+    try:
+        likes_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_likes")
+                .select("post_id,created_at")
+                .eq("user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ),
+            operation_name="circle community liked post list",
+        )
+        like_rows = likes_response.data or []
+        liked_at_by_post_id = {
+            str(row.get("post_id")): row.get("created_at")
+            for row in like_rows
+            if row.get("post_id")
+        }
+        ordered_post_ids = list(liked_at_by_post_id)
+        if not ordered_post_ids:
+            return CommunityLikedPostListResponse()
+
+        posts_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .select("*")
+                .in_("id", ordered_post_ids)
+                .eq("is_published", True)
+                .execute()
+            ),
+            operation_name="circle community liked post lookup",
+        )
+        rows_by_id = {
+            str(row.get("id")): row
+            for row in (posts_response.data or [])
+            if row.get("id")
+        }
+        rows = [
+            rows_by_id[post_id]
+            for post_id in ordered_post_ids
+            if post_id in rows_by_id and post_id not in COMMUNITY_RETIRED_SEED_POST_IDS
+        ]
+        post_ids = [str(row.get("id")) for row in rows]
+
+        with ThreadPoolExecutor(max_workers=2) as executor:
+            profiles_future = executor.submit(
+                _fetch_community_profiles,
+                supabase,
+                [str(row.get("author_id") or "") for row in rows],
+            )
+            previews_future = executor.submit(_fetch_comment_previews, supabase, post_ids)
+            profiles = profiles_future.result()
+            previews = previews_future.result()
+
+        return CommunityLikedPostListResponse(
+            items=[
+                CommunityLikedPostItem(
+                    **_post_item(row, set(post_ids), previews, profiles).model_dump(),
+                    liked_at=liked_at_by_post_id.get(str(row.get("id"))),
+                )
+                for row in rows
+            ],
             count=len(rows),
         )
     except HTTPException:

@@ -22,6 +22,14 @@ export function fetchLearningSummary(params = {}) {
   })
 }
 
+export function fetchPlatformPracticeTrend() {
+  return request({
+    url: '/report/platform-practice-trend',
+    method: 'GET',
+    authRedirect: false
+  })
+}
+
 export function fetchStudyAdvice(params = {}) {
   const query = Object.keys(params)
     .filter((key) => params[key] !== undefined && params[key] !== '')

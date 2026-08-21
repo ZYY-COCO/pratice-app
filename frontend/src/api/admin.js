@@ -54,6 +54,21 @@ export function updateQuestionAdminPortalUserDisabled(userId, payload) {
   })
 }
 
+export function renewQuestionAdminPortalUserMembership(userId, payload) {
+  return request({
+    url: `/admin/question-portal/users/${encodeURIComponent(userId)}/membership`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function cancelQuestionAdminPortalUserMembership(userId) {
+  return request({
+    url: `/admin/question-portal/users/${encodeURIComponent(userId)}/membership`,
+    method: 'DELETE'
+  })
+}
+
 export function previewQuestionAdminAdmissionImport(dataset, payload) {
   return uploadFileRequest({
     url: `/admin/question-portal/admission/${encodeURIComponent(dataset)}/preview`,
@@ -121,6 +136,23 @@ export function updateQuestionAdminScorelineRecord(recordId, payload) {
     url: `/admin/question-portal/admission/scorelines/records/${encodeURIComponent(recordId)}`,
     method: 'PATCH',
     data: payload
+  })
+}
+
+export function fetchQuestionAdminMajorCatalogRecords(params = {}) {
+  return request({
+    url: '/admin/question-portal/admission/major-catalog/records',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function updateQuestionAdminMajorCatalogRecord(recordId, payload) {
+  return request({
+    url: `/admin/question-portal/admission/major-catalog/records/${encodeURIComponent(recordId)}`,
+    method: 'PATCH',
+    data: payload,
+    timeout: 90000
   })
 }
 
@@ -197,6 +229,14 @@ export function updateQuestionAdminCommunityPostVisibility(postId, payload) {
 export function bulkUpdateQuestionAdminCommunityPostVisibility(payload) {
   return request({
     url: '/admin/question-portal/community/posts/bulk-visibility',
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function bulkUpdateQuestionAdminCommunityPostFeatured(payload) {
+  return request({
+    url: '/admin/question-portal/community/posts/bulk-featured',
     method: 'PATCH',
     data: payload
   })
@@ -415,6 +455,84 @@ export function updateAdminMessage(messageId, payload) {
   return request({
     url: `/admin/messages/${messageId}`,
     method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorProfiles(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/mentors',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorProfile(mentorId) {
+  return request({
+    url: `/admin/mentor-consultation/mentors/${encodeURIComponent(mentorId)}`,
+    method: 'GET'
+  })
+}
+
+export function createAdminMentorProfile(payload) {
+  return request({
+    url: '/admin/mentor-consultation/mentors',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function updateAdminMentorProfile(mentorId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/mentors/${encodeURIComponent(mentorId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorSlots(mentorId, params = {}) {
+  return request({
+    url: `/admin/mentor-consultation/mentors/${encodeURIComponent(mentorId)}/slots`,
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createAdminMentorSlot(mentorId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/mentors/${encodeURIComponent(mentorId)}/slots`,
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function updateAdminMentorSlot(slotId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/slots/${encodeURIComponent(slotId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorVerificationApplications(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/applications',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorVerificationApplication(applicationId) {
+  return request({
+    url: `/admin/mentor-consultation/applications/${encodeURIComponent(applicationId)}`,
+    method: 'GET'
+  })
+}
+
+export function decideAdminMentorVerificationApplication(applicationId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/applications/${encodeURIComponent(applicationId)}/decision`,
+    method: 'POST',
     data: payload
   })
 }

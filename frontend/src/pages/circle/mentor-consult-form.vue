@@ -60,7 +60,7 @@
             <view v-if="isBooking"><text>预约时间</text><strong>{{ bookingSlotLabel }}</strong></view>
             <view><text>咨询方式</text><strong>文字 / 语音消息</strong></view>
             <view><text>服务形式</text><strong>{{ isBooking ? '预约咨询' : '单次即时咨询' }}</strong></view>
-            <view><text>咨询窗口</text><strong>60分钟</strong></view>
+            <view><text>咨询窗口</text><strong>{{ mentor.consultationWindowMinutes || 60 }}分钟</strong></view>
             <view class="mentor-order-price"><text>价格</text><strong>¥{{ orderPrice }}</strong></view>
           </view>
         </view>
@@ -81,14 +81,19 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
+  createMentorConsultationOrder,
+  mockPayMentorConsultationOrder
+} from '../../api/mentorConsultation'
+import {
   MENTOR_GRADE_OPTIONS,
   createDefaultConsultationQuestionnaire,
   getConsultationDraft,
   getMentorById,
+  saveConsultationOrder,
   saveConsultationQuestionnaire,
-  setConsultationOrderStatus,
   startConsultationDraft
 } from '../../data/mentorConsultation'
+import { isLoggedIn } from '../../utils/auth'
 
 const mentor = ref(null)
 const mode = ref('instant')
@@ -101,7 +106,7 @@ const yearOptions = ['2031', '2030', '2029', '2028', '2027', '2026', '2025', '20
 const isBooking = computed(() => mode.value === 'booking')
 const gradeIndex = computed(() => Math.max(0, gradeOptions.indexOf(questionnaire.value.grade)))
 const yearIndex = computed(() => Math.max(0, yearOptions.indexOf(String(questionnaire.value.graduationYear))))
-const orderPrice = computed(() => bookingSlot.value?.price || mentor.value?.price || 0)
+const orderPrice = computed(() => bookingSlot.value?.price ?? mentor.value?.price ?? 0)
 const bookingSlotLabel = computed(() => bookingSlot.value ? `${bookingSlot.value.date} ${bookingSlot.value.time}` : '待选择')
 
 onLoad((options) => {
@@ -133,8 +138,12 @@ function selectGraduationYear(event) {
   questionnaire.value.graduationYear = yearOptions[Number(event?.detail?.value)] || yearOptions[0]
 }
 
-function submitOrder() {
+async function submitOrder() {
   if (!mentor.value || isPaying.value) return
+  if (!isLoggedIn()) {
+    uni.showToast({ title: '请先登录后再发起咨询', icon: 'none' })
+    return
+  }
   if (!questionnaire.value.name.trim() || !questionnaire.value.school.trim() || !questionnaire.value.major.trim()) {
     uni.showToast({ title: '请先填写姓名、当前学校和当前专业', icon: 'none' })
     return
@@ -145,15 +154,32 @@ function submitOrder() {
   }
 
   isPaying.value = true
-  saveConsultationQuestionnaire(questionnaire.value)
-  setTimeout(() => {
-    const nextStatus = isBooking.value ? 'booked' : 'pending_accept'
-    setConsultationOrderStatus(nextStatus)
-    uni.navigateTo({
-      url: `/pages/circle/mentor-waiting?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}`
+  try {
+    saveConsultationQuestionnaire(questionnaire.value)
+    const createdOrder = await createMentorConsultationOrder({
+      mentor_id: mentor.value.id,
+      consultation_type: mode.value,
+      ...(isBooking.value ? { slot_id: bookingSlot.value.id } : {}),
+      questionnaire: {
+        name: questionnaire.value.name.trim(),
+        school: questionnaire.value.school.trim(),
+        major: questionnaire.value.major.trim(),
+        grade: questionnaire.value.grade,
+        graduation_year: Number(questionnaire.value.graduationYear) || undefined,
+        question: questionnaire.value.question.trim()
+      }
     })
+    saveConsultationOrder(createdOrder)
+    const paidOrder = await mockPayMentorConsultationOrder(createdOrder.id)
+    const draft = saveConsultationOrder(paidOrder)
+    uni.navigateTo({
+      url: `/pages/circle/mentor-waiting?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}&orderId=${encodeURIComponent(draft.orderId)}`
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '创建咨询订单失败，请稍后重试', icon: 'none' })
+  } finally {
     isPaying.value = false
-  }, 520)
+  }
 }
 
 function goBack() {
@@ -166,7 +192,7 @@ function goBack() {
 </script>
 
 <style scoped>
-.mentor-form-page { height: 100vh; overflow: hidden; background: #f4f8ff; display: flex; flex-direction: column; }
+.mentor-form-page { height: 100vh; height: 100dvh; overflow: hidden; background: #f4f8ff; display: flex; flex-direction: column; }
 .mentor-form-scroll { min-height: 0; flex: 1; }
 .mentor-form-content { padding: 24rpx 24rpx 0; }
 .mentor-form-intro { padding: 20rpx 22rpx; border: 2rpx solid #d6e6ff; border-radius: 20rpx; background: #edf4ff; color: #5c7398; font-size: 21rpx; line-height: 1.6; font-weight: 650; }
@@ -197,12 +223,12 @@ function goBack() {
 .mentor-order-lines .mentor-order-price strong { color: #1f2e44; font-size: 28rpx; font-weight: 900; }
 .mentor-form-bottom-space { height: calc(154rpx + env(safe-area-inset-bottom)); }
 .mentor-form-missing { padding: 150rpx 40rpx; color: #75869d; text-align: center; font-size: 25rpx; font-weight: 700; }
-.mentor-form-footer { padding: 16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid #dbe7f8; background: rgba(255,255,255,.97); display: flex; align-items: center; gap: 18rpx; }
+.mentor-form-footer { padding: 16rpx 24rpx calc(24rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid #dbe7f8; background: rgba(255,255,255,.97); display: flex; align-items: center; gap: 18rpx; }
 .mentor-form-footer > view { min-width: 0; flex: 1; }
 .mentor-form-footer text, .mentor-form-footer strong { display: block; }
 .mentor-form-footer text { color: #8290a5; font-size: 19rpx; font-weight: 650; }
 .mentor-form-footer strong { margin-top: 4rpx; color: #203048; font-size: 28rpx; line-height: 1.2; font-weight: 900; }
-.mentor-form-footer button { min-width: 250rpx; min-height: 74rpx; margin: 0; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; font-size: 23rpx; font-weight: 900; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
+.mentor-form-footer button { box-sizing: border-box; min-width: 250rpx; height: 74rpx; min-height: 74rpx; margin: 0; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 16rpx; text-align: center; font-size: 23rpx; line-height: 1; font-weight: 900; white-space: nowrap; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
 .mentor-form-footer button::after { border: 0; }
 @media (max-width:350px){.mentor-form-footer{gap:12rpx;padding-right:18rpx;padding-left:18rpx}.mentor-form-footer button{min-width:220rpx;font-size:21rpx}.mentor-form-card{padding:24rpx}}
 </style>

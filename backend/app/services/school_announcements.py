@@ -90,7 +90,6 @@ def _load_published_database_index() -> dict[str, Any] | None:
                 .select("*")
                 .eq("import_run_id", published_run_id)
                 .eq("status", "published")
-                .order("is_pinned", desc=True)
                 .order("sort_order")
                 .order("notice_date", desc=True)
                 .execute()
@@ -129,7 +128,6 @@ def _load_published_database_index() -> dict[str, Any] | None:
             "content_text": str(row.get("content_text") or ""),
             "notice_level": "school",
             "content_mode": "text",
-            "is_pinned": bool(row.get("is_pinned")),
             "sort_order": int(row.get("sort_order") or 0),
         }
 

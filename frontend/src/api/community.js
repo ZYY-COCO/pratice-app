@@ -9,6 +9,14 @@ export function fetchCommunityPosts(params = {}) {
   })
 }
 
+export function fetchLikedCommunityPosts(params = {}) {
+  return request({
+    url: '/circle/community/liked-posts',
+    method: 'GET',
+    data: params
+  })
+}
+
 export function fetchCommunityPost(postId) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}`,

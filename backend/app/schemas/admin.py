@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, ConfigDict, Field
 
 
@@ -255,6 +257,8 @@ class QuestionAdminDashboardResponse(BaseModel):
     today_practicing_users: int = 0
     online_members: int = 0
     online_window_minutes: int = 15
+    registered_users: int = 0
+    today_registered_users: int = 0
     difficult_questions_count: int = 0
     difficult_questions_page: int = 1
     difficult_questions_page_size: int = 20
@@ -282,6 +286,7 @@ class AdminCommunityPostItem(BaseModel):
     comment_count: int = 0
     view_count: int = 0
     is_published: bool = True
+    is_featured: bool = False
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -310,6 +315,17 @@ class AdminCommunityBulkVisibilityRequest(BaseModel):
 
 
 class AdminCommunityBulkVisibilityResponse(BaseModel):
+    updated_count: int
+
+
+class AdminCommunityBulkFeaturedRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_featured: bool
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class AdminCommunityBulkFeaturedResponse(BaseModel):
     updated_count: int
 
 
@@ -366,6 +382,12 @@ class QuestionAdminPortalUserDisableRequest(BaseModel):
     disabled: bool
 
 
+class QuestionAdminPortalMembershipRenewRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    months: Literal[1, 4]
+
+
 class AdminOperationsImportPreviewResponse(BaseModel):
     dataset: str
     source_sha256: str
@@ -405,13 +427,24 @@ class AdminAnnouncementRecordUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: str | None = Field(default=None, pattern="^(draft|published|archived)$")
-    is_pinned: bool | None = None
+    notice_year: str | None = Field(default=None, pattern="^20\\d{2}$")
+    region: str | None = Field(default=None, min_length=1, max_length=60)
+    school_name: str | None = Field(default=None, min_length=1, max_length=160)
+    unit_name: str | None = Field(default=None, max_length=160)
+    notice_type: str | None = Field(default=None, pattern="^(brochure|scoreline_retest)$")
+    title: str | None = Field(default=None, min_length=1, max_length=500)
+    summary: str | None = Field(default=None, max_length=5000)
+    notice_date: str | None = Field(default=None, pattern="^20\\d{2}-\\d{2}-\\d{2}$")
+    source_url: str | None = Field(default=None, max_length=1000)
+    content_text: str | None = Field(default=None, max_length=100000)
     sort_order: int | None = Field(default=None, ge=-10000, le=10000)
 
 
 class AdminScorelineRecordListResponse(BaseModel):
     items: list[dict] = Field(default_factory=list)
     count: int = 0
+    filter_years: list[str] = Field(default_factory=list)
+    filter_regions: list[str] = Field(default_factory=list)
 
 
 class AdminScorelineRecordUpdateRequest(BaseModel):
@@ -428,6 +461,28 @@ class AdminScorelineRecordUpdateRequest(BaseModel):
     )
     source_url: str | None = Field(default=None, max_length=1000)
     source_note: str | None = Field(default=None, max_length=2000)
+
+
+class AdminMajorCatalogRecordListResponse(BaseModel):
+    items: list[dict] = Field(default_factory=list)
+    count: int = 0
+    filter_regions: list[str] = Field(default_factory=list)
+    filter_exam_codes: list[str] = Field(default_factory=list)
+
+
+class AdminMajorCatalogRecordUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    region: str | None = Field(default=None, min_length=1, max_length=60)
+    school_name: str | None = Field(default=None, min_length=1, max_length=160)
+    department_name: str | None = Field(default=None, min_length=1, max_length=300)
+    program_name: str | None = Field(default=None, min_length=1, max_length=300)
+    program_code: str | None = Field(default=None, max_length=60)
+    direction_name: str | None = Field(default=None, min_length=1, max_length=500)
+    tutor: str | None = Field(default=None, max_length=300)
+    exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
+    degree: str | None = Field(default=None, max_length=100)
+    study_mode: str | None = Field(default=None, max_length=100)
 
 
 class AdminScorelineBootstrapRecord(BaseModel):

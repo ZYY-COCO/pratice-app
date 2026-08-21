@@ -30,6 +30,14 @@
       }
     },
     {
+      "path": "pages/circle/liked-posts",
+      "style": {
+        "navigationBarTitleText": "赞过的帖子",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f8ff"
+      }
+    },
+    {
       "path": "pages/circle/mentor-detail",
       "style": {
         "navigationBarTitleText": "前辈详情",
@@ -41,6 +49,22 @@
       "path": "pages/circle/mentor-booking",
       "style": {
         "navigationBarTitleText": "预约咨询",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f8ff"
+      }
+    },
+    {
+      "path": "pages/circle/mentor-schedule",
+      "style": {
+        "navigationBarTitleText": "预约时段",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f8ff"
+      }
+    },
+    {
+      "path": "pages/circle/mentor-info",
+      "style": {
+        "navigationBarTitleText": "我的信息",
         "navigationStyle": "custom",
         "backgroundColor": "#f4f8ff"
       }

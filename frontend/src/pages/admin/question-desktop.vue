@@ -118,7 +118,7 @@
             <view>
               <view class="welcome-kicker">{{ todayLabel }}</view>
               <view class="welcome-title">{{ greeting }}，{{ profileName }}</view>
-              <view class="welcome-copy">这里汇总今天的刷题活跃、会员在线情况与高频错题。</view>
+              <view class="welcome-copy">这里汇总今天的刷题活跃、注册增长与高频错题。</view>
             </view>
             <view class="welcome-badge">
               <text class="badge-dot"></text>
@@ -139,16 +139,23 @@
               <view class="metric-chip">北京时间</view>
             </view>
 
-            <view class="metric-card">
+            <view class="metric-card registered-users-card">
               <view class="metric-icon metric-icon-asset">
                 <image class="metric-icon-image" src="/static/admin-icons/dashboard-members.svg" mode="aspectFit" />
               </view>
               <view class="metric-content">
-                <view class="metric-label">在线会员</view>
-                <view class="metric-value">{{ formatCount(dashboard.online_members) }}</view>
-                <view class="metric-note">近 {{ dashboard.online_window_minutes || 15 }} 分钟有刷题行为的有效会员</view>
+                <view class="metric-label">注册人数</view>
+                <view class="metric-value">{{ formatCount(dashboard.registered_users) }}</view>
+                <view class="metric-note">累计完成注册的用户</view>
               </view>
-              <view class="live-indicator"><text></text>LIVE</view>
+              <view
+                v-if="dashboard.today_registered_users > 0"
+                class="metric-growth"
+                :aria-label="`今日新增 ${formatCount(dashboard.today_registered_users)} 人`"
+              >
+                <text class="metric-growth-count">+{{ formatCount(dashboard.today_registered_users) }}</text>
+                <text class="metric-growth-label">今日新增</text>
+              </view>
             </view>
 
             <view class="metric-card">
@@ -306,7 +313,6 @@
             <view class="workspace-heading">
               <view>
                 <view class="panel-title">社区内容</view>
-                <view class="panel-subtitle">查看用户发布内容与互动数据，并进行下架或恢复。</view>
               </view>
             </view>
 
@@ -347,33 +353,38 @@
                 aria-label="帖子排序方式"
                 @change="handleCommunitySortChange"
               />
+              <button
+                class="community-featured-button"
+                :class="{ remove: communityBulkFeaturedAction && !communityBulkFeaturedAction.isFeatured }"
+                :disabled="!communityBulkFeaturedAction || communitySaving"
+                @tap="handleCommunityBulkFeaturedAction"
+              >{{ communityBulkFeaturedAction?.label || '加入精选' }}</button>
               <button v-if="communityHasFilters" class="clear-filter-button" @tap="clearCommunityFilters">清空</button>
-            </view>
-
-            <view v-if="communitySelectedIds.length" class="bulk-toolbar">
-              <view class="bulk-copy">已选择 <text>{{ communitySelectedIds.length }}</text> 条帖子</view>
-              <view class="bulk-actions">
-                <button
-                  v-if="communityBulkVisibilityAction"
-                  class="bulk-button"
-                  :class="communityBulkVisibilityAction.tone"
-                  @tap="bulkChangeCommunityVisibility(communityBulkVisibilityAction.isPublished)"
-                >
-                  {{ communityBulkVisibilityAction.label }}
-                </button>
-                <button class="bulk-cancel" @tap="communitySelectedIds = []">取消选择</button>
-              </view>
             </view>
 
             <view class="question-table-wrap">
               <view class="question-table community-table">
-                <view class="community-grid table-head">
+                <view class="community-grid table-head" :class="{ selecting: communitySelectedIds.length }">
                   <view class="check-cell">
                     <button class="check-box" :class="{ checked: allCommunityPageSelected }" @tap="toggleSelectCommunityPage">
                       {{ allCommunityPageSelected ? '✓' : '' }}
                     </button>
                   </view>
-                  <view>帖子</view>
+                  <view v-if="communitySelectedIds.length" class="community-selection-header">
+                    <view class="bulk-copy">已选择 <text>{{ communitySelectedIds.length }}</text> 条帖子</view>
+                    <view class="bulk-actions">
+                      <button
+                        v-if="communityBulkVisibilityAction"
+                        class="bulk-button"
+                        :class="communityBulkVisibilityAction.tone"
+                        @tap="bulkChangeCommunityVisibility(communityBulkVisibilityAction.isPublished)"
+                      >
+                        {{ communityBulkVisibilityAction.label }}
+                      </button>
+                      <button class="bulk-cancel" @tap="communitySelectedIds = []">取消选择</button>
+                    </view>
+                  </view>
+                  <view v-else>帖子</view>
                   <view>发布用户</view>
                   <view>分类</view>
                   <view>浏览</view>
@@ -381,7 +392,7 @@
                   <view>评论</view>
                   <view>状态</view>
                   <view>发布时间</view>
-                  <view>操作</view>
+                  <view>{{ communitySelectedIds.length ? '' : '操作' }}</view>
                 </view>
 
                 <view v-if="communityLoading" class="table-state">正在加载社区内容…</view>
@@ -397,6 +408,7 @@
                   v-else
                   :key="item.id"
                   class="community-grid community-row"
+                  :class="{ selected: isCommunitySelected(item.id) }"
                   @tap="openCommunityPostDetail(item)"
                 >
                   <view class="check-cell">
@@ -433,8 +445,9 @@
                   </view>
                   <view class="date-cell">{{ formatDate(item.created_at) }}</view>
                   <view class="community-action-cell">
-                    <button class="row-action" @tap.stop="openCommunityPostDetail(item)">查看</button>
+                    <button v-if="!communitySelectedIds.length" class="row-action" @tap.stop="openCommunityPostDetail(item)">查看</button>
                     <button
+                      v-if="!communitySelectedIds.length"
                       class="community-visibility-button"
                       :class="{ restore: !item.is_published }"
                       @tap.stop="toggleCommunityPostVisibility(item)"
@@ -456,6 +469,10 @@
               </view>
             </view>
           </view>
+        </section>
+
+        <section v-if="activeSection === 'mentors'" class="content-section operations-section">
+          <AdminMentorManagement ref="mentorManagementRef" :preview="devPreviewMode" />
         </section>
 
         <section v-if="activeSection === 'users'" class="content-section operations-section">
@@ -504,13 +521,20 @@
               <AdminSelect class="question-admin-select" :options="portalUserMembershipOptions.map((item) => item.label)" :value-index="portalUserMembershipIndex" aria-label="会员状态" @change="handlePortalUserMembershipChange" />
               <AdminSelect class="question-admin-select" :options="portalUserAccountStatusOptions.map((item) => item.label)" :value-index="portalUserAccountStatusIndex" aria-label="账号状态" @change="handlePortalUserAccountStatusChange" />
               <AdminSelect class="question-admin-select" :options="portalUserActivityOptions.map((item) => item.label)" :value-index="portalUserActivityIndex" aria-label="用户活跃度" @change="handlePortalUserActivityChange" />
-              <AdminSelect class="question-admin-select sort" :options="portalUserSortOptions.map((item) => item.label)" :value-index="portalUserSortIndex" aria-label="用户排序" @change="handlePortalUserSortChange" />
             </view>
 
             <view class="question-table-wrap">
               <view class="question-table portal-user-table">
                 <view class="portal-user-grid table-head">
-                  <view>用户</view><view>目标</view><view>刷题数据</view><view>正确率</view><view>最近作答</view><view>注册时间</view><view>会员</view><view>状态</view><view>操作</view>
+                  <view>用户</view>
+                  <view class="portal-user-sort-header" :class="{ active: userSort.field === 'exam_target' }" @tap="sortPortalUsers('exam_target')">目标<text v-if="userSort.field === 'exam_target'" class="portal-user-sort-icon">{{ userSort.direction === 'asc' ? '▲' : '▼' }}</text></view>
+                  <view class="portal-user-sort-header" :class="{ active: userSort.field === 'answer_count' }" @tap="sortPortalUsers('answer_count')">刷题数据<text v-if="userSort.field === 'answer_count'" class="portal-user-sort-icon">{{ userSort.direction === 'asc' ? '▲' : '▼' }}</text></view>
+                  <view class="portal-user-sort-header" :class="{ active: userSort.field === 'accuracy' }" @tap="sortPortalUsers('accuracy')">正确率<text v-if="userSort.field === 'accuracy'" class="portal-user-sort-icon">{{ userSort.direction === 'asc' ? '▲' : '▼' }}</text></view>
+                  <view class="portal-user-sort-header" :class="{ active: userSort.field === 'last_active' }" @tap="sortPortalUsers('last_active')">最近作答<text v-if="userSort.field === 'last_active'" class="portal-user-sort-icon">{{ userSort.direction === 'asc' ? '▲' : '▼' }}</text></view>
+                  <view class="portal-user-sort-header" :class="{ active: userSort.field === 'created_at' }" @tap="sortPortalUsers('created_at')">注册时间<text v-if="userSort.field === 'created_at'" class="portal-user-sort-icon">{{ userSort.direction === 'asc' ? '▲' : '▼' }}</text></view>
+                  <view>会员</view>
+                  <view>状态</view>
+                  <view>操作</view>
                 </view>
                 <view v-if="portalUsersLoading" class="table-state">正在加载用户数据…</view>
                 <view v-else-if="portalUsersError" class="table-state error"><view>用户数据加载失败，请检查网络或权限状态。</view><button @tap="loadPortalUsers">重新加载</button></view>
@@ -524,7 +548,7 @@
                   <view>{{ formatDate(item.created_at) }}</view>
                   <view>{{ portalUserMembershipLabel(item) }}</view>
                   <view><text class="status-pill" :class="item.disabled_at ? 'archived' : 'published'">{{ item.disabled_at ? '已停用' : '正常' }}</text></view>
-                  <view class="portal-user-actions"><button class="row-action" :disabled="portalUserSavingId === item.id" @tap.stop="openPortalUserDetail(item)">查看</button><button class="community-visibility-button" :class="{ restore: item.disabled_at }" :disabled="portalUserSavingId === item.id" @tap.stop="togglePortalUserDisabled(item)">{{ portalUserSavingId === item.id ? '处理中' : item.disabled_at ? '恢复' : '停用' }}</button></view>
+                  <view class="portal-user-actions"><button class="row-action" :disabled="portalUserSavingId === item.id" @tap.stop="openPortalUserDetail(item)">查看</button><button class="portal-membership-button" :disabled="portalUserSavingId === item.id" @tap.stop="openPortalUserMembership(item)">{{ portalUserSavingId === item.id ? '处理中' : '会员管理' }}</button></view>
                 </view>
               </view>
             </view>
@@ -534,65 +558,34 @@
 
         <section v-if="activeSection === 'admission'" class="content-section operations-section">
           <view class="operations-heading-row">
-            <view><view class="welcome-kicker">ADMISSION DATA</view><view class="operations-page-title">报考资料</view><view class="operations-page-copy">历史分数线、院校公告和专业目录都按独立数据快照维护，发布前先完成字段检查。</view></view>
+            <view><view class="welcome-kicker">ADMISSION DATA</view><view class="operations-page-title">报考资料</view><view class="operations-page-copy">历史分数线、院校公告和专业目录统一在后台维护，导入前先完成字段检查。</view></view>
             <view class="operations-status-chip"><text class="badge-dot"></text> {{ operationsMetricValue('published_announcements') }} 条公告已发布</view>
           </view>
           <view class="operations-tab-strip">
             <view v-for="item in admissionDatasets" :key="item.key" class="operations-tab" :class="{ active: admissionDataset === item.key }">
-              <view class="operations-tab-copy" role="button" :aria-label="`查看${item.label}数据`" @tap="switchAdmissionDataset(item.key)"><text>{{ item.label }}</text><small>{{ admissionDatasetDraftLabel(item.key) }}</small></view>
+              <view class="operations-tab-copy" role="button" :aria-label="`查看${item.label}数据`" @tap="switchAdmissionDataset(item.key)"><text>{{ item.label }}</text><small>点击查看或导入数据</small></view>
               <button class="admission-card-import-button" @tap.stop="openAdmissionImport(item.key)">导入数据</button>
             </view>
           </view>
 
-            <view class="question-workspace admission-run-workspace">
-              <view class="workspace-heading"><view><view class="panel-title">数据版本</view><view class="panel-subtitle">同一类资料同时只有一个公开版本；发布新批次会自动归档上一个版本，可随时回滚。</view></view></view>
-              <view class="question-table-wrap">
-                <view class="question-table admission-run-table">
-                  <view class="admission-run-grid table-head"><view>导入文件</view><view>有效行</view><view>状态</view><view>创建时间</view><view>发布时间</view><view>操作</view></view>
-                  <view v-if="admissionRunsLoading" class="table-state">正在读取版本记录…</view>
-                  <view v-else-if="admissionRunsError" class="table-state error"><view>版本记录读取失败。</view><button @tap="loadAdmissionRuns">重新加载</button></view>
-                  <view v-else-if="!admissionRuns.length" class="table-state">暂无导入记录</view>
-                  <view
-                    v-else
-                    v-for="run in admissionRuns"
-                    :key="run.id"
-                    class="admission-run-grid admission-run-row"
-                    :class="{ selected: ['scorelines', 'announcements'].includes(admissionDataset) && selectedAdmissionRunId === run.id }"
-                    @tap="selectAdmissionRun(run)"
-                  >
-                    <view><strong>{{ run.source_filename }}</strong><text>{{ shortId(run.id) }}{{ ['scorelines', 'announcements'].includes(admissionDataset) && selectedAdmissionRunId === run.id ? ' · 正在查看' : '' }}</text></view>
-                    <view>{{ formatCount(run.record_count || run.statistics?.valid_rows) }}</view>
-                    <view><text class="status-pill" :class="run.status === 'published' ? 'published' : run.status === 'failed' ? 'archived' : 'pending'">{{ admissionRunStatusText(run.status) }}</text></view>
-                    <view>{{ formatDateTime(run.created_at) }}</view>
-                    <view>{{ formatDateTime(run.published_at) }}</view>
-                    <view>
-                      <button v-if="canPublishAdmissionRun(run)" class="row-action publish" :disabled="admissionPublishingId === run.id" @tap.stop="publishAdmissionRun(run)">{{ admissionPublishingId === run.id ? '处理中…' : admissionRunActionText(run) }}</button>
-                      <text v-else-if="run.status === 'published'" class="row-published-copy">学生端可见</text>
-                      <text v-else class="row-unavailable-copy">不可发布</text>
-                    </view>
-                  </view>
-                </view>
-              </view>
-            </view>
-
             <view v-if="admissionDataset === 'scorelines'" class="question-workspace scoreline-record-workspace">
               <view class="workspace-heading scoreline-workspace-heading">
-                <view><view class="panel-title">分数线逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前版本：${selectedAdmissionRun.source_filename}` : '请先在版本记录中选择一个批次' }}</view></view>
+                <view><view class="panel-title">分数线逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前数据：${selectedAdmissionRun.source_filename}` : '暂无分数线数据，请先导入' }}</view></view>
                 <view class="scoreline-heading-tools"><text>{{ formatCount(scorelineRecordCount) }} 条</text><button v-if="!admissionRunsLoading && !admissionRuns.length" class="row-action" :disabled="scorelineRecordBootstrapLoading" @tap="bootstrapExistingScorelineRecords">{{ scorelineRecordBootstrapLoading ? '接入中…' : '接入现有数据' }}</button></view>
               </view>
               <view v-if="selectedAdmissionRun" class="scoreline-filter-toolbar">
                 <input v-model.trim="scorelineFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="100" placeholder="搜索院校" confirm-type="search" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
-                <input v-model.trim="scorelineFilters.score_year" class="scoreline-filter-input scoreline-filter-year" type="number" maxlength="4" placeholder="年份" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
-                <input v-model.trim="scorelineFilters.region" class="scoreline-filter-input scoreline-filter-region" maxlength="60" placeholder="地区" @input="handleScorelineFilterInput" @confirm="applyScorelineFilters" />
+                <AdminSelect class="scoreline-filter-select" :options="scorelineYearFilterOptions" :value-index="scorelineYearFilterIndex" aria-label="年份筛选" @change="handleScorelineYearFilterChange" />
+                <AdminSelect class="scoreline-filter-select scoreline-filter-region-select" :options="scorelineRegionFilterOptions" :value-index="scorelineRegionFilterIndex" aria-label="地区筛选" @change="handleScorelineRegionFilterChange" />
                 <button v-if="scorelineFilters.keyword || scorelineFilters.score_year || scorelineFilters.region" class="scoreline-filter-clear" @tap="clearScorelineFilters">×</button>
               </view>
               <view class="question-table-wrap">
                 <view class="question-table scoreline-record-table">
                   <view class="scoreline-record-grid table-head"><view>年份</view><view>地区</view><view>招生单位</view><view>分数线</view><view>来源与备注</view><view>更新时间</view><view>操作</view></view>
-                  <view v-if="!selectedAdmissionRun" class="table-state">{{ admissionRuns.length ? '请选择一个分数线版本后查看记录' : '尚无受管分数线版本' }}</view>
+                  <view v-if="!selectedAdmissionRun" class="table-state">暂无分数线数据，请先导入</view>
                   <view v-else-if="scorelineRecordsLoading" class="table-state">正在读取分数线…</view>
                   <view v-else-if="scorelineRecordsError" class="table-state error"><view>分数线记录读取失败。</view><button @tap="loadScorelineRecords">重新加载</button></view>
-                  <view v-else-if="!scorelineRecords.length" class="table-state">该版本在当前筛选下没有分数线记录</view>
+                  <view v-else-if="!scorelineRecords.length" class="table-state">当前筛选下没有分数线记录</view>
                   <view v-else v-for="item in scorelineRecords" :key="item.id" class="scoreline-record-grid scoreline-record-row">
                     <view class="scoreline-year-cell">{{ item.score_year }}</view>
                     <view>{{ item.region }}</view>
@@ -609,7 +602,7 @@
 
             <view v-if="admissionDataset === 'announcements'" class="question-workspace announcement-record-workspace">
               <view class="workspace-heading announcement-workspace-heading">
-                <view><view class="panel-title">公告逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前版本：${selectedAdmissionRun.source_filename}` : '请先在版本记录中选择一个批次' }}</view></view>
+                <view><view class="panel-title">公告逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前数据：${selectedAdmissionRun.source_filename}` : '暂无公告数据，请先导入' }}</view></view>
                 <view class="announcement-heading-tools">
                   <text>{{ formatCount(announcementRecordCount) }} 条</text>
                   <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('announcements')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
@@ -619,17 +612,17 @@
               <view class="question-table-wrap">
                 <view class="question-table announcement-record-table">
                   <view class="announcement-record-grid table-head"><view>公告</view><view>院校</view><view>类型</view><view>发布日期</view><view>状态</view><view>操作</view></view>
-                  <view v-if="!selectedAdmissionRun" class="table-state">请选择一个公告导入批次后查看记录</view>
+                  <view v-if="!selectedAdmissionRun" class="table-state">暂无公告数据，请先导入</view>
                   <view v-else-if="announcementRecordsLoading" class="table-state">正在读取公告…</view>
                   <view v-else-if="announcementRecordsError" class="table-state error"><view>公告记录读取失败。</view><button @tap="loadAnnouncementRecords">重新加载</button></view>
-                  <view v-else-if="!announcementRecords.length" class="table-state">该版本在当前筛选下没有公告</view>
+                  <view v-else-if="!announcementRecords.length" class="table-state">当前筛选下没有公告</view>
                   <view v-else v-for="item in announcementRecords" :key="item.id" class="announcement-record-grid announcement-record-row">
                     <view><strong>{{ item.title }}</strong><text>{{ item.summary || '—' }}</text></view>
                     <view>{{ item.school_name }}<text v-if="item.unit_name"> · {{ item.unit_name }}</text></view>
                     <view>{{ item.notice_type === 'brochure' ? '招生简章' : '复试分数线' }}</view>
                     <view>{{ item.notice_date || '—' }}</view>
-                    <view><text class="status-pill" :class="item.status === 'published' ? 'published' : item.status === 'archived' ? 'archived' : 'pending'">{{ admissionRunStatusText(item.status) }}</text></view>
-                    <view class="announcement-record-actions"><template v-if="canManageSelectedAnnouncementRecords"><button class="row-action" :disabled="announcementUpdatingId === item.id" @tap="setAnnouncementRecordStatus(item, item.status === 'published' ? 'archived' : 'published')">{{ announcementUpdatingId === item.id ? '处理中' : item.status === 'published' ? '归档' : '发布' }}</button><button class="row-action" :disabled="item.status !== 'published' || announcementUpdatingId === item.id" @tap="toggleAnnouncementPinned(item)">{{ item.is_pinned ? '取消置顶' : '置顶' }}</button></template><text v-else class="row-unavailable-copy">随版本发布</text></view>
+                    <view class="announcement-status-cell"><text class="status-pill" :class="item.status === 'published' ? 'published' : item.status === 'archived' ? 'archived' : 'pending'">{{ admissionRunStatusText(item.status) }}</text></view>
+                    <view class="announcement-record-actions"><template v-if="canManageSelectedAnnouncementRecords"><button class="row-action" :disabled="announcementUpdatingId === item.id" @tap="setAnnouncementRecordStatus(item, item.status === 'published' ? 'archived' : 'published')">{{ announcementUpdatingId === item.id ? '处理中' : item.status === 'published' ? '归档' : '发布' }}</button><button class="row-action" :disabled="announcementRecordSaving && announcementRecordEditingId === item.id" @tap="openAnnouncementRecordEditor(item)">编辑</button></template><text v-else class="row-unavailable-copy">暂未开放操作</text></view>
                   </view>
                 </view>
               </view>
@@ -637,28 +630,40 @@
 
             <view v-if="admissionDataset === 'major-catalog'" class="question-workspace major-catalog-workspace">
               <view class="workspace-heading major-catalog-workspace-heading">
-                <view><view class="panel-title">专业目录版本管理</view><view class="panel-subtitle">按完整年度快照维护，发布时会原子切换学生端目录。</view></view>
+                <view><view class="panel-title">专业目录逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前目录：${selectedAdmissionRun.source_filename}` : '暂无专业目录数据，请先导入或接入现有数据' }}</view></view>
                 <view class="major-catalog-heading-tools">
-                  <text v-if="admissionRuns.length">{{ formatCount(admissionRuns.length) }} 个版本</text>
+                  <text>{{ formatCount(majorCatalogRecordCount) }} 条方向</text>
                   <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('major-catalog')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
                 </view>
               </view>
-              <view class="major-catalog-guard">
-                <view class="major-catalog-guard-mark">目录</view>
-                <view>
-                  <view class="major-catalog-guard-title">{{ admissionRuns.length ? '目录版本已纳入管理' : '当前 2026 专业目录尚未接入' }}</view>
-                  <view class="major-catalog-guard-copy">{{ admissionRuns.length ? '请在上方版本记录中发布或回滚目录快照。' : '接入后将先创建草稿版本，确认发布前不会影响学生端。' }}</view>
+              <view v-if="selectedAdmissionRun" class="scoreline-filter-toolbar major-catalog-filter-toolbar">
+                <input v-model.trim="majorCatalogFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="100" placeholder="搜索院校、院系、专业或方向" confirm-type="search" @input="handleMajorCatalogFilterInput" @confirm="applyMajorCatalogFilters" />
+                <AdminSelect class="scoreline-filter-select scoreline-filter-region-select" :options="majorCatalogRegionFilterOptions" :value-index="majorCatalogRegionFilterIndex" aria-label="地区筛选" @change="handleMajorCatalogRegionFilterChange" />
+                <AdminSelect class="scoreline-filter-select" :options="majorCatalogExamCodeFilterOptions" :value-index="majorCatalogExamCodeFilterIndex" aria-label="考试类别筛选" @change="handleMajorCatalogExamCodeFilterChange" />
+                <button v-if="majorCatalogFilters.keyword || majorCatalogFilters.region || majorCatalogFilters.exam_code" class="scoreline-filter-clear" @tap="clearMajorCatalogFilters">×</button>
+              </view>
+              <view class="question-table-wrap">
+                <view class="question-table major-catalog-record-table">
+                  <view class="major-catalog-record-grid table-head"><view>地区</view><view>院校及院系</view><view>专业及方向</view><view>考试类别</view><view>学位 / 学习方式</view><view>操作</view></view>
+                  <view v-if="!selectedAdmissionRun" class="table-state">暂无专业目录数据，请先导入或接入现有数据</view>
+                  <view v-else-if="majorCatalogRecordsLoading" class="table-state">正在读取专业目录…</view>
+                  <view v-else-if="majorCatalogRecordsError" class="table-state error"><view>专业目录记录读取失败。</view><button @tap="loadMajorCatalogRecords">重新加载</button></view>
+                  <view v-else-if="!majorCatalogRecords.length" class="table-state">当前筛选下没有专业目录记录</view>
+                  <view v-else v-for="item in majorCatalogRecords" :key="item.id" class="major-catalog-record-grid major-catalog-record-row">
+                    <view>{{ item.region }}</view>
+                    <view><strong>{{ item.school_name }}</strong><text>{{ item.department_name || '未区分院系所' }}</text></view>
+                    <view><strong>{{ item.program_name }}</strong><text>{{ item.program_code ? `${item.program_code} · ` : '' }}{{ item.direction_name || '不区分研究方向' }}</text></view>
+                    <view><text class="exam-code-pill" :class="item.exam_code === 'Z002' ? 'is-z002' : 'is-z001'">{{ item.exam_code }}</text></view>
+                    <view><strong>{{ item.degree || '—' }}</strong><text>{{ item.study_mode || '—' }}</text></view>
+                    <view><button class="row-action" :disabled="majorCatalogRecordSaving && majorCatalogRecordEditingId === item.id" @tap="openMajorCatalogRecordEditor(item)">编辑</button></view>
+                  </view>
                 </view>
               </view>
+              <view v-if="selectedAdmissionRun" class="pagination-row scoreline-pagination"><view class="pagination-info">共 {{ formatCount(majorCatalogRecordCount) }} 条，每页 {{ majorCatalogRecordPageSize }} 条</view><view class="pagination-actions"><button :disabled="majorCatalogRecordPage <= 1 || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage - 1)">‹</button><view class="page-current">{{ majorCatalogRecordPage }}</view><view class="page-total">/ {{ majorCatalogRecordTotalPages }}</view><button :disabled="majorCatalogRecordPage >= majorCatalogRecordTotalPages || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage + 1)">›</button></view></view>
             </view>
         </section>
 
-        <section v-if="activeSection === 'homeOps'" class="content-section operations-section">
-          <view class="operations-heading-row">
-            <view><view class="welcome-kicker">HOME OPERATIONS</view><view class="operations-page-title">首页运营</view><view class="operations-page-copy">精确控制首页轮播与考研资讯；草稿、定时内容和已下架内容都不会混入用户端。</view></view>
-            <button class="primary-button" @tap="openHomeContentEditor('focus')">新增首页内容</button>
-          </view>
-
+        <section v-if="activeSection === 'homeOps'" class="content-section operations-section home-operations-content-section">
           <view v-if="homeContentEditorVisible" class="question-workspace home-content-editor">
             <view class="workspace-heading"><view><view class="panel-title">{{ homeContentEditingId ? '编辑首页内容' : '新增首页内容' }}</view><view class="panel-subtitle">{{ homeContentForm.status === 'published' ? '该内容正在发布中，保存后会立即更新学生端。' : '保存后仍留在后台，需单独发布才会进入学生端。' }}</view></view><button class="drawer-close" @tap="closeHomeContentEditor">×</button></view>
             <view class="home-editor-grid">
@@ -991,17 +996,19 @@
         </view>
         <scroll-view scroll-y class="admission-import-scroll">
           <view class="admission-import-content">
-            <view class="admission-import-intro"><view><view class="panel-title">导入前字段检查</view><view class="panel-subtitle">{{ currentAdmissionDataset.description }}</view></view><button class="header-import-button template" @tap="downloadAdmissionTemplate">下载模板</button></view>
             <view class="admission-import-actions">
-              <label class="admission-file-picker"><input type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="handleAdmissionFileChange" /><text>{{ admissionFileName || '选择标准 .xlsx 文件' }}</text></label>
+              <view class="admission-file-picker">
+                <input ref="admissionFileInputRef" class="admission-file-input" type="file" accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" @change="handleAdmissionFileChange" />
+                <button class="admission-file-picker-trigger" type="button" @click="openAdmissionFilePicker"><text>{{ admissionFileName || '选择标准 .xlsx 文件' }}</text></button>
+              </view>
               <button class="secondary-button" :disabled="!admissionFile || admissionPreviewLoading" @tap="previewAdmissionImport">{{ admissionPreviewLoading ? '检查中…' : '导入预览' }}</button>
-              <button class="primary-button" :disabled="!canCommitAdmissionImport || admissionCommitting" @tap="commitAdmissionImport">{{ admissionCommitting ? '提交中…' : '提交待发布' }}</button>
+              <button class="primary-button" :disabled="!canCommitAdmissionImport || admissionCommitting" @tap="commitAdmissionImport">{{ admissionCommitting ? '导入中…' : '确认导入' }}</button>
+              <button class="header-import-button template admission-template-button" @tap="downloadAdmissionTemplate">下载模板</button>
             </view>
             <view v-if="admissionPreview" class="admission-preview-summary" :class="{ error: Number(admissionPreview.invalid_rows || 0) > 0 }"><view><strong>{{ admissionPreview.valid_rows || 0 }}</strong><text> 行可提交</text></view><view><strong>{{ admissionPreview.invalid_rows || 0 }}</strong><text> 行需修正</text></view><view><text>文件校验码 {{ String(admissionPreview.source_sha256 || '').slice(0, 12) }}</text></view></view>
             <view v-if="admissionPreview?.preview_items?.length" class="admission-preview-list"><view v-for="item in admissionPreview.preview_items.slice(0, 6)" :key="`${item.source_row}-${item.title || item.school_name || ''}`" class="admission-preview-row" :class="{ invalid: item.valid === false }"><text>第 {{ item.source_row || '—' }} 行</text><text>{{ item.title || item.school_name || '字段检查' }}</text><text>{{ item.valid === false ? (item.errors || []).join('；') : '字段有效' }}</text></view></view>
           </view>
         </scroll-view>
-        <view class="drawer-footer admission-import-footer"><button class="footer-button secondary" :disabled="admissionCommitting || admissionPreviewLoading" @tap="closeAdmissionImport()">关闭</button></view>
       </view>
     </view>
 
@@ -1013,20 +1020,72 @@
         </view>
         <scroll-view scroll-y class="scoreline-editor-scroll">
           <view class="scoreline-editor-content">
-            <view class="scoreline-editor-status" :class="{ published: selectedAdmissionRun?.status === 'published' }">{{ selectedAdmissionRun?.status === 'published' ? '当前版本已发布，保存后将同步学生端。' : '当前版本尚未发布。' }}</view>
             <view class="scoreline-editor-grid">
               <view class="form-field"><view class="form-label">年份</view><input v-model.trim="scorelineRecordForm.score_year" class="form-input" type="number" maxlength="4" placeholder="例如 2026" /></view>
               <view class="form-field"><view class="form-label">地区</view><input v-model.trim="scorelineRecordForm.region" class="form-input" maxlength="60" placeholder="例如 广东" /></view>
               <view class="form-field"><view class="form-label">院校</view><input v-model.trim="scorelineRecordForm.school_name" class="form-input" maxlength="160" placeholder="填写院校名称" /></view>
               <view class="form-field"><view class="form-label">院系（选填）</view><input v-model.trim="scorelineRecordForm.unit_name" class="form-input" maxlength="160" placeholder="例如 研究生院" /></view>
-              <view class="form-field full"><view class="form-label">分数线内容</view><textarea v-model.trim="scorelineRecordForm.score_raw" class="form-textarea scoreline-form-textarea" maxlength="1000" placeholder="例如 90 或各专业分数线不同" /></view>
+              <view class="form-field"><view class="form-label">分数线内容</view><input v-model.trim="scorelineRecordForm.score_raw" class="form-input" maxlength="1000" placeholder="例如 90 或各专业分数线不同" /></view>
               <view class="form-field"><view class="form-label">数据状态</view><AdminSelect class="form-admin-select" :options="scorelineKindLabels" :value-index="scorelineKindIndex" aria-label="分数线数据状态" @change="handleScorelineKindChange" /></view>
               <view class="form-field"><view class="form-label">来源链接（选填）</view><input v-model.trim="scorelineRecordForm.source_url" class="form-input" maxlength="1000" placeholder="https://..." /></view>
-              <view class="form-field full"><view class="form-label">来源备注（选填）</view><textarea v-model.trim="scorelineRecordForm.source_note" class="form-textarea scoreline-form-textarea note" maxlength="2000" placeholder="填写院校、公告或核验说明" /></view>
+              <view class="form-field"><view class="form-label">来源备注（选填）</view><input v-model.trim="scorelineRecordForm.source_note" class="form-input" maxlength="2000" placeholder="填写院校、公告或核验说明" /></view>
             </view>
           </view>
         </scroll-view>
         <view class="drawer-footer"><button class="footer-button secondary" :disabled="scorelineRecordSaving" @tap="closeScorelineRecordEditor">取消</button><button class="footer-button primary" :disabled="scorelineRecordSaving" @tap="saveScorelineRecord">{{ scorelineRecordSaving ? '保存中…' : '保存修改' }}</button></view>
+      </view>
+    </view>
+
+    <view v-if="announcementRecordEditorVisible" class="drawer-backdrop scoreline-editor-backdrop" @tap="closeAnnouncementRecordEditor">
+      <view class="scoreline-editor-modal announcement-editor-modal" @tap.stop>
+        <view class="drawer-header">
+          <view><view class="drawer-kicker">SCHOOL ANNOUNCEMENT</view><view class="drawer-title">编辑公告</view></view>
+          <button class="drawer-close" :disabled="announcementRecordSaving" @tap="closeAnnouncementRecordEditor">×</button>
+        </view>
+        <scroll-view scroll-y class="scoreline-editor-scroll">
+          <view class="scoreline-editor-content">
+            <view class="announcement-editor-grid">
+              <view class="form-field"><view class="form-label">年份</view><input v-model.trim="announcementRecordForm.notice_year" class="form-input" type="number" maxlength="4" placeholder="例如 2026" /></view>
+              <view class="form-field"><view class="form-label">地区</view><input v-model.trim="announcementRecordForm.region" class="form-input" maxlength="60" placeholder="例如 广东" /></view>
+              <view class="form-field"><view class="form-label">院校</view><input v-model.trim="announcementRecordForm.school_name" class="form-input" maxlength="160" placeholder="填写院校名称" /></view>
+              <view class="form-field"><view class="form-label">院系（选填）</view><input v-model.trim="announcementRecordForm.unit_name" class="form-input" maxlength="160" placeholder="例如 研究生院" /></view>
+              <view class="form-field"><view class="form-label">公告类型</view><AdminSelect class="form-admin-select" :options="announcementRecordNoticeTypeOptions" :value-index="announcementRecordNoticeTypeIndex" aria-label="公告类型" @change="handleAnnouncementRecordNoticeTypeChange" /></view>
+              <view class="form-field"><view class="form-label">发布日期（选填）</view><input v-model.trim="announcementRecordForm.notice_date" class="form-input" type="date" /></view>
+              <view class="form-field full"><view class="form-label">公告标题</view><input v-model.trim="announcementRecordForm.title" class="form-input" maxlength="500" placeholder="填写公告标题" /></view>
+              <view class="form-field full"><view class="form-label">摘要（选填）</view><textarea v-model.trim="announcementRecordForm.summary" class="form-textarea" maxlength="5000" placeholder="填写简短摘要" /></view>
+              <view class="form-field full"><view class="form-label">原文链接（选填）</view><input v-model.trim="announcementRecordForm.source_url" class="form-input" maxlength="1000" placeholder="https://..." /></view>
+              <view class="form-field full"><view class="form-label">公告正文（选填）</view><textarea v-model.trim="announcementRecordForm.content_text" class="form-textarea announcement-content-textarea" maxlength="100000" placeholder="填写或修正公告正文" /></view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="drawer-footer"><button class="footer-button secondary" :disabled="announcementRecordSaving" @tap="closeAnnouncementRecordEditor">取消</button><button class="footer-button primary" :disabled="announcementRecordSaving" @tap="saveAnnouncementRecord">{{ announcementRecordSaving ? '保存中…' : '保存修改' }}</button></view>
+      </view>
+    </view>
+
+    <view v-if="majorCatalogRecordEditorVisible" class="drawer-backdrop scoreline-editor-backdrop" @tap="closeMajorCatalogRecordEditor">
+      <view class="scoreline-editor-modal major-catalog-editor-modal" @tap.stop>
+        <view class="drawer-header">
+          <view><view class="drawer-kicker">MAJOR CATALOG</view><view class="drawer-title">编辑专业目录</view></view>
+          <button class="drawer-close" :disabled="majorCatalogRecordSaving" @tap="closeMajorCatalogRecordEditor">×</button>
+        </view>
+        <scroll-view scroll-y class="scoreline-editor-scroll">
+          <view class="scoreline-editor-content">
+            <view class="major-catalog-editor-grid">
+              <view class="form-field"><view class="form-label">目录年份</view><input :value="majorCatalogRecordYear" class="form-input" disabled /></view>
+              <view class="form-field"><view class="form-label">地区</view><input v-model.trim="majorCatalogRecordForm.region" class="form-input" maxlength="60" placeholder="例如 广东" /></view>
+              <view class="form-field"><view class="form-label">院校</view><input v-model.trim="majorCatalogRecordForm.school_name" class="form-input" maxlength="160" placeholder="填写院校名称" /></view>
+              <view class="form-field"><view class="form-label">院系</view><input v-model.trim="majorCatalogRecordForm.department_name" class="form-input" maxlength="300" placeholder="例如 文学院" /></view>
+              <view class="form-field"><view class="form-label">专业名称</view><input v-model.trim="majorCatalogRecordForm.program_name" class="form-input" maxlength="300" placeholder="填写专业名称" /></view>
+              <view class="form-field"><view class="form-label">专业代码（选填）</view><input v-model.trim="majorCatalogRecordForm.program_code" class="form-input" maxlength="60" placeholder="例如 050101" /></view>
+              <view class="form-field"><view class="form-label">研究方向</view><input v-model.trim="majorCatalogRecordForm.direction_name" class="form-input" maxlength="500" placeholder="例如 不区分研究方向" /></view>
+              <view class="form-field"><view class="form-label">导师（选填）</view><input v-model.trim="majorCatalogRecordForm.tutor" class="form-input" maxlength="300" placeholder="填写导师姓名" /></view>
+              <view class="form-field"><view class="form-label">考试类别</view><AdminSelect class="form-admin-select" :options="majorCatalogExamCodeEditOptions" :value-index="majorCatalogExamCodeEditIndex" aria-label="考试类别" @change="handleMajorCatalogExamCodeChange" /></view>
+              <view class="form-field"><view class="form-label">学位（选填）</view><input v-model.trim="majorCatalogRecordForm.degree" class="form-input" maxlength="100" placeholder="例如 硕士" /></view>
+              <view class="form-field"><view class="form-label">学习方式（选填）</view><input v-model.trim="majorCatalogRecordForm.study_mode" class="form-input" maxlength="100" placeholder="例如 全日制" /></view>
+            </view>
+          </view>
+        </scroll-view>
+        <view class="drawer-footer"><button class="footer-button secondary" :disabled="majorCatalogRecordSaving" @tap="closeMajorCatalogRecordEditor">取消</button><button class="footer-button primary" :disabled="majorCatalogRecordSaving" @tap="saveMajorCatalogRecord">{{ majorCatalogRecordSaving ? '保存中…' : '保存修改' }}</button></view>
       </view>
     </view>
 
@@ -1036,6 +1095,14 @@
         <view v-if="portalUserDetailLoading" class="drawer-state">正在读取用户详情…</view>
         <scroll-view v-else-if="portalUserDetail" scroll-y class="portal-user-detail-scroll"><view class="portal-user-detail-content"><view class="portal-user-profile-card"><view class="portal-user-avatar large">{{ portalUserDetail.profile?.nickname?.slice(0, 1) || portalUserDetail.profile?.email?.slice(0, 1) || '研' }}</view><view><view class="portal-user-profile-name">{{ portalUserDetail.profile?.nickname || '未设置昵称' }}</view><view class="portal-user-profile-contact">{{ portalUserDetail.profile?.email || portalUserDetail.profile?.phone || shortId(portalUserDetail.profile?.id) }}</view><view class="portal-user-profile-meta">注册于 {{ formatDateTime(portalUserDetail.profile?.created_at) }}</view></view><text class="status-pill" :class="portalUserDetail.profile?.disabled_at ? 'archived' : 'published'">{{ portalUserDetail.profile?.disabled_at ? '已停用' : '正常' }}</text></view><view class="portal-user-detail-stats"><view><text>累计作答</text><strong>{{ formatCount(portalUserDetail.answer_summary?.total) }}</strong></view><view><text>答对</text><strong>{{ formatCount(portalUserDetail.answer_summary?.correct) }}</strong></view><view><text>正确率</text><strong>{{ formatAccuracy(portalUserDetail.answer_summary?.accuracy) }}</strong></view><view><text>错题</text><strong>{{ formatCount(portalUserDetail.answer_summary?.wrong_question_count || portalUserDetail.answer_summary?.wrong) }}</strong></view></view><view class="portal-user-detail-heading">各科正确率</view><view v-if="portalUserDetail.subject_accuracy?.length" class="portal-subject-accuracy-list"><view v-for="item in portalUserDetail.subject_accuracy" :key="item.subject" class="portal-subject-accuracy-row"><view><strong>{{ item.subject }}</strong><text>{{ formatCount(item.total) }} 题</text></view><view class="portal-subject-accuracy-value" :class="accuracyTone(item.accuracy)">{{ formatAccuracy(item.accuracy) }}</view></view></view><view v-else class="portal-detail-empty">尚无可统计的学科作答数据</view><view class="portal-user-detail-heading">最近作答</view><view v-if="portalUserDetail.recent_answers?.length" class="portal-answer-list"><view v-for="item in portalUserDetail.recent_answers.slice(0, 8)" :key="item.id" class="portal-answer-row"><text :class="item.is_correct ? 'is-correct' : 'is-wrong'">{{ item.is_correct ? '正确' : '错误' }}</text><view><strong>{{ item.subject || '题目' }}</strong><text>{{ item.stem || item.questions?.stem || '—' }}</text></view><time>{{ formatDateTime(item.created_at) }}</time></view></view><view v-else class="portal-detail-empty">暂无作答记录</view></view></scroll-view>
         <view class="drawer-footer"><button class="footer-button secondary" :disabled="portalUserSaving" @tap="closePortalUserDetail">关闭</button><button v-if="portalUserDetail?.profile" class="footer-button" :class="portalUserDetail.profile.disabled_at ? 'primary' : 'danger'" :disabled="portalUserSaving" @tap="togglePortalUserDisabled(portalUserDetail.profile)">{{ portalUserDetail.profile.disabled_at ? '恢复账号' : '停用账号' }}</button></view>
+      </view>
+    </view>
+
+    <view v-if="portalMembershipVisible" class="drawer-backdrop portal-membership-backdrop" @tap="closePortalUserMembership">
+      <view class="portal-membership-modal" @tap.stop>
+        <view class="drawer-header"><view><view class="drawer-kicker">MEMBERSHIP MANAGEMENT</view><view class="drawer-title">会员管理</view></view><button class="drawer-close" :disabled="portalMembershipSaving" @tap="closePortalUserMembership">×</button></view>
+        <view v-if="portalMembershipLoading" class="drawer-state">正在读取会员信息…</view>
+        <scroll-view v-else-if="portalMembershipDetail?.profile" scroll-y class="portal-membership-scroll"><view class="portal-membership-content"><view class="portal-user-profile-card"><view class="portal-user-avatar large">{{ portalMembershipDetail.profile?.nickname?.slice(0, 1) || portalMembershipDetail.profile?.email?.slice(0, 1) || '研' }}</view><view><view class="portal-user-profile-name">{{ portalMembershipDetail.profile?.nickname || '未设置昵称' }}</view><view class="portal-user-profile-contact">{{ portalMembershipDetail.profile?.email || portalMembershipDetail.profile?.phone || shortId(portalMembershipDetail.profile?.id) }}</view></view></view><view class="portal-membership-summary"><view><text>会员状态</text><strong>{{ portalUserMembershipLabel(portalMembershipDetail.profile) }}</strong></view><view><text>当前到期日</text><strong>{{ portalMembershipDetail.profile?.membership_expires_at ? formatDateTime(portalMembershipDetail.profile.membership_expires_at) : '—' }}</strong></view></view><view class="portal-user-detail-heading">会员操作</view><view class="portal-membership-actions"><button class="portal-membership-action cancel" :disabled="portalMembershipSaving || !isPortalUserMembershipActive(portalMembershipDetail.profile)" @tap="cancelPortalUserMembership">{{ portalMembershipAction === 'cancel' ? '处理中…' : '取消会员' }}</button><button class="portal-membership-action" :disabled="portalMembershipSaving" @tap="renewPortalUserMembership(1)">{{ portalMembershipAction === 'renew-1' ? '处理中…' : '续费 1 个月' }}</button><button class="portal-membership-action" :disabled="portalMembershipSaving" @tap="renewPortalUserMembership(4)">{{ portalMembershipAction === 'renew-4' ? '处理中…' : '续费一个季度（4 个月）' }}</button></view><view class="portal-user-detail-heading">会员充值记录</view><view v-if="portalMembershipDetail.membership_orders?.length" class="portal-membership-order-list"><view v-for="order in portalMembershipDetail.membership_orders" :key="order.id" class="portal-membership-order-row"><view><strong>{{ membershipOrderPlanLabel(order) }}</strong><text>{{ membershipOrderProviderLabel(order) }}</text></view><view class="portal-membership-order-meta"><text class="membership-order-status" :class="membershipOrderStatusTone(order)">{{ membershipOrderStatusLabel(order) }}</text><strong>{{ membershipOrderAmount(order) }}</strong><time>{{ formatDateTime(order.paid_at || order.created_at) }}</time></view></view></view><view v-else class="portal-detail-empty">该用户暂无会员充值记录</view></view></scroll-view>
       </view>
     </view>
 
@@ -1407,11 +1474,14 @@
 <script setup>
 import { computed, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
+import AdminMentorManagement from '../../components/AdminMentorManagement.vue'
 import AdminSelect from '../../components/AdminSelect.vue'
 import {
-  bulkUpdateQuestionAdminCommunityPostVisibility,
   bootstrapQuestionAdminScorelines,
+  bulkUpdateQuestionAdminCommunityPostFeatured,
+  bulkUpdateQuestionAdminCommunityPostVisibility,
   bulkUpdateAdminQuestionStatus,
+  cancelQuestionAdminPortalUserMembership,
   createAdminQuestion,
   createAdminQuestionBank,
   createQuestionAdminHomeContent,
@@ -1427,6 +1497,7 @@ import {
   fetchQuestionAdminDashboard,
   fetchQuestionAdminAdmissionRuns,
   fetchQuestionAdminAnnouncementRecords,
+  fetchQuestionAdminMajorCatalogRecords,
   fetchQuestionAdminHomeContent,
   fetchQuestionAdminOperationsOverview,
   fetchQuestionAdminPortalMe,
@@ -1435,10 +1506,11 @@ import {
   fetchQuestionAdminScorelineRecords,
   bootstrapQuestionAdminAdmissionSnapshot,
   previewQuestionAdminAdmissionImport,
-  publishQuestionAdminAdmissionRun,
   publishAdminQuestionBankPendingQuestions,
   renameAdminQuestionBank,
+  renewQuestionAdminPortalUserMembership,
   updateQuestionAdminAnnouncementRecord,
+  updateQuestionAdminMajorCatalogRecord,
   updateQuestionAdminHomeContent,
   updateAdminQuestion,
   updateAdminQuestionReview,
@@ -1476,13 +1548,14 @@ const questionLoadError = ref(false)
 const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
+const mentorManagementRef = ref(null)
 const sidebarCollapsed = ref(false)
 const sidebarToggleTitle = computed(() => (sidebarCollapsed.value ? '打开边栏' : '关闭边栏'))
 const authUser = ref(getAuthUser() || {})
 const dashboard = reactive({
   today_practicing_users: 0,
-  online_members: 0,
-  online_window_minutes: 15,
+  registered_users: 0,
+  today_registered_users: 0,
   difficult_questions_count: 0,
   difficult_questions: []
 })
@@ -1531,8 +1604,11 @@ const userFilters = reactive({
   exam_target: '',
   membership_status: '',
   account_status: 'all',
-  activity: 'all',
-  sort_by: 'created_at'
+  activity: 'all'
+})
+const userSort = reactive({
+  field: 'created_at',
+  direction: 'desc'
 })
 const portalUsers = ref([])
 const portalUserCount = ref(0)
@@ -1545,6 +1621,11 @@ const portalUserDetailLoading = ref(false)
 const portalUserDetail = ref(null)
 const portalUserSaving = ref(false)
 const portalUserSavingId = ref('')
+const portalMembershipVisible = ref(false)
+const portalMembershipLoading = ref(false)
+const portalMembershipDetail = ref(null)
+const portalMembershipSaving = ref(false)
+const portalMembershipAction = ref('')
 const devPreviewPortalUsers = ref([])
 const admissionDataset = ref('scorelines')
 const admissionRuns = ref([])
@@ -1557,11 +1638,11 @@ const admissionRunsLoading = ref(false)
 const admissionRunsError = ref(false)
 const admissionFile = ref(null)
 const admissionFileName = ref('')
+const admissionFileInputRef = ref(null)
 const admissionPreview = ref(null)
 const admissionImportVisible = ref(false)
 const admissionPreviewLoading = ref(false)
 const admissionCommitting = ref(false)
-const admissionPublishingId = ref('')
 const admissionSnapshotBootstrapLoading = ref(false)
 const selectedAdmissionRunId = ref('')
 const scorelineRecords = ref([])
@@ -1579,6 +1660,33 @@ const scorelineFilters = reactive({
   region: '',
   keyword: ''
 })
+const scorelineFilterOptions = ref({ years: [], regions: [] })
+const scorelineYearFilterOptions = computed(() => {
+  const years = new Set(scorelineFilterOptions.value.years)
+  if (scorelineFilters.score_year) years.add(scorelineFilters.score_year)
+  return [
+    { label: '全部年份', value: '' },
+    ...Array.from(years)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .sort((left, right) => right.localeCompare(left))
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const scorelineRegionFilterOptions = computed(() => {
+  const regions = new Set(scorelineFilterOptions.value.regions)
+  if (scorelineFilters.region) regions.add(scorelineFilters.region)
+  return [
+    { label: '全部地区', value: '' },
+    ...Array.from(regions)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const scorelineYearFilterIndex = computed(() => optionIndex(scorelineYearFilterOptions.value, scorelineFilters.score_year))
+const scorelineRegionFilterIndex = computed(() => optionIndex(scorelineRegionFilterOptions.value, scorelineFilters.region))
 const scorelineRecordForm = reactive({
   score_year: '',
   region: '',
@@ -1596,7 +1704,51 @@ const announcementRecordsLoading = ref(false)
 const announcementRecordsError = ref(false)
 const announcementRecordStatus = ref('all')
 const announcementUpdatingId = ref('')
+const announcementRecordEditorVisible = ref(false)
+const announcementRecordSaving = ref(false)
+const announcementRecordEditingId = ref('')
+const announcementRecordForm = reactive({
+  notice_year: '',
+  region: '',
+  school_name: '',
+  unit_name: '',
+  notice_type: 'brochure',
+  title: '',
+  summary: '',
+  notice_date: '',
+  source_url: '',
+  content_text: ''
+})
 const devPreviewAnnouncementRecords = ref([])
+const majorCatalogRecords = ref([])
+const majorCatalogRecordCount = ref(0)
+const majorCatalogRecordsLoading = ref(false)
+const majorCatalogRecordsError = ref(false)
+const majorCatalogRecordPage = ref(1)
+const majorCatalogRecordPageSize = 50
+const majorCatalogRecordEditorVisible = ref(false)
+const majorCatalogRecordSaving = ref(false)
+const majorCatalogRecordEditingId = ref('')
+const majorCatalogRecordYear = ref('')
+const majorCatalogFilters = reactive({
+  region: '',
+  exam_code: '',
+  keyword: ''
+})
+const majorCatalogFilterOptions = ref({ regions: [], exam_codes: [] })
+const majorCatalogRecordForm = reactive({
+  region: '',
+  school_name: '',
+  department_name: '',
+  program_name: '',
+  program_code: '',
+  direction_name: '',
+  tutor: '',
+  exam_code: 'Z001',
+  degree: '',
+  study_mode: ''
+})
+const devPreviewMajorCatalogRecords = ref([])
 const homeContentItems = ref([])
 const devPreviewHomeContentItems = ref([])
 const homeContentLoading = ref(false)
@@ -1669,6 +1821,7 @@ let searchTimer = null
 let communitySearchTimer = null
 let portalUserSearchTimer = null
 let scorelineSearchTimer = null
+let majorCatalogSearchTimer = null
 
 const filters = reactive({
   subject: '',
@@ -1704,6 +1857,7 @@ const navItems = [
   { key: 'dashboard', label: '仪表盘', icon: '/static/admin-icons/nav-dashboard.svg' },
   { key: 'users', label: '用户管理', icon: '/static/admin-icons/dashboard-visits.svg' },
   { key: 'community', label: '内容管理', icon: '/static/ui-icons/circle-community.svg' },
+  { key: 'mentors', label: '前辈审核', icon: '/static/ui-icons/tab-profile.svg' },
   { key: 'admission', label: '报考资料', icon: '/static/ui-icons/home-school-notices.svg' },
   { key: 'homeOps', label: '首页运营', icon: '/static/ui-icons/tab-home.svg' },
   { key: 'questions', label: '题目管理', icon: '/static/admin-icons/nav-question-management.svg' },
@@ -1733,6 +1887,7 @@ const dashboardTimeRangeOptions = [
 const communityStatusOptions = [
   { label: '全部状态', value: 'all' },
   { label: '公开展示', value: 'published' },
+  { label: '精选', value: 'featured' },
   { label: '已下架', value: 'archived' }
 ]
 const communityTypeOptions = [
@@ -1766,15 +1921,9 @@ const portalUserActivityOptions = [
   { label: '近 7 天作答', value: 'active_7d' },
   { label: '30 天未作答', value: 'inactive' }
 ]
-const portalUserSortOptions = [
-  { label: '注册时间：最新', value: 'created_at' },
-  { label: '正确率：从高到低', value: 'accuracy' },
-  { label: '作答数：从高到低', value: 'answer_count' },
-  { label: '最近作答：最新', value: 'last_active' }
-]
 const admissionDatasets = [
   { key: 'scorelines', label: '历年分数线', description: '以完整年度快照维护院校分数线，发布后同步学生端。' },
-  { key: 'announcements', label: '院校公告', description: '统一导入招生简章与复试分数线，可逐条置顶、发布或归档。' },
+  { key: 'announcements', label: '院校公告', description: '统一导入招生简章与复试分数线，可逐条编辑、发布或归档。' },
   { key: 'major-catalog', label: '专业目录', description: '请上传包含院校、院系、专业与研究方向的完整年度快照；发布时会以事务方式切换学生端目录。' }
 ]
 const homeToneOptions = [
@@ -1794,6 +1943,14 @@ const announcementRecordStatusOptions = [
   { label: '已发布', value: 'published' },
   { label: '待发布', value: 'draft' },
   { label: '已归档', value: 'archived' }
+]
+const announcementRecordNoticeTypeOptions = [
+  { label: '招生简章', value: 'brochure' },
+  { label: '复试分数线', value: 'scoreline_retest' }
+]
+const majorCatalogExamCodeEditOptions = [
+  { label: 'Z001', value: 'Z001' },
+  { label: 'Z002', value: 'Z002' }
 ]
 const scorelineKindOptions = [
   { label: '数字分数', value: 'score' },
@@ -1894,6 +2051,7 @@ const previewCommunityPosts = [
     like_count: 26,
     comment_count: 4,
     is_published: true,
+    is_featured: true,
     created_at: '2026-08-07T01:15:00Z',
     updated_at: '2026-08-07T01:15:00Z',
     comments: [
@@ -1929,6 +2087,7 @@ const previewCommunityPosts = [
     like_count: 74,
     comment_count: 11,
     is_published: true,
+    is_featured: true,
     created_at: '2026-08-06T08:25:00Z',
     updated_at: '2026-08-06T08:25:00Z',
     comments: []
@@ -2001,6 +2160,7 @@ const pageTitle = computed(() => {
     dashboard: '后台仪表盘',
     users: '用户管理',
     community: '社区内容',
+    mentors: '前辈审核',
     admission: '报考资料',
     homeOps: '首页运营',
     questions: '题目管理',
@@ -2090,7 +2250,6 @@ const portalUserExamIndex = computed(() => optionIndex(portalUserExamOptions, us
 const portalUserMembershipIndex = computed(() => optionIndex(portalUserMembershipOptions, userFilters.membership_status))
 const portalUserAccountStatusIndex = computed(() => optionIndex(portalUserAccountStatusOptions, userFilters.account_status))
 const portalUserActivityIndex = computed(() => optionIndex(portalUserActivityOptions, userFilters.activity))
-const portalUserSortIndex = computed(() => optionIndex(portalUserSortOptions, userFilters.sort_by))
 const portalUserTotalPages = computed(() => Math.max(1, Math.ceil(Number(portalUserCount.value || 0) / portalUserPageSize)))
 const currentAdmissionDataset = computed(() => (
   admissionDatasets.find((item) => item.key === admissionDataset.value) || admissionDatasets[0]
@@ -2117,6 +2276,35 @@ const scorelineKindIndex = computed(() => optionIndex(scorelineKindOptions, scor
 const legacyScorelineImportRecords = computed(() => buildLegacyScorelineImportRecords())
 const canManageSelectedAnnouncementRecords = computed(() => selectedAdmissionRun.value?.status === 'published')
 const announcementRecordStatusIndex = computed(() => optionIndex(announcementRecordStatusOptions, announcementRecordStatus.value))
+const announcementRecordNoticeTypeIndex = computed(() => optionIndex(announcementRecordNoticeTypeOptions, announcementRecordForm.notice_type))
+const majorCatalogRecordTotalPages = computed(() => Math.max(1, Math.ceil(majorCatalogRecordCount.value / majorCatalogRecordPageSize)))
+const majorCatalogRegionFilterOptions = computed(() => {
+  const regions = new Set(majorCatalogFilterOptions.value.regions)
+  if (majorCatalogFilters.region) regions.add(majorCatalogFilters.region)
+  return [
+    { label: '全部地区', value: '' },
+    ...Array.from(regions)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const majorCatalogExamCodeFilterOptions = computed(() => {
+  const examCodes = new Set(majorCatalogFilterOptions.value.exam_codes)
+  if (majorCatalogFilters.exam_code) examCodes.add(majorCatalogFilters.exam_code)
+  return [
+    { label: '全部考试类别', value: '' },
+    ...Array.from(examCodes)
+      .map((value) => String(value || '').trim().toUpperCase())
+      .filter(Boolean)
+      .sort()
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const majorCatalogRegionFilterIndex = computed(() => optionIndex(majorCatalogRegionFilterOptions.value, majorCatalogFilters.region))
+const majorCatalogExamCodeFilterIndex = computed(() => optionIndex(majorCatalogExamCodeFilterOptions.value, majorCatalogFilters.exam_code))
+const majorCatalogExamCodeEditIndex = computed(() => optionIndex(majorCatalogExamCodeEditOptions, majorCatalogRecordForm.exam_code))
 const homeFocusContentItems = computed(() => sortHomeContentItems(homeContentItems.value.filter((item) => item.slot === 'focus')))
 const homeNewsContentItems = computed(() => sortHomeContentItems(homeContentItems.value.filter((item) => item.slot === 'news')))
 const homeSortedContentItems = computed(() => [...homeFocusContentItems.value, ...homeNewsContentItems.value])
@@ -2143,6 +2331,15 @@ const communityBulkVisibilityAction = computed(() => {
     isPublished: !isPublished,
     label: isPublished ? (items.length > 1 ? '批量下架' : '下架') : (items.length > 1 ? '批量恢复' : '恢复'),
     tone: isPublished ? 'danger' : 'publish'
+  }
+})
+const communityBulkFeaturedAction = computed(() => {
+  const items = selectedCommunityPosts.value
+  if (!items.length || items.length !== communitySelectedIds.value.length) return null
+  const allFeatured = items.every((item) => Boolean(item.is_featured))
+  return {
+    isFeatured: !allFeatured,
+    label: allFeatured ? '移出精选' : '加入精选'
   }
 })
 const communityHasFilters = computed(() => Boolean(
@@ -2206,7 +2403,7 @@ onLoad(async (options = {}) => {
   homeContentClockTimer = setInterval(() => {
     homeContentClock.value = Date.now()
   }, 30_000)
-  if (['dashboard', 'users', 'community', 'admission', 'homeOps', 'questions', 'import'].includes(options.section)) {
+  if (['dashboard', 'users', 'community', 'mentors', 'admission', 'homeOps', 'questions', 'import'].includes(options.section)) {
     activeSection.value = options.section
   }
   requestedQuestionBankId.value = String(options.question_bank_id || '')
@@ -2223,6 +2420,7 @@ onUnmounted(() => {
   if (communitySearchTimer) clearTimeout(communitySearchTimer)
   if (portalUserSearchTimer) clearTimeout(portalUserSearchTimer)
   if (scorelineSearchTimer) clearTimeout(scorelineSearchTimer)
+  if (majorCatalogSearchTimer) clearTimeout(majorCatalogSearchTimer)
   if (homeContentClockTimer) clearInterval(homeContentClockTimer)
 })
 
@@ -2304,8 +2502,8 @@ async function loadDashboard() {
       page_size: dashboardDifficultPageSize
     })
     dashboard.today_practicing_users = Number(response?.today_practicing_users || 0)
-    dashboard.online_members = Number(response?.online_members || 0)
-    dashboard.online_window_minutes = Number(response?.online_window_minutes || 15)
+    dashboard.registered_users = Number(response?.registered_users || 0)
+    dashboard.today_registered_users = Number(response?.today_registered_users || 0)
     const difficultQuestions = Array.isArray(response?.difficult_questions) ? response.difficult_questions : []
     dashboard.difficult_questions_count = Number(
       response?.difficult_questions_count == null
@@ -2477,6 +2675,8 @@ async function switchSection(section) {
       await Promise.all([loadOperationsOverview(), loadPortalUsers()])
     } else if (section === 'community') {
       await loadCommunityData()
+    } else if (section === 'mentors') {
+      await mentorManagementRef.value?.refresh?.()
     } else if (section === 'admission') {
       await Promise.all([loadOperationsOverview(), loadAdmissionWorkspace()])
     } else if (section === 'homeOps') {
@@ -2506,6 +2706,8 @@ async function switchSection(section) {
     await Promise.all([loadOperationsOverview(), loadPortalUsers()])
   } else if (section === 'community') {
     await loadCommunityData()
+  } else if (section === 'mentors') {
+    await mentorManagementRef.value?.refresh?.()
   } else if (section === 'admission') {
     await Promise.all([loadOperationsOverview(), loadAdmissionWorkspace()])
   } else if (section === 'homeOps') {
@@ -2527,6 +2729,8 @@ async function refreshCurrentSection() {
       await Promise.all([loadOperationsOverview(), loadPortalUsers()])
     } else if (activeSection.value === 'community') {
       await loadCommunityData()
+    } else if (activeSection.value === 'mentors') {
+      await mentorManagementRef.value?.refresh?.()
     } else if (activeSection.value === 'admission') {
       await Promise.all([loadOperationsOverview(), loadAdmissionWorkspace()])
     } else if (activeSection.value === 'homeOps') {
@@ -2675,6 +2879,12 @@ function handleCommunityTypeChange(event) {
 function handleCommunitySortChange(event) {
   communityFilters.sort_by = communitySortOptions[Number(event?.detail?.value || 0)]?.value || 'newest'
   applyCommunityFilters()
+}
+
+function handleCommunityBulkFeaturedAction() {
+  const action = communityBulkFeaturedAction.value
+  if (!action) return
+  bulkChangeCommunityFeatured(action.isFeatured)
 }
 
 async function handleDashboardSubjectChange(event) {
@@ -3019,6 +3229,44 @@ async function bulkChangeCommunityVisibility(isPublished) {
     await loadCommunityData()
   } catch (error) {
     uni.showToast({ title: '批量操作失败', icon: 'none' })
+  } finally {
+    communitySaving.value = false
+  }
+}
+
+async function bulkChangeCommunityFeatured(isFeatured) {
+  if (!communitySelectedIds.value.length || communitySaving.value || typeof isFeatured !== 'boolean') return
+  const actionText = isFeatured ? '加入精选' : '移出精选'
+  const confirmed = await confirmAction(
+    `确认${actionText}？`,
+    isFeatured
+      ? `已选择的 ${communitySelectedIds.value.length} 条帖子会标记为精选；当前公开展示的帖子会进入用户端“精选”列表，并以随机顺序展示。`
+      : `已选择的 ${communitySelectedIds.value.length} 条帖子会从用户端“精选”列表移除。`,
+    actionText
+  )
+  if (!confirmed) return
+  communitySaving.value = true
+  try {
+    let updatedCount = 0
+    if (devPreviewMode.value) {
+      const selected = new Set(communitySelectedIds.value)
+      previewCommunityPosts.forEach((item) => {
+        if (!selected.has(item.id)) return
+        item.is_featured = isFeatured
+        item.updated_at = new Date().toISOString()
+        updatedCount += 1
+      })
+    } else {
+      const response = await bulkUpdateQuestionAdminCommunityPostFeatured({
+        ids: communitySelectedIds.value,
+        is_featured: isFeatured
+      })
+      updatedCount = Number(response?.updated_count || 0)
+    }
+    uni.showToast({ title: `${actionText} ${updatedCount} 条`, icon: 'success' })
+    await loadCommunityData()
+  } catch (error) {
+    uni.showToast({ title: '精选状态更新失败', icon: 'none' })
   } finally {
     communitySaving.value = false
   }
@@ -3655,8 +3903,8 @@ function loadDevPreview() {
 
 function loadDevPreviewDashboard() {
   dashboard.today_practicing_users = 186
-  dashboard.online_members = 24
-  dashboard.online_window_minutes = 15
+  dashboard.registered_users = 1286
+  dashboard.today_registered_users = 6
   const previewItems = [
     {
       question_id: previewQuestions[3].id,
@@ -3724,6 +3972,7 @@ function loadDevPreviewCommunity() {
   const keyword = String(communityFilters.search || '').trim().toLowerCase()
   const filtered = previewCommunityPosts.filter((item) => {
     if (communityFilters.status === 'published' && !item.is_published) return false
+    if (communityFilters.status === 'featured' && !item.is_featured) return false
     if (communityFilters.status === 'archived' && item.is_published) return false
     if (communityFilters.post_type !== 'all' && item.post_type !== communityFilters.post_type) return false
     if (keyword) {
@@ -3787,6 +4036,8 @@ async function loadPortalUsers() {
   try {
     const response = await fetchQuestionAdminPortalUsers({
       ...userFilters,
+      sort_by: userSort.field,
+      sort_direction: userSort.direction,
       limit: portalUserPageSize,
       offset: (portalUserPage.value - 1) * portalUserPageSize
     })
@@ -3802,6 +4053,17 @@ async function loadPortalUsers() {
 }
 
 function applyPortalUserFilters() {
+  portalUserPage.value = 1
+  loadPortalUsers()
+}
+
+function sortPortalUsers(field) {
+  if (userSort.field === field) {
+    userSort.direction = userSort.direction === 'asc' ? 'desc' : 'asc'
+  } else {
+    userSort.field = field
+    userSort.direction = field === 'exam_target' ? 'asc' : 'desc'
+  }
   portalUserPage.value = 1
   loadPortalUsers()
 }
@@ -3836,11 +4098,6 @@ function handlePortalUserActivityChange(event) {
   applyPortalUserFilters()
 }
 
-function handlePortalUserSortChange(event) {
-  userFilters.sort_by = portalUserSortOptions[Number(event?.detail?.value || 0)]?.value || 'created_at'
-  applyPortalUserFilters()
-}
-
 function changePortalUserPage(page) {
   const nextPage = Math.min(Math.max(1, Number(page) || 1), portalUserTotalPages.value)
   if (nextPage === portalUserPage.value) return
@@ -3870,6 +4127,134 @@ function closePortalUserDetail() {
   if (portalUserSaving.value) return
   portalUserDetailVisible.value = false
   portalUserDetail.value = null
+}
+
+async function openPortalUserMembership(item) {
+  if (!item?.id || portalMembershipLoading.value) return
+  portalMembershipVisible.value = true
+  portalMembershipLoading.value = true
+  portalMembershipDetail.value = null
+  try {
+    portalMembershipDetail.value = devPreviewMode.value
+      ? buildDevPreviewUserDetail(item)
+      : await fetchQuestionAdminPortalUserDetail(item.id)
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '会员信息加载失败', icon: 'none' })
+    portalMembershipVisible.value = false
+  } finally {
+    portalMembershipLoading.value = false
+  }
+}
+
+function closePortalUserMembership() {
+  if (portalMembershipSaving.value) return
+  portalMembershipVisible.value = false
+  portalMembershipDetail.value = null
+  portalMembershipAction.value = ''
+}
+
+function nextPortalMembershipExpiry(profile, months) {
+  const now = Date.now()
+  const currentExpiry = new Date(profile?.membership_expires_at || '').getTime()
+  const baseTime = Number.isFinite(currentExpiry) && currentExpiry > now ? currentExpiry : now
+  return new Date(baseTime + months * 30 * 24 * 60 * 60 * 1000).toISOString()
+}
+
+async function syncPortalUserMembership(updated) {
+  if (devPreviewMode.value) {
+    devPreviewPortalUsers.value = devPreviewPortalUsers.value.map((candidate) => (
+      candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+    ))
+  }
+  const leavesCurrentFilter = (
+    (userFilters.membership_status === 'active' && !isPortalUserMembershipActive(updated))
+    || (userFilters.membership_status === 'inactive' && isPortalUserMembershipActive(updated))
+  )
+  if (leavesCurrentFilter) {
+    await loadPortalUsers()
+  } else {
+    portalUsers.value = portalUsers.value.map((candidate) => (
+      candidate.id === updated.id ? { ...candidate, ...updated } : candidate
+    ))
+  }
+  if (portalUserDetail.value?.profile?.id === updated.id) {
+    portalUserDetail.value = { ...portalUserDetail.value, profile: { ...portalUserDetail.value.profile, ...updated } }
+  }
+  if (portalMembershipDetail.value?.profile?.id === updated.id) {
+    portalMembershipDetail.value = {
+      ...portalMembershipDetail.value,
+      profile: { ...portalMembershipDetail.value.profile, ...updated }
+    }
+  }
+}
+
+async function renewPortalUserMembership(months) {
+  const profile = portalMembershipDetail.value?.profile
+  if (!profile?.id || portalMembershipSaving.value || ![1, 4].includes(months)) return
+  const duration = months === 4 ? '一个季度（4 个月）' : '1 个月'
+  const confirmed = await confirmAction(
+    `为该用户续费 ${duration}？`,
+    `会员有效期将顺延至 ${formatDateTime(nextPortalMembershipExpiry(profile, months))}。`,
+    '确认续费'
+  )
+  if (!confirmed) return
+  portalMembershipSaving.value = true
+  portalMembershipAction.value = `renew-${months}`
+  portalUserSavingId.value = profile.id
+  try {
+    const updated = devPreviewMode.value
+      ? {
+          ...profile,
+          membership_status: 'active',
+          membership_plan: 'admin_grant',
+          membership_started_at: profile.membership_started_at || new Date().toISOString(),
+          membership_expires_at: nextPortalMembershipExpiry(profile, months),
+          membership_updated_at: new Date().toISOString()
+        }
+      : await renewQuestionAdminPortalUserMembership(profile.id, { months })
+    await syncPortalUserMembership(updated)
+    uni.showToast({ title: `已续费 ${duration}`, icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '会员续费失败', icon: 'none' })
+  } finally {
+    portalMembershipSaving.value = false
+    portalMembershipAction.value = ''
+    portalUserSavingId.value = ''
+  }
+}
+
+async function cancelPortalUserMembership() {
+  const profile = portalMembershipDetail.value?.profile
+  if (!profile?.id || portalMembershipSaving.value || !isPortalUserMembershipActive(profile)) return
+  const confirmed = await confirmAction(
+    '取消该用户的会员？',
+    '取消后该用户将立即失去会员权益，原有效期将被清空。',
+    '确认取消'
+  )
+  if (!confirmed) return
+  portalMembershipSaving.value = true
+  portalMembershipAction.value = 'cancel'
+  portalUserSavingId.value = profile.id
+  try {
+    const updated = devPreviewMode.value
+      ? {
+          ...profile,
+          membership_status: 'inactive',
+          membership_plan: null,
+          membership_started_at: null,
+          membership_expires_at: null,
+          membership_updated_at: new Date().toISOString()
+        }
+      : await cancelQuestionAdminPortalUserMembership(profile.id)
+    await syncPortalUserMembership(updated)
+    uni.showToast({ title: '会员已取消', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '会员取消失败', icon: 'none' })
+  } finally {
+    portalMembershipSaving.value = false
+    portalMembershipAction.value = ''
+    portalUserSavingId.value = ''
+  }
 }
 
 async function togglePortalUserDisabled(item) {
@@ -3922,6 +4307,8 @@ async function loadAdmissionWorkspace() {
     await loadScorelineRecords()
   } else if (admissionDataset.value === 'announcements') {
     await loadAnnouncementRecords()
+  } else if (admissionDataset.value === 'major-catalog') {
+    await loadMajorCatalogRecords()
   }
 }
 
@@ -3942,6 +4329,13 @@ async function switchAdmissionDataset(dataset) {
   scorelineRecordsError.value = false
   announcementRecordStatus.value = 'all'
   announcementRecords.value = []
+  majorCatalogRecordPage.value = 1
+  majorCatalogFilters.region = ''
+  majorCatalogFilters.exam_code = ''
+  majorCatalogFilters.keyword = ''
+  majorCatalogRecords.value = []
+  majorCatalogRecordCount.value = 0
+  majorCatalogRecordsError.value = false
   await loadAdmissionWorkspace()
 }
 
@@ -3964,7 +4358,7 @@ function closeAdmissionImport(force = false) {
 }
 
 function ensureSelectedAdmissionRun(preferredRunId = '') {
-  if (!['scorelines', 'announcements'].includes(admissionDataset.value)) {
+  if (!['scorelines', 'announcements', 'major-catalog'].includes(admissionDataset.value)) {
     selectedAdmissionRunId.value = ''
     return
   }
@@ -4049,6 +4443,7 @@ async function loadScorelineRecords() {
     scorelineRecords.value = []
     scorelineRecordCount.value = 0
     scorelineRecordsError.value = false
+    scorelineFilterOptions.value = { years: [], regions: [] }
     return
   }
   if (devPreviewMode.value) {
@@ -4056,9 +4451,10 @@ async function loadScorelineRecords() {
     const keyword = scorelineFilters.keyword.trim().toLowerCase()
     const region = scorelineFilters.region.trim().toLowerCase()
     const scoreYear = scorelineFilters.score_year.trim()
-    const filtered = devPreviewScorelineRecords.value.filter((item) => (
-      item.import_run_id === selectedAdmissionRunId.value
-      && (!scoreYear || item.score_year === scoreYear)
+    const recordsForRun = devPreviewScorelineRecords.value.filter((item) => item.import_run_id === selectedAdmissionRunId.value)
+    updateScorelineFilterOptions(recordsForRun)
+    const filtered = recordsForRun.filter((item) => (
+      (!scoreYear || item.score_year === scoreYear)
       && (!region || String(item.region || '').toLowerCase().includes(region))
       && (!keyword || `${item.school_name || ''} ${item.unit_name || ''}`.toLowerCase().includes(keyword))
     )).sort((left, right) => (
@@ -4087,6 +4483,10 @@ async function loadScorelineRecords() {
     })
     scorelineRecords.value = response?.items || []
     scorelineRecordCount.value = Number(response?.count || 0)
+    scorelineFilterOptions.value = {
+      years: Array.isArray(response?.filter_years) ? response.filter_years : [],
+      regions: Array.isArray(response?.filter_regions) ? response.filter_regions : []
+    }
   } catch (error) {
     scorelineRecords.value = []
     scorelineRecordCount.value = 0
@@ -4106,6 +4506,23 @@ function handleScorelineFilterInput() {
   scorelineSearchTimer = setTimeout(applyScorelineFilters, 360)
 }
 
+function handleScorelineYearFilterChange(event) {
+  scorelineFilters.score_year = scorelineYearFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  applyScorelineFilters()
+}
+
+function handleScorelineRegionFilterChange(event) {
+  scorelineFilters.region = scorelineRegionFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  applyScorelineFilters()
+}
+
+function updateScorelineFilterOptions(records) {
+  scorelineFilterOptions.value = {
+    years: Array.from(new Set(records.map((item) => String(item?.score_year || '').trim()).filter(Boolean))),
+    regions: Array.from(new Set(records.map((item) => String(item?.region || '').trim()).filter(Boolean)))
+  }
+}
+
 function clearScorelineFilters() {
   scorelineFilters.score_year = ''
   scorelineFilters.region = ''
@@ -4120,6 +4537,187 @@ function changeScorelineRecordPage(page) {
   loadScorelineRecords()
 }
 
+function ensureDevPreviewMajorCatalogRecords() {
+  if (devPreviewMajorCatalogRecords.value.length) return
+  devPreviewMajorCatalogRecords.value = [
+    { id: 'preview-major-1', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '北京', school_name: '中国人民大学', department_name: '文学院', program_name: '中国语言文学', program_code: '050100', direction_name: '中国古代文学', tutor: '', exam_code: 'Z001', degree: '硕士', study_mode: '全日制', source_row: 1 },
+    { id: 'preview-major-2', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '北京', school_name: '北京大学', department_name: '国际关系学院', program_name: '国际关系', program_code: '030207', direction_name: '国际安全与战略研究', tutor: '', exam_code: 'Z001', degree: '硕士', study_mode: '全日制', source_row: 2 },
+    { id: 'preview-major-3', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '广东', school_name: '暨南大学', department_name: '新闻与传播学院', program_name: '新闻与传播', program_code: '055200', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 3 },
+    { id: 'preview-major-4', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '广东', school_name: '中山大学', department_name: '管理学院', program_name: '工商管理', program_code: '125100', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '非全日制', source_row: 4 },
+    { id: 'preview-major-5', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '上海', school_name: '复旦大学', department_name: '数学科学学院', program_name: '应用统计', program_code: '025200', direction_name: '金融统计与风险管理', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 5 },
+    { id: 'preview-major-6', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '浙江', school_name: '浙江大学', department_name: '计算机科学与技术学院', program_name: '电子信息', program_code: '085400', direction_name: '人工智能', tutor: '', exam_code: 'Z001', degree: '硕士', study_mode: '全日制', source_row: 6 }
+  ]
+}
+
+function updateMajorCatalogFilterOptions(records) {
+  majorCatalogFilterOptions.value = {
+    regions: Array.from(new Set(records.map((item) => String(item?.region || '').trim()).filter(Boolean))),
+    exam_codes: Array.from(new Set(records.map((item) => String(item?.exam_code || '').trim()).filter(Boolean)))
+  }
+}
+
+async function loadMajorCatalogRecords() {
+  if (!selectedAdmissionRunId.value) {
+    majorCatalogRecords.value = []
+    majorCatalogRecordCount.value = 0
+    majorCatalogRecordsError.value = false
+    majorCatalogFilterOptions.value = { regions: [], exam_codes: [] }
+    return
+  }
+  if (devPreviewMode.value) {
+    ensureDevPreviewMajorCatalogRecords()
+    const keyword = majorCatalogFilters.keyword.trim().toLowerCase()
+    const recordsForRun = devPreviewMajorCatalogRecords.value.filter((item) => item.import_run_id === selectedAdmissionRunId.value)
+    updateMajorCatalogFilterOptions(recordsForRun)
+    const filtered = recordsForRun.filter((item) => (
+      (!majorCatalogFilters.region || item.region === majorCatalogFilters.region)
+      && (!majorCatalogFilters.exam_code || item.exam_code === majorCatalogFilters.exam_code)
+      && (!keyword || `${item.school_name || ''} ${item.department_name || ''} ${item.program_name || ''} ${item.program_code || ''} ${item.direction_name || ''}`.toLowerCase().includes(keyword))
+    )).sort((left, right) => (
+      String(left.region || '').localeCompare(String(right.region || ''), 'zh-CN')
+      || String(left.school_name || '').localeCompare(String(right.school_name || ''), 'zh-CN')
+      || Number(left.source_row || 0) - Number(right.source_row || 0)
+    ))
+    majorCatalogRecordCount.value = filtered.length
+    const maxPage = Math.max(1, Math.ceil(filtered.length / majorCatalogRecordPageSize))
+    if (majorCatalogRecordPage.value > maxPage) majorCatalogRecordPage.value = maxPage
+    const start = (majorCatalogRecordPage.value - 1) * majorCatalogRecordPageSize
+    majorCatalogRecords.value = filtered.slice(start, start + majorCatalogRecordPageSize).map((item) => ({ ...item }))
+    majorCatalogRecordsError.value = false
+    return
+  }
+  majorCatalogRecordsLoading.value = true
+  majorCatalogRecordsError.value = false
+  try {
+    const response = await fetchQuestionAdminMajorCatalogRecords({
+      import_run_id: selectedAdmissionRunId.value,
+      catalog_year: String(selectedAdmissionRun.value?.statistics?.catalog_year || '').trim() || undefined,
+      region: majorCatalogFilters.region || undefined,
+      exam_code: majorCatalogFilters.exam_code || undefined,
+      keyword: majorCatalogFilters.keyword.trim() || undefined,
+      limit: majorCatalogRecordPageSize,
+      offset: (majorCatalogRecordPage.value - 1) * majorCatalogRecordPageSize
+    })
+    majorCatalogRecords.value = response?.items || []
+    majorCatalogRecordCount.value = Number(response?.count || 0)
+    majorCatalogFilterOptions.value = {
+      regions: Array.isArray(response?.filter_regions) ? response.filter_regions : [],
+      exam_codes: Array.isArray(response?.filter_exam_codes) ? response.filter_exam_codes : []
+    }
+  } catch (error) {
+    majorCatalogRecords.value = []
+    majorCatalogRecordCount.value = 0
+    majorCatalogRecordsError.value = true
+  } finally {
+    majorCatalogRecordsLoading.value = false
+  }
+}
+
+function applyMajorCatalogFilters() {
+  majorCatalogRecordPage.value = 1
+  loadMajorCatalogRecords()
+}
+
+function handleMajorCatalogFilterInput() {
+  if (majorCatalogSearchTimer) clearTimeout(majorCatalogSearchTimer)
+  majorCatalogSearchTimer = setTimeout(applyMajorCatalogFilters, 360)
+}
+
+function handleMajorCatalogRegionFilterChange(event) {
+  majorCatalogFilters.region = majorCatalogRegionFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  applyMajorCatalogFilters()
+}
+
+function handleMajorCatalogExamCodeFilterChange(event) {
+  majorCatalogFilters.exam_code = majorCatalogExamCodeFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  applyMajorCatalogFilters()
+}
+
+function clearMajorCatalogFilters() {
+  majorCatalogFilters.region = ''
+  majorCatalogFilters.exam_code = ''
+  majorCatalogFilters.keyword = ''
+  applyMajorCatalogFilters()
+}
+
+function changeMajorCatalogRecordPage(page) {
+  const nextPage = Math.min(Math.max(1, Number(page) || 1), majorCatalogRecordTotalPages.value)
+  if (nextPage === majorCatalogRecordPage.value) return
+  majorCatalogRecordPage.value = nextPage
+  loadMajorCatalogRecords()
+}
+
+function openMajorCatalogRecordEditor(item) {
+  if (!item?.id || majorCatalogRecordSaving.value) return
+  majorCatalogRecordEditingId.value = item.id
+  majorCatalogRecordYear.value = String(item.catalog_year || selectedAdmissionRun.value?.statistics?.catalog_year || '')
+  majorCatalogRecordForm.region = String(item.region || '')
+  majorCatalogRecordForm.school_name = String(item.school_name || '')
+  majorCatalogRecordForm.department_name = String(item.department_name || '未区分院系所')
+  majorCatalogRecordForm.program_name = String(item.program_name || '')
+  majorCatalogRecordForm.program_code = String(item.program_code || '')
+  majorCatalogRecordForm.direction_name = String(item.direction_name || '不区分研究方向')
+  majorCatalogRecordForm.tutor = String(item.tutor || '')
+  majorCatalogRecordForm.exam_code = String(item.exam_code || 'Z001')
+  majorCatalogRecordForm.degree = String(item.degree || '')
+  majorCatalogRecordForm.study_mode = String(item.study_mode || '')
+  majorCatalogRecordEditorVisible.value = true
+}
+
+function closeMajorCatalogRecordEditor(force = false) {
+  if (majorCatalogRecordSaving.value && !force) return
+  majorCatalogRecordEditorVisible.value = false
+  majorCatalogRecordEditingId.value = ''
+}
+
+function handleMajorCatalogExamCodeChange(event) {
+  majorCatalogRecordForm.exam_code = majorCatalogExamCodeEditOptions[Number(event?.detail?.value || 0)]?.value || 'Z001'
+}
+
+async function saveMajorCatalogRecord() {
+  if (!majorCatalogRecordEditingId.value || majorCatalogRecordSaving.value) return
+  const payload = {
+    region: majorCatalogRecordForm.region.trim(),
+    school_name: majorCatalogRecordForm.school_name.trim(),
+    department_name: majorCatalogRecordForm.department_name.trim(),
+    program_name: majorCatalogRecordForm.program_name.trim(),
+    program_code: majorCatalogRecordForm.program_code.trim(),
+    direction_name: majorCatalogRecordForm.direction_name.trim(),
+    tutor: majorCatalogRecordForm.tutor.trim(),
+    exam_code: majorCatalogRecordForm.exam_code,
+    degree: majorCatalogRecordForm.degree.trim(),
+    study_mode: majorCatalogRecordForm.study_mode.trim()
+  }
+  if (!payload.region || !payload.school_name || !payload.department_name || !payload.program_name || !payload.direction_name) {
+    uni.showToast({ title: '请完整填写地区、院校、院系、专业和研究方向', icon: 'none' })
+    return
+  }
+  const syncsStudentView = selectedAdmissionRun.value?.status === 'published'
+  const confirmed = await confirmAction(
+    '保存专业目录修改？',
+    syncsStudentView ? '当前目录正在用户端展示，保存后会重新同步这一年度目录。' : '修改会保存在当前导入批次中。',
+    '保存修改'
+  )
+  if (!confirmed) return
+  majorCatalogRecordSaving.value = true
+  try {
+    if (devPreviewMode.value) {
+      devPreviewMajorCatalogRecords.value = devPreviewMajorCatalogRecords.value.map((record) => (
+        record.id === majorCatalogRecordEditingId.value ? { ...record, ...payload } : record
+      ))
+    } else {
+      await updateQuestionAdminMajorCatalogRecord(majorCatalogRecordEditingId.value, payload)
+    }
+    closeMajorCatalogRecordEditor(true)
+    await loadMajorCatalogRecords()
+    uni.showToast({ title: syncsStudentView ? '专业目录已保存并同步' : '专业目录已保存', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '专业目录保存失败', icon: 'none' })
+  } finally {
+    majorCatalogRecordSaving.value = false
+  }
+}
+
 function scorelineKindText(kind) {
   return scorelineKindOptions.find((item) => item.value === kind)?.label || '文字说明'
 }
@@ -4128,7 +4726,7 @@ async function bootstrapExistingScorelineRecords() {
   if (scorelineRecordBootstrapLoading.value || !legacyScorelineImportRecords.value.length) return
   const confirmed = await confirmAction(
     '接入现有分数线？',
-    `将 ${formatCount(legacyScorelineImportRecords.value.length)} 条现有分数信息创建为草稿版本，学生端暂不变更。`,
+    `将 ${formatCount(legacyScorelineImportRecords.value.length)} 条现有分数信息接入后台管理，学生端现有内容保持不变。`,
     '接入数据'
   )
   if (!confirmed) return
@@ -4137,7 +4735,7 @@ async function bootstrapExistingScorelineRecords() {
     const response = await bootstrapQuestionAdminScorelines({ records: legacyScorelineImportRecords.value })
     await loadAdmissionRuns(response?.run?.id)
     await loadScorelineRecords()
-    uni.showToast({ title: response?.created === false ? '现有数据已在版本记录中' : '已接入分数线草稿', icon: 'success' })
+    uni.showToast({ title: response?.created === false ? '现有分数线已接入' : '已接入分数线数据', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '现有数据接入失败', icon: 'none' })
   } finally {
@@ -4151,8 +4749,8 @@ async function bootstrapExistingAdmissionSnapshot(dataset) {
   const confirmed = await confirmAction(
     isAnnouncement ? '接入现有院校公告？' : '接入现有专业目录？',
     isAnnouncement
-      ? '将当前学生端院校公告创建为草稿版本，发布前不会影响学生端。'
-      : '将当前学生端 2026 专业目录创建为草稿版本，发布前不会影响学生端。',
+      ? '将当前学生端院校公告接入后台管理，当前展示不受影响。'
+      : '将当前学生端 2026 专业目录接入后台管理，当前展示不受影响。',
     '接入数据'
   )
   if (!confirmed) return
@@ -4162,9 +4760,10 @@ async function bootstrapExistingAdmissionSnapshot(dataset) {
     if (admissionDataset.value === dataset) {
       await loadAdmissionRuns(response?.run?.id)
       if (dataset === 'announcements') await loadAnnouncementRecords()
+      if (dataset === 'major-catalog') await loadMajorCatalogRecords()
     }
     await loadOperationsOverview()
-    uni.showToast({ title: response?.created === false ? '现有数据已在版本记录中' : isAnnouncement ? '已接入公告草稿' : '已接入目录草稿', icon: 'success' })
+    uni.showToast({ title: response?.created === false ? '现有数据已接入' : isAnnouncement ? '已接入院校公告' : '已接入专业目录', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || (isAnnouncement ? '院校公告接入失败' : '专业目录接入失败'), icon: 'none' })
   } finally {
@@ -4215,7 +4814,7 @@ async function saveScorelineRecord() {
   const syncsStudentView = selectedAdmissionRun.value?.status === 'published'
   const confirmed = await confirmAction(
     '保存分数线修改？',
-    syncsStudentView ? '当前版本已发布，保存后将立即同步学生端。' : '修改会保存在当前草稿版本中。',
+    syncsStudentView ? '当前数据已同步学生端，保存后将立即生效。' : '修改会保存在当前后台数据中。',
     '保存修改'
   )
   if (!confirmed) return
@@ -4253,8 +4852,7 @@ async function loadAnnouncementRecords() {
       item.import_run_id === selectedAdmissionRunId.value
       && (announcementRecordStatus.value === 'all' || item.status === announcementRecordStatus.value)
     )).map((item) => ({ ...item })).sort((left, right) => (
-      Number(Boolean(right.is_pinned)) - Number(Boolean(left.is_pinned))
-      || Number(left.sort_order || 0) - Number(right.sort_order || 0)
+      Number(left.sort_order || 0) - Number(right.sort_order || 0)
       || String(right.notice_date || '').localeCompare(String(left.notice_date || ''))
     ))
     announcementRecordCount.value = announcementRecords.value.length
@@ -4280,41 +4878,14 @@ async function loadAnnouncementRecords() {
   }
 }
 
-async function selectAdmissionRun(run) {
-  if (!['scorelines', 'announcements'].includes(admissionDataset.value) || !run?.id || selectedAdmissionRunId.value === run.id) return
-  selectedAdmissionRunId.value = run.id
-  scorelineRecordPage.value = 1
-  if (admissionDataset.value === 'scorelines') {
-    await loadScorelineRecords()
-  } else {
-    await loadAnnouncementRecords()
-  }
-}
-
 function handleAnnouncementRecordStatusChange(event) {
   announcementRecordStatus.value = announcementRecordStatusOptions[Number(event?.detail?.value || 0)]?.value || 'all'
   loadAnnouncementRecords()
 }
 
-function admissionDatasetDraftLabel(dataset) {
-  const keys = {
-    scorelines: 'scoreline_draft_runs',
-    announcements: 'announcement_draft_runs',
-    'major-catalog': 'major_catalog_draft_runs'
-  }
-  if (operationsOverviewLoading.value) return '正在读取版本…'
-  if (operationsOverviewError.value) return '草稿数未知'
-  const count = Number(operationsOverview[keys[dataset]] || 0)
-  return count ? `${count} 个草稿待发布` : '暂无待发布草稿'
-}
-
-function canPublishAdmissionRun(run) {
-  return ['draft', 'archived'].includes(String(run?.status || ''))
-    && Number(run?.record_count || run?.statistics?.valid_rows || 0) > 0
-}
-
-function admissionRunActionText(run) {
-  return run?.status === 'archived' ? '回滚至此版本' : '发布此版本'
+function openAdmissionFilePicker() {
+  const fileInput = admissionFileInputRef.value?.$el || admissionFileInputRef.value
+  fileInput?.click?.()
 }
 
 function handleAdmissionFileChange(event) {
@@ -4344,7 +4915,7 @@ async function previewAdmissionImport() {
 
 async function commitAdmissionImport() {
   if (!canCommitAdmissionImport.value || !admissionFile.value) return
-  const confirmed = await confirmAction('提交导入批次？', '数据会先保存为草稿，确认发布前不会对学生端生效。', '提交')
+  const confirmed = await confirmAction('确认导入数据？', '数据会先保存到后台，导入后可在当前列表继续维护。', '确认导入')
   if (!confirmed) return
   admissionCommitting.value = true
   try {
@@ -4357,63 +4928,13 @@ async function commitAdmissionImport() {
     admissionFileName.value = ''
     await loadAdmissionRuns(response?.run?.id)
     if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
+    if (admissionDataset.value === 'major-catalog') await loadMajorCatalogRecords()
     closeAdmissionImport(true)
-    uni.showToast({ title: response?.created === false ? '该文件已存在于版本记录' : '已提交待发布', icon: 'success' })
+    uni.showToast({ title: response?.created === false ? '该文件已存在于导入记录' : '数据已导入', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '导入提交失败', icon: 'none' })
   } finally {
     admissionCommitting.value = false
-  }
-}
-
-async function publishAdmissionRun(run) {
-  if (!canPublishAdmissionRun(run) || admissionPublishingId.value) return
-  const isRollback = run.status === 'archived'
-  const confirmed = await confirmAction(
-    isRollback ? '回滚至此版本？' : '发布此版本？',
-    `${run.source_filename || '该版本'}（${formatCount(run.record_count || run.statistics?.valid_rows)} 行）将替换当前学生端公开版本；现有公开版本会自动归档。`,
-    isRollback ? '确认回滚' : '确认发布'
-  )
-  if (!confirmed) return
-  admissionPublishingId.value = run.id
-  try {
-    if (devPreviewMode.value) {
-      const current = new Date().toISOString()
-      const nextRuns = admissionRuns.value.map((item) => ({
-        ...item,
-        status: item.id === run.id ? 'published' : item.status === 'published' ? 'archived' : item.status,
-        published_at: item.id === run.id ? current : item.published_at
-      }))
-      admissionRuns.value = nextRuns
-      devPreviewAdmissionRuns[admissionDataset.value] = nextRuns.map((item) => ({
-        ...item,
-        statistics: { ...(item.statistics || {}) }
-      }))
-      if (admissionDataset.value === 'announcements') {
-        devPreviewAnnouncementRecords.value = devPreviewAnnouncementRecords.value.map((record) => ({
-          ...record,
-          status: record.import_run_id === run.id
-            ? 'published'
-            : record.status === 'published' ? 'archived' : record.status,
-          published_at: record.import_run_id === run.id ? current : record.published_at,
-          archived_at: record.import_run_id !== run.id && record.status === 'published' ? current : null
-        }))
-      }
-      ensureSelectedAdmissionRun(run.id)
-      if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
-      if (admissionDataset.value === 'announcements') await loadAnnouncementRecords()
-    } else {
-      await publishQuestionAdminAdmissionRun(admissionDataset.value, run.id)
-      await loadAdmissionRuns(run.id)
-      if (admissionDataset.value === 'scorelines') await loadScorelineRecords()
-      if (admissionDataset.value === 'announcements') await loadAnnouncementRecords()
-    }
-    await loadOperationsOverview()
-    uni.showToast({ title: isRollback ? '已回滚并同步学生端' : '已发布到学生端', icon: 'success' })
-  } catch (error) {
-    uni.showToast({ title: error?.detail || '版本发布失败', icon: 'none' })
-  } finally {
-    admissionPublishingId.value = ''
   }
 }
 
@@ -4452,36 +4973,78 @@ async function setAnnouncementRecordStatus(item, nextStatus) {
   }
 }
 
-async function toggleAnnouncementPinned(item) {
-  if (!item?.id || item.status !== 'published' || announcementUpdatingId.value) return
+function openAnnouncementRecordEditor(item) {
+  if (!item?.id || announcementRecordSaving.value) return
   if (!canManageSelectedAnnouncementRecords.value) {
-    uni.showToast({ title: '仅当前公开版本可调整置顶', icon: 'none' })
+    uni.showToast({ title: '请先发布该公告版本', icon: 'none' })
     return
   }
-  const nextPinned = !item.is_pinned
+  announcementRecordEditingId.value = item.id
+  announcementRecordForm.notice_year = String(item.notice_year || '')
+  announcementRecordForm.region = String(item.region || '')
+  announcementRecordForm.school_name = String(item.school_name || '')
+  announcementRecordForm.unit_name = String(item.unit_name || '')
+  announcementRecordForm.notice_type = String(item.notice_type || 'brochure')
+  announcementRecordForm.title = String(item.title || '')
+  announcementRecordForm.summary = String(item.summary || '')
+  announcementRecordForm.notice_date = String(item.notice_date || '')
+  announcementRecordForm.source_url = String(item.source_url || '')
+  announcementRecordForm.content_text = String(item.content_text || '')
+  announcementRecordEditorVisible.value = true
+}
+
+function closeAnnouncementRecordEditor(force = false) {
+  if (announcementRecordSaving.value && !force) return
+  announcementRecordEditorVisible.value = false
+  announcementRecordEditingId.value = ''
+}
+
+function handleAnnouncementRecordNoticeTypeChange(event) {
+  announcementRecordForm.notice_type = announcementRecordNoticeTypeOptions[Number(event?.detail?.value || 0)]?.value || 'brochure'
+}
+
+async function saveAnnouncementRecord() {
+  if (!announcementRecordEditingId.value || announcementRecordSaving.value) return
+  const payload = {
+    notice_year: announcementRecordForm.notice_year.trim(),
+    region: announcementRecordForm.region.trim(),
+    school_name: announcementRecordForm.school_name.trim(),
+    unit_name: announcementRecordForm.unit_name.trim(),
+    notice_type: announcementRecordForm.notice_type,
+    title: announcementRecordForm.title.trim(),
+    summary: announcementRecordForm.summary.trim(),
+    notice_date: announcementRecordForm.notice_date.trim() || null,
+    source_url: announcementRecordForm.source_url.trim(),
+    content_text: announcementRecordForm.content_text.trim()
+  }
+  if (!/^20\d{2}$/.test(payload.notice_year) || !payload.region || !payload.school_name || !payload.title) {
+    uni.showToast({ title: '请完整填写年份、地区、院校和标题', icon: 'none' })
+    return
+  }
+  const syncsStudentView = selectedAdmissionRun.value?.status === 'published'
   const confirmed = await confirmAction(
-    nextPinned ? '置顶这条公告？' : '取消置顶？',
-    nextPinned ? '置顶会调整学生端院校公告的展示顺序。' : '取消后公告将恢复按排序和日期展示。',
-    nextPinned ? '确认置顶' : '取消置顶'
+    '保存公告修改？',
+    syncsStudentView ? '当前公告正在用户端展示，保存后将立即生效。' : '修改会保存在当前后台数据中。',
+    '保存修改'
   )
   if (!confirmed) return
-  announcementUpdatingId.value = item.id
+  announcementRecordSaving.value = true
   try {
-    const updated = devPreviewMode.value
-      ? { ...item, is_pinned: nextPinned }
-      : await updateQuestionAdminAnnouncementRecord(item.id, { is_pinned: nextPinned })
     if (devPreviewMode.value) {
+      const updatedAt = new Date().toISOString()
       devPreviewAnnouncementRecords.value = devPreviewAnnouncementRecords.value.map((record) => (
-        record.id === updated.id ? { ...record, ...updated } : record
+        record.id === announcementRecordEditingId.value ? { ...record, ...payload, updated_at: updatedAt } : record
       ))
+    } else {
+      await updateQuestionAdminAnnouncementRecord(announcementRecordEditingId.value, payload)
     }
-    announcementRecords.value = announcementRecords.value.map((record) => record.id === updated.id ? { ...record, ...updated } : record)
-    announcementRecords.value.sort((left, right) => Number(Boolean(right.is_pinned)) - Number(Boolean(left.is_pinned)))
-    uni.showToast({ title: nextPinned ? '公告已置顶' : '已取消置顶', icon: 'success' })
+    closeAnnouncementRecordEditor(true)
+    await loadAnnouncementRecords()
+    uni.showToast({ title: '公告已保存', icon: 'success' })
   } catch (error) {
-    uni.showToast({ title: error?.detail || '公告置顶更新失败', icon: 'none' })
+    uni.showToast({ title: error?.detail || '公告保存失败', icon: 'none' })
   } finally {
-    announcementUpdatingId.value = ''
+    announcementRecordSaving.value = false
   }
 }
 
@@ -4793,15 +5356,34 @@ function loadDevPreviewOperations() {
     if (userFilters.activity === 'inactive' && lastAnswerAt && now - lastAnswerAt < 30 * 86400000) return false
     return true
   })
-  const sorters = {
-    accuracy: (left, right) => right.accuracy - left.accuracy,
-    answer_count: (left, right) => right.answer_count - left.answer_count,
-    last_active: (left, right) => String(right.last_answer_at || '').localeCompare(String(left.last_answer_at || '')),
-    created_at: (left, right) => String(right.created_at || '').localeCompare(String(left.created_at || ''))
-  }
-  filteredUsers = filteredUsers.sort(sorters[userFilters.sort_by] || sorters.created_at)
+  filteredUsers = sortPortalUserItems(filteredUsers)
   portalUsers.value = filteredUsers
   portalUserCount.value = portalUsers.value.length
+}
+
+function sortPortalUserItems(items) {
+  const direction = userSort.direction === 'asc' ? 1 : -1
+  const valueFor = (item) => {
+    if (userSort.field === 'exam_target') return String(item.exam_target || '')
+    if (userSort.field === 'answer_count') return Number(item.answer_count || 0)
+    if (userSort.field === 'accuracy') return Number(item.accuracy || 0)
+    const timestamp = item[userSort.field === 'last_active' ? 'last_answer_at' : 'created_at']
+    return timestamp ? new Date(timestamp).getTime() : null
+  }
+  return [...items].sort((left, right) => {
+    const leftValue = valueFor(left)
+    const rightValue = valueFor(right)
+    if (leftValue === null || rightValue === null) {
+      if (leftValue !== rightValue) return leftValue === null ? 1 : -1
+    } else if (typeof leftValue === 'string') {
+      const comparison = leftValue.localeCompare(rightValue)
+      if (comparison) return comparison * direction
+    } else if (leftValue !== rightValue) {
+      return (leftValue - rightValue) * direction
+    }
+    const createdAtComparison = String(right.created_at || '').localeCompare(String(left.created_at || ''))
+    return createdAtComparison || String(left.id || '').localeCompare(String(right.id || ''))
+  })
 }
 
 function buildDevPreviewUserDetail(item) {
@@ -4849,9 +5431,9 @@ function loadDevPreviewAdmission() {
   }))
   if (dataset === 'announcements' && !devPreviewAnnouncementRecords.value.length) {
     devPreviewAnnouncementRecords.value = [
-      { id: 'preview-notice-1', import_run_id: 'preview-notice-run-1', school_name: '暨南大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年面向港澳台地区研究生招生简章', summary: '含报名条件、考试科目与录取办法。', notice_date: '2026-04-08', status: 'published', is_pinned: true },
-      { id: 'preview-notice-2', import_run_id: 'preview-notice-run-1', school_name: '华南理工大学', unit_name: '', notice_type: 'scoreline_retest', title: '2026 年港澳台研究生复试分数线', summary: '各学院复试安排以学院通知为准。', notice_date: '2026-04-06', status: 'published', is_pinned: false },
-      { id: 'preview-notice-3', import_run_id: 'preview-notice-run-2', school_name: '中山大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年港澳台研究生招生补充说明', summary: '补充报名材料与时间安排。', notice_date: '2026-08-18', status: 'draft', is_pinned: false }
+      { id: 'preview-notice-1', import_run_id: 'preview-notice-run-1', school_name: '暨南大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年面向港澳台地区研究生招生简章', summary: '含报名条件、考试科目与录取办法。', notice_date: '2026-04-08', status: 'published' },
+      { id: 'preview-notice-2', import_run_id: 'preview-notice-run-1', school_name: '华南理工大学', unit_name: '', notice_type: 'scoreline_retest', title: '2026 年港澳台研究生复试分数线', summary: '各学院复试安排以学院通知为准。', notice_date: '2026-04-06', status: 'published' },
+      { id: 'preview-notice-3', import_run_id: 'preview-notice-run-2', school_name: '中山大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年港澳台研究生招生补充说明', summary: '补充报名材料与时间安排。', notice_date: '2026-08-18', status: 'draft' }
     ]
   }
 }
@@ -4942,6 +5524,33 @@ function portalUserMembershipLabel(item) {
   if (isPortalUserMembershipActive(item)) return '有效会员'
   if (item?.membership_status === 'active' && item?.membership_expires_at) return '会员已过期'
   return '普通用户'
+}
+
+function membershipOrderPlanLabel(order) {
+  if (order?.plan_code === 'pro_monthly') return '月度会员'
+  if (order?.plan_code === 'pro_quarterly') return '季度会员'
+  return order?.plan_code || '会员订单'
+}
+
+function membershipOrderProviderLabel(order) {
+  const provider = String(order?.provider || '支付订单')
+  const orderId = String(order?.provider_order_id || '')
+  return orderId ? `${provider} · ${orderId.slice(-8)}` : provider
+}
+
+function membershipOrderStatusLabel(order) {
+  const labels = { paid: '已支付', pending: '待支付', failed: '支付失败', cancelled: '已取消', refunded: '已退款' }
+  return labels[String(order?.status || '').toLowerCase()] || '状态未知'
+}
+
+function membershipOrderStatusTone(order) {
+  return `is-${String(order?.status || 'pending').toLowerCase()}`
+}
+
+function membershipOrderAmount(order) {
+  const cents = Number(order?.amount_cents)
+  if (!Number.isFinite(cents)) return '金额待确认'
+  return `${order?.currency || 'CNY'} ${(cents / 100).toFixed(2)}`
 }
 
 function shortId(value) {
@@ -5688,8 +6297,7 @@ button {
   font-size: 10px;
 }
 
-.badge-dot,
-.live-indicator text {
+.badge-dot {
   width: 6px;
   height: 6px;
   border-radius: 50%;
@@ -5952,8 +6560,40 @@ button {
   line-height: 1.5;
 }
 
-.metric-chip,
-.live-indicator {
+.metric-growth {
+  position: absolute;
+  right: 18px;
+  bottom: 18px;
+  display: flex;
+  align-items: baseline;
+  gap: 5px;
+  color: #df706c;
+  opacity: 0;
+  pointer-events: none;
+  transform: translateY(5px);
+  transition: opacity 0.24s ease, transform 0.24s ease;
+}
+
+.metric-growth-count {
+  font-size: 15px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.metric-growth-label {
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+}
+
+@media (hover: hover) {
+  .registered-users-card:hover .metric-growth {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.metric-chip {
   position: absolute;
   top: 17px;
   right: 17px;
@@ -5965,23 +6605,6 @@ button {
   padding: 5px 7px;
   border-radius: 6px;
   background: #f3f6f7;
-}
-
-.live-indicator {
-  display: flex;
-  align-items: center;
-  gap: 5px;
-  color: #2aad91;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-}
-
-.live-indicator text {
-  animation: pulse 1.8s ease-in-out infinite;
-}
-
-@keyframes pulse {
-  50% { opacity: 0.35; transform: scale(0.78); }
 }
 
 .metric-link {
@@ -6091,6 +6714,43 @@ button {
   --admin-select-menu-min-width: 164px;
 }
 
+.community-featured-button {
+  width: 96px;
+  height: 37px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  border: 1px solid #a9ddcf;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #197966;
+  background: #eaf8f4;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.community-featured-button:hover:not([disabled]) {
+  border-color: #66c6ae;
+  background: #ddf5ee;
+}
+
+.community-featured-button.remove {
+  border-color: #d8e0e5;
+  color: #66778a;
+  background: #f5f7f8;
+}
+
+.community-featured-button[disabled] {
+  border-color: #e1e8eb;
+  color: #a3afb9;
+  background: #f6f8f9;
+}
+
 .community-table {
   min-width: 980px;
 }
@@ -6115,6 +6775,29 @@ button {
 
 .community-row:hover {
   background: #f7fbfa;
+}
+
+.community-row.selected {
+  background: #f3fbf8;
+}
+
+.community-grid.table-head.selecting {
+  color: #5d716c;
+  background: #f0faf7;
+}
+
+.community-selection-header {
+  grid-column: 2 / 3;
+  min-width: 0;
+  min-height: 42px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20px;
+}
+
+.community-selection-header .bulk-copy {
+  margin-right: 0;
 }
 
 .community-post-cell,
@@ -6238,16 +6921,20 @@ button {
 
 .community-detail-backdrop {
   z-index: 106;
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
 }
 
 .community-detail-modal {
-  width: min(840px, 100%);
-  max-height: min(860px, calc(100vh - 44px));
+  width: min(840px, 100vw);
+  height: 100vh;
+  max-height: none;
   display: flex;
   flex-direction: column;
   overflow: hidden;
   border: 1px solid rgba(221, 233, 235, 0.92);
-  border-radius: 16px;
+  border-radius: 0;
   box-sizing: border-box;
   background: #fff;
   box-shadow: 0 22px 64px rgba(19, 35, 52, 0.2);
@@ -7264,11 +7951,17 @@ button {
   height: 30px;
   margin: 12px 0 0;
   padding: 0 11px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   border-radius: 7px;
+  box-sizing: border-box;
   color: #267c6a;
   background: #dff5ef;
   font-size: 9px;
   line-height: 1;
+  text-align: center;
+  white-space: nowrap;
 }
 
 .pagination-row {
@@ -8185,6 +8878,14 @@ button {
   gap: 18px;
 }
 
+.home-operations-content-section {
+  padding-bottom: 8px;
+}
+
+.home-status-section {
+  padding-top: 10px;
+}
+
 .operations-summary-grid {
   display: grid;
   grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -8228,7 +8929,6 @@ button {
 }
 
 .user-workspace,
-.admission-run-workspace,
 .scoreline-record-workspace,
 .announcement-record-workspace,
 .major-catalog-workspace,
@@ -8298,9 +8998,9 @@ button {
 }
 
 .portal-user-table,
-.admission-run-table,
 .scoreline-record-table,
-.announcement-record-table {
+.announcement-record-table,
+.major-catalog-record-table {
   min-width: 100%;
 }
 
@@ -8314,9 +9014,9 @@ button {
 }
 
 .portal-user-grid.table-head,
-.admission-run-grid.table-head,
 .scoreline-record-grid.table-head,
-.announcement-record-grid.table-head {
+.announcement-record-grid.table-head,
+.major-catalog-record-grid.table-head {
   box-sizing: border-box;
   min-height: 42px;
   padding: 0 16px;
@@ -8324,6 +9024,26 @@ button {
   font-size: 10px;
   font-weight: 700;
   background: #f8fafb;
+}
+
+.portal-user-sort-header {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  min-width: 0;
+  cursor: pointer;
+  user-select: none;
+}
+
+.portal-user-sort-header.active {
+  color: #34799f;
+}
+
+.portal-user-sort-icon {
+  flex: 0 0 auto;
+  color: #34799f;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .portal-user-row {
@@ -8340,9 +9060,9 @@ button {
 }
 
 .portal-user-row:hover,
-.admission-run-row:hover,
 .scoreline-record-row:hover,
-.announcement-record-row:hover {
+.announcement-record-row:hover,
+.major-catalog-record-row:hover {
   background: #f8fcfb;
 }
 
@@ -8421,6 +9141,31 @@ button {
   min-width: 48px;
   padding-right: 8px;
   padding-left: 8px;
+}
+
+.portal-membership-button {
+  min-width: 58px !important;
+  height: 25px;
+  margin: 0;
+  padding: 0 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b6d7ef;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #34799f;
+  font-size: 9px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  background: #f1f8fc;
+}
+
+.portal-membership-button[disabled] {
+  border-color: #e1e8eb;
+  color: #a3afb9;
+  background: #f6f8f9;
 }
 
 .operations-heading-row {
@@ -8559,26 +9304,6 @@ button {
   padding: 22px 24px 28px;
 }
 
-.admission-import-intro {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 16px;
-  margin-bottom: 18px;
-}
-
-.admission-import-intro > view {
-  min-width: 0;
-}
-
-.admission-import-intro .panel-subtitle {
-  max-width: 560px;
-}
-
-.admission-import-footer {
-  min-height: 64px;
-}
-
 .scoreline-editor-backdrop {
   z-index: 109;
   padding: 36px;
@@ -8598,6 +9323,11 @@ button {
   box-shadow: 0 22px 60px rgba(27, 43, 60, 0.2);
 }
 
+.announcement-editor-modal,
+.major-catalog-editor-modal {
+  height: min(720px, calc(100vh - 72px));
+}
+
 .scoreline-editor-scroll {
   min-height: 0;
   flex: 1;
@@ -8607,46 +9337,60 @@ button {
   padding: 22px 24px 28px;
 }
 
-.scoreline-editor-status {
-  margin-bottom: 18px;
-  padding: 10px 12px;
-  border: 1px solid #d8e7ec;
-  border-radius: 7px;
-  color: #718499;
-  font-size: 11px;
-  background: #f8fbfc;
-}
-
-.scoreline-editor-status.published {
-  border-color: #bfe6dc;
-  color: #247969;
-  background: #f1fbf8;
-}
-
-.scoreline-editor-grid {
+.scoreline-editor-grid,
+.announcement-editor-grid,
+.major-catalog-editor-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
 }
 
-.scoreline-editor-grid .form-field.full {
-  grid-column: 1 / -1;
-  margin-top: 0;
-}
-
-.scoreline-editor-grid .form-label {
+.scoreline-editor-grid .form-label,
+.announcement-editor-grid .form-label,
+.major-catalog-editor-grid .form-label {
   color: #64778b;
   font-size: 11px;
 }
 
-.scoreline-editor-grid .form-input,
-.scoreline-editor-grid .form-textarea {
-  font-size: 12px;
+.announcement-editor-grid .form-field.full {
+  grid-column: 1 / -1;
 }
 
-.scoreline-form-textarea {
-  min-height: 72px;
+.scoreline-editor-grid .form-input,
+.announcement-editor-grid .form-input,
+.announcement-editor-grid .form-textarea,
+.major-catalog-editor-grid .form-input {
+  width: 100%;
+  height: 38px;
+  margin-top: 8px;
+  padding: 0 11px;
+  border: 1px dashed #9fcfc4;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #40566d;
+  font-size: 12px;
+  background: #fbfefd;
+}
+
+.announcement-editor-grid .form-textarea {
+  min-height: 78px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.5;
   resize: vertical;
+}
+
+.announcement-editor-grid .announcement-content-textarea {
+  min-height: 148px;
+}
+
+.scoreline-editor-grid .form-input:focus,
+.announcement-editor-grid .form-input:focus,
+.announcement-editor-grid .form-textarea:focus,
+.major-catalog-editor-grid .form-input:focus {
+  border-color: #58bba5;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(80, 208, 180, 0.09);
 }
 
 .admission-import-actions {
@@ -8655,29 +9399,63 @@ button {
   gap: 10px;
 }
 
+.admission-template-button {
+  margin-left: auto;
+  flex: 0 0 auto;
+}
+
+.admission-import-actions .secondary-button,
+.admission-import-actions .primary-button {
+  width: 72px;
+  min-width: 72px;
+  max-width: 72px;
+  height: 35px;
+  min-height: 35px;
+  max-height: 35px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 72px;
+  box-sizing: border-box;
+  line-height: 1;
+}
+
 .admission-file-picker {
   display: flex;
   min-width: 290px;
   height: 38px;
-  align-items: center;
+}
+
+.admission-file-input {
+  display: none;
+}
+
+.admission-file-picker-trigger {
+  width: 100%;
+  height: 100%;
+  margin: 0;
   padding: 0 13px;
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
   border: 1px dashed #aaccc6;
   border-radius: 7px;
+  box-sizing: border-box;
   color: #5d7288;
   font-size: 11px;
+  line-height: 1;
+  text-align: left;
   background: #fbfefd;
   cursor: pointer;
 }
 
-.admission-file-picker input {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  opacity: 0;
+.admission-file-picker-trigger::after {
+  border: 0;
 }
 
-.admission-file-picker text {
+.admission-file-picker-trigger text {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -8736,37 +9514,14 @@ button {
   background: #fff9f7;
 }
 
-.admission-run-grid {
-  display: grid;
-  grid-template-columns: minmax(240px, 1.5fr) 100px 98px 132px 132px 120px;
-  min-width: 860px;
-  align-items: center;
-  gap: 12px;
-}
-
-.admission-run-row {
-  box-sizing: border-box;
-  min-height: 58px;
-  padding: 7px 18px;
-  border-top: 1px solid #edf1f3;
-  color: #65778c;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.admission-run-row.selected {
-  box-shadow: inset 3px 0 0 #55cdb3;
-  background: #f3fbf9;
-}
-
 .row-unavailable-copy {
   color: #a3adb8;
   font-size: 10px;
 }
 
-.admission-run-row strong,
 .scoreline-record-row strong,
-.announcement-record-row strong {
+.announcement-record-row strong,
+.major-catalog-record-row strong {
   display: block;
   overflow: hidden;
   color: #33475e;
@@ -8775,18 +9530,13 @@ button {
   white-space: nowrap;
 }
 
-.admission-run-row text,
 .scoreline-record-row text,
-.announcement-record-row text {
+.announcement-record-row text,
+.major-catalog-record-row text {
   display: block;
   margin-top: 4px;
   color: #98a7b7;
   font-size: 9px;
-}
-
-.row-published-copy {
-  color: #2aa58d;
-  font-size: 10px;
 }
 
 .scoreline-record-grid {
@@ -8896,16 +9646,24 @@ button {
 }
 
 .scoreline-filter-search {
-  min-width: 180px;
-  flex: 1;
+  width: 360px;
+  min-width: 220px;
+  flex: 0 1 360px;
 }
 
-.scoreline-filter-year {
-  width: 86px;
+.scoreline-filter-select {
+  width: 116px;
+  flex: 0 0 116px;
+  --admin-select-height: 34px;
+  --admin-select-radius: 6px;
+  --admin-select-font-size: 10px;
+  --admin-select-padding-x: 10px;
+  --admin-select-menu-min-width: 132px;
 }
 
-.scoreline-filter-region {
-  width: 108px;
+.scoreline-filter-region-select {
+  width: 132px;
+  flex-basis: 132px;
 }
 
 .scoreline-filter-clear {
@@ -8940,6 +9698,62 @@ button {
   border-top: 1px solid #edf1f3;
   color: #64768b;
   font-size: 11px;
+}
+
+.major-catalog-record-grid {
+  display: grid;
+  grid-template-columns: 72px minmax(180px, 1.05fr) minmax(230px, 1.4fr) 78px minmax(120px, 0.8fr) 64px;
+  min-width: 900px;
+  align-items: center;
+  gap: 12px;
+}
+
+.major-catalog-record-row {
+  box-sizing: border-box;
+  min-height: 64px;
+  padding: 8px 18px;
+  border-top: 1px solid #edf1f3;
+  color: #64768b;
+  font-size: 11px;
+}
+
+.major-catalog-record-row > view {
+  min-width: 0;
+}
+
+.exam-code-pill {
+  display: inline-flex;
+  min-width: 42px;
+  height: 22px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  font-size: 9px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.exam-code-pill.is-z001 {
+  color: #257568;
+  background: #e4f7f1;
+}
+
+.exam-code-pill.is-z002 {
+  color: #55789e;
+  background: #eaf2fa;
+}
+
+.announcement-status-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.announcement-status-cell .status-pill {
+  margin-top: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .announcement-workspace-heading,
@@ -9375,7 +10189,25 @@ button {
 .portal-user-detail-modal {
   display: flex;
   width: min(720px, calc(100vw - 48px));
-  max-height: min(760px, calc(100vh - 56px));
+  height: 100vh;
+  max-height: none;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: 0 22px 60px rgba(27, 43, 60, 0.2);
+}
+
+.portal-user-detail-backdrop {
+  align-items: stretch;
+  justify-content: flex-end;
+  padding: 0;
+}
+
+.portal-membership-modal {
+  display: flex;
+  width: min(640px, calc(100vw - 48px));
+  max-height: min(720px, calc(100vh - 56px));
   flex-direction: column;
   overflow: hidden;
   border-radius: 10px;
@@ -9383,8 +10215,165 @@ button {
   box-shadow: 0 22px 60px rgba(27, 43, 60, 0.2);
 }
 
+.portal-membership-scroll {
+  max-height: 620px;
+}
+
+.portal-membership-content {
+  padding: 20px 26px 28px;
+}
+
+.portal-membership-summary {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-top: 18px;
+  border: 1px solid #e4edef;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.portal-membership-summary > view {
+  display: flex;
+  min-height: 66px;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 14px;
+  border-left: 1px solid #e7edf0;
+}
+
+.portal-membership-summary > view:first-child {
+  border-left: 0;
+}
+
+.portal-membership-summary text {
+  color: #98a7b6;
+  font-size: 10px;
+}
+
+.portal-membership-summary strong {
+  margin-top: 6px;
+  color: #2e4359;
+  font-size: 13px;
+}
+
+.portal-membership-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.portal-membership-action {
+  min-height: 34px;
+  margin: 0;
+  padding: 0 8px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #b6d7ef;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #34799f;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.25;
+  text-align: center;
+  background: #f1f8fc;
+}
+
+.portal-membership-action.cancel {
+  border-color: #ecc8c3;
+  color: #b36258;
+  background: #fff7f5;
+}
+
+.portal-membership-action[disabled] {
+  border-color: #e1e8eb;
+  color: #a3afb9;
+  background: #f6f8f9;
+}
+
+.portal-membership-order-list {
+  border: 1px solid #e6edef;
+  border-radius: 7px;
+  overflow: hidden;
+}
+
+.portal-membership-order-row {
+  display: flex;
+  min-height: 58px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 8px 13px;
+  border-top: 1px solid #edf1f3;
+}
+
+.portal-membership-order-row:first-child {
+  border-top: 0;
+}
+
+.portal-membership-order-row > view:first-child {
+  min-width: 0;
+}
+
+.portal-membership-order-row strong {
+  display: block;
+  overflow: hidden;
+  color: #40556b;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-membership-order-row > view:first-child text {
+  display: block;
+  overflow: hidden;
+  margin-top: 4px;
+  color: #94a3b3;
+  font-size: 10px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.portal-membership-order-meta {
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: center;
+  justify-items: end;
+  column-gap: 8px;
+  row-gap: 4px;
+  flex: 0 0 auto;
+}
+
+.portal-membership-order-meta time {
+  grid-column: 1 / -1;
+  color: #9aa8b7;
+  font-size: 9px;
+}
+
+.membership-order-status {
+  font-size: 9px;
+  font-weight: 700;
+}
+
+.membership-order-status.is-paid {
+  color: #2da28c;
+}
+
+.membership-order-status.is-pending {
+  color: #d89b4c;
+}
+
+.membership-order-status.is-failed,
+.membership-order-status.is-cancelled,
+.membership-order-status.is-refunded {
+  color: #c97067;
+}
+
 .portal-user-detail-scroll {
-  max-height: 600px;
+  min-height: 0;
+  flex: 1;
+  max-height: none;
 }
 
 .portal-user-detail-content {
@@ -9682,8 +10671,19 @@ button {
   }
 
   .scoreline-filter-search {
-    min-width: 100%;
-    flex-basis: 100%;
+    width: 100%;
+    min-width: 0;
+    flex: 1 1 100%;
+  }
+
+  .scoreline-filter-select {
+    width: calc(50% - 4px);
+    min-width: 0;
+    flex: 1 1 calc(50% - 4px);
+  }
+
+  .scoreline-filter-clear {
+    margin-left: auto;
   }
 
   .home-preview-counts {
@@ -9739,25 +10739,29 @@ button {
     max-height: calc(100vh - 32px);
   }
 
+  .announcement-editor-modal,
+  .major-catalog-editor-modal {
+    height: calc(100vh - 32px);
+  }
+
   .scoreline-editor-content {
     padding: 18px 18px 22px;
   }
 
-  .scoreline-editor-grid {
+  .scoreline-editor-grid,
+  .announcement-editor-grid,
+  .major-catalog-editor-grid {
     grid-template-columns: 1fr;
   }
 
-  .scoreline-editor-grid .form-field.full {
+  .announcement-editor-grid .form-field.full {
     grid-column: auto;
   }
 
-  .admission-import-intro {
-    align-items: stretch;
-    flex-direction: column;
-  }
-
-  .admission-import-intro .header-import-button {
-    align-self: flex-start;
+  .admission-template-button {
+    margin-left: 0;
+    order: -1;
+    align-self: flex-end;
   }
 
   .admission-preview-summary {
@@ -9782,8 +10786,17 @@ button {
     padding-right: 18px;
   }
 
+  .portal-membership-content {
+    padding-right: 18px;
+    padding-left: 18px;
+  }
+
   .portal-user-detail-stats {
     grid-template-columns: 1fr 1fr;
+  }
+
+  .portal-membership-actions {
+    grid-template-columns: 1fr;
   }
 
   .portal-user-detail-stats > view:nth-child(3) {
@@ -9813,10 +10826,6 @@ button {
   .question-summary,
   .import-flow {
     grid-template-columns: 1fr 1fr;
-  }
-
-  .community-detail-modal {
-    max-height: calc(100vh - 28px);
   }
 
   .community-detail-content {

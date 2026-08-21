@@ -167,6 +167,9 @@ create index if not exists idx_questions_passage_id
 create index if not exists idx_user_answers_user_created
   on public.user_answers (user_id, created_at desc);
 
+create index if not exists idx_user_answers_created_user
+  on public.user_answers (created_at desc, user_id);
+
 create index if not exists idx_wrong_questions_user_last
   on public.wrong_questions (user_id, last_wrong_at desc);
 

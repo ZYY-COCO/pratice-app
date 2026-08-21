@@ -12,7 +12,7 @@
               <text>✓ 已认证</text>
             </view>
             <view>{{ mentor.school }} · {{ mentor.major }}</view>
-            <view class="mentor-booking-rating">★ {{ Number(mentor.rating).toFixed(1) }} <text>· {{ mentor.priceLabel }} / 次</text></view>
+            <view class="mentor-booking-rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating).toFixed(1)}` : '暂无评分' }} <text>· {{ mentor.priceLabel }} / 次</text></view>
           </view>
         </view>
 
@@ -41,6 +41,10 @@
           </view>
         </view>
 
+        <view v-if="!bookingLoading && slotGroups.length === 0" class="mentor-booking-empty-slots">
+          该前辈暂未开放新的预约时间
+        </view>
+
         <view class="mentor-booking-notice">
           <text>预约说明</text>
           <view>付款后不需要再次等待接单；在预约时间到达后即可开始本次 60 分钟文字与语音消息咨询。</view>
@@ -64,10 +68,17 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
-import { getMentorById, startConsultationDraft } from '../../data/mentorConsultation'
+import { fetchMentorProfile } from '../../api/mentorConsultation'
+import {
+  cacheMentors,
+  getMentorById,
+  normalizeMentorDetailResponse,
+  startConsultationDraft
+} from '../../data/mentorConsultation'
 
 const mentor = ref(null)
 const selectedSlotId = ref('')
+const bookingLoading = ref(false)
 
 const slotGroups = computed(() => {
   const groups = []
@@ -88,8 +99,26 @@ const selectedSlot = computed(() => (
 ))
 
 onLoad((options) => {
-  mentor.value = getMentorById(options?.mentorId)
+  void loadBookingMentor(options?.mentorId)
 })
+
+async function loadBookingMentor(mentorId) {
+  const id = String(mentorId || '')
+  if (!id) return
+  mentor.value = getMentorById(id)
+  bookingLoading.value = true
+  try {
+    const profile = normalizeMentorDetailResponse(await fetchMentorProfile(id))
+    if (profile) {
+      mentor.value = profile
+      cacheMentors([profile])
+    }
+  } catch (error) {
+    if (error?.statusCode === 404) mentor.value = null
+  } finally {
+    bookingLoading.value = false
+  }
+}
 
 function selectSlot(slot) {
   if (slot?.status === 'available') selectedSlotId.value = slot.id
@@ -161,6 +190,7 @@ function goBack() {
 
 .mentor-booking-notice { margin-top: 18rpx; padding: 24rpx; color: #718198; font-size: 21rpx; line-height: 1.6; font-weight: 600; }
 .mentor-booking-notice text { display: block; margin-bottom: 8rpx; color: #46608a; font-size: 23rpx; font-weight: 850; }
+.mentor-booking-empty-slots { padding: 36rpx 24rpx; border: 2rpx dashed #d7e4f6; border-radius: 22rpx; background: rgba(255,255,255,.72); color: #8190a5; text-align: center; font-size: 22rpx; font-weight: 700; }
 .mentor-booking-bottom-space { height: calc(150rpx + env(safe-area-inset-bottom)); }
 .mentor-booking-missing { padding: 150rpx 36rpx; color: #7b8da6; text-align: center; font-size: 25rpx; font-weight: 700; }
 

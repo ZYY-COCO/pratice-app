@@ -3,7 +3,7 @@ from datetime import datetime, timedelta, timezone
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 import aiohttp
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.config import get_settings
 from app.db import get_supabase_admin
@@ -15,12 +15,15 @@ from app.schemas.reports import (
     LeaderboardResponse,
     LearningSummaryResponse,
     LearningTrendPoint,
+    PlatformPracticeTrendPoint,
+    PlatformPracticeTrendResponse,
     StudyAdviceResponse,
     StudySubjectAdvice,
     SubjectWeeklyChange,
 )
 from app.services.question_sources import is_ai_generated_question
 from app.services.reports import build_ability_item
+from app.services.supabase_resilience import call_supabase
 
 router = APIRouter(prefix="/report", tags=["能力报告"])
 
@@ -32,6 +35,7 @@ EXAM_SUBJECTS = {
 }
 PAGE_SIZE = 1000
 LEARNING_ACTIVITY_LIMIT = 5000
+PLATFORM_PRACTICE_TREND_DAYS = 7
 
 
 def get_app_timezone():
@@ -224,6 +228,99 @@ def fetch_weekly_answer_rows(supabase, week_start: datetime) -> list[dict]:
         if len(chunk) < PAGE_SIZE:
             return rows
         offset += PAGE_SIZE
+
+
+def build_platform_practice_trend_dates(days: int = PLATFORM_PRACTICE_TREND_DAYS, now: datetime | None = None) -> list:
+    safe_days = max(1, min(int(days or PLATFORM_PRACTICE_TREND_DAYS), 31))
+    current = now or datetime.now(APP_TIMEZONE)
+    today = current.astimezone(APP_TIMEZONE).date()
+    return [today - timedelta(days=safe_days - 1 - offset) for offset in range(safe_days)]
+
+
+def build_platform_practice_trend(
+    rows: list[dict],
+    days: int = PLATFORM_PRACTICE_TREND_DAYS,
+    now: datetime | None = None,
+) -> list[PlatformPracticeTrendPoint]:
+    trend_dates = build_platform_practice_trend_dates(days, now)
+    trend_date_texts = {item.isoformat() for item in trend_dates}
+    users_by_date = {item.isoformat(): set() for item in trend_dates}
+
+    for row in rows:
+        date_value = row.get("stat_date") or row.get("date")
+        date_text = str(date_value or "")[:10]
+        if date_text not in trend_date_texts:
+            continue
+
+        if "practice_users" in row or "user_count" in row:
+            try:
+                users_by_date[date_text] = max(0, int(row.get("practice_users", row.get("user_count", 0)) or 0))
+            except (TypeError, ValueError):
+                users_by_date[date_text] = 0
+            continue
+
+        user_id = str(row.get("user_id") or "").strip()
+        if user_id:
+            users_by_date[date_text].add(user_id)
+
+    points = []
+    for trend_date in trend_dates:
+        date_text = trend_date.isoformat()
+        value = users_by_date[date_text]
+        practice_users = value if isinstance(value, int) else len(value)
+        points.append(PlatformPracticeTrendPoint(date=date_text, practice_users=practice_users))
+    return points
+
+
+def fetch_platform_practice_activity_rows(supabase, start_at: datetime, end_at: datetime) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+
+    while True:
+        response = call_supabase(
+            lambda: (
+                supabase.table("user_answers")
+                .select("user_id,created_at")
+                .gte("created_at", start_at.isoformat())
+                .lt("created_at", end_at.isoformat())
+                .order("created_at")
+                .range(offset, offset + PAGE_SIZE - 1)
+                .execute()
+            ),
+            operation_name="platform practice activity lookup",
+        )
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
+
+
+def fetch_platform_practice_trend(supabase) -> list[PlatformPracticeTrendPoint]:
+    trend_dates = build_platform_practice_trend_dates()
+    try:
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "platform_practice_user_trend",
+                {"p_days": PLATFORM_PRACTICE_TREND_DAYS},
+            ).execute(),
+            operation_name="platform practice trend aggregate",
+        )
+        return build_platform_practice_trend(response.data or [])
+    except Exception:
+        # 兼容尚未执行聚合 SQL 的环境：直接从真实作答记录按用户去重统计。
+        start_at = datetime.combine(trend_dates[0], datetime.min.time(), tzinfo=APP_TIMEZONE).astimezone(timezone.utc)
+        end_at = datetime.combine(trend_dates[-1] + timedelta(days=1), datetime.min.time(), tzinfo=APP_TIMEZONE).astimezone(timezone.utc)
+        activity_rows = fetch_platform_practice_activity_rows(supabase, start_at, end_at)
+        local_rows = []
+        for row in activity_rows:
+            local_time = to_local_datetime(row.get("created_at"))
+            if local_time:
+                local_rows.append({
+                    "date": local_time.date().isoformat(),
+                    "user_id": row.get("user_id"),
+                })
+        return build_platform_practice_trend(local_rows)
 
 
 def fetch_study_ability_rows(supabase, user_id: str, exam_code: str) -> list[dict]:
@@ -694,6 +791,20 @@ def learning_summary(
         trend=trend,
         subject_weekly_changes=subject_weekly_changes,
     )
+
+
+@router.get("/platform-practice-trend", response_model=PlatformPracticeTrendResponse)
+def platform_practice_trend() -> PlatformPracticeTrendResponse:
+    """Public, privacy-safe daily count of unique users who submitted answers."""
+
+    try:
+        items = fetch_platform_practice_trend(get_supabase_admin())
+        return PlatformPracticeTrendResponse(items=items)
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="刷题人数统计暂时不可用，请稍后重试",
+        ) from exc
 
 
 @router.get("/study-advice", response_model=StudyAdviceResponse)

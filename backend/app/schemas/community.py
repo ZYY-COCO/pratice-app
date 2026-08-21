@@ -44,11 +44,21 @@ class CommunityPostItem(BaseModel):
     comment_preview: CommunityCommentPreview | None = None
     comment_previews: list[CommunityCommentPreview] = Field(default_factory=list)
     stats: CommunityPostStats = Field(default_factory=CommunityPostStats)
+    is_featured: bool = False
     liked: bool = False
 
 
 class CommunityPostListResponse(BaseModel):
     items: list[CommunityPostItem]
+    count: int = 0
+
+
+class CommunityLikedPostItem(CommunityPostItem):
+    liked_at: str | None = None
+
+
+class CommunityLikedPostListResponse(BaseModel):
+    items: list[CommunityLikedPostItem] = Field(default_factory=list)
     count: int = 0
 
 

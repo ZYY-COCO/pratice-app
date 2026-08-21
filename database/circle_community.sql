@@ -21,6 +21,7 @@ create table if not exists public.circle_community_posts (
   comment_count integer not null default 0 check (comment_count >= 0),
   view_count integer not null default 0 check (view_count >= 0),
   is_published boolean not null default true,
+  is_featured boolean not null default false,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
@@ -62,8 +63,15 @@ create index if not exists idx_circle_community_posts_category_created
 create index if not exists idx_circle_community_posts_type_published_created
   on public.circle_community_posts (post_type, is_published, created_at desc);
 
+create index if not exists idx_circle_community_posts_featured_visible
+  on public.circle_community_posts (post_type, created_at desc)
+  where is_published = true and is_featured = true;
+
 create index if not exists idx_circle_community_likes_post
   on public.circle_community_likes (post_id, created_at desc);
+
+create index if not exists idx_circle_community_likes_user_created
+  on public.circle_community_likes (user_id, created_at desc);
 
 create index if not exists idx_circle_community_comments_post_created
   on public.circle_community_comments (post_id, created_at asc);

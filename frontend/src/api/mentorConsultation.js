@@ -1,0 +1,179 @@
+import { request, uploadFileRequest } from './http'
+
+export function fetchMentorProfiles(params = {}) {
+  return request({
+    url: '/mentor-consultation/mentors',
+    method: 'GET',
+    data: params,
+    header: { Authorization: '' },
+    authRedirect: false
+  })
+}
+
+export function fetchMentorProfile(mentorId) {
+  return request({
+    url: `/mentor-consultation/mentors/${encodeURIComponent(mentorId)}`,
+    method: 'GET',
+    header: { Authorization: '' },
+    authRedirect: false
+  })
+}
+
+export function fetchMyMentorVerificationApplication() {
+  return request({
+    url: '/mentor-consultation/me/verification-application',
+    method: 'GET'
+  })
+}
+
+export function fetchMyMentorProfile() {
+  return request({
+    url: '/mentor-consultation/me/mentor-profile',
+    method: 'GET'
+  })
+}
+
+export function updateMyMentorAvailability(onlineStatus) {
+  return request({
+    url: '/mentor-consultation/me/mentor-profile/availability',
+    method: 'PATCH',
+    data: { online_status: onlineStatus }
+  })
+}
+
+export function fetchMyMentorAvailabilitySlots(params = {}) {
+  return request({
+    url: '/mentor-consultation/me/mentor-slots',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createMyMentorAvailabilitySlot(payload) {
+  return request({
+    url: '/mentor-consultation/me/mentor-slots',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function updateMyMentorAvailabilitySlot(slotId, payload) {
+  return request({
+    url: `/mentor-consultation/me/mentor-slots/${encodeURIComponent(slotId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchMyReceivedMentorOrders(params = {}) {
+  return request({
+    url: '/mentor-consultation/me/mentor-orders',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createMentorVerificationApplication(payload) {
+  return request({
+    url: '/mentor-consultation/verification-applications',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function uploadMentorVerificationDocument(applicationId, { filePath, file, fileName }) {
+  return uploadFileRequest({
+    url: `/mentor-consultation/verification-applications/${encodeURIComponent(applicationId)}/documents`,
+    filePath,
+    file,
+    fileName,
+    name: 'file',
+    timeout: 120000
+  })
+}
+
+export function fetchMyMentorFavorites() {
+  return request({
+    url: '/mentor-consultation/me/favorites',
+    method: 'GET'
+  })
+}
+
+export function toggleMentorFavoriteRequest(mentorId) {
+  return request({
+    url: `/mentor-consultation/mentors/${encodeURIComponent(mentorId)}/favorite`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function createMentorConsultationOrder(payload) {
+  return request({
+    url: '/mentor-consultation/orders',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function mockPayMentorConsultationOrder(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/mock-pay`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function fetchMentorConsultationOrder(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}`,
+    method: 'GET'
+  })
+}
+
+export function decideMentorConsultationOrder(orderId, decision) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/decision`,
+    method: 'POST',
+    data: { decision }
+  })
+}
+
+export function startMentorConsultationOrder(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/start`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function completeMentorConsultationOrder(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/complete`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function fetchMentorConsultationMessages(orderId, params = {}) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/messages`,
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createMentorConsultationMessage(orderId, payload) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/messages`,
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function createMentorConsultationReview(orderId, payload) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/review`,
+    method: 'POST',
+    data: payload
+  })
+}

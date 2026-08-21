@@ -53,6 +53,16 @@ class LearningSummaryResponse(BaseModel):
     subject_weekly_changes: list[SubjectWeeklyChange] = Field(default_factory=list)
 
 
+class PlatformPracticeTrendPoint(BaseModel):
+    date: str
+    practice_users: int = 0
+
+
+class PlatformPracticeTrendResponse(BaseModel):
+    timezone: str = "Asia/Shanghai"
+    items: list[PlatformPracticeTrendPoint] = Field(default_factory=list)
+
+
 class LeaderboardItem(BaseModel):
     rank: int
     user_id: str

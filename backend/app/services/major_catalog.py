@@ -47,6 +47,18 @@ def normalize_catalog_year(catalog_year: str | None) -> str:
     return normalized if len(normalized) == 4 and normalized.isdigit() else "__invalid__"
 
 
+def _response_catalog_year(catalog_year: str, source: dict[str, Any] | None = None) -> str:
+    if catalog_year:
+        return catalog_year
+    source = source or {}
+    for key in ("catalog_year", "target_year"):
+        candidate = str(source.get(key) or "").strip()
+        if len(candidate) == 4 and candidate.isdigit():
+            return candidate
+    # An empty filter always queries the comprehensive 2026 directory.
+    return "2026"
+
+
 def _ordered_exam_codes(codes: Iterable[str]) -> list[str]:
     values = {str(code or "") for code in codes}
     return [code for code in EXAM_CODE_ORDER if code in values]
@@ -208,7 +220,7 @@ def _list_regions_from_database(exam_code: str | None = None, catalog_year: str 
     return {
         "version": current_import.get("source_version") or "",
         "statistics": current_import.get("source_statistics") or {},
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics")),
         "items": items,
     }
 
@@ -265,7 +277,7 @@ def _list_schools_from_database(
     return {
         "region": normalized_region,
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics")),
         "count": len(items),
         "items": items,
     }
@@ -438,7 +450,7 @@ def _get_school_programs_from_database(
             "program_count": program_count,
         },
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics")),
         "keyword": normalized_keyword,
         "departments": result_departments,
     }
@@ -492,7 +504,7 @@ def _search_catalog_from_database(
             "keyword": normalized_keyword,
             "region": normalized_region,
             "exam_code": normalized_exam_code,
-            "catalog_year": normalized_catalog_year,
+            "catalog_year": _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics")),
             "school_count": 0,
             "program_count": 0,
             "total_count": 0,
@@ -660,7 +672,7 @@ def _search_catalog_from_database(
         "keyword": normalized_keyword,
         "region": normalized_region,
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics")),
         "school_count": len(school_matches),
         "program_count": len(program_items),
         "total_count": len(school_matches) + len(program_items),
@@ -761,7 +773,7 @@ def _list_regions_from_file(exam_code: str | None = None, catalog_year: str | No
     return {
         "version": catalog.get("version") or "",
         "statistics": catalog.get("statistics") or {},
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, catalog),
         "items": items,
     }
 
@@ -797,7 +809,7 @@ def _list_schools_from_file(
     return {
         "region": normalized_region,
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, catalog),
         "count": len(items),
         "items": items,
     }
@@ -854,7 +866,7 @@ def _get_school_programs_from_file(
             "program_count": program_count,
         },
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, catalog),
         "keyword": normalized_keyword,
         "departments": departments,
     }
@@ -948,7 +960,7 @@ def _search_catalog_from_file(
         "keyword": normalized_keyword,
         "region": normalized_region,
         "exam_code": normalized_exam_code,
-        "catalog_year": normalized_catalog_year,
+        "catalog_year": _response_catalog_year(normalized_catalog_year, catalog),
         "school_count": len(school_matches),
         "program_count": len(program_items),
         "total_count": len(school_matches) + len(program_items),
