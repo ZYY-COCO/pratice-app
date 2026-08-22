@@ -67,12 +67,52 @@
       </template>
     </view>
 
-    <view v-else-if="mentor" class="mentor-chat-input-bar">
-      <button class="mentor-chat-tool" @tap="sendVoice">◉</button>
-      <input v-model="messageInput" :placeholder="isMentorViewer ? '输入回复内容' : '输入想继续咨询的问题'" placeholder-class="mentor-chat-placeholder" confirm-type="send" @confirm="sendText" />
-      <button class="mentor-chat-tool" @tap="sendImage">▧</button>
-      <button class="mentor-chat-send" :disabled="!messageInput.trim()" @tap="sendText">发送</button>
-      <button class="mentor-chat-finish" :loading="finishing" @tap="finishConsultation">结束</button>
+    <view v-else-if="mentor" class="mentor-chat-input-bar" :class="{ voice: voiceInputMode }">
+      <button
+        class="mentor-chat-tool mentor-chat-mode-toggle"
+        :aria-label="voiceInputMode ? '切换键盘输入' : '切换语音输入'"
+        @tap="toggleInputMode"
+      >
+        <image :src="voiceInputMode ? '/static/ui-icons/mentor-chat-keyboard.svg' : '/static/ui-icons/mentor-chat-voice.svg'" mode="aspectFit" />
+      </button>
+      <button
+        v-if="voiceInputMode"
+        class="mentor-chat-voice-hold"
+        :class="{ recording: voiceRecording }"
+        @touchstart.stop="startVoiceRecording"
+        @touchend.stop="finishVoiceRecording"
+        @touchcancel.stop="cancelVoiceRecording"
+      >{{ voiceRecording ? '松开发送' : '按住说话' }}</button>
+      <input
+        v-else
+        v-model="messageInput"
+        :placeholder="isMentorViewer ? '输入回复内容' : '输入想继续咨询的问题'"
+        placeholder-class="mentor-chat-placeholder"
+        confirm-type="send"
+        @confirm="sendText"
+      />
+      <button class="mentor-chat-tool" aria-label="发送图片" @tap="sendImage">
+        <image src="/static/ui-icons/mentor-chat-add.svg" mode="aspectFit" />
+      </button>
+      <button v-if="!voiceInputMode" class="mentor-chat-send" :disabled="!messageInput.trim()" @tap="sendText">发送</button>
+    </view>
+
+    <view
+      v-if="voiceWaveVisible"
+      class="mentor-chat-recording-overlay"
+      :class="{ ending: !voiceRecording }"
+      aria-live="polite"
+    >
+      <view class="mentor-chat-recording-bubble">
+        <view class="mentor-chat-waveform" aria-hidden="true">
+          <view
+            v-for="(height, index) in voiceWaveHeights"
+            :key="index"
+            class="mentor-chat-wave-bar"
+            :style="{ transform: 'scaleY(' + height + ')' }"
+          ></view>
+        </view>
+      </view>
     </view>
 
     <view v-if="!isMentorViewer && reviewVisible" class="mentor-review-mask" @tap="closeReview">
@@ -114,6 +154,9 @@ import {
   saveConsultationOrder
 } from '../../data/mentorConsultation'
 
+const VOICE_WAVE_MIN_SCALE = 0.11
+const VOICE_WAVE_PROFILE = [0.18, 0.26, 0.37, 0.51, 0.68, 0.84, 0.96, 1, 0.96, 0.84, 0.68, 0.51, 0.37, 0.26, 0.18]
+
 const mentor = ref(null)
 const viewerRole = ref('applicant')
 const questionnaire = ref({})
@@ -133,8 +176,23 @@ const reviewText = ref('')
 const reviewSubmitted = ref(false)
 const submittingReview = ref(false)
 const finishing = ref(false)
+const voiceInputMode = ref(false)
+const voiceRecording = ref(false)
+const voiceRecordingStartedAt = ref(0)
+const voiceWaveVisible = ref(false)
+const voiceWaveHeights = ref(createVoiceWaveHeights())
 let serviceTimer = null
 let messagePollTimer = null
+let voiceAudioStream = null
+let voiceAudioContext = null
+let voiceAudioSource = null
+let voiceAudioAnalyser = null
+let voiceAudioSamples = null
+let voiceWaveFrame = null
+let voiceWaveCollapseFrame = null
+let voiceLastMeterFrameAt = 0
+let voiceSmoothedLevel = 0
+let voiceRecordingSession = 0
 
 const reviewTags = ['解答清晰', '回复及时', '很有帮助', '经验丰富', '建议具体']
 const defaultQuestion = '我准备报考暨南大学应用经济学，目前比较纠结 Z001 的复习安排，希望了解前辈当时的复习节奏。'
@@ -167,7 +225,10 @@ onShow(() => {
   if (orderId.value) void loadChatData({ silent: true })
 })
 
-onBeforeUnmount(stopChatTimers)
+onBeforeUnmount(() => {
+  stopChatTimers()
+  stopVoiceRecordingResources({ hideImmediately: true })
+})
 
 async function loadChatData({ silent = false } = {}) {
   if (!orderId.value) return
@@ -208,6 +269,7 @@ function applyOrder(order) {
   if (consultationEnded.value) {
     remainingServiceSeconds.value = 0
     stopChatTimers()
+    stopVoiceRecordingResources({ hideImmediately: true })
     return
   }
   syncServiceRemainingSeconds()
@@ -276,10 +338,206 @@ async function sendText() {
   }
 }
 
-function sendVoice() {
+function toggleInputMode() {
   if (consultationEnded.value) return
-  appendLocalDemoMessage({ type: 'voice', duration: '00:12' })
-  uni.showToast({ title: '语音消息上传仍为本地演示', icon: 'none' })
+  stopVoiceRecordingResources({ hideImmediately: true })
+  voiceInputMode.value = !voiceInputMode.value
+  if (voiceInputMode.value) messageInput.value = ''
+}
+
+async function startVoiceRecording() {
+  if (!voiceInputMode.value || consultationEnded.value || voiceRecording.value) return
+  cancelVoiceWaveCollapse()
+  const session = ++voiceRecordingSession
+  voiceRecordingStartedAt.value = Date.now()
+  voiceRecording.value = true
+  voiceWaveVisible.value = true
+  voiceWaveHeights.value = createVoiceWaveHeights()
+  voiceSmoothedLevel = 0
+
+  const meterStarted = await startLiveVoiceMeter(session)
+  if (!meterStarted && session === voiceRecordingSession && voiceRecording.value) {
+    stopVoiceRecordingResources()
+    uni.showToast({ title: '请允许麦克风权限后再录音', icon: 'none' })
+  }
+}
+
+function finishVoiceRecording() {
+  if (!voiceRecording.value) return
+  const durationSeconds = Math.max(1, Math.round((Date.now() - voiceRecordingStartedAt.value) / 1000))
+  stopVoiceRecordingResources()
+  appendLocalDemoMessage({ type: 'voice', duration: formatDuration(durationSeconds) })
+  uni.showToast({ title: '语音消息已发送（本地演示）', icon: 'none' })
+}
+
+function cancelVoiceRecording() {
+  if (!voiceRecording.value && !voiceWaveVisible.value) return
+  const wasRecording = voiceRecording.value
+  stopVoiceRecordingResources()
+  if (wasRecording) uni.showToast({ title: '已取消语音录制', icon: 'none' })
+}
+
+function createVoiceWaveHeights(scale = VOICE_WAVE_MIN_SCALE) {
+  return VOICE_WAVE_PROFILE.map(() => scale)
+}
+
+function clamp(value, min, max) {
+  return Math.min(max, Math.max(min, value))
+}
+
+async function startLiveVoiceMeter(session) {
+  const canReadMicrophone = typeof window !== 'undefined'
+    && typeof navigator !== 'undefined'
+    && navigator.mediaDevices
+    && typeof navigator.mediaDevices.getUserMedia === 'function'
+  if (!canReadMicrophone) return false
+
+  let stream = null
+  let audioContext = null
+  try {
+    stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true
+      }
+    })
+    if (session !== voiceRecordingSession || !voiceRecording.value) {
+      stream.getTracks().forEach((track) => track.stop())
+      return false
+    }
+
+    const AudioContextConstructor = window.AudioContext || window.webkitAudioContext
+    if (!AudioContextConstructor) {
+      stream.getTracks().forEach((track) => track.stop())
+      return false
+    }
+
+    audioContext = new AudioContextConstructor()
+    if (audioContext.state === 'suspended') await audioContext.resume()
+    if (session !== voiceRecordingSession || !voiceRecording.value) {
+      stream.getTracks().forEach((track) => track.stop())
+      if (audioContext.state !== 'closed') void audioContext.close()
+      return false
+    }
+
+    const analyser = audioContext.createAnalyser()
+    analyser.fftSize = 512
+    analyser.smoothingTimeConstant = 0.78
+    const source = audioContext.createMediaStreamSource(stream)
+    source.connect(analyser)
+
+    voiceAudioStream = stream
+    voiceAudioContext = audioContext
+    voiceAudioSource = source
+    voiceAudioAnalyser = analyser
+    voiceAudioSamples = new Uint8Array(analyser.fftSize)
+    voiceLastMeterFrameAt = 0
+    startVoiceWaveLoop(session)
+    return true
+  } catch (error) {
+    if (stream) stream.getTracks().forEach((track) => track.stop())
+    if (audioContext && audioContext.state !== 'closed') void audioContext.close()
+    return false
+  }
+}
+
+function startVoiceWaveLoop(session) {
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') return
+  const render = (timestamp) => {
+    if (session !== voiceRecordingSession || !voiceRecording.value || !voiceAudioAnalyser || !voiceAudioSamples) return
+    if (!voiceLastMeterFrameAt || timestamp - voiceLastMeterFrameAt >= 33) {
+      voiceLastMeterFrameAt = timestamp
+      voiceAudioAnalyser.getByteTimeDomainData(voiceAudioSamples)
+      let sum = 0
+      for (let index = 0; index < voiceAudioSamples.length; index += 1) {
+        const sample = (voiceAudioSamples[index] - 128) / 128
+        sum += sample * sample
+      }
+      const rms = Math.sqrt(sum / voiceAudioSamples.length)
+      const rawLevel = clamp((rms - 0.008) * 10, 0, 1)
+      const targetLevel = Math.pow(rawLevel, 0.62)
+      const levelSmoothing = targetLevel > voiceSmoothedLevel ? 0.32 : 0.22
+      voiceSmoothedLevel += (targetLevel - voiceSmoothedLevel) * levelSmoothing
+      updateVoiceWaveHeights(timestamp)
+    }
+    voiceWaveFrame = window.requestAnimationFrame(render)
+  }
+  voiceWaveFrame = window.requestAnimationFrame(render)
+}
+
+function updateVoiceWaveHeights(timestamp) {
+  const level = voiceSmoothedLevel
+  voiceWaveHeights.value = VOICE_WAVE_PROFILE.map((profile, index) => {
+    const current = voiceWaveHeights.value[index] ?? VOICE_WAVE_MIN_SCALE
+    const motion = (Math.sin(timestamp / 96 + index * 1.37) + Math.sin(timestamp / 151 + index * 0.73)) * 0.035 * level
+    const target = clamp(VOICE_WAVE_MIN_SCALE + level * (0.12 + profile * 0.82) + motion, VOICE_WAVE_MIN_SCALE, 1)
+    const barSmoothing = target > current ? 0.36 : 0.22
+    return current + (target - current) * barSmoothing
+  })
+}
+
+function stopVoiceRecordingResources({ hideImmediately = false } = {}) {
+  voiceRecordingSession += 1
+  voiceRecording.value = false
+  disconnectLiveVoiceMeter()
+  if (hideImmediately) {
+    cancelVoiceWaveCollapse()
+    voiceWaveVisible.value = false
+    voiceWaveHeights.value = createVoiceWaveHeights()
+    return
+  }
+  collapseVoiceWaveform()
+}
+
+function disconnectLiveVoiceMeter() {
+  if (voiceWaveFrame !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(voiceWaveFrame)
+  }
+  voiceWaveFrame = null
+  if (voiceAudioSource) voiceAudioSource.disconnect()
+  if (voiceAudioStream) voiceAudioStream.getTracks().forEach((track) => track.stop())
+  if (voiceAudioContext && voiceAudioContext.state !== 'closed') void voiceAudioContext.close()
+  voiceAudioStream = null
+  voiceAudioContext = null
+  voiceAudioSource = null
+  voiceAudioAnalyser = null
+  voiceAudioSamples = null
+  voiceLastMeterFrameAt = 0
+  voiceSmoothedLevel = 0
+}
+
+function collapseVoiceWaveform() {
+  if (!voiceWaveVisible.value) return
+  cancelVoiceWaveCollapse()
+  if (typeof window === 'undefined' || typeof window.requestAnimationFrame !== 'function') {
+    voiceWaveHeights.value = createVoiceWaveHeights()
+    voiceWaveVisible.value = false
+    return
+  }
+  const startingHeights = [...voiceWaveHeights.value]
+  const startedAt = performance.now()
+  const duration = 160
+  const render = (timestamp) => {
+    const progress = Math.min(1, (timestamp - startedAt) / duration)
+    const eased = 1 - Math.pow(1 - progress, 3)
+    voiceWaveHeights.value = startingHeights.map((height) => height + (VOICE_WAVE_MIN_SCALE - height) * eased)
+    if (progress < 1) {
+      voiceWaveCollapseFrame = window.requestAnimationFrame(render)
+      return
+    }
+    voiceWaveCollapseFrame = null
+    voiceWaveHeights.value = createVoiceWaveHeights()
+    voiceWaveVisible.value = false
+  }
+  voiceWaveCollapseFrame = window.requestAnimationFrame(render)
+}
+
+function cancelVoiceWaveCollapse() {
+  if (voiceWaveCollapseFrame !== null && typeof window !== 'undefined' && typeof window.cancelAnimationFrame === 'function') {
+    window.cancelAnimationFrame(voiceWaveCollapseFrame)
+  }
+  voiceWaveCollapseFrame = null
 }
 
 function sendImage() {
@@ -333,14 +591,11 @@ function formatDuration(seconds) {
 }
 
 function showMore() {
-  const itemList = consultationEnded.value
-    ? ['查看咨询规则', '举报此咨询']
-    : ['查看咨询规则', '举报此咨询', '结束本次咨询']
+  const itemList = ['查看咨询规则', '举报此咨询']
   uni.showActionSheet({
     itemList,
     success: ({ tapIndex }) => {
       if (tapIndex === 1) openReport()
-      if (!consultationEnded.value && tapIndex === 2) void finishConsultation()
     }
   })
 }
@@ -392,12 +647,13 @@ function goBack() {
 </script>
 
 <style scoped>
-.mentor-chat-page{height:100vh;overflow:hidden;background:#f4f8ff;display:flex;flex-direction:column}.mentor-chat-service-tip{margin:16rpx 24rpx 0;padding:14rpx 18rpx;border:2rpx solid #d7e7ff;border-radius:17rpx;background:#edf4ff;color:#3478f6;display:flex;align-items:center;justify-content:space-between;gap:14rpx;font-size:20rpx;line-height:1.3;font-weight:850}.mentor-chat-service-tip view{color:#7690ba;font-size:18rpx;font-weight:650;white-space:nowrap}.mentor-chat-service-tip.ended{border-color:#dce8f6;background:#f5f8fc;color:#6b7d95}.mentor-chat-scroll{min-height:0;flex:1}.mentor-chat-content{padding:22rpx 24rpx 36rpx}.mentor-chat-system-message{margin:0 auto 22rpx;padding:10rpx 16rpx;border-radius:999rpx;background:#e7eef9;color:#7b8da5;text-align:center;font-size:18rpx;line-height:1.35;font-weight:650;width:max-content;max-width:88%}
+.mentor-chat-page{height:100vh;height:100dvh;overflow:hidden;background:#f4f8ff;display:flex;flex-direction:column}.mentor-chat-service-tip{margin:16rpx 24rpx 0;padding:14rpx 18rpx;border:2rpx solid #d7e7ff;border-radius:17rpx;background:#edf4ff;color:#3478f6;display:flex;align-items:center;justify-content:space-between;gap:14rpx;font-size:20rpx;line-height:1.3;font-weight:850}.mentor-chat-service-tip view{color:#7690ba;font-size:18rpx;font-weight:650;white-space:nowrap}.mentor-chat-service-tip.ended{border-color:#dce8f6;background:#f5f8fc;color:#6b7d95}.mentor-chat-scroll{min-height:0;flex:1}.mentor-chat-content{padding:22rpx 24rpx 36rpx}.mentor-chat-system-message{margin:0 auto 22rpx;padding:10rpx 16rpx;border-radius:999rpx;background:#e7eef9;color:#7b8da5;text-align:center;font-size:18rpx;line-height:1.35;font-weight:650;width:max-content;max-width:88%}
 .mentor-chat-context-card{padding:24rpx;border:2rpx solid #d9e7fc;border-radius:25rpx;background:rgba(255,255,255,.92);box-shadow:0 12rpx 28rpx rgba(52,120,246,.06)}.mentor-chat-context-title{color:#314764;font-size:25rpx;font-weight:900}.mentor-chat-context-line{display:flex;align-items:center;justify-content:space-between;gap:18rpx;margin-top:15rpx;color:#8896a9;font-size:20rpx;font-weight:650}.mentor-chat-context-line strong{color:#465a74;text-align:right;font-size:21rpx;font-weight:800}.mentor-chat-context-question{margin-top:18rpx;padding-top:16rpx;border-top:2rpx solid #eef2f8}.mentor-chat-context-question text{display:block;color:#8090a6;font-size:20rpx;font-weight:750}.mentor-chat-context-question view{margin-top:8rpx;color:#51647e;font-size:21rpx;line-height:1.55;font-weight:650}
 .mentor-chat-message-row{display:flex;align-items:flex-start;gap:12rpx;margin-top:26rpx}.mentor-chat-message-row.user{justify-content:flex-end}.mentor-chat-avatar{width:56rpx;height:56rpx;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:22rpx;font-weight:900;flex-shrink:0}.mentor-chat-avatar.tone-blue{background:#e6efff;color:#3478f6}.mentor-chat-avatar.tone-mint{background:#e2f4ef;color:#198777}.mentor-chat-avatar.tone-violet{background:#eeeafe;color:#7162bd}.mentor-chat-avatar.tone-warm{background:#f9eee1;color:#b66c32}.mentor-chat-message-stack{max-width:78%}.mentor-chat-message-row.user .mentor-chat-message-stack{display:flex;flex-direction:column;align-items:flex-end}.mentor-chat-sender{margin:0 0 6rpx 3rpx;color:#8090a6;font-size:18rpx;font-weight:700}.mentor-chat-bubble{padding:16rpx 18rpx;border-radius:8rpx 20rpx 20rpx 20rpx;background:#fff;color:#465a74;font-size:22rpx;line-height:1.55;font-weight:600;box-shadow:0 7rpx 16rpx rgba(49,83,132,.06)}.mentor-chat-message-row.user .mentor-chat-bubble{border-radius:20rpx 8rpx 20rpx 20rpx;background:#3478f6;color:#fff}.mentor-chat-bubble.voice{min-width:162rpx;color:#4d6ea0;font-weight:800}.mentor-chat-message-row.user .mentor-chat-bubble.voice{color:#fff}.mentor-chat-bubble.image{padding:8rpx}.mentor-chat-image-placeholder{width:190rpx;height:128rpx;border-radius:14rpx;background:linear-gradient(135deg,#dceaff,#bcd5ff);color:#5b7cae;display:flex;align-items:center;justify-content:center;font-size:19rpx;font-weight:800}.mentor-chat-message-row.user .mentor-chat-image-placeholder{background:rgba(255,255,255,.28);color:#fff}.mentor-chat-time{margin-top:6rpx;color:#a1adbd;font-size:16rpx;font-weight:650}.mentor-chat-bottom-anchor{height:2rpx}
-.mentor-chat-input-bar{padding:14rpx 18rpx calc(14rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.97);display:flex;align-items:center;gap:10rpx}.mentor-chat-input-bar input{min-width:0;flex:1;height:64rpx;padding:0 16rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#f9fbff;color:#3b4f6b;font-size:21rpx;font-weight:600}.mentor-chat-placeholder{color:#a3b1c2;font-weight:500}.mentor-chat-tool,.mentor-chat-send,.mentor-chat-finish,.mentor-chat-more{margin:0;border:0}.mentor-chat-tool{width:52rpx;height:52rpx;min-width:52rpx;min-height:52rpx;padding:0;border-radius:50%;background:#edf4ff;color:#5d80ba;font-size:26rpx;line-height:1}.mentor-chat-send{min-width:68rpx;height:58rpx;padding:0;border-radius:16rpx;background:#3478f6;color:#fff;font-size:20rpx;font-weight:850}.mentor-chat-send[disabled]{background:#bfccdd}.mentor-chat-finish{width:40rpx;height:56rpx;padding:0;background:transparent;color:#9aaabd;font-size:18rpx;font-weight:750}.mentor-chat-tool::after,.mentor-chat-send::after,.mentor-chat-finish::after,.mentor-chat-more::after{border:0}.mentor-chat-more{box-sizing:border-box;width:54rpx;height:54rpx;min-width:54rpx;min-height:54rpx;padding:0;border-radius:50%;background:#edf4ff;color:#6681ad;display:flex;align-items:center;justify-content:center;text-align:center;font-size:21rpx;line-height:1;font-weight:900;white-space:nowrap}
+.mentor-chat-input-bar{padding:14rpx 18rpx calc(30rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.97);display:flex;align-items:center;gap:10rpx}.mentor-chat-input-bar input{min-width:0;flex:1;height:72rpx;padding:0 18rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#f9fbff;color:#3b4f6b;font-size:21rpx;font-weight:600}.mentor-chat-placeholder{color:#a3b1c2;font-weight:500}.mentor-chat-tool,.mentor-chat-send,.mentor-chat-more,.mentor-chat-voice-hold{margin:0;border:0}.mentor-chat-tool{box-sizing:border-box;width:60rpx;height:60rpx;min-width:60rpx;min-height:60rpx;padding:9rpx;border-radius:50%;background:#edf4ff;color:#5d80ba;display:flex;align-items:center;justify-content:center;font-size:26rpx;line-height:1}.mentor-chat-tool image{width:100%;height:100%}.mentor-chat-mode-toggle image{transform:scale(1.18)}.mentor-chat-voice-hold{min-width:0;flex:1;height:72rpx;padding:0 18rpx;border:2rpx solid #d9e7fa;border-radius:18rpx;background:#f9fbff;color:#526e98;display:flex;align-items:center;justify-content:center;text-align:center;font-size:22rpx;line-height:1;font-weight:800}.mentor-chat-voice-hold.recording{border-color:#a8c7fa;background:#e8f1ff;color:#3478f6}.mentor-chat-send{box-sizing:border-box;min-width:116rpx;height:72rpx;padding:0 16rpx;border-radius:19rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:23rpx;line-height:1;font-weight:900;white-space:nowrap;box-shadow:0 8rpx 18rpx rgba(52,120,246,.18)}.mentor-chat-send[disabled]{background:#bfccdd;box-shadow:none}.mentor-chat-tool::after,.mentor-chat-send::after,.mentor-chat-more::after,.mentor-chat-voice-hold::after{border:0}.mentor-chat-more{box-sizing:border-box;width:54rpx;height:54rpx;min-width:54rpx;min-height:54rpx;padding:0;border-radius:50%;background:#edf4ff;color:#6681ad;display:flex;align-items:center;justify-content:center;text-align:center;font-size:21rpx;line-height:1;font-weight:900;white-space:nowrap}
 .mentor-chat-completed-bar{padding:14rpx 20rpx calc(16rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.98);display:grid;grid-template-columns:minmax(0,1fr) 166rpx 118rpx;align-items:center;gap:10rpx}.mentor-chat-completed-bar>view{min-width:0}.mentor-chat-completed-bar strong,.mentor-chat-completed-bar text{display:block}.mentor-chat-completed-bar strong{color:#31445f;font-size:22rpx;font-weight:900}.mentor-chat-completed-bar text{margin-top:5rpx;color:#8998aa;font-size:17rpx;line-height:1.3;font-weight:650}.mentor-chat-completed-bar button{box-sizing:border-box;height:64rpx;min-height:64rpx;margin:0;padding:0 10rpx;border:0;border-radius:17rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:19rpx;line-height:1;font-weight:850;white-space:nowrap}.mentor-chat-completed-bar button::after{border:0}.mentor-chat-completed-bar button.light{background:#edf4ff;color:#5274aa}
 .mentor-chat-completed-bar.mentor{grid-template-columns:minmax(0,1fr) 180rpx}
+.mentor-chat-recording-overlay{position:fixed;z-index:30;top:50%;left:50%;box-sizing:border-box;width:100%;padding:0 36rpx;transform:translate(-50%,-50%);pointer-events:none;display:flex;justify-content:center;opacity:1;transition:opacity 160ms ease}.mentor-chat-recording-overlay.ending{opacity:0}.mentor-chat-recording-bubble{box-sizing:border-box;min-width:284rpx;height:178rpx;padding:32rpx 30rpx;border:2rpx solid rgba(255,255,255,.34);border-radius:34rpx;background:var(--gyt-primary-gradient,linear-gradient(135deg,#3478f6,#68a0ff));box-shadow:0 22rpx 54rpx var(--gyt-primary-shadow,rgba(52,120,246,.2));display:flex;align-items:center;justify-content:center}.mentor-chat-waveform{height:94rpx;display:flex;align-items:center;justify-content:center;gap:7rpx}.mentor-chat-wave-bar{display:block;width:7rpx;min-width:7rpx;height:82rpx;min-height:82rpx;border-radius:999rpx;background:rgba(255,255,255,.96);transform-origin:center;transition:transform 72ms cubic-bezier(.2,.8,.2,1);will-change:transform}
 .mentor-review-mask{position:fixed;z-index:10;inset:0;padding:32rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));background:rgba(19,37,66,.35);display:flex;align-items:flex-end}.mentor-review-sheet{width:100%;padding:20rpx 28rpx 28rpx;border-radius:30rpx;background:#fff;box-shadow:0 -16rpx 46rpx rgba(28,62,117,.16)}.mentor-review-handle{width:64rpx;height:7rpx;margin:0 auto 22rpx;border-radius:999rpx;background:#dce6f4}.mentor-review-title{color:#273a55;font-size:29rpx;font-weight:900}.mentor-review-subtitle{margin-top:7rpx;color:#8796aa;font-size:20rpx;line-height:1.45;font-weight:650}.mentor-review-stars{display:flex;gap:12rpx;margin-top:22rpx}.mentor-review-stars button{width:54rpx;height:54rpx;margin:0;padding:0;border:0;background:transparent;color:#d3dce8;font-size:42rpx;line-height:1}.mentor-review-stars button::after,.mentor-review-tags button::after,.mentor-review-submit::after{border:0}.mentor-review-stars button.active{color:#f2a437}.mentor-review-tags{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-review-tags button{min-height:48rpx;margin:0;padding:0 15rpx;border:2rpx solid #dce7f8;border-radius:14rpx;background:#fbfdff;color:#71839d;font-size:20rpx;font-weight:750}.mentor-review-tags button.active{border-color:#b9d2ff;background:#edf4ff;color:#3478f6}.mentor-review-sheet textarea{box-sizing:border-box;width:100%;min-height:144rpx;margin-top:20rpx;padding:16rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#fbfdff;color:#3a4f6e;font-size:21rpx;line-height:1.5}.mentor-review-count{margin-top:7rpx;color:#9aa9ba;text-align:right;font-size:18rpx}.mentor-review-submit{width:100%;min-height:72rpx;margin-top:16rpx;border:0;border-radius:20rpx;background:#3478f6;color:#fff;font-size:24rpx;font-weight:900;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}
-@media(max-width:350px){.mentor-chat-completed-bar{grid-template-columns:minmax(0,1fr) 142rpx 98rpx}.mentor-chat-completed-bar button{font-size:17rpx}.mentor-chat-input-bar{gap:7rpx;padding-right:12rpx;padding-left:12rpx}.mentor-chat-tool{width:46rpx;min-width:46rpx;height:46rpx;min-height:46rpx}.mentor-chat-finish{display:none}}
+@media(max-width:350px){.mentor-chat-completed-bar{grid-template-columns:minmax(0,1fr) 142rpx 98rpx}.mentor-chat-completed-bar button{font-size:17rpx}.mentor-chat-input-bar{gap:7rpx;padding-right:12rpx;padding-left:12rpx}.mentor-chat-tool{width:54rpx;min-width:54rpx;height:54rpx;min-height:54rpx;padding:8rpx}.mentor-chat-send{min-width:100rpx;font-size:21rpx}}
 </style>
