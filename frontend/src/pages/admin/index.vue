@@ -121,6 +121,33 @@
         </view>
       </view>
 
+      <view v-if="activeTab === 'reports'" class="panel-card">
+        <view class="panel-head">
+          <view>
+            <view class="panel-title">咨询举报</view>
+            <view class="panel-subtitle">查看咨询订单、聊天摘录和私有凭证</view>
+          </view>
+          <button class="ghost-btn refresh-btn" @tap="loadMentorReports">刷新</button>
+        </view>
+        <view v-if="mentorReportsLoading" class="inline-state">正在加载举报...</view>
+        <view v-else-if="mentorReportItems.length === 0" class="inline-state">暂无咨询举报</view>
+        <view v-else class="record-list">
+          <view v-for="item in mentorReportItems" :key="item.id" class="record-card feedback-card" @tap="openMentorReport(item)">
+            <view class="record-title">{{ item.issue_type || '咨询举报' }}</view>
+            <view class="record-subtitle clamp">{{ item.content }}</view>
+            <view class="record-subtitle mentor-report-party-line">
+              {{ mentorReportPartyText(item.reporter, mentorReportRoleText(item.reporter_role)) }} 举报 {{ mentorReportPartyText(item.target, mentorReportRoleText(item.target_role)) }}
+            </view>
+            <view class="badge-row">
+              <text class="badge" :class="mentorReportStatusClass(item.status)">{{ mentorReportStatusText(item.status) }}</text>
+              <text v-if="item.evidence_count" class="badge">凭证 {{ item.evidence_count }} 张</text>
+              <text class="record-date">{{ formatDate(item.created_at) }}{{ item.order_no ? ` · ${item.order_no}` : '' }}</text>
+            </view>
+            <button class="small-btn inline-action" @tap.stop="openMentorReportStatusAction(item)">处理状态</button>
+          </view>
+        </view>
+      </view>
+
       <view v-if="activeTab === 'questions' && questionCreateMode" class="question-create-page">
         <view class="question-create-card">
           <view class="create-meta-grid">
@@ -578,6 +605,8 @@ import {
   fetchAdminFeedback,
   fetchAdminMe,
   fetchAdminMessages,
+  fetchAdminMentorConsultationReport,
+  fetchAdminMentorConsultationReports,
   fetchAdminOverview,
   fetchAdminQuestionDetail,
   fetchAdminQuestions,
@@ -587,6 +616,7 @@ import {
   bulkUpdateAdminQuestionStatus,
   updateAdminQuestion,
   updateAdminMessage,
+  updateAdminMentorConsultationReportStatus,
   updateAdminFeedbackStatus,
   updateAdminQuestionReview,
   updateAdminQuestionStatus
@@ -618,6 +648,8 @@ const userSearch = ref('')
 const userFilter = ref('all')
 const feedbackItems = ref([])
 const feedbackLoading = ref(false)
+const mentorReportItems = ref([])
+const mentorReportsLoading = ref(false)
 const questions = ref([])
 const questionsLoading = ref(false)
 const questionLoadError = ref(false)
@@ -777,6 +809,7 @@ const createQuestionForm = reactive({
 const tabs = [
   { key: 'users', label: '用户' },
   { key: 'feedback', label: '反馈' },
+  { key: 'reports', label: '举报' },
   { key: 'messages', label: '消息' }
 ]
 
@@ -789,7 +822,7 @@ const pageSubtitle = computed(() => (
     ? '编辑题干、选项、分类与发布状态'
     : activeTab.value === 'questions'
     ? '编辑、审核与题库质量运营'
-    : '用户、反馈与消息运营面板'
+    : '用户、反馈、举报与消息运营面板'
 ))
 
 const userFilterOptions = [
@@ -803,7 +836,7 @@ const primaryOverviewCards = computed(() => [
   { label: '总用户', value: overview.value.total_users || 0 },
   { label: '今日活跃', value: overview.value.active_today || 0 },
   { label: '会员数', value: overview.value.active_members || 0 },
-  { label: '待处理', value: overview.value.pending_feedback || 0 }
+  { label: '待处理反馈', value: overview.value.pending_feedback || 0 }
 ])
 
 const secondaryOverviewCards = computed(() => [
@@ -1040,6 +1073,7 @@ async function switchTab(tab) {
   activeTab.value = tab
   if (tab === 'users' && users.value.length === 0) await loadUsers()
   if (tab === 'feedback' && feedbackItems.value.length === 0) await loadFeedback()
+  if (tab === 'reports' && mentorReportItems.value.length === 0) await loadMentorReports()
   if (tab === 'questions' && questions.value.length === 0) await refreshQuestionManager()
   if (tab === 'messages' && officialMessageItems.value.length === 0) await loadMessages()
 }
@@ -1085,6 +1119,18 @@ async function loadFeedback() {
     uni.showToast({ title: '反馈加载失败', icon: 'none' })
   } finally {
     feedbackLoading.value = false
+  }
+}
+
+async function loadMentorReports() {
+  mentorReportsLoading.value = true
+  try {
+    const response = await fetchAdminMentorConsultationReports({ limit: 50, offset: 0 })
+    mentorReportItems.value = response.items || []
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '举报加载失败', icon: 'none' })
+  } finally {
+    mentorReportsLoading.value = false
   }
 }
 
@@ -2035,6 +2081,31 @@ function feedbackStatusText(status) {
   return map[status] || '待处理'
 }
 
+function mentorReportStatusText(status) {
+  const map = {
+    pending: '待处理',
+    reviewing: '处理中',
+    resolved: '已解决',
+    dismissed: '已驳回'
+  }
+  return map[status] || '待处理'
+}
+
+function mentorReportStatusClass(status) {
+  if (status === 'resolved') return 'active'
+  if (status === 'reviewing') return 'warning'
+  if (status === 'dismissed') return 'dismissed'
+  return ''
+}
+
+function mentorReportRoleText(role) {
+  return role === 'mentor' ? '前辈' : '咨询用户'
+}
+
+function mentorReportPartyText(party, fallback) {
+  return party?.display_name || fallback || '用户'
+}
+
 function questionStatusText(status) {
   const map = {
     active: '已发布',
@@ -2085,6 +2156,68 @@ function openFeedbackStatusAction(item) {
         await Promise.all([loadFeedback(), loadOverview()])
       } catch (error) {
         uni.showToast({ title: '状态更新失败', icon: 'none' })
+      }
+    }
+  })
+}
+
+async function openMentorReport(item) {
+  try {
+    const detail = await fetchAdminMentorConsultationReport(item.id)
+    const report = detail.report || item
+    const evidence = detail.evidence || []
+    const messages = (detail.messages || []).slice(-6).map((message) => {
+      const sender = message.sender_role === 'mentor' ? '前辈' : message.sender_role === 'applicant' ? '咨询用户' : '系统'
+      return `${sender}：${String(message.content || '').slice(0, 80)}`
+    }).filter(Boolean)
+    const actions = ['查看举报详情']
+    if (evidence.length) actions.push('查看凭证')
+    actions.push('处理状态')
+    uni.showActionSheet({
+      itemList: actions,
+      success: ({ tapIndex }) => {
+        if (tapIndex === 0) {
+          const content = [
+            `举报人：${mentorReportPartyText(report.reporter, mentorReportRoleText(report.reporter_role))}`,
+            `被举报对象：${mentorReportPartyText(report.target, mentorReportRoleText(report.target_role))}`,
+            `问题类型：${report.issue_type || '-'}`,
+            `订单：${report.order_no || report.order_id || '-'}`,
+            `状态：${mentorReportStatusText(report.status)}`,
+            `说明：${report.content || '-'}`,
+            report.admin_note ? `管理员备注：${report.admin_note}` : '',
+            messages.length ? `聊天摘录：\n${messages.join('\n')}` : '暂无聊天记录'
+          ].filter(Boolean).join('\n\n')
+          uni.showModal({ title: '举报详情', content, showCancel: false, confirmText: '关闭' })
+          return
+        }
+        const evidenceIndex = evidence.length ? 1 : -1
+        if (tapIndex === evidenceIndex) {
+          uni.previewImage({
+            current: evidence[0].file_url,
+            urls: evidence.map((entry) => entry.file_url).filter(Boolean)
+          })
+          return
+        }
+        openMentorReportStatusAction(report)
+      }
+    })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '举报详情加载失败', icon: 'none' })
+  }
+}
+
+function openMentorReportStatusAction(item) {
+  uni.showActionSheet({
+    itemList: ['标记处理中', '标记已解决', '驳回举报', '重新打开'],
+    success: async ({ tapIndex }) => {
+      const statuses = ['reviewing', 'resolved', 'dismissed', 'pending']
+      const nextStatus = statuses[tapIndex] || 'reviewing'
+      try {
+        await updateAdminMentorConsultationReportStatus(item.id, { status: nextStatus })
+        uni.showToast({ title: '举报状态已更新', icon: 'success' })
+        await loadMentorReports()
+      } catch (error) {
+        uni.showToast({ title: error?.detail || '举报状态更新失败', icon: 'none' })
       }
     }
   })
@@ -2390,7 +2523,7 @@ function goBack() {
 
 .tab-bar {
   display: grid;
-  grid-template-columns: repeat(3, 1fr);
+  grid-template-columns: repeat(4, 1fr);
   gap: 0;
   margin-bottom: 20rpx;
   padding: 8rpx;
@@ -2669,6 +2802,16 @@ function goBack() {
   background: #fee4e2;
 }
 
+.badge.warning {
+  color: #b54708;
+  background: #fffaeb;
+}
+
+.badge.dismissed {
+  color: #667085;
+  background: #eef2f7;
+}
+
 .record-date {
   color: #98a2b3;
   font-size: 21rpx;
@@ -2685,6 +2828,10 @@ function goBack() {
 
 .inline-action {
   margin-top: 16rpx;
+}
+
+.mentor-report-party-line {
+  color: #475467;
 }
 
 .filter-grid {

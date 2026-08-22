@@ -464,13 +464,28 @@
                   :key="mentor.id"
                   :mentor="mentor"
                   :favorite="mentorFavoriteIds.includes(mentor.id)"
+                  :view-only="isCurrentMentorProfile(mentor)"
                   @open="openMentorDetail(mentor)"
                   @consult="beginMentorConsultation(mentor)"
                   @toggle-favorite="toggleMentorFavoriteState(mentor.id)"
                 />
-                <view v-if="mentorProfilesLoading && mentorProfiles.length === 0" class="circle-empty-card mentor-empty-card">
-                  <view class="circle-empty-title">正在加载前辈资料</view>
-                  <view class="circle-empty-copy">正在从港研通数据库获取已认证前辈。</view>
+                <view v-if="mentorProfilesLoading && mentorProfiles.length === 0" class="mentor-loading-list" role="status" aria-label="正在加载已认证前辈资料">
+                  <view v-for="index in 2" :key="`mentor-loading-${index}`" class="mentor-loading-card" aria-hidden="true">
+                    <view class="mentor-loading-person-row">
+                      <view class="mentor-loading-avatar"></view>
+                      <view class="mentor-loading-copy">
+                        <view class="mentor-loading-line mentor-loading-line-name"></view>
+                        <view class="mentor-loading-line mentor-loading-line-school"></view>
+                      </view>
+                    </view>
+                    <view class="mentor-loading-line mentor-loading-line-meta"></view>
+                    <view class="mentor-loading-line mentor-loading-line-copy"></view>
+                    <view class="mentor-loading-line mentor-loading-line-copy short"></view>
+                    <view class="mentor-loading-bottom-row">
+                      <view class="mentor-loading-line mentor-loading-line-price"></view>
+                      <view class="mentor-loading-action"></view>
+                    </view>
+                  </view>
                 </view>
                 <view v-else-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
                   <view class="circle-empty-title">暂时没有匹配的前辈</view>
@@ -2342,6 +2357,7 @@ import {
   cacheMentors,
   createDefaultMentorFilters,
   filterMentors,
+  getCachedMentorDirectory,
   getFallbackMentors,
   getMentorFavoriteIds,
   getMentorVerificationStatus,
@@ -2463,12 +2479,14 @@ const communitySearchKeyword = ref('')
 const selectedCommunityPostSort = ref('latest')
 const mentorSearchKeyword = ref('')
 const selectedMentorSort = ref('recommended')
-const mentorProfiles = ref([])
+// 先回填上一次成功加载的公开目录，首屏不再因为等待网络而整块留白。
+const mentorProfiles = ref(getCachedMentorDirectory())
 const mentorProfilesLoading = ref(false)
 const mentorProfilesLoaded = ref(false)
 const mentorProfilesError = ref('')
 const mentorEntryStatus = ref(isLoggedIn() ? getMentorVerificationStatus() : 'unverified')
 const mentorEntryStatusLoaded = ref(false)
+const currentMentorProfileId = ref('')
 let mentorEntryStatusRequest = null
 const mentorFilters = ref(createDefaultMentorFilters())
 const mentorFilterDraft = ref(createDefaultMentorFilters())
@@ -3760,6 +3778,9 @@ watch(activeTab, (value) => {
     selectedCircleSection.value = 'overview'
     selectedCirclePost.value = null
     closeCommunityPost()
+    // 在进入研圈时预取，用户切到“前辈咨询”时大多已准备就绪。
+    void loadMentorProfiles()
+    void loadMentorEntryStatus()
   }
   if (value !== 'mistakes') {
     selectedWrongDetail.value = null
@@ -3833,6 +3854,8 @@ onLoad((options) => {
   void loadCirclePracticeTrend()
 })
 
+const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 2 })
+
 async function loadPublishedOperationContent() {
   const [homeContentResult, scorelineResult] = await Promise.allSettled([
     fetchHomeContent(),
@@ -3841,8 +3864,8 @@ async function loadPublishedOperationContent() {
 
   if (homeContentResult.status === 'fulfilled') {
     const payload = homeContentResult.value || {}
-    const focus = (payload.focus || []).filter((item) => item?.title)
-    const news = (payload.news || []).filter((item) => item?.title)
+    const focus = (payload.focus || []).filter((item) => item?.title).slice(0, HOME_CONTENT_SLOT_LIMITS.focus)
+    const news = (payload.news || []).filter((item) => item?.title).slice(0, HOME_CONTENT_SLOT_LIMITS.news)
     const managedSlots = payload.managedSlots || {}
     if (managedSlots.focus === true || focus.length) {
       homeFocusItems.splice(0, homeFocusItems.length, ...focus.map((item) => ({
@@ -4531,6 +4554,8 @@ function openCircleSection(key) {
     communitySearchKeyword.value = ''
     selectedExperienceCategory.value = '全部'
     experienceSearchKeyword.value = ''
+    // 浏览研友聊时并行预取前辈目录，不阻塞当前内容加载。
+    void loadMentorProfiles()
     const shouldRefreshChat = consumeCircleCommunityFeedRefresh('chat')
     hydrateCircleCommunityFeed('chat')
     loadCircleCommunityPosts('chat', { force: shouldRefreshChat })
@@ -4952,10 +4977,17 @@ function setMentorEntryStatus(status) {
   return mentorEntryStatus.value
 }
 
+function isCurrentMentorProfile(mentor) {
+  return mentorEntryStatus.value === 'verified'
+    && Boolean(currentMentorProfileId.value)
+    && String(mentor?.id || '') === currentMentorProfileId.value
+}
+
 function loadMentorEntryStatus({ force = false } = {}) {
   if (!isLoggedIn()) {
     mentorEntryStatus.value = 'unverified'
     mentorEntryStatusLoaded.value = false
+    currentMentorProfileId.value = ''
     return Promise.resolve(mentorEntryStatus.value)
   }
   if (mentorEntryStatusRequest) return mentorEntryStatusRequest
@@ -4963,11 +4995,14 @@ function loadMentorEntryStatus({ force = false } = {}) {
 
   const cachedStatus = getMentorVerificationStatus()
   mentorEntryStatus.value = cachedStatus
+  currentMentorProfileId.value = ''
   mentorEntryStatusRequest = (async () => {
     try {
       try {
         const profilePayload = await fetchMyMentorProfile()
-        if (profilePayload?.mentor?.id) {
+        const mentorId = String(profilePayload?.mentor?.id || '').trim()
+        if (mentorId) {
+          currentMentorProfileId.value = mentorId
           return setMentorEntryStatus('verified')
         }
       } catch (error) {
@@ -5077,11 +5112,19 @@ async function toggleMentorFavoriteState(mentorId) {
 
 function openMentorDetail(mentor) {
   if (!mentor?.id) return
-  uni.navigateTo({ url: `/pages/circle/mentor-detail?id=${encodeURIComponent(mentor.id)}` })
+  const currentMentorId = String(currentMentorProfileId.value || '').trim()
+  const viewerMentorQuery = currentMentorId
+    ? `&viewerMentorId=${encodeURIComponent(currentMentorId)}`
+    : ''
+  uni.navigateTo({ url: `/pages/circle/mentor-detail?id=${encodeURIComponent(mentor.id)}${viewerMentorQuery}` })
 }
 
 function beginMentorConsultation(mentor) {
   if (!mentor?.id) return
+  if (isCurrentMentorProfile(mentor)) {
+    openMentorDetail(mentor)
+    return
+  }
   const page = mentor.onlineStatus === 'online' ? 'mentor-consult-form' : 'mentor-booking'
   const suffix = page === 'mentor-consult-form' ? '&mode=instant' : ''
   uni.navigateTo({ url: `/pages/circle/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
@@ -7892,13 +7935,6 @@ function formatDateTime(value) {
   transform: scale(0.98);
 }
 
-.home-page.circle-glass-page :deep(.tab-active-indicator),
-.home-page.circle-glass-page :deep(.tab-icon),
-.home-page.circle-glass-page :deep(.tab-icon-image),
-.home-page.circle-glass-page :deep(.tab-label) {
-  transition: none;
-}
-
 @supports not (backdrop-filter: blur(1px)) {
   .circle-glass-page .circle-trend-card {
     background: #ffffff;
@@ -9231,6 +9267,50 @@ function formatDateTime(value) {
   display: flex;
   flex-direction: column;
   gap: 16rpx;
+}
+
+.mentor-loading-list {
+  display: flex;
+  flex-direction: column;
+  gap: 16rpx;
+}
+
+.mentor-loading-card {
+  padding: 28rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 30rpx;
+  background: var(--gyt-panel-bg, #ffffff);
+  box-shadow: 0 16rpx 38rpx rgba(52, 120, 246, 0.06);
+}
+
+.mentor-loading-person-row,
+.mentor-loading-bottom-row {
+  display: flex;
+  align-items: center;
+}
+
+.mentor-loading-person-row { gap: 16rpx; }
+.mentor-loading-copy { min-width: 0; flex: 1; }
+.mentor-loading-avatar,
+.mentor-loading-line,
+.mentor-loading-action {
+  background: linear-gradient(90deg, #edf3fb 0%, #f7faff 50%, #edf3fb 100%);
+  background-size: 200% 100%;
+  animation: mentor-directory-skeleton 1.45s ease-in-out infinite;
+}
+.mentor-loading-avatar { width: 74rpx; height: 74rpx; border-radius: 50%; flex-shrink: 0; }
+.mentor-loading-line { height: 18rpx; border-radius: 999rpx; }
+.mentor-loading-line-name { width: 142rpx; height: 22rpx; }
+.mentor-loading-line-school { width: 104rpx; margin-top: 12rpx; }
+.mentor-loading-line-meta { width: 58%; margin-top: 28rpx; }
+.mentor-loading-line-copy { width: 100%; margin-top: 16rpx; }
+.mentor-loading-line-copy.short { width: 68%; }
+.mentor-loading-bottom-row { justify-content: space-between; gap: 18rpx; margin-top: 28rpx; }
+.mentor-loading-line-price { width: 130rpx; height: 24rpx; }
+.mentor-loading-action { width: 150rpx; height: 62rpx; border-radius: 18rpx; flex-shrink: 0; }
+
+@keyframes mentor-directory-skeleton {
+  to { background-position: -200% 0; }
 }
 
 .mentor-empty-card {

@@ -466,8 +466,10 @@ class AdminScorelineRecordUpdateRequest(BaseModel):
 class AdminMajorCatalogRecordListResponse(BaseModel):
     items: list[dict] = Field(default_factory=list)
     count: int = 0
+    filter_years: list[str] = Field(default_factory=list)
     filter_regions: list[str] = Field(default_factory=list)
     filter_exam_codes: list[str] = Field(default_factory=list)
+    filter_schools: list[dict[str, str]] = Field(default_factory=list)
 
 
 class AdminMajorCatalogRecordUpdateRequest(BaseModel):

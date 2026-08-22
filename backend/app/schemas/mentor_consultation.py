@@ -8,6 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field
 MentorExamType = Literal["Z001", "Z002", "application"]
 MentorOnlineStatus = Literal["online", "offline", "busy"]
 MentorVerificationStatus = Literal["unverified", "pending", "verified", "rejected"]
+MentorProfileChangeRequestStatus = Literal["pending", "approved", "rejected"]
 MentorSlotStatus = Literal["available", "booked", "expired", "closed"]
 MentorConsultationType = Literal["instant", "booking"]
 MentorConsultationOrderStatus = Literal[
@@ -26,6 +27,8 @@ MentorConsultationOrderStatus = Literal[
 MentorPaymentStatus = Literal["unpaid", "paid", "refunding", "refunded", "failed"]
 MentorMessageType = Literal["text", "image", "voice", "system"]
 MentorSenderRole = Literal["applicant", "mentor", "system"]
+MentorConsultationReportRole = Literal["applicant", "mentor"]
+MentorConsultationReportStatus = Literal["pending", "reviewing", "resolved", "dismissed"]
 
 
 class MentorAvailabilitySlotItem(BaseModel):
@@ -90,6 +93,54 @@ class MentorOwnerAvailabilityUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     online_status: MentorOnlineStatus
+
+
+class MentorProfileChangeRequestCreateRequest(BaseModel):
+    """A mentor-owned profile update that must be approved before publication."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    school: str = Field(min_length=1, max_length=120)
+    major: str = Field(min_length=1, max_length=120)
+    exam_type: MentorExamType
+    score: int = Field(ge=0, le=150)
+    skills: list[str] = Field(default_factory=list, max_length=4)
+    bio: str = Field(default="", max_length=500)
+    price_cents: int = Field(ge=0, le=100000)
+
+
+class MentorProfileChangeRequestItem(BaseModel):
+    id: str
+    mentor_id: str
+    owner_user_id: str
+    school: str
+    major: str
+    exam_type: MentorExamType
+    score: int = Field(ge=0, le=150)
+    skills: list[str] = Field(default_factory=list)
+    bio: str = ""
+    price: float | int = Field(ge=0)
+    request_status: MentorProfileChangeRequestStatus = "pending"
+    admin_note: str | None = None
+    reviewed_at: str | None = None
+    created_at: str | None = None
+    updated_at: str | None = None
+
+
+class MentorProfileChangeRequestStatusResponse(BaseModel):
+    request: MentorProfileChangeRequestItem | None = None
+
+
+class AdminMentorProfileChangeRequestListResponse(BaseModel):
+    items: list[MentorProfileChangeRequestItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminMentorProfileChangeDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approve", "reject"]
+    admin_note: str | None = Field(default=None, max_length=1000)
 
 
 class MentorOwnerAvailabilitySlotListResponse(BaseModel):
@@ -384,3 +435,64 @@ class MentorConsultationReviewCreateRequest(BaseModel):
 
 class MentorConsultationReviewCreateResponse(MentorReviewItem):
     order_id: str
+
+
+class MentorConsultationReportCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    issue_type: str = Field(min_length=1, max_length=60)
+    content: str = Field(min_length=20, max_length=500)
+
+
+class MentorConsultationReportItem(BaseModel):
+    id: str
+    order_id: str
+    reporter_role: MentorConsultationReportRole
+    target_role: MentorConsultationReportRole
+    issue_type: str
+    content: str
+    status: MentorConsultationReportStatus = "pending"
+    created_at: str | None = None
+
+
+class MentorConsultationReportCreateResponse(MentorConsultationReportItem):
+    pass
+
+
+class MentorConsultationReportEvidenceUploadResponse(BaseModel):
+    id: str
+    file_name: str
+    mime_type: str | None = None
+    created_at: str | None = None
+
+
+class AdminMentorConsultationReportItem(MentorConsultationReportItem):
+    reporter: dict = Field(default_factory=dict)
+    target: dict = Field(default_factory=dict)
+    order_no: str | None = None
+    admin_note: str | None = None
+    handled_at: str | None = None
+    evidence_count: int = 0
+
+
+class AdminMentorConsultationReportListResponse(BaseModel):
+    items: list[AdminMentorConsultationReportItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminMentorConsultationReportEvidenceItem(MentorConsultationReportEvidenceUploadResponse):
+    file_url: str
+
+
+class AdminMentorConsultationReportDetailResponse(BaseModel):
+    report: AdminMentorConsultationReportItem
+    evidence: list[AdminMentorConsultationReportEvidenceItem] = Field(default_factory=list)
+    order: dict = Field(default_factory=dict)
+    messages: list[dict] = Field(default_factory=list)
+
+
+class AdminMentorConsultationReportStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: MentorConsultationReportStatus
+    admin_note: str | None = Field(default=None, max_length=1000)

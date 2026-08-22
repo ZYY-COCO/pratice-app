@@ -94,6 +94,14 @@
       }
     },
     {
+      "path": "pages/circle/mentor-report",
+      "style": {
+        "navigationBarTitleText": "举报咨询",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f4f8ff"
+      }
+    },
+    {
       "path": "pages/circle/mentor-apply",
       "style": {
         "navigationBarTitleText": "申请成为前辈",

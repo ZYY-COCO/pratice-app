@@ -16,6 +16,9 @@ from app.schemas.mentor_consultation import (
     MentorConsultationOrderCreateRequest,
     MentorConsultationOrderItem,
     MentorConsultationOrderListResponse,
+    MentorConsultationReportCreateRequest,
+    MentorConsultationReportCreateResponse,
+    MentorConsultationReportEvidenceUploadResponse,
     MentorConsultationReviewCreateRequest,
     MentorConsultationReviewCreateResponse,
     MentorAvailabilitySlotItem,
@@ -27,6 +30,9 @@ from app.schemas.mentor_consultation import (
     MentorOwnerAvailabilitySlotStatusUpdateRequest,
     MentorOwnerAvailabilityUpdateRequest,
     MentorOwnerProfileResponse,
+    MentorProfileChangeRequestCreateRequest,
+    MentorProfileChangeRequestItem,
+    MentorProfileChangeRequestStatusResponse,
     MentorPublicDetailResponse,
     MentorPublicListResponse,
     MentorVerificationApplicationCreateRequest,
@@ -65,6 +71,10 @@ ORDER_PAYMENT_WINDOW_MINUTES = 10
 ORDER_LIST_MAX_LIMIT = 100
 MENTOR_SLOT_MAX_LIMIT = 100
 MENTOR_SLOT_WINDOW_MINUTES = 60
+MENTOR_SLOT_DATE_WINDOW_DAYS = 3
+MENTOR_SLOT_FIRST_HOUR = 9
+MENTOR_SLOT_LAST_HOUR = 23
+MENTOR_SLOT_LOCAL_TIMEZONE = timezone(timedelta(hours=8), name="Asia/Shanghai")
 CONSULTATION_ORDER_STATUSES = {
     "draft", "pending_payment", "pending_accept", "accepted", "in_progress",
     "completed", "rejected", "timeout", "refunded", "cancelled", "booked",
@@ -76,10 +86,45 @@ MENTOR_VERIFICATION_DOCUMENT_CONTENT_TYPES = {
     "image/png": "png",
     "image/webp": "webp",
 }
+MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET = "mentor-consultation-report-evidence"
+MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES = 8 * 1024 * 1024
+MENTOR_CONSULTATION_REPORT_EVIDENCE_CONTENT_TYPES = {
+    "image/jpeg": "jpg",
+    "image/png": "png",
+    "image/webp": "webp",
+}
+MENTOR_CONSULTATION_REPORT_ISSUE_TYPES = {
+    "mentor": {
+        "服务态度问题",
+        "虚假经历或信息",
+        "收费或诱导私下交易",
+        "爽约或未提供服务",
+        "骚扰、辱骂或不当言行",
+        "泄露隐私",
+        "其他问题",
+    },
+    "applicant": {
+        "骚扰、辱骂或不当言行",
+        "虚假身份或材料",
+        "诱导私下交易",
+        "恶意占用时段或爽约",
+        "侵犯隐私",
+        "发布不当内容",
+        "其他问题",
+    },
+}
+MENTOR_CONSULTATION_REPORT_FIELDS = (
+    "id,order_id,reporter_user_id,reporter_role,target_role,target_user_id,target_mentor_id,"
+    "issue_type,content,status,admin_note,handled_by,handled_at,created_at,updated_at"
+)
 MENTOR_VERIFICATION_APPLICATION_FIELDS = (
     "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
     "exam_type,score,skills,bio,price_cents,application_status,admin_note,reviewed_at,"
     "created_at,updated_at"
+)
+MENTOR_PROFILE_CHANGE_REQUEST_FIELDS = (
+    "id,mentor_id,owner_user_id,school,major,exam_type,score,skills,bio,price_cents,"
+    "request_status,admin_note,reviewed_at,created_at,updated_at"
 )
 
 
@@ -129,6 +174,39 @@ def _as_utc_datetime(value: object) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
+def _validate_mentor_slot_schedule_window(starts_at: datetime, ends_at: datetime) -> None:
+    """Keep owner-created appointment slots within the public scheduling window."""
+    local_start = starts_at.astimezone(MENTOR_SLOT_LOCAL_TIMEZONE)
+    local_end = ends_at.astimezone(MENTOR_SLOT_LOCAL_TIMEZONE)
+    local_today = _utc_now().astimezone(MENTOR_SLOT_LOCAL_TIMEZONE).date()
+    latest_date = local_today + timedelta(days=MENTOR_SLOT_DATE_WINDOW_DAYS - 1)
+
+    if local_start.date() < local_today or local_start.date() > latest_date:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"预约日期仅可选择今天起 {MENTOR_SLOT_DATE_WINDOW_DAYS} 天内",
+        )
+
+    is_full_hour = (
+        local_start.minute == 0
+        and local_start.second == 0
+        and local_start.microsecond == 0
+        and local_end.minute == 0
+        and local_end.second == 0
+        and local_end.microsecond == 0
+    )
+    is_supported_hour = (
+        MENTOR_SLOT_FIRST_HOUR <= local_start.hour < MENTOR_SLOT_LAST_HOUR
+        and local_end.date() == local_start.date()
+        and local_end.hour == local_start.hour + 1
+    )
+    if not is_full_hour or not is_supported_hour:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"预约时段仅支持 {MENTOR_SLOT_FIRST_HOUR:02d}:00–{MENTOR_SLOT_LAST_HOUR:02d}:00 的整点 60 分钟时段",
+        )
+
+
 def _new_order_no() -> str:
     return f"MC{_utc_now():%Y%m%d%H%M%S}{uuid4().hex[:8].upper()}"
 
@@ -163,6 +241,26 @@ def _ensure_mentor_verification_document_bucket(storage) -> None:
         storage.get_bucket(MENTOR_VERIFICATION_DOCUMENT_BUCKET)
 
 
+def _ensure_mentor_consultation_report_evidence_bucket(storage) -> None:
+    try:
+        storage.get_bucket(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET)
+        return
+    except Exception:
+        pass
+
+    try:
+        storage.create_bucket(
+            MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET,
+            options={
+                "public": False,
+                "file_size_limit": MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES,
+                "allowed_mime_types": list(MENTOR_CONSULTATION_REPORT_EVIDENCE_CONTENT_TYPES),
+            },
+        )
+    except Exception:
+        storage.get_bucket(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET)
+
+
 def _serialize_mentor_verification_application(row: dict, *, document_count: int = 0) -> dict:
     return {
         "id": str(row.get("id") or ""),
@@ -183,6 +281,26 @@ def _serialize_mentor_verification_application(row: dict, *, document_count: int
         "created_at": row.get("created_at") or None,
         "updated_at": row.get("updated_at") or None,
         "document_count": max(0, int(document_count or 0)),
+    }
+
+
+def _serialize_mentor_profile_change_request(row: dict) -> dict:
+    return {
+        "id": str(row.get("id") or ""),
+        "mentor_id": str(row.get("mentor_id") or ""),
+        "owner_user_id": str(row.get("owner_user_id") or ""),
+        "school": str(row.get("school") or ""),
+        "major": str(row.get("major") or ""),
+        "exam_type": str(row.get("exam_type") or "Z001"),
+        "score": int(row.get("score") or 0),
+        "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else [])[:4],
+        "bio": str(row.get("bio") or ""),
+        "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
+        "request_status": str(row.get("request_status") or "pending"),
+        "admin_note": row.get("admin_note") or None,
+        "reviewed_at": row.get("reviewed_at") or None,
+        "created_at": row.get("created_at") or None,
+        "updated_at": row.get("updated_at") or None,
     }
 
 
@@ -332,6 +450,36 @@ def _get_order_participant(supabase, order_id: str, user_id: str) -> tuple[dict,
     if str(mentor.get("owner_user_id") or "") == user_id:
         return order, "mentor", mentor
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该咨询订单")
+
+
+def _serialize_consultation_report(row: dict) -> dict:
+    return {
+        "id": str(row.get("id") or ""),
+        "order_id": str(row.get("order_id") or ""),
+        "reporter_role": str(row.get("reporter_role") or "applicant"),
+        "target_role": str(row.get("target_role") or "mentor"),
+        "issue_type": str(row.get("issue_type") or "其他问题"),
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "created_at": row.get("created_at") or None,
+    }
+
+
+def _get_owned_consultation_report_or_404(supabase, report_id: str, user_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_reports")
+            .select(MENTOR_CONSULTATION_REPORT_FIELDS)
+            .eq("id", report_id)
+            .eq("reporter_user_id", user_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="consultation report lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该举报记录")
+    return response.data[0]
 
 
 def _refresh_pending_accept_status(supabase, order: dict) -> dict:
@@ -585,6 +733,95 @@ def get_my_owned_mentor_profile(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈主页暂时不可用") from exc
 
 
+@router.get("/me/mentor-profile/change-request", response_model=MentorProfileChangeRequestStatusResponse)
+def get_my_mentor_profile_change_request(
+    user_id: str = Depends(get_current_user_id),
+) -> MentorProfileChangeRequestStatusResponse:
+    """Return only the active revision request so a mentor can continue using the old profile."""
+    supabase = get_supabase_admin()
+    try:
+        _get_current_owned_mentor_for_action_or_404(supabase, user_id)
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_profile_change_requests")
+                .select(MENTOR_PROFILE_CHANGE_REQUEST_FIELDS)
+                .eq("owner_user_id", user_id)
+                .eq("request_status", "pending")
+                .order("created_at", desc=True)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="mentor profile change request lookup",
+        )
+        row = (response.data or [None])[0]
+        return MentorProfileChangeRequestStatusResponse(
+            request=MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(row)) if row else None
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Mentor profile change request lookup failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改审核状态暂时不可用") from exc
+
+
+@router.post(
+    "/me/mentor-profile/change-request",
+    response_model=MentorProfileChangeRequestItem,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_my_mentor_profile_change_request(
+    payload: MentorProfileChangeRequestCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorProfileChangeRequestItem:
+    """Create a review request without changing the verified mentor profile."""
+    school = payload.school.strip()
+    major = payload.major.strip()
+    if not school or not major:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="录取院校和专业不能为空")
+
+    supabase = get_supabase_admin()
+    try:
+        mentor = _get_current_owned_mentor_for_action_or_404(supabase, user_id)
+        mentor_id = str(mentor.get("id") or "")
+        existing_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_profile_change_requests")
+                .select("id")
+                .eq("mentor_id", mentor_id)
+                .eq("request_status", "pending")
+                .limit(1)
+                .execute()
+            ),
+            operation_name="mentor pending profile change request lookup",
+        )
+        if existing_response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="你已有正在审核的资料修改申请")
+
+        response = call_supabase(
+            lambda: supabase.table("mentor_profile_change_requests").insert({
+                "mentor_id": mentor_id,
+                "owner_user_id": user_id,
+                "school": school,
+                "major": major,
+                "exam_type": payload.exam_type,
+                "score": payload.score,
+                "skills": normalize_skills(payload.skills)[:4],
+                "bio": payload.bio.strip(),
+                "price_cents": payload.price_cents,
+                "request_status": "pending",
+            }).execute(),
+            operation_name="mentor profile change request create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改申请提交失败")
+        return MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(response.data[0]))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Mentor profile change request create failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改申请提交失败") from exc
+
+
 @router.patch("/me/mentor-profile/availability", response_model=MentorOwnerProfileResponse)
 def update_my_owned_mentor_availability(
     payload: MentorOwnerAvailabilityUpdateRequest,
@@ -678,6 +915,7 @@ def create_my_mentor_availability_slot(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"单次预约时段需为 {MENTOR_SLOT_WINDOW_MINUTES} 分钟",
         )
+    _validate_mentor_slot_schedule_window(starts_at, ends_at)
 
     supabase = get_supabase_admin()
     try:
@@ -690,7 +928,7 @@ def create_my_mentor_availability_slot(
                 supabase.table("mentor_availability_slots")
                 .select("id")
                 .eq("mentor_id", mentor_id)
-                .in_("status", ["available", "booked"])
+                .in_("status", ["available", "booked", "closed"])
                 .lt("starts_at", ends_at_iso)
                 .gt("ends_at", starts_at_iso)
                 .limit(1)
@@ -701,9 +939,8 @@ def create_my_mentor_availability_slot(
         if overlap_response.data:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该时间与已有预约时段重叠")
 
-        price_cents = payload.price_cents
-        if price_cents is None:
-            price_cents = max(0, int(mentor.get("price_cents") or 0))
+        # 预约时段始终沿用前辈资料中已审核的价格，不能由前辈在放号时单独改价。
+        price_cents = max(0, int(mentor.get("price_cents") or 0))
         response = call_supabase(
             lambda: supabase.table("mentor_availability_slots").insert({
                 "mentor_id": mentor_id,
@@ -1505,3 +1742,166 @@ def create_mentor_consultation_review(
     except Exception as exc:
         logger.warning("Consultation review create failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="评价提交失败") from exc
+
+
+@router.post(
+    "/orders/{order_id}/reports",
+    response_model=MentorConsultationReportCreateResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_mentor_consultation_report(
+    order_id: UUID,
+    payload: MentorConsultationReportCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportCreateResponse:
+    normalized_order_id = str(order_id)
+    issue_type = str(payload.issue_type or "").strip()
+    content = str(payload.content or "").strip()
+    supabase = get_supabase_admin()
+    try:
+        order, reporter_role, mentor = _get_order_participant(supabase, normalized_order_id, user_id)
+        target_role = "mentor" if reporter_role == "applicant" else "applicant"
+        if issue_type not in MENTOR_CONSULTATION_REPORT_ISSUE_TYPES[target_role]:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请选择与举报对象相符的问题类型")
+        if not content or len(content) < 20:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="举报说明请至少填写 20 个字")
+
+        existing_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_reports")
+                .select("id")
+                .eq("order_id", normalized_order_id)
+                .eq("reporter_user_id", user_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation report duplicate lookup",
+        )
+        if existing_response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本次咨询已提交过举报，如需补充请联系平台")
+
+        target_user_id = None
+        target_mentor_id = None
+        if target_role == "mentor":
+            target_mentor_id = str(mentor.get("id") or "")
+            if not target_mentor_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到被举报前辈")
+            target_user_id = str(mentor.get("owner_user_id") or "") or None
+        else:
+            target_user_id = str(order.get("applicant_user_id") or "")
+            if not target_user_id:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到被举报咨询用户")
+
+        response = call_supabase(
+            lambda: supabase.table("mentor_consultation_reports").insert({
+                "order_id": normalized_order_id,
+                "reporter_user_id": user_id,
+                "reporter_role": reporter_role,
+                "target_role": target_role,
+                "target_user_id": target_user_id,
+                "target_mentor_id": target_mentor_id,
+                "issue_type": issue_type,
+                "content": content,
+                "status": "pending",
+            }).execute(),
+            operation_name="consultation report create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报提交失败")
+        return MentorConsultationReportCreateResponse(**_serialize_consultation_report(response.data[0]))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation report create failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报提交暂时不可用") from exc
+
+
+@router.post(
+    "/reports/{report_id}/evidence",
+    response_model=MentorConsultationReportEvidenceUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_mentor_consultation_report_evidence(
+    report_id: UUID,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportEvidenceUploadResponse:
+    data = await file.read(MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES + 1)
+    filename = str(file.filename or "举报凭证").strip()[:255] or "举报凭证"
+    await file.close()
+
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="凭证图片为空")
+    if len(data) > MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="单张凭证图片不能超过 8 MB")
+    detected = _detect_mentor_verification_document_content_type(data)
+    if not detected:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="凭证仅支持 PNG、JPG 或 WebP 图片")
+
+    normalized_report_id = str(report_id)
+    content_type, extension = detected
+    supabase = get_supabase_admin()
+    bucket = None
+    storage_path = ""
+    try:
+        report = _get_owned_consultation_report_or_404(supabase, normalized_report_id, user_id)
+        if str(report.get("status") or "pending") not in {"pending", "reviewing"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该举报已处理，不能继续补充凭证")
+        count_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_evidence")
+                .select("id", count="exact")
+                .eq("report_id", normalized_report_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation report evidence limit check",
+        )
+        if int(count_response.count or 0) >= 3:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="最多上传 3 张凭证图片")
+
+        _ensure_mentor_consultation_report_evidence_bucket(supabase.storage)
+        bucket = supabase.storage.from_(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET)
+        storage_path = f"{user_id}/{normalized_report_id}/{uuid4().hex}.{extension}"
+        bucket.upload(
+            storage_path,
+            data,
+            file_options={
+                "content-type": content_type,
+                "cache-control": "31536000",
+                "upsert": "false",
+            },
+        )
+        response = call_supabase(
+            lambda: supabase.table("mentor_consultation_report_evidence").insert({
+                "report_id": normalized_report_id,
+                "file_url": storage_path,
+                "file_name": filename,
+                "mime_type": content_type,
+            }).execute(),
+            operation_name="consultation report evidence create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="凭证图片保存失败")
+        evidence = response.data[0]
+        return MentorConsultationReportEvidenceUploadResponse(
+            id=str(evidence.get("id") or ""),
+            file_name=str(evidence.get("file_name") or filename),
+            mime_type=evidence.get("mime_type") or content_type,
+            created_at=evidence.get("created_at") or None,
+        )
+    except HTTPException:
+        if bucket and storage_path:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        raise
+    except Exception as exc:
+        if bucket and storage_path:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        logger.warning("Consultation report evidence upload failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="凭证图片上传失败") from exc

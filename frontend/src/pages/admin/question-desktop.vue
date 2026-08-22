@@ -602,18 +602,25 @@
 
             <view v-if="admissionDataset === 'announcements'" class="question-workspace announcement-record-workspace">
               <view class="workspace-heading announcement-workspace-heading">
-                <view><view class="panel-title">公告逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前数据：${selectedAdmissionRun.source_filename}` : '暂无公告数据，请先导入' }}</view></view>
+                <view><view class="panel-title">公告逐条管理</view><view class="panel-subtitle">用户端已发布院校公告</view></view>
                 <view class="announcement-heading-tools">
                   <text>{{ formatCount(announcementRecordCount) }} 条</text>
                   <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('announcements')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
-                  <AdminSelect class="question-admin-select" :options="announcementRecordStatusOptions.map((item) => item.label)" :value-index="announcementRecordStatusIndex" aria-label="公告状态" @change="handleAnnouncementRecordStatusChange" />
                 </view>
+              </view>
+              <view class="scoreline-filter-toolbar announcement-filter-toolbar">
+                <input v-model.trim="announcementFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="80" placeholder="搜索院校、学院、公告标题或正文" confirm-type="search" @confirm="applyAnnouncementFilters" />
+                <AdminSelect class="scoreline-filter-select" :options="announcementNoticeTypeFilterOptions" :value-index="announcementNoticeTypeFilterIndex" aria-label="公告类型筛选" @change="handleAnnouncementNoticeTypeFilterChange" />
+                <AdminSelect class="scoreline-filter-select" :options="announcementYearFilterOptions" :value-index="announcementYearFilterIndex" aria-label="公告年份筛选" @change="handleAnnouncementYearFilterChange" />
+                <AdminSelect class="scoreline-filter-select scoreline-filter-region-select" :options="announcementRegionFilterOptions" :value-index="announcementRegionFilterIndex" aria-label="地域查找" @change="handleAnnouncementRegionFilterChange" />
+                <AdminSelect class="scoreline-filter-select major-catalog-school-select" :options="announcementSchoolFilterOptions" :value-index="announcementSchoolFilterIndex" :disabled="!announcementFilters.region" aria-label="招生院校筛选" @change="handleAnnouncementSchoolFilterChange" />
+                <button class="scoreline-filter-apply" @tap="applyAnnouncementFilters">查找</button>
+                <button v-if="announcementFilters.notice_type || announcementFilters.notice_year || announcementFilters.region || announcementFilters.school_id || announcementFilters.keyword" class="scoreline-filter-clear" @tap="clearAnnouncementFilters">×</button>
               </view>
               <view class="question-table-wrap">
                 <view class="question-table announcement-record-table">
                   <view class="announcement-record-grid table-head"><view>公告</view><view>院校</view><view>类型</view><view>发布日期</view><view>状态</view><view>操作</view></view>
-                  <view v-if="!selectedAdmissionRun" class="table-state">暂无公告数据，请先导入</view>
-                  <view v-else-if="announcementRecordsLoading" class="table-state">正在读取公告…</view>
+                  <view v-if="announcementRecordsLoading" class="table-state">正在读取公告…</view>
                   <view v-else-if="announcementRecordsError" class="table-state error"><view>公告记录读取失败。</view><button @tap="loadAnnouncementRecords">重新加载</button></view>
                   <view v-else-if="!announcementRecords.length" class="table-state">当前筛选下没有公告</view>
                   <view v-else v-for="item in announcementRecords" :key="item.id" class="announcement-record-grid announcement-record-row">
@@ -630,46 +637,50 @@
 
             <view v-if="admissionDataset === 'major-catalog'" class="question-workspace major-catalog-workspace">
               <view class="workspace-heading major-catalog-workspace-heading">
-                <view><view class="panel-title">专业目录逐条管理</view><view class="panel-subtitle">{{ selectedAdmissionRun ? `当前目录：${selectedAdmissionRun.source_filename}` : '暂无专业目录数据，请先导入或接入现有数据' }}</view></view>
+                <view><view class="panel-title">专业目录逐条管理</view><view class="panel-subtitle">用户端已发布目录：全部目录、2026 年、2025 年</view></view>
                 <view class="major-catalog-heading-tools">
                   <text>{{ formatCount(majorCatalogRecordCount) }} 条方向</text>
                   <button v-if="canBootstrapExistingAdmissionSnapshot" class="row-action" :disabled="admissionSnapshotBootstrapLoading" @tap="bootstrapExistingAdmissionSnapshot('major-catalog')">{{ admissionSnapshotBootstrapLoading ? '接入中…' : '接入现有数据' }}</button>
                 </view>
               </view>
-              <view v-if="selectedAdmissionRun" class="scoreline-filter-toolbar major-catalog-filter-toolbar">
-                <input v-model.trim="majorCatalogFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="100" placeholder="搜索院校、院系、专业或方向" confirm-type="search" @input="handleMajorCatalogFilterInput" @confirm="applyMajorCatalogFilters" />
-                <AdminSelect class="scoreline-filter-select scoreline-filter-region-select" :options="majorCatalogRegionFilterOptions" :value-index="majorCatalogRegionFilterIndex" aria-label="地区筛选" @change="handleMajorCatalogRegionFilterChange" />
-                <AdminSelect class="scoreline-filter-select" :options="majorCatalogExamCodeFilterOptions" :value-index="majorCatalogExamCodeFilterIndex" aria-label="考试类别筛选" @change="handleMajorCatalogExamCodeFilterChange" />
-                <button v-if="majorCatalogFilters.keyword || majorCatalogFilters.region || majorCatalogFilters.exam_code" class="scoreline-filter-clear" @tap="clearMajorCatalogFilters">×</button>
+              <view class="scoreline-filter-toolbar major-catalog-filter-toolbar">
+                <input v-model.trim="majorCatalogFilters.keyword" class="scoreline-filter-input scoreline-filter-search" maxlength="100" placeholder="搜索院校、专业、代码或研究方向" confirm-type="search" @confirm="applyMajorCatalogFilters" />
+                <AdminSelect class="scoreline-filter-select" :options="majorCatalogYearFilterOptions" :value-index="majorCatalogYearFilterIndex" aria-label="目录年份筛选" @change="handleMajorCatalogYearFilterChange" />
+                <AdminSelect class="scoreline-filter-select scoreline-filter-region-select" :options="majorCatalogRegionFilterOptions" :value-index="majorCatalogRegionFilterIndex" aria-label="地域查找" @change="handleMajorCatalogRegionFilterChange" />
+                <AdminSelect class="scoreline-filter-select major-catalog-school-select" :options="majorCatalogSchoolFilterOptions" :value-index="majorCatalogSchoolFilterIndex" :disabled="!majorCatalogFilters.region" aria-label="招生院校筛选" @change="handleMajorCatalogSchoolFilterChange" />
+                <AdminSelect class="scoreline-filter-select" :options="majorCatalogExamCodeFilterOptions" :value-index="majorCatalogExamCodeFilterIndex" aria-label="统考科目筛选" @change="handleMajorCatalogExamCodeFilterChange" />
+                <button class="scoreline-filter-apply" @tap="applyMajorCatalogFilters">查找</button>
+                <button v-if="majorCatalogFilters.catalog_year || majorCatalogFilters.keyword || majorCatalogFilters.region || majorCatalogFilters.school_name || majorCatalogFilters.exam_code" class="scoreline-filter-clear" @tap="clearMajorCatalogFilters">×</button>
               </view>
               <view class="question-table-wrap">
                 <view class="question-table major-catalog-record-table">
-                  <view class="major-catalog-record-grid table-head"><view>地区</view><view>院校及院系</view><view>专业及方向</view><view>考试类别</view><view>学位 / 学习方式</view><view>操作</view></view>
-                  <view v-if="!selectedAdmissionRun" class="table-state">暂无专业目录数据，请先导入或接入现有数据</view>
-                  <view v-else-if="majorCatalogRecordsLoading" class="table-state">正在读取专业目录…</view>
+                  <view class="major-catalog-record-grid table-head"><view>地区</view><view>院校及院系</view><view>专业及方向</view><view class="exam-code-cell">考试类别</view><view>学位 / 学习方式</view><view>操作</view></view>
+                  <view v-if="majorCatalogRecordsLoading" class="table-state">正在读取专业目录…</view>
                   <view v-else-if="majorCatalogRecordsError" class="table-state error"><view>专业目录记录读取失败。</view><button @tap="loadMajorCatalogRecords">重新加载</button></view>
                   <view v-else-if="!majorCatalogRecords.length" class="table-state">当前筛选下没有专业目录记录</view>
                   <view v-else v-for="item in majorCatalogRecords" :key="item.id" class="major-catalog-record-grid major-catalog-record-row">
                     <view>{{ item.region }}</view>
                     <view><strong>{{ item.school_name }}</strong><text>{{ item.department_name || '未区分院系所' }}</text></view>
                     <view><strong>{{ item.program_name }}</strong><text>{{ item.program_code ? `${item.program_code} · ` : '' }}{{ item.direction_name || '不区分研究方向' }}</text></view>
-                    <view><text class="exam-code-pill" :class="item.exam_code === 'Z002' ? 'is-z002' : 'is-z001'">{{ item.exam_code }}</text></view>
+                    <view class="exam-code-cell"><text class="exam-code-pill" :class="item.exam_code === 'Z002' ? 'is-z002' : 'is-z001'">{{ item.exam_code }}</text></view>
                     <view><strong>{{ item.degree || '—' }}</strong><text>{{ item.study_mode || '—' }}</text></view>
                     <view><button class="row-action" :disabled="majorCatalogRecordSaving && majorCatalogRecordEditingId === item.id" @tap="openMajorCatalogRecordEditor(item)">编辑</button></view>
                   </view>
                 </view>
               </view>
-              <view v-if="selectedAdmissionRun" class="pagination-row scoreline-pagination"><view class="pagination-info">共 {{ formatCount(majorCatalogRecordCount) }} 条，每页 {{ majorCatalogRecordPageSize }} 条</view><view class="pagination-actions"><button :disabled="majorCatalogRecordPage <= 1 || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage - 1)">‹</button><view class="page-current">{{ majorCatalogRecordPage }}</view><view class="page-total">/ {{ majorCatalogRecordTotalPages }}</view><button :disabled="majorCatalogRecordPage >= majorCatalogRecordTotalPages || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage + 1)">›</button></view></view>
+              <view class="pagination-row scoreline-pagination"><view class="pagination-info">共 {{ formatCount(majorCatalogRecordCount) }} 条，每页 {{ majorCatalogRecordPageSize }} 条</view><view class="pagination-actions"><button :disabled="majorCatalogRecordPage <= 1 || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage - 1)">‹</button><view class="page-current">{{ majorCatalogRecordPage }}</view><view class="page-total">/ {{ majorCatalogRecordTotalPages }}</view><button :disabled="majorCatalogRecordPage >= majorCatalogRecordTotalPages || majorCatalogRecordsLoading" @tap="changeMajorCatalogRecordPage(majorCatalogRecordPage + 1)">›</button></view></view>
             </view>
         </section>
 
         <section v-if="activeSection === 'homeOps'" class="content-section operations-section home-operations-content-section">
-          <view v-if="homeContentEditorVisible" class="question-workspace home-content-editor">
-            <view class="workspace-heading"><view><view class="panel-title">{{ homeContentEditingId ? '编辑首页内容' : '新增首页内容' }}</view><view class="panel-subtitle">{{ homeContentForm.status === 'published' ? '该内容正在发布中，保存后会立即更新学生端。' : '保存后仍留在后台，需单独发布才会进入学生端。' }}</view></view><button class="drawer-close" @tap="closeHomeContentEditor">×</button></view>
-            <view class="home-editor-grid">
-              <view class="form-field"><view class="form-label">位置</view><view class="home-slot-toggle"><button :class="{ active: homeContentForm.slot === 'focus' }" @tap="homeContentForm.slot = 'focus'">焦点轮播</button><button :class="{ active: homeContentForm.slot === 'news' }" @tap="homeContentForm.slot = 'news'">考研资讯</button></view></view>
-              <view class="form-field"><view class="form-label">排序</view><input v-model.number="homeContentForm.sort_order" class="form-input" type="number" /></view>
+          <view v-if="homeContentEditorVisible" class="drawer-backdrop home-content-editor-backdrop" @tap="closeHomeContentEditor()">
+            <view class="home-content-editor-modal" @tap.stop>
+              <view class="workspace-heading home-editor-modal-heading"><view><view class="panel-title">{{ homeContentEditingId ? '编辑首页内容' : '新增首页内容' }}</view><view class="panel-subtitle">{{ homeContentSlotLabel(homeContentForm.slot) }} · {{ homeContentForm.status === 'published' ? '保存后会立即更新学生端。' : '保存后仍留在后台，需单独发布才会进入学生端。' }}</view></view><button class="drawer-close" :disabled="homeContentSaving" @tap="closeHomeContentEditor">×</button></view>
+              <scroll-view scroll-y class="home-editor-scroll">
+                <view class="home-editor-content">
+                  <view class="home-editor-grid">
               <view class="form-field full"><view class="form-label">标题</view><input v-model.trim="homeContentForm.title" class="form-input" maxlength="120" placeholder="填写用户端展示标题" /></view>
+              <view class="form-field"><view class="form-label">排序</view><input v-model.number="homeContentForm.sort_order" class="form-input" type="number" /></view>
               <view class="form-field"><view class="form-label">{{ homeContentForm.slot === 'focus' ? '标签' : '来源' }}</view><input v-if="homeContentForm.slot === 'focus'" v-model.trim="homeContentForm.badge" class="form-input" maxlength="30" placeholder="例如：备考指南" /><input v-else v-model.trim="homeContentForm.source" class="form-input" maxlength="80" placeholder="例如：广东省教育考试院" /></view>
               <view class="form-field full"><view class="form-label">说明 / 摘要</view><textarea v-model.trim="homeContentForm.subtitle" class="form-textarea" maxlength="240" placeholder="填写简短说明" /></view>
               <view class="form-field"><view class="form-label">卡片标识</view><input v-model.trim="homeContentForm.cover_label" class="form-input" maxlength="40" placeholder="例如：准考证、官方公告" /></view>
@@ -679,25 +690,11 @@
               <view v-if="!homeContentForm.route_key" class="form-field full"><view class="form-label">外部链接（选填）</view><input v-model.trim="homeContentForm.target_url" class="form-input" maxlength="1000" placeholder="https://...；留空则卡片不可点击" /></view>
               <view class="form-field"><view class="form-label">生效时间（选填）</view><input v-model="homeContentForm.starts_at" class="form-input" type="datetime-local" /></view>
               <view class="form-field"><view class="form-label">下线时间（选填）</view><input v-model="homeContentForm.ends_at" class="form-input" type="datetime-local" /></view>
-            </view>
-            <view class="home-editor-sample" :class="homeContentForm.tone"><small>{{ homeContentForm.slot === 'focus' ? '焦点轮播预览' : '考研资讯预览' }}</small><strong>{{ homeContentForm.title || '标题将在这里显示' }}</strong><text>{{ homeContentForm.slot === 'focus' ? (homeContentForm.subtitle || homeContentForm.badge || '补充简短说明') : `${homeContentForm.source || '信息来源'} · ${homeContentForm.display_date || '展示日期'}` }}</text></view>
-            <view class="home-editor-actions"><button class="secondary-button" @tap="closeHomeContentEditor">取消</button><button class="primary-button" :disabled="homeContentSaving || !homeContentForm.title" @tap="saveHomeContent">{{ homeContentSaving ? '保存中…' : homeContentForm.status === 'published' ? '保存并更新' : '保存内容' }}</button></view>
-          </view>
-
-          <view class="home-content-columns">
-            <view class="question-workspace home-content-column">
-              <view class="workspace-heading"><view><view class="panel-title">焦点轮播</view><view class="panel-subtitle">按排序展示前三条当前生效内容</view></view><button class="row-action" @tap="openHomeContentEditor('focus')">新增</button></view>
-              <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
-              <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
-              <view v-else-if="!homeFocusContentItems.length" class="table-state">暂未配置焦点轮播</view>
-              <view v-else v-for="(item, index) in homeFocusContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '焦点' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
-            </view>
-            <view class="question-workspace home-content-column">
-              <view class="workspace-heading"><view><view class="panel-title">港澳台考研资讯</view><view class="panel-subtitle">按排序展示前两条当前生效内容</view></view><button class="row-action" @tap="openHomeContentEditor('news')">新增</button></view>
-              <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
-              <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
-              <view v-else-if="!homeNewsContentItems.length" class="table-state">暂未配置考研资讯</view>
-              <view v-else v-for="(item, index) in homeNewsContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '资讯' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
+                  </view>
+                  <view class="home-editor-sample" :class="homeContentForm.tone"><small>{{ homeContentForm.slot === 'focus' ? '焦点轮播预览' : '考研资讯预览' }}</small><strong>{{ homeContentForm.title || '标题将在这里显示' }}</strong><text>{{ homeContentForm.slot === 'focus' ? (homeContentForm.subtitle || homeContentForm.badge || '补充简短说明') : `${homeContentForm.source || '信息来源'} · ${homeContentForm.display_date || '展示日期'}` }}</text></view>
+                </view>
+              </scroll-view>
+              <view class="home-editor-actions"><button class="secondary-button" :disabled="homeContentSaving" @tap="closeHomeContentEditor">取消</button><button class="primary-button" :disabled="homeContentSaving || !homeContentForm.title" @tap="saveHomeContent">{{ homeContentSaving ? '保存中…' : homeContentForm.status === 'published' ? '保存并更新' : '保存内容' }}</button></view>
             </view>
           </view>
 
@@ -710,15 +707,22 @@
               <view class="home-user-preview-panel"><view class="home-user-preview-label">考研资讯</view><view v-if="homeVisibleNewsItems.length" class="home-preview-news-list"><view v-for="item in homeVisibleNewsItems" :key="`preview-${item.id}`" class="home-preview-news-item"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '资讯' }}</view><view><strong>{{ item.title }}</strong><text>{{ item.source || '港研通' }} · {{ item.display_date || '—' }}</text></view></view></view><view v-else class="home-preview-empty">当前没有生效中的资讯内容</view></view>
             </view>
           </view>
-        </section>
 
-        <section v-if="activeSection === 'homeOps'" class="content-section home-status-section">
-          <view class="question-workspace home-status-workspace">
-            <view class="workspace-heading"><view><view class="panel-title">发布控制</view><view class="panel-subtitle">草稿仅在后台可见；发布和下架会立即影响首页展示。</view></view></view>
-            <view v-if="homeContentLoading" class="table-state">正在读取发布状态…</view>
-            <view v-else-if="homeContentError" class="table-state error"><view>发布状态读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
-            <view v-else-if="homeSortedContentItems.length" class="home-status-list"><view v-for="item in homeSortedContentItems" :key="`status-${item.id}`" class="home-status-row"><view><text class="home-status-slot">{{ item.slot === 'focus' ? '焦点轮播' : '考研资讯' }}</text><strong>{{ item.title }}</strong><small>{{ homeContentTimingText(item) }}</small></view><view class="home-status-actions"><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button class="row-action" :class="{ publish: item.status !== 'published' }" :disabled="homeContentStatusSavingId === item.id" @tap="toggleHomeContentStatus(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : item.status === 'published' ? '下架' : '发布' }}</button></view></view></view>
-            <view v-else class="table-state">先新增一条首页内容，再决定何时发布。</view>
+          <view class="home-content-columns">
+            <view class="question-workspace home-content-column">
+              <view class="workspace-heading"><view><view class="panel-title">焦点轮播</view><view class="panel-subtitle">最多 {{ HOME_CONTENT_SLOT_LIMITS.focus }} 个 · 已发布 {{ homeFocusPublishedCount }}/{{ HOME_CONTENT_SLOT_LIMITS.focus }}</view></view><button class="row-action home-content-add-button" :disabled="homeFocusContentAtCapacity" @tap="openHomeContentEditor('focus')">{{ homeFocusContentAtCapacity ? `已满 ${HOME_CONTENT_SLOT_LIMITS.focus}/${HOME_CONTENT_SLOT_LIMITS.focus}` : '新增' }}</button></view>
+              <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
+              <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
+              <view v-else-if="!homeFocusContentItems.length" class="table-state">暂未配置焦点轮播</view>
+              <view v-else v-for="(item, index) in homeFocusContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '焦点' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
+            </view>
+            <view class="question-workspace home-content-column">
+              <view class="workspace-heading"><view><view class="panel-title">港澳台考研资讯</view><view class="panel-subtitle">最多 {{ HOME_CONTENT_SLOT_LIMITS.news }} 个 · 已发布 {{ homeNewsPublishedCount }}/{{ HOME_CONTENT_SLOT_LIMITS.news }}</view></view><button class="row-action home-content-add-button" :disabled="homeNewsContentAtCapacity" @tap="openHomeContentEditor('news')">{{ homeNewsContentAtCapacity ? `已满 ${HOME_CONTENT_SLOT_LIMITS.news}/${HOME_CONTENT_SLOT_LIMITS.news}` : '新增' }}</button></view>
+              <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
+              <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
+              <view v-else-if="!homeNewsContentItems.length" class="table-state">暂未配置考研资讯</view>
+              <view v-else v-for="(item, index) in homeNewsContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '资讯' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
+            </view>
           </view>
         </section>
 
@@ -1702,7 +1706,14 @@ const announcementRecords = ref([])
 const announcementRecordCount = ref(0)
 const announcementRecordsLoading = ref(false)
 const announcementRecordsError = ref(false)
-const announcementRecordStatus = ref('all')
+const announcementFilters = reactive({
+  notice_type: '',
+  notice_year: '',
+  region: '',
+  school_id: '',
+  keyword: ''
+})
+const announcementFilterOptions = ref({ years: [], regions: [], schools: [] })
 const announcementUpdatingId = ref('')
 const announcementRecordEditorVisible = ref(false)
 const announcementRecordSaving = ref(false)
@@ -1731,11 +1742,13 @@ const majorCatalogRecordSaving = ref(false)
 const majorCatalogRecordEditingId = ref('')
 const majorCatalogRecordYear = ref('')
 const majorCatalogFilters = reactive({
+  catalog_year: '',
   region: '',
+  school_name: '',
   exam_code: '',
   keyword: ''
 })
-const majorCatalogFilterOptions = ref({ regions: [], exam_codes: [] })
+const majorCatalogFilterOptions = ref({ years: [], regions: [], schools: [], exam_codes: [] })
 const majorCatalogRecordForm = reactive({
   region: '',
   school_name: '',
@@ -1932,17 +1945,17 @@ const homeToneOptions = [
   { label: '橙色', value: 'is-orange' },
   { label: '紫色', value: 'is-violet' }
 ]
+const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 2 })
 const homeTargetOptions = [
   { label: '外部链接 / 不跳转', value: '' },
   { label: '院校公告', value: 'school-announcements' },
   { label: '专业目录', value: 'major-catalog' },
   { label: '报考资讯归档', value: 'application-guide' }
 ]
-const announcementRecordStatusOptions = [
-  { label: '全部公告状态', value: 'all' },
-  { label: '已发布', value: 'published' },
-  { label: '待发布', value: 'draft' },
-  { label: '已归档', value: 'archived' }
+const announcementNoticeTypeFilterOptions = [
+  { label: '全部公告', value: '' },
+  { label: '招生简章', value: 'brochure' },
+  { label: '分数线与复试', value: 'scoreline_retest' }
 ]
 const announcementRecordNoticeTypeOptions = [
   { label: '招生简章', value: 'brochure' },
@@ -2274,18 +2287,91 @@ const scorelineRecordTotalPages = computed(() => Math.max(1, Math.ceil(scoreline
 const scorelineKindLabels = computed(() => scorelineKindOptions.map((item) => item.label))
 const scorelineKindIndex = computed(() => optionIndex(scorelineKindOptions, scorelineRecordForm.score_kind))
 const legacyScorelineImportRecords = computed(() => buildLegacyScorelineImportRecords())
-const canManageSelectedAnnouncementRecords = computed(() => selectedAdmissionRun.value?.status === 'published')
-const announcementRecordStatusIndex = computed(() => optionIndex(announcementRecordStatusOptions, announcementRecordStatus.value))
+const canManageSelectedAnnouncementRecords = computed(() => true)
+const announcementYearFilterOptions = computed(() => {
+  const years = new Set(announcementFilterOptions.value.years)
+  if (announcementFilters.notice_year) years.add(announcementFilters.notice_year)
+  return [
+    { label: '全部年份', value: '' },
+    ...Array.from(years)
+      .filter((value) => /^20\d{2}$/.test(String(value)))
+      .sort((left, right) => String(right).localeCompare(String(left)))
+      .map((value) => ({ label: `${value} 年`, value }))
+  ]
+})
+const announcementRegionFilterOptions = computed(() => {
+  const regions = new Set(announcementFilterOptions.value.regions)
+  if (announcementFilters.region) regions.add(announcementFilters.region)
+  return [
+    { label: '全部地域', value: '' },
+    ...Array.from(regions)
+      .map((value) => String(value || '').trim())
+      .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const announcementSchoolFilterOptions = computed(() => {
+  if (!announcementFilters.region) return [{ label: '请先选择地域', value: '' }]
+  const schools = new Map(
+    announcementFilterOptions.value.schools
+      .filter((item) => item?.region === announcementFilters.region)
+      .map((item) => [String(item?.id || ''), String(item?.name || '').trim()])
+      .filter(([id, name]) => id && name)
+  )
+  if (announcementFilters.school_id && !schools.has(announcementFilters.school_id)) {
+    schools.set(announcementFilters.school_id, announcementFilters.school_id)
+  }
+  return [
+    { label: '全部院校', value: '' },
+    ...Array.from(schools.entries())
+      .sort((left, right) => left[1].localeCompare(right[1], 'zh-CN'))
+      .map(([value, label]) => ({ label, value }))
+  ]
+})
+const announcementNoticeTypeFilterIndex = computed(() => optionIndex(announcementNoticeTypeFilterOptions, announcementFilters.notice_type))
+const announcementYearFilterIndex = computed(() => optionIndex(announcementYearFilterOptions.value, announcementFilters.notice_year))
+const announcementRegionFilterIndex = computed(() => optionIndex(announcementRegionFilterOptions.value, announcementFilters.region))
+const announcementSchoolFilterIndex = computed(() => optionIndex(announcementSchoolFilterOptions.value, announcementFilters.school_id))
 const announcementRecordNoticeTypeIndex = computed(() => optionIndex(announcementRecordNoticeTypeOptions, announcementRecordForm.notice_type))
 const majorCatalogRecordTotalPages = computed(() => Math.max(1, Math.ceil(majorCatalogRecordCount.value / majorCatalogRecordPageSize)))
+const majorCatalogYearFilterOptions = computed(() => {
+  const years = new Set(majorCatalogFilterOptions.value.years)
+  const currentYear = String(selectedAdmissionRun.value?.statistics?.catalog_year || '').trim()
+  if (currentYear) years.add(currentYear)
+  if (majorCatalogFilters.catalog_year) years.add(majorCatalogFilters.catalog_year)
+  return [
+    { label: '全部目录', value: '' },
+    ...Array.from(years)
+      .filter((value) => /^20\d{2}$/.test(String(value)))
+      .sort((left, right) => String(right).localeCompare(String(left)))
+      .map((value) => ({ label: `${value} 年`, value }))
+  ]
+})
 const majorCatalogRegionFilterOptions = computed(() => {
   const regions = new Set(majorCatalogFilterOptions.value.regions)
   if (majorCatalogFilters.region) regions.add(majorCatalogFilters.region)
   return [
-    { label: '全部地区', value: '' },
+    { label: '全部地域', value: '' },
     ...Array.from(regions)
       .map((value) => String(value || '').trim())
       .filter(Boolean)
+      .sort((left, right) => left.localeCompare(right, 'zh-CN'))
+      .map((value) => ({ label: value, value }))
+  ]
+})
+const majorCatalogSchoolFilterOptions = computed(() => {
+  if (!majorCatalogFilters.region) return [{ label: '请选择地域', value: '' }]
+  const schools = new Set(
+    majorCatalogFilterOptions.value.schools
+      .filter((item) => item?.region === majorCatalogFilters.region)
+      .map((item) => String(item?.name || '').trim())
+      .filter(Boolean)
+  )
+  if (majorCatalogFilters.school_name) schools.add(majorCatalogFilters.school_name)
+  return [
+    { label: '全部招生院校', value: '' },
+    ...Array.from(schools)
       .sort((left, right) => left.localeCompare(right, 'zh-CN'))
       .map((value) => ({ label: value, value }))
   ]
@@ -2294,7 +2380,7 @@ const majorCatalogExamCodeFilterOptions = computed(() => {
   const examCodes = new Set(majorCatalogFilterOptions.value.exam_codes)
   if (majorCatalogFilters.exam_code) examCodes.add(majorCatalogFilters.exam_code)
   return [
-    { label: '全部考试类别', value: '' },
+    { label: '全部统考科目', value: '' },
     ...Array.from(examCodes)
       .map((value) => String(value || '').trim().toUpperCase())
       .filter(Boolean)
@@ -2302,14 +2388,19 @@ const majorCatalogExamCodeFilterOptions = computed(() => {
       .map((value) => ({ label: value, value }))
   ]
 })
+const majorCatalogYearFilterIndex = computed(() => optionIndex(majorCatalogYearFilterOptions.value, majorCatalogFilters.catalog_year))
 const majorCatalogRegionFilterIndex = computed(() => optionIndex(majorCatalogRegionFilterOptions.value, majorCatalogFilters.region))
+const majorCatalogSchoolFilterIndex = computed(() => optionIndex(majorCatalogSchoolFilterOptions.value, majorCatalogFilters.school_name))
 const majorCatalogExamCodeFilterIndex = computed(() => optionIndex(majorCatalogExamCodeFilterOptions.value, majorCatalogFilters.exam_code))
 const majorCatalogExamCodeEditIndex = computed(() => optionIndex(majorCatalogExamCodeEditOptions, majorCatalogRecordForm.exam_code))
 const homeFocusContentItems = computed(() => sortHomeContentItems(homeContentItems.value.filter((item) => item.slot === 'focus')))
 const homeNewsContentItems = computed(() => sortHomeContentItems(homeContentItems.value.filter((item) => item.slot === 'news')))
-const homeSortedContentItems = computed(() => [...homeFocusContentItems.value, ...homeNewsContentItems.value])
-const homeVisibleFocusItems = computed(() => homeFocusContentItems.value.filter(isHomeContentVisibleNow).slice(0, 3))
-const homeVisibleNewsItems = computed(() => homeNewsContentItems.value.filter(isHomeContentVisibleNow).slice(0, 2))
+const homeFocusPublishedCount = computed(() => homeFocusContentItems.value.filter((item) => item.status === 'published').length)
+const homeNewsPublishedCount = computed(() => homeNewsContentItems.value.filter((item) => item.status === 'published').length)
+const homeFocusContentAtCapacity = computed(() => homeFocusPublishedCount.value >= HOME_CONTENT_SLOT_LIMITS.focus)
+const homeNewsContentAtCapacity = computed(() => homeNewsPublishedCount.value >= HOME_CONTENT_SLOT_LIMITS.news)
+const homeVisibleFocusItems = computed(() => homeFocusContentItems.value.filter(isHomeContentVisibleNow).slice(0, HOME_CONTENT_SLOT_LIMITS.focus))
+const homeVisibleNewsItems = computed(() => homeNewsContentItems.value.filter(isHomeContentVisibleNow).slice(0, HOME_CONTENT_SLOT_LIMITS.news))
 const homeToneLabels = computed(() => homeToneOptions.map((item) => item.label))
 const homeToneIndex = computed(() => optionIndex(homeToneOptions, homeContentForm.tone))
 const homeTargetLabels = computed(() => homeTargetOptions.map((item) => item.label))
@@ -4327,10 +4418,16 @@ async function switchAdmissionDataset(dataset) {
   scorelineRecords.value = []
   scorelineRecordCount.value = 0
   scorelineRecordsError.value = false
-  announcementRecordStatus.value = 'all'
+  announcementFilters.notice_type = ''
+  announcementFilters.notice_year = ''
+  announcementFilters.region = ''
+  announcementFilters.school_id = ''
+  announcementFilters.keyword = ''
   announcementRecords.value = []
   majorCatalogRecordPage.value = 1
+  majorCatalogFilters.catalog_year = ''
   majorCatalogFilters.region = ''
+  majorCatalogFilters.school_name = ''
   majorCatalogFilters.exam_code = ''
   majorCatalogFilters.keyword = ''
   majorCatalogRecords.value = []
@@ -4545,34 +4642,46 @@ function ensureDevPreviewMajorCatalogRecords() {
     { id: 'preview-major-3', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '广东', school_name: '暨南大学', department_name: '新闻与传播学院', program_name: '新闻与传播', program_code: '055200', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 3 },
     { id: 'preview-major-4', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '广东', school_name: '中山大学', department_name: '管理学院', program_name: '工商管理', program_code: '125100', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '非全日制', source_row: 4 },
     { id: 'preview-major-5', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '上海', school_name: '复旦大学', department_name: '数学科学学院', program_name: '应用统计', program_code: '025200', direction_name: '金融统计与风险管理', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 5 },
-    { id: 'preview-major-6', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '浙江', school_name: '浙江大学', department_name: '计算机科学与技术学院', program_name: '电子信息', program_code: '085400', direction_name: '人工智能', tutor: '', exam_code: 'Z001', degree: '硕士', study_mode: '全日制', source_row: 6 }
+    { id: 'preview-major-6', import_run_id: 'preview-major-run-1', catalog_year: '2026', region: '浙江', school_name: '浙江大学', department_name: '计算机科学与技术学院', program_name: '电子信息', program_code: '085400', direction_name: '人工智能', tutor: '', exam_code: 'Z001', degree: '硕士', study_mode: '全日制', source_row: 6 },
+    { id: 'preview-major-2025-1', import_run_id: 'preview-major-run-1', catalog_year: '2025', region: '浙江', school_name: '浙江师范大学', department_name: '地理与环境科学学院', program_name: '地理学与工程', program_code: '083000', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 1 },
+    { id: 'preview-major-2025-2', import_run_id: 'preview-major-run-1', catalog_year: '2025', region: '广东', school_name: '暨南大学', department_name: '新闻与传播学院', program_name: '新闻与传播', program_code: '055200', direction_name: '不区分研究方向', tutor: '', exam_code: 'Z002', degree: '硕士', study_mode: '全日制', source_row: 2 }
   ]
 }
 
 function updateMajorCatalogFilterOptions(records) {
   majorCatalogFilterOptions.value = {
+    years: Array.from(new Set(records.map((item) => String(item?.catalog_year || '').trim()).filter(Boolean))),
     regions: Array.from(new Set(records.map((item) => String(item?.region || '').trim()).filter(Boolean))),
+    schools: Array.from(new Map(records.map((item) => {
+      const region = String(item?.region || '').trim()
+      const name = String(item?.school_name || '').trim()
+      return [`${region}\u0000${name}`, { region, name }]
+    })).values()).filter((item) => item.region && item.name),
     exam_codes: Array.from(new Set(records.map((item) => String(item?.exam_code || '').trim()).filter(Boolean)))
   }
 }
 
 async function loadMajorCatalogRecords() {
-  if (!selectedAdmissionRunId.value) {
+  if (devPreviewMode.value && !selectedAdmissionRunId.value) {
     majorCatalogRecords.value = []
     majorCatalogRecordCount.value = 0
     majorCatalogRecordsError.value = false
-    majorCatalogFilterOptions.value = { regions: [], exam_codes: [] }
+    majorCatalogFilterOptions.value = { years: [], regions: [], schools: [], exam_codes: [] }
     return
   }
   if (devPreviewMode.value) {
     ensureDevPreviewMajorCatalogRecords()
     const keyword = majorCatalogFilters.keyword.trim().toLowerCase()
     const recordsForRun = devPreviewMajorCatalogRecords.value.filter((item) => item.import_run_id === selectedAdmissionRunId.value)
-    updateMajorCatalogFilterOptions(recordsForRun)
-    const filtered = recordsForRun.filter((item) => (
+    const activeCatalogYear = majorCatalogFilters.catalog_year || '2026'
+    const recordsForCatalogYear = recordsForRun.filter((item) => item.catalog_year === activeCatalogYear)
+    updateMajorCatalogFilterOptions(recordsForCatalogYear)
+    majorCatalogFilterOptions.value.years = Array.from(new Set(recordsForRun.map((item) => item.catalog_year).filter(Boolean)))
+    const filtered = recordsForCatalogYear.filter((item) => (
       (!majorCatalogFilters.region || item.region === majorCatalogFilters.region)
+      && (!majorCatalogFilters.school_name || item.school_name === majorCatalogFilters.school_name)
       && (!majorCatalogFilters.exam_code || item.exam_code === majorCatalogFilters.exam_code)
-      && (!keyword || `${item.school_name || ''} ${item.department_name || ''} ${item.program_name || ''} ${item.program_code || ''} ${item.direction_name || ''}`.toLowerCase().includes(keyword))
+      && (!keyword || `${item.school_name || ''} ${item.department_name || ''} ${item.program_name || ''} ${item.program_code || ''} ${item.direction_name || ''} ${item.tutor || ''}`.toLowerCase().includes(keyword))
     )).sort((left, right) => (
       String(left.region || '').localeCompare(String(right.region || ''), 'zh-CN')
       || String(left.school_name || '').localeCompare(String(right.school_name || ''), 'zh-CN')
@@ -4590,9 +4699,9 @@ async function loadMajorCatalogRecords() {
   majorCatalogRecordsError.value = false
   try {
     const response = await fetchQuestionAdminMajorCatalogRecords({
-      import_run_id: selectedAdmissionRunId.value,
-      catalog_year: String(selectedAdmissionRun.value?.statistics?.catalog_year || '').trim() || undefined,
+      catalog_year: majorCatalogFilters.catalog_year || undefined,
       region: majorCatalogFilters.region || undefined,
+      school_name: majorCatalogFilters.school_name || undefined,
       exam_code: majorCatalogFilters.exam_code || undefined,
       keyword: majorCatalogFilters.keyword.trim() || undefined,
       limit: majorCatalogRecordPageSize,
@@ -4601,7 +4710,9 @@ async function loadMajorCatalogRecords() {
     majorCatalogRecords.value = response?.items || []
     majorCatalogRecordCount.value = Number(response?.count || 0)
     majorCatalogFilterOptions.value = {
+      years: Array.isArray(response?.filter_years) ? response.filter_years : [],
       regions: Array.isArray(response?.filter_regions) ? response.filter_regions : [],
+      schools: Array.isArray(response?.filter_schools) ? response.filter_schools : [],
       exam_codes: Array.isArray(response?.filter_exam_codes) ? response.filter_exam_codes : []
     }
   } catch (error) {
@@ -4618,13 +4729,21 @@ function applyMajorCatalogFilters() {
   loadMajorCatalogRecords()
 }
 
-function handleMajorCatalogFilterInput() {
-  if (majorCatalogSearchTimer) clearTimeout(majorCatalogSearchTimer)
-  majorCatalogSearchTimer = setTimeout(applyMajorCatalogFilters, 360)
+function handleMajorCatalogYearFilterChange(event) {
+  majorCatalogFilters.catalog_year = majorCatalogYearFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  majorCatalogFilters.region = ''
+  majorCatalogFilters.school_name = ''
+  applyMajorCatalogFilters()
 }
 
 function handleMajorCatalogRegionFilterChange(event) {
   majorCatalogFilters.region = majorCatalogRegionFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  majorCatalogFilters.school_name = ''
+  applyMajorCatalogFilters()
+}
+
+function handleMajorCatalogSchoolFilterChange(event) {
+  majorCatalogFilters.school_name = majorCatalogSchoolFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
   applyMajorCatalogFilters()
 }
 
@@ -4634,7 +4753,9 @@ function handleMajorCatalogExamCodeFilterChange(event) {
 }
 
 function clearMajorCatalogFilters() {
+  majorCatalogFilters.catalog_year = ''
   majorCatalogFilters.region = ''
+  majorCatalogFilters.school_name = ''
   majorCatalogFilters.exam_code = ''
   majorCatalogFilters.keyword = ''
   applyMajorCatalogFilters()
@@ -4692,7 +4813,7 @@ async function saveMajorCatalogRecord() {
     uni.showToast({ title: '请完整填写地区、院校、院系、专业和研究方向', icon: 'none' })
     return
   }
-  const syncsStudentView = selectedAdmissionRun.value?.status === 'published'
+  const syncsStudentView = true
   const confirmed = await confirmAction(
     '保存专业目录修改？',
     syncsStudentView ? '当前目录正在用户端展示，保存后会重新同步这一年度目录。' : '修改会保存在当前导入批次中。',
@@ -4841,16 +4962,32 @@ async function saveScorelineRecord() {
 }
 
 async function loadAnnouncementRecords() {
-  if (!selectedAdmissionRunId.value) {
+  if (devPreviewMode.value && !selectedAdmissionRunId.value) {
     announcementRecords.value = []
     announcementRecordCount.value = 0
     announcementRecordsError.value = false
+    announcementFilterOptions.value = { years: [], regions: [], schools: [] }
     return
   }
   if (devPreviewMode.value) {
-    announcementRecords.value = devPreviewAnnouncementRecords.value.filter((item) => (
-      item.import_run_id === selectedAdmissionRunId.value
-      && (announcementRecordStatus.value === 'all' || item.status === announcementRecordStatus.value)
+    const publishedRecords = devPreviewAnnouncementRecords.value.filter((item) => item.status === 'published')
+    const filterRecords = publishedRecords.filter((item) => (
+      (!announcementFilters.notice_year || item.notice_year === announcementFilters.notice_year)
+      && (!announcementFilters.notice_type || item.notice_type === announcementFilters.notice_type)
+    ))
+    announcementFilterOptions.value = {
+      years: Array.from(new Set(publishedRecords.map((item) => String(item.notice_year || '')).filter(Boolean))),
+      regions: Array.from(new Set(filterRecords.map((item) => String(item.region || '')).filter(Boolean))),
+      schools: Array.from(new Map(filterRecords.map((item) => [
+        String(item.school_id || ''),
+        { id: String(item.school_id || ''), region: String(item.region || ''), name: String(item.school_name || '') }
+      ])).values()).filter((item) => item.id && item.region && item.name)
+    }
+    const keyword = announcementFilters.keyword.trim().toLowerCase()
+    announcementRecords.value = filterRecords.filter((item) => (
+      (!announcementFilters.region || item.region === announcementFilters.region)
+      && (!announcementFilters.school_id || item.school_id === announcementFilters.school_id)
+      && (!keyword || `${item.school_name || ''} ${item.unit_name || ''} ${item.title || ''} ${item.summary || ''} ${item.content_text || ''}`.toLowerCase().includes(keyword))
     )).map((item) => ({ ...item })).sort((left, right) => (
       Number(left.sort_order || 0) - Number(right.sort_order || 0)
       || String(right.notice_date || '').localeCompare(String(left.notice_date || ''))
@@ -4863,12 +5000,20 @@ async function loadAnnouncementRecords() {
   announcementRecordsError.value = false
   try {
     const response = await fetchQuestionAdminAnnouncementRecords({
-      import_run_id: selectedAdmissionRunId.value,
-      status: announcementRecordStatus.value === 'all' ? undefined : announcementRecordStatus.value,
+      notice_type: announcementFilters.notice_type || undefined,
+      notice_year: announcementFilters.notice_year || undefined,
+      region: announcementFilters.region || undefined,
+      school_id: announcementFilters.school_id || undefined,
+      keyword: announcementFilters.keyword.trim() || undefined,
       limit: 100
     })
     announcementRecords.value = response?.items || []
     announcementRecordCount.value = Number(response?.count || 0)
+    announcementFilterOptions.value = {
+      years: Array.isArray(response?.filter_years) ? response.filter_years : [],
+      regions: Array.isArray(response?.filter_regions) ? response.filter_regions : [],
+      schools: Array.isArray(response?.filter_schools) ? response.filter_schools : []
+    }
   } catch (error) {
     announcementRecords.value = []
     announcementRecordCount.value = 0
@@ -4878,9 +5023,40 @@ async function loadAnnouncementRecords() {
   }
 }
 
-function handleAnnouncementRecordStatusChange(event) {
-  announcementRecordStatus.value = announcementRecordStatusOptions[Number(event?.detail?.value || 0)]?.value || 'all'
+function applyAnnouncementFilters() {
   loadAnnouncementRecords()
+}
+
+function handleAnnouncementNoticeTypeFilterChange(event) {
+  announcementFilters.notice_type = announcementNoticeTypeFilterOptions[Number(event?.detail?.value || 0)]?.value || ''
+  announcementFilters.school_id = ''
+  applyAnnouncementFilters()
+}
+
+function handleAnnouncementYearFilterChange(event) {
+  announcementFilters.notice_year = announcementYearFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  announcementFilters.school_id = ''
+  applyAnnouncementFilters()
+}
+
+function handleAnnouncementRegionFilterChange(event) {
+  announcementFilters.region = announcementRegionFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  announcementFilters.school_id = ''
+  applyAnnouncementFilters()
+}
+
+function handleAnnouncementSchoolFilterChange(event) {
+  announcementFilters.school_id = announcementSchoolFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  applyAnnouncementFilters()
+}
+
+function clearAnnouncementFilters() {
+  announcementFilters.notice_type = ''
+  announcementFilters.notice_year = ''
+  announcementFilters.region = ''
+  announcementFilters.school_id = ''
+  announcementFilters.keyword = ''
+  applyAnnouncementFilters()
 }
 
 function openAdmissionFilePicker() {
@@ -4960,11 +5136,7 @@ async function setAnnouncementRecordStatus(item, nextStatus) {
         record.id === updated.id ? { ...record, ...updated } : record
       ))
     }
-    announcementRecords.value = announcementRecords.value.map((record) => record.id === updated.id ? { ...record, ...updated } : record)
-    if (announcementRecordStatus.value !== 'all' && updated.status !== announcementRecordStatus.value) {
-      announcementRecords.value = announcementRecords.value.filter((record) => record.id !== updated.id)
-      announcementRecordCount.value = Math.max(0, announcementRecordCount.value - 1)
-    }
+    await loadAnnouncementRecords()
     uni.showToast({ title: nextStatus === 'published' ? '公告已发布' : '公告已归档', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '公告状态更新失败', icon: 'none' })
@@ -5102,6 +5274,10 @@ function resetHomeContentForm(slot = 'focus') {
 }
 
 function openHomeContentEditor(slot, item = null) {
+  if (!item && homeContentSlotAtCapacity(slot)) {
+    uni.showToast({ title: `${homeContentSlotLabel(slot)}最多发布 ${homeContentSlotLimit(slot)} 个，请先下架现有内容`, icon: 'none' })
+    return
+  }
   if (item) {
     homeContentEditingId.value = item.id
     Object.assign(homeContentForm, {
@@ -5230,21 +5406,19 @@ function homeContentPayloadFromItem(item, status = item.status) {
   }
 }
 
-async function toggleHomeContentStatus(item) {
-  if (!item?.id || homeContentStatusSavingId.value) return
-  const nextStatus = item.status === 'published' ? 'archived' : 'published'
-  const nextVisibility = nextStatus === 'published' ? homeContentTimingText({ ...item, status: nextStatus }) : ''
+async function archiveHomeContent(item) {
+  if (!item?.id || item.status !== 'published' || homeContentStatusSavingId.value) return
   const confirmed = await confirmAction(
-    nextStatus === 'published' ? '发布首页内容？' : '下架首页内容？',
-    nextStatus === 'published' ? `发布后将按排序进入学生端首页；${nextVisibility}。` : '下架后学生端将不再展示该内容，后台记录会保留。',
-    nextStatus === 'published' ? '发布' : '下架'
+    '下架首页内容？',
+    '下架后学生端将不再展示该内容，后台记录会保留。',
+    '下架'
   )
   if (!confirmed) return
   homeContentStatusSavingId.value = item.id
   try {
     const updated = devPreviewMode.value
-      ? { ...item, status: nextStatus }
-      : await updateQuestionAdminHomeContent(item.id, homeContentPayloadFromItem(item, nextStatus))
+      ? { ...item, status: 'archived' }
+      : await updateQuestionAdminHomeContent(item.id, homeContentPayloadFromItem(item, 'archived'))
     if (devPreviewMode.value) {
       devPreviewHomeContentItems.value = devPreviewHomeContentItems.value.map((candidate) => (
         candidate.id === updated.id ? { ...candidate, ...updated } : candidate
@@ -5252,7 +5426,7 @@ async function toggleHomeContentStatus(item) {
     }
     homeContentItems.value = homeContentItems.value.map((candidate) => candidate.id === updated.id ? { ...candidate, ...updated } : candidate)
     await loadOperationsOverview()
-    uni.showToast({ title: nextStatus === 'published' ? '已发布到首页' : '首页内容已下架', icon: 'success' })
+    uni.showToast({ title: '首页内容已下架', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '首页状态更新失败', icon: 'none' })
   } finally {
@@ -5293,15 +5467,6 @@ function homeContentStatusClass(item) {
   if (text === '展示中') return 'published'
   if (text === '已下架' || text === '已到期') return 'archived'
   return 'pending'
-}
-
-function homeContentTimingText(item) {
-  if (item?.status !== 'published') return item?.status === 'archived' ? '已从用户端下架' : '尚未发布到用户端'
-  const timing = homeContentTimeState(item)
-  if (timing === 'scheduled') return `将于 ${formatDateTime(item.starts_at)} 生效`
-  if (timing === 'expired') return `已于 ${formatDateTime(item.ends_at)} 到期`
-  if (item?.ends_at) return `展示中，${formatDateTime(item.ends_at)} 自动下线`
-  return '当前正在用户端展示'
 }
 
 function homeContentListMeta(item, index) {
@@ -5359,6 +5524,19 @@ function loadDevPreviewOperations() {
   filteredUsers = sortPortalUserItems(filteredUsers)
   portalUsers.value = filteredUsers
   portalUserCount.value = portalUsers.value.length
+}
+
+function homeContentSlotLimit(slot) {
+  return HOME_CONTENT_SLOT_LIMITS[slot] || 0
+}
+
+function homeContentSlotLabel(slot) {
+  return slot === 'news' ? '港澳台考研资讯' : '焦点轮播'
+}
+
+function homeContentSlotAtCapacity(slot) {
+  const count = slot === 'news' ? homeNewsPublishedCount.value : homeFocusPublishedCount.value
+  return count >= homeContentSlotLimit(slot)
 }
 
 function sortPortalUserItems(items) {
@@ -5431,9 +5609,9 @@ function loadDevPreviewAdmission() {
   }))
   if (dataset === 'announcements' && !devPreviewAnnouncementRecords.value.length) {
     devPreviewAnnouncementRecords.value = [
-      { id: 'preview-notice-1', import_run_id: 'preview-notice-run-1', school_name: '暨南大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年面向港澳台地区研究生招生简章', summary: '含报名条件、考试科目与录取办法。', notice_date: '2026-04-08', status: 'published' },
-      { id: 'preview-notice-2', import_run_id: 'preview-notice-run-1', school_name: '华南理工大学', unit_name: '', notice_type: 'scoreline_retest', title: '2026 年港澳台研究生复试分数线', summary: '各学院复试安排以学院通知为准。', notice_date: '2026-04-06', status: 'published' },
-      { id: 'preview-notice-3', import_run_id: 'preview-notice-run-2', school_name: '中山大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年港澳台研究生招生补充说明', summary: '补充报名材料与时间安排。', notice_date: '2026-08-18', status: 'draft' }
+      { id: 'preview-notice-1', import_run_id: 'preview-notice-run-1', notice_year: '2026', region: '广东', school_id: 'preview-school-jnu', school_name: '暨南大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年面向港澳台地区研究生招生简章', summary: '含报名条件、考试科目与录取办法。', notice_date: '2026-04-08', status: 'published' },
+      { id: 'preview-notice-2', import_run_id: 'preview-notice-run-1', notice_year: '2026', region: '广东', school_id: 'preview-school-scut', school_name: '华南理工大学', unit_name: '', notice_type: 'scoreline_retest', title: '2026 年港澳台研究生复试分数线', summary: '各学院复试安排以学院通知为准。', notice_date: '2026-04-06', status: 'published' },
+      { id: 'preview-notice-3', import_run_id: 'preview-notice-run-2', notice_year: '2026', region: '广东', school_id: 'preview-school-sysu', school_name: '中山大学', unit_name: '研究生院', notice_type: 'brochure', title: '2026 年港澳台研究生招生补充说明', summary: '补充报名材料与时间安排。', notice_date: '2026-08-18', status: 'draft' }
     ]
   }
 }
@@ -7942,6 +8120,17 @@ button {
   text-align: center;
 }
 
+.home-content-add-button {
+  width: 68px;
+}
+
+.home-content-add-button:disabled {
+  border-color: #e2e8eb;
+  color: #9aa7b2;
+  background: #f4f6f7;
+  opacity: 1;
+}
+
 .table-state.error {
   color: #b2605b;
 }
@@ -8932,7 +9121,7 @@ button {
 .scoreline-record-workspace,
 .announcement-record-workspace,
 .major-catalog-workspace,
-.home-content-editor,
+.home-content-editor-modal,
 .home-content-column,
 .home-live-preview-workspace {
   border: 1px solid #e2eaee;
@@ -9666,6 +9855,31 @@ button {
   flex-basis: 132px;
 }
 
+.major-catalog-school-select {
+  width: 180px;
+  flex-basis: 180px;
+  --admin-select-menu-min-width: 220px;
+}
+
+.scoreline-filter-apply {
+  width: 54px;
+  height: 34px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 54px;
+  border: 1px solid #b9ded5;
+  border-radius: 6px;
+  box-sizing: border-box;
+  color: #287d6d;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  background: #f3fbf8;
+}
+
 .scoreline-filter-clear {
   width: 30px;
   height: 30px;
@@ -9721,16 +9935,31 @@ button {
   min-width: 0;
 }
 
+.exam-code-cell {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
 .exam-code-pill {
   display: inline-flex;
   min-width: 42px;
   height: 22px;
   align-items: center;
   justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
   border-radius: 6px;
   font-size: 9px;
   font-weight: 800;
   line-height: 1;
+}
+
+.exam-code-cell .exam-code-pill {
+  display: inline-flex;
+  margin-top: 0;
 }
 
 .exam-code-pill.is-z001 {
@@ -9824,52 +10053,89 @@ button {
   line-height: 1.6;
 }
 
-.home-content-editor {
-  padding-bottom: 20px;
+.home-content-editor-backdrop {
+  z-index: 110;
+  padding: 36px;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+}
+
+.home-content-editor-modal {
+  width: min(860px, calc(100vw - 72px));
+  height: min(720px, calc(100vh - 72px));
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-radius: 10px;
+}
+
+.home-editor-modal-heading {
+  flex: 0 0 auto;
+}
+
+.home-editor-scroll {
+  min-height: 0;
+  flex: 1;
+}
+
+.home-editor-content {
+  padding: 22px 24px 26px;
 }
 
 .home-editor-grid {
   display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 14px;
-  padding: 0 20px;
 }
 
 .home-editor-grid .form-field.full {
   grid-column: span 2;
+  margin-top: 0;
 }
 
-.home-slot-toggle {
-  display: flex;
-  min-height: 36px;
-  overflow: hidden;
-  border: 1px solid #dfe8ec;
+.home-editor-grid .form-label {
+  color: #64778b;
+  font-size: 11px;
+}
+
+.home-editor-grid .form-input,
+.home-editor-grid .form-textarea {
+  width: 100%;
+  height: 38px;
+  margin-top: 8px;
+  padding: 0 11px;
+  border: 1px dashed #9fcfc4;
   border-radius: 7px;
+  box-sizing: border-box;
+  color: #40566d;
+  font-size: 12px;
+  background: #fbfefd;
 }
 
-.home-slot-toggle button {
-  flex: 1;
-  border: 0;
-  color: #8292a3;
-  font-size: 10px;
+.home-editor-grid .form-textarea {
+  min-height: 88px;
+  padding-top: 10px;
+  padding-bottom: 10px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+.home-editor-grid .form-input:focus,
+.home-editor-grid .form-textarea:focus {
+  border-color: #58bba5;
   background: #ffffff;
-}
-
-.home-slot-toggle button + button {
-  border-left: 1px solid #dfe8ec;
-}
-
-.home-slot-toggle button.active {
-  color: #197e6f;
-  font-weight: 700;
-  background: #dff5ef;
+  box-shadow: 0 0 0 3px rgba(80, 208, 180, 0.09);
 }
 
 .home-editor-actions {
   display: flex;
   justify-content: flex-end;
   gap: 10px;
-  margin: 18px 20px 0;
+  padding: 14px 24px;
+  flex: 0 0 auto;
+  border-top: 1px solid #e8eef1;
+  background: #ffffff;
 }
 
 .home-editor-sample {
@@ -9877,7 +10143,7 @@ button {
   min-height: 82px;
   align-content: center;
   gap: 5px;
-  margin: 16px 20px 0;
+  margin: 16px 0 0;
   padding: 14px 16px;
   border-left: 3px solid #6a9fd0;
   color: #38536e;
@@ -10682,6 +10948,15 @@ button {
     flex: 1 1 calc(50% - 4px);
   }
 
+  .major-catalog-school-select {
+    width: calc(50% - 4px);
+    flex-basis: calc(50% - 4px);
+  }
+
+  .scoreline-filter-apply {
+    margin-left: auto;
+  }
+
   .scoreline-filter-clear {
     margin-left: auto;
   }
@@ -10719,6 +10994,23 @@ button {
 
   .admission-import-backdrop {
     padding: 16px;
+  }
+
+  .home-content-editor-backdrop {
+    padding: 16px;
+  }
+
+  .home-content-editor-modal {
+    width: 100%;
+    height: calc(100vh - 32px);
+  }
+
+  .home-editor-content {
+    padding: 18px;
+  }
+
+  .home-editor-actions {
+    padding: 14px 18px;
   }
 
   .admission-import-modal {

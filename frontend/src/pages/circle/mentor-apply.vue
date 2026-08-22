@@ -147,7 +147,13 @@
                 <view v-if="mentorOrdersLoading && !mentorOrders.length" class="mentor-center-empty">正在加载咨询请求…</view>
                 <view v-else-if="!mentorOrders.length" class="mentor-center-empty">暂时没有新的咨询请求</view>
 
-                <view v-for="order in mentorOrders" :key="order.id" class="mentor-center-order-card">
+                <view
+                  v-for="order in mentorOrders"
+                  :key="order.id"
+                  class="mentor-center-order-card"
+                  :class="{ 'is-chat-record': canOpenOrderChat(order) }"
+                  @tap="openMentorOrderChatFromCard(order)"
+                >
                   <view class="mentor-center-order-head">
                     <view>
                       <strong>{{ getOrderTypeLabel(order) }}</strong>
@@ -166,11 +172,11 @@
                   </view>
 
                   <view v-if="order.orderStatus === 'pending_accept'" class="mentor-center-order-actions">
-                    <button class="light" :loading="centerActionId === order.id" @tap="handleOrderDecision(order, 'reject')">暂不接受</button>
-                    <button :loading="centerActionId === order.id" @tap="handleOrderDecision(order, 'accept')">接受咨询</button>
+                    <button class="light" :loading="centerActionId === order.id" @tap.stop="handleOrderDecision(order, 'reject')">暂不接受</button>
+                    <button :loading="centerActionId === order.id" @tap.stop="handleOrderDecision(order, 'accept')">接受咨询</button>
                   </view>
                   <view v-else-if="['accepted', 'in_progress'].includes(order.orderStatus)" class="mentor-center-order-actions">
-                    <button :loading="centerActionId === order.id" @tap="openMentorOrderChat(order)">{{ order.orderStatus === 'accepted' ? '开始咨询' : '进入咨询' }}</button>
+                    <button :loading="centerActionId === order.id" @tap.stop="openMentorOrderChat(order)">{{ order.orderStatus === 'accepted' ? '开始咨询' : '进入咨询' }}</button>
                   </view>
                 </view>
               </view>
@@ -529,7 +535,7 @@ async function handleOrderDecision(order, decision) {
 }
 
 async function openMentorOrderChat(order) {
-  if (!order?.id || !mentorProfile.value || centerActionId.value) return
+  if (!order?.id || !mentorProfile.value || centerActionId.value || !canOpenOrderChat(order)) return
   centerActionId.value = order.id
   try {
     let activeOrder = order
@@ -603,6 +609,15 @@ function clearCachedMentorCenterProfile() {
   }
 }
 
+function canOpenOrderChat(order = {}) {
+  return ['accepted', 'in_progress', 'completed'].includes(order.orderStatus)
+}
+
+function openMentorOrderChatFromCard(order) {
+  if (!canOpenOrderChat(order)) return
+  void openMentorOrderChat(order)
+}
+
 function getUserAvatarUrl(user = {}) {
   const value = String(user?.avatar_url || user?.avatarUrl || '').trim()
   return /^(https?:\/\/|data:image\/)/i.test(value) ? value : ''
@@ -653,4 +668,6 @@ function goBack() {
 .mentor-center-hero-action{cursor:pointer;transition:transform 160ms ease,background 160ms ease}.mentor-center-hero-action:active{transform:scale(.992);background:#f7faff}.mentor-center-hero-arrow{margin:0 0 0 auto!important;color:#8ba6d2!important;display:inline-flex!important;align-items:center;justify-content:center;font-size:42rpx!important;line-height:1!important;font-weight:500}.mentor-center-schedule-button{box-sizing:border-box;position:relative;width:172rpx;height:54rpx;min-width:172rpx;min-height:54rpx;margin:0;padding:0;border:2rpx solid #c9dcfb;border-radius:16rpx;background:#f7faff;color:#4d72a9;display:block;font-size:0;line-height:1;overflow:hidden}.mentor-center-schedule-button:active{transform:scale(.98);background:#edf4ff}.mentor-center-schedule-button-label{position:absolute;inset:0;margin:0;display:flex!important;align-items:center;justify-content:center;color:inherit;font-size:19rpx;line-height:1;font-weight:850;text-align:center;white-space:nowrap;transform:translateY(-2rpx)}
 .mentor-apply-center-content{box-sizing:border-box;height:100%;min-height:0;padding:20rpx 24rpx 24rpx;display:flex;flex-direction:column}.mentor-apply-center-content>.mentor-center-hero,.mentor-apply-center-content>.mentor-center-status{flex-shrink:0}.mentor-center-orders{min-height:0;flex:1 1 auto;display:flex;flex-direction:column;overflow:hidden}.mentor-center-orders-heading{flex-shrink:0}.mentor-center-orders-scroll{height:0;min-height:0;flex:1 1 auto;margin-top:18rpx}.mentor-center-orders-list{padding-bottom:4rpx}
 @media(max-width:350px){.mentor-apply-content{padding-right:18rpx;padding-left:18rpx}.mentor-apply-card{padding:23rpx}.mentor-proof-image,.mentor-proof-upload{width:126rpx;height:126rpx}}
+.mentor-center-order-card.is-chat-record{cursor:pointer;transition:transform 160ms ease,background 160ms ease}
+.mentor-center-order-card.is-chat-record:active{transform:scale(.992);background:#f8fbff}
 </style>

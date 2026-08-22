@@ -105,6 +105,11 @@ export function cacheMentors(mentors = [], { replace = false } = {}) {
   return clone(mentorCache)
 }
 
+// 目录缓存用于先回填上一次成功获取的公开前辈资料，再在后台刷新真实数据。
+export function getCachedMentorDirectory() {
+  return clone(getCachedMentors())
+}
+
 export function getFallbackMentors() {
   return [withMentorDisplayFields(clone(fallbackMentorSeed))]
 }

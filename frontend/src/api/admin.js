@@ -536,3 +536,49 @@ export function decideAdminMentorVerificationApplication(applicationId, payload)
     data: payload
   })
 }
+
+export function fetchAdminMentorConsultationReports(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/reports',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorConsultationReport(reportId) {
+  return request({
+    url: `/admin/mentor-consultation/reports/${encodeURIComponent(reportId)}`,
+    method: 'GET'
+  })
+}
+
+export function updateAdminMentorConsultationReportStatus(reportId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/reports/${encodeURIComponent(reportId)}/status`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorProfileChangeRequests(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/profile-change-requests',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorProfileChangeRequest(requestId) {
+  return request({
+    url: `/admin/mentor-consultation/profile-change-requests/${encodeURIComponent(requestId)}`,
+    method: 'GET'
+  })
+}
+
+export function decideAdminMentorProfileChangeRequest(requestId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/profile-change-requests/${encodeURIComponent(requestId)}/decision`,
+    method: 'POST',
+    data: payload
+  })
+}

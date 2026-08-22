@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections import defaultdict
 import gzip
 import json
+import re
 from functools import lru_cache
 from pathlib import Path
 from typing import Any, Callable, Iterable, Iterator
@@ -135,11 +136,10 @@ def _display_region_name(catalog_year: str, region_name: str) -> str:
 
 
 def _database_catalog_year_school_ids(catalog_year: str) -> set[str] | None:
-    # 2026 remains a verified overlay on the comprehensive baseline.  A
-    # historical import is already an exact year-specific catalogue and must
-    # not be filtered by the local 2026 overlay list.
-    if catalog_year == "2026":
-        return _catalog_year_school_ids(catalog_year)
+    # Once a catalogue has been published, its database snapshot is the
+    # single source of truth for the student client.  Restricting it with the
+    # bundled file's year filters can silently discard regions imported later
+    # through the operations portal.
     if catalog_year == "__invalid__":
         return set()
     return None
@@ -967,6 +967,128 @@ def _search_catalog_from_file(
         "truncated": len(school_matches) > SEARCH_RESULT_LIMIT or len(program_items) > SEARCH_RESULT_LIMIT,
         "schools": school_matches[:SEARCH_RESULT_LIMIT],
         "programs": program_items[:SEARCH_RESULT_LIMIT],
+    }
+
+
+def _published_catalog_years() -> list[str]:
+    """Return every published catalogue year available to the student client."""
+    supabase = _get_supabase()
+    response = _execute(
+        lambda: (
+            supabase.table("major_catalog_import_runs")
+            .select("source_version")
+            .eq("status", "completed")
+            .order("completed_at", desc=True)
+        )
+    )
+    years = {
+        match.group(1)
+        for item in (response.data or [])
+        if (match := re.match(r"^(20\d{2})-", str(item.get("source_version") or "")))
+    }
+    return sorted(years, reverse=True)
+
+
+def list_published_catalog_records(
+    *,
+    catalog_year: str | None = None,
+    region: str | None = None,
+    school_name: str | None = None,
+    exam_code: str | None = None,
+    keyword: str | None = None,
+    limit: int = 50,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Flatten the same completed directory snapshot exposed to students.
+
+    An empty year intentionally follows the student-facing ``全部目录``
+    behavior: it uses the complete current (2026) catalogue rather than a
+    mixture of historical records.
+    """
+    normalized_catalog_year = normalize_catalog_year(catalog_year)
+    normalized_region = (region or "").strip()
+    normalized_school_name = (school_name or "").strip()
+    normalized_exam_code = normalize_exam_code(exam_code)
+    normalized_keyword = " ".join(re.sub(r"[,%().]", " ", (keyword or "").strip()).split()).lower()
+    current_import = _current_import(normalized_catalog_year)
+    visible_catalog_year = _response_catalog_year(normalized_catalog_year, current_import.get("source_statistics"))
+    supabase = _get_supabase()
+    directions = _fetch_all(
+        lambda: (
+            supabase.table("major_catalog_directions")
+            .select(
+                "id,name,tutor,exam_code,degree,study_mode,sort_order,"
+                "school:major_catalog_schools!major_catalog_directions_school_id_fkey(id,region_name,name),"
+                "department:major_catalog_departments!major_catalog_directions_department_id_fkey(id,name),"
+                "program:major_catalog_programs!major_catalog_directions_program_id_fkey(id,name,code)"
+            )
+            .eq("sync_run_id", current_import["id"])
+            .order("sort_order")
+            .order("id")
+        )
+    )
+
+    all_records: list[dict[str, Any]] = []
+    records: list[dict[str, Any]] = []
+    for direction in directions:
+        school = direction.get("school") if isinstance(direction.get("school"), dict) else {}
+        department = direction.get("department") if isinstance(direction.get("department"), dict) else {}
+        program = direction.get("program") if isinstance(direction.get("program"), dict) else {}
+        record = {
+            "id": str(direction.get("id") or ""),
+            "catalog_year": visible_catalog_year,
+            "region": _display_region_name(normalized_catalog_year, str(school.get("region_name") or "")),
+            "school_name": str(school.get("name") or ""),
+            "department_name": str(department.get("name") or "未区分院系所"),
+            "program_name": str(program.get("name") or ""),
+            "program_code": str(program.get("code") or ""),
+            "direction_name": str(direction.get("name") or ""),
+            "tutor": str(direction.get("tutor") or ""),
+            "exam_code": str(direction.get("exam_code") or ""),
+            "degree": str(direction.get("degree") or ""),
+            "study_mode": str(direction.get("study_mode") or ""),
+            "source_row": int(direction.get("sort_order") or 0),
+        }
+        if not record["id"] or not record["school_name"] or not record["program_name"]:
+            continue
+        all_records.append(record)
+        if normalized_region and record["region"] != normalized_region:
+            continue
+        if normalized_school_name and record["school_name"] != normalized_school_name:
+            continue
+        if normalized_exam_code and record["exam_code"] != normalized_exam_code:
+            continue
+        if normalized_keyword and normalized_keyword not in " ".join(
+            str(record.get(field) or "").lower()
+            for field in ("school_name", "department_name", "program_name", "program_code", "direction_name", "tutor")
+        ):
+            continue
+        records.append(record)
+
+    schools = {
+        (record["region"], record["school_name"])
+        for record in all_records
+        if record.get("region") and record.get("school_name")
+    }
+    records.sort(
+        key=lambda item: (
+            item["region"],
+            item["school_name"],
+            item["department_name"],
+            item["program_name"],
+            int(item["source_row"]),
+        )
+    )
+    return {
+        "items": records[offset : offset + limit],
+        "count": len(records),
+        "filter_years": _published_catalog_years(),
+        "filter_regions": sorted({record["region"] for record in all_records if record["region"]}),
+        "filter_exam_codes": _ordered_exam_codes(record["exam_code"] for record in all_records),
+        "filter_schools": [
+            {"region": region_name, "name": name}
+            for region_name, name in sorted(schools, key=lambda item: (item[0], item[1]))
+        ],
     }
 
 

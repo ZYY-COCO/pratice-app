@@ -92,10 +92,10 @@ from app.services.admin_operations_imports import (
     import_run_statistics,
     parse_operations_xlsx,
 )
-from app.services.major_catalog import get_major_catalog
+from app.services.major_catalog import get_major_catalog, list_published_catalog_records
 from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
-from app.services.school_announcements import get_bundled_announcement_index
+from app.services.school_announcements import get_bundled_announcement_index, list_published_announcement_records
 from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -131,6 +131,8 @@ SCORELINE_RECORD_KINDS = {"score", "missing", "unavailable", "official", "multip
 SCORELINE_NUMERIC_PATTERN = re.compile(r"^\d+(?:\.\d+)?\s*(?:分)?$")
 ANNOUNCEMENT_NOTICE_TYPES = {"brochure", "scoreline_retest"}
 MAJOR_CATALOG_EXAM_CODES = {"Z001", "Z002"}
+HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 2}
+HOME_CONTENT_SLOT_LABELS = {"focus": "焦点轮播", "news": "港澳台考研资讯"}
 OPERATIONS_IMPORT_DATASETS = {
     "scorelines": {
         "run_table": "historical_scoreline_import_runs",
@@ -2828,6 +2830,7 @@ def question_admin_portal_major_catalog_records(
     import_run_id: str | None = Query(default=None, max_length=80),
     catalog_year: str | None = Query(default=None, max_length=4),
     region: str | None = Query(default=None, max_length=60),
+    school_name: str | None = Query(default=None, max_length=160),
     exam_code: str | None = Query(default=None, max_length=4),
     keyword: str | None = Query(default=None, max_length=100),
     limit: int = Query(default=50, ge=1, le=200),
@@ -2838,56 +2841,33 @@ def question_admin_portal_major_catalog_records(
     if normalized_year and not re.fullmatch(r"20\d{2}", normalized_year):
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="年份必须为 20xx")
     normalized_region = (region or "").strip()
+    normalized_school_name = (school_name or "").strip()
     normalized_exam_code = (exam_code or "").strip().upper()
     if normalized_exam_code and normalized_exam_code not in MAJOR_CATALOG_EXAM_CODES:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="考试类型仅支持 Z001 或 Z002")
     normalized_keyword = (keyword or "").strip()
     search_keyword = " ".join(re.sub(r"[,%().]", " ", normalized_keyword).split())
-    supabase = get_supabase_admin()
     try:
-        query = supabase.table("major_catalog_staging_records").select("*", count="exact")
-        if import_run_id:
-            query = query.eq("import_run_id", import_run_id)
-        if normalized_year:
-            query = query.eq("catalog_year", normalized_year)
-        if normalized_region:
-            query = query.eq("region", normalized_region)
-        if normalized_exam_code:
-            query = query.eq("exam_code", normalized_exam_code)
-        if search_keyword:
-            pattern = f"%{search_keyword}%"
-            query = query.or_(
-                ",".join(
-                    f"{field}.ilike.{pattern}"
-                    for field in ("school_name", "department_name", "program_name", "program_code", "direction_name")
-                )
-            )
-        response = call_supabase(
-            lambda: (
-                query.order("catalog_year", desc=True)
-                .order("region")
-                .order("school_name")
-                .order("department_name")
-                .order("program_name")
-                .order("source_row")
-                .range(offset, offset + limit - 1)
-                .execute()
-            ),
-            operation_name="question portal major catalog record list",
+        # The user-facing catalogue is the source of truth.  A staging run is
+        # still accepted in this endpoint for backwards-compatible callers,
+        # but it must not narrow the directory visible to administrators.
+        _ = import_run_id
+        result = list_published_catalog_records(
+            catalog_year=normalized_year or None,
+            region=normalized_region or None,
+            school_name=normalized_school_name or None,
+            exam_code=normalized_exam_code or None,
+            keyword=search_keyword or None,
+            limit=limit,
+            offset=offset,
         )
-        filter_query = supabase.table("major_catalog_staging_records").select("region,exam_code")
-        if import_run_id:
-            filter_query = filter_query.eq("import_run_id", import_run_id)
-        filter_response = call_supabase(
-            lambda: filter_query.order("region").limit(60_000).execute(),
-            operation_name="question portal major catalog filter options",
-        )
-        filter_rows = filter_response.data or []
         return AdminMajorCatalogRecordListResponse(
-            items=response.data or [],
-            count=max(0, _safe_int(response.count, 0)),
-            filter_regions=sorted({str(item.get("region") or "").strip() for item in filter_rows if item.get("region")}),
-            filter_exam_codes=sorted({str(item.get("exam_code") or "").strip() for item in filter_rows if item.get("exam_code")}),
+            items=result["items"],
+            count=max(0, _safe_int(result["count"], 0)),
+            filter_years=result["filter_years"],
+            filter_regions=result["filter_regions"],
+            filter_exam_codes=result["filter_exam_codes"],
+            filter_schools=result["filter_schools"],
         )
     except Exception as exc:
         logger.warning("Question portal major catalog record list unavailable (error_type=%s)", type(exc).__name__)
@@ -2895,6 +2875,338 @@ def question_admin_portal_major_catalog_records(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="专业目录记录暂时不可用",
         ) from exc
+
+
+def _published_catalog_year_from_source_version(source_version: object) -> str:
+    match = re.match(r"^(20\d{2})-", str(source_version or ""))
+    return match.group(1) if match else "2026"
+
+
+def _published_catalog_region_key(catalog_year: str, region: str) -> str:
+    return region if catalog_year == "2026" else f"{catalog_year}::region::{region}"
+
+
+def _display_published_catalog_region(catalog_year: str, region: str) -> str:
+    prefix = f"{catalog_year}::region::"
+    return region[len(prefix) :] if catalog_year != "2026" and region.startswith(prefix) else region
+
+
+def _update_published_major_catalog_record(
+    supabase,
+    record_id: str,
+    update_data: dict[str, str],
+) -> dict | None:
+    """Update the normalized published snapshot that powers the student page."""
+    direction_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_directions")
+            .select("id,school_id,department_id,program_id,sync_run_id,name,tutor,exam_code,degree,study_mode")
+            .eq("id", record_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="question portal published major catalog record lookup",
+    )
+    if not direction_response.data:
+        return None
+    direction = direction_response.data[0]
+    sync_run_id = str(direction.get("sync_run_id") or "")
+    school_id = str(direction.get("school_id") or "")
+    department_id = str(direction.get("department_id") or "")
+    program_id = str(direction.get("program_id") or "")
+    if not sync_run_id or not school_id or not department_id or not program_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="专业目录记录关联不完整")
+
+    run_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_import_runs")
+            .select("source_version")
+            .eq("id", sync_run_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="question portal published major catalog run lookup",
+    )
+    catalog_year = _published_catalog_year_from_source_version((run_response.data or [{}])[0].get("source_version"))
+    school_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_schools")
+            .select("id,region_name,name,sort_order")
+            .eq("id", school_id)
+            .eq("sync_run_id", sync_run_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="question portal published major catalog school lookup",
+    )
+    department_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_departments")
+            .select("id,name")
+            .eq("id", department_id)
+            .eq("sync_run_id", sync_run_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="question portal published major catalog department lookup",
+    )
+    program_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_programs")
+            .select("id,name,code")
+            .eq("id", program_id)
+            .eq("sync_run_id", sync_run_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="question portal published major catalog program lookup",
+    )
+    if not school_response.data or not department_response.data or not program_response.data:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="专业目录关联数据不存在")
+    school = school_response.data[0]
+    department = department_response.data[0]
+    program = program_response.data[0]
+    previous_region_key = str(school.get("region_name") or "")
+    update_data = {
+        "region": _display_published_catalog_region(catalog_year, previous_region_key),
+        "school_name": str(school.get("name") or ""),
+        "department_name": str(department.get("name") or "未区分院系所"),
+        "program_name": str(program.get("name") or ""),
+        "program_code": str(program.get("code") or ""),
+        "direction_name": str(direction.get("name") or ""),
+        "tutor": str(direction.get("tutor") or ""),
+        "exam_code": str(direction.get("exam_code") or ""),
+        "degree": str(direction.get("degree") or ""),
+        "study_mode": str(direction.get("study_mode") or ""),
+        **update_data,
+    }
+    next_region_key = _published_catalog_region_key(catalog_year, update_data["region"])
+
+    if next_region_key != previous_region_key:
+        next_region_response = call_supabase(
+            lambda: (
+                supabase.table("major_catalog_regions")
+                .select("name")
+                .eq("name", next_region_key)
+                .eq("sync_run_id", sync_run_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="question portal published major catalog region lookup",
+        )
+        if not next_region_response.data:
+            region_rows = call_supabase(
+                lambda: (
+                    supabase.table("major_catalog_regions")
+                    .select("sort_order")
+                    .eq("sync_run_id", sync_run_id)
+                    .order("sort_order", desc=True)
+                    .limit(1)
+                    .execute()
+                ),
+                operation_name="question portal published major catalog region order lookup",
+            )
+            next_sort_order = _safe_int((region_rows.data or [{}])[0].get("sort_order"), -1) + 1
+            call_supabase(
+                lambda: (
+                    supabase.table("major_catalog_regions")
+                    .insert(
+                        {
+                            "name": next_region_key,
+                            "sort_order": next_sort_order,
+                            "school_count": 0,
+                            "program_count": 0,
+                            "school_count_z001": 0,
+                            "school_count_z002": 0,
+                            "program_count_z001": 0,
+                            "program_count_z002": 0,
+                            "sync_run_id": sync_run_id,
+                        }
+                    )
+                    .execute()
+                ),
+                operation_name="question portal published major catalog region create",
+            )
+        call_supabase(
+            lambda: (
+                supabase.table("major_catalog_schools")
+                .update({"region_name": next_region_key})
+                .eq("id", school_id)
+                .eq("sync_run_id", sync_run_id)
+                .execute()
+            ),
+            operation_name="question portal published major catalog school region update",
+        )
+
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_schools")
+            .update({"name": update_data["school_name"]})
+            .eq("id", school_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog school update",
+    )
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_departments")
+            .update({"name": update_data["department_name"]})
+            .eq("id", department_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog department update",
+    )
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_programs")
+            .update({"name": update_data["program_name"], "code": update_data["program_code"]})
+            .eq("id", program_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog program update",
+    )
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_directions")
+            .update(
+                {
+                    "name": update_data["direction_name"],
+                    "tutor": update_data["tutor"],
+                    "exam_code": update_data["exam_code"],
+                    "degree": update_data["degree"],
+                    "study_mode": update_data["study_mode"],
+                }
+            )
+            .eq("id", record_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog direction update",
+    )
+
+    program_directions_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_directions")
+            .select("exam_code,degree,study_mode")
+            .eq("program_id", program_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog program aggregate lookup",
+    )
+    program_directions = program_directions_response.data or []
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_programs")
+            .update(
+                {
+                    "exam_codes": sorted({str(item.get("exam_code") or "") for item in program_directions if item.get("exam_code")}),
+                    "degree_options": sorted({str(item.get("degree") or "") for item in program_directions if item.get("degree")}),
+                    "study_mode_options": sorted({str(item.get("study_mode") or "") for item in program_directions if item.get("study_mode")}),
+                    "direction_count": len(program_directions),
+                }
+            )
+            .eq("id", program_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog program aggregate update",
+    )
+
+    school_directions_response = call_supabase(
+        lambda: (
+            supabase.table("major_catalog_directions")
+            .select("department_id,program_id,exam_code")
+            .eq("school_id", school_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog school aggregate lookup",
+    )
+    school_directions = school_directions_response.data or []
+    school_exam_codes = {str(item.get("exam_code") or "") for item in school_directions if item.get("exam_code")}
+    school_updates = {"exam_codes": sorted(school_exam_codes)}
+    for code in MAJOR_CATALOG_EXAM_CODES:
+        suffix = code.lower()
+        matching_rows = [item for item in school_directions if item.get("exam_code") == code]
+        school_updates[f"department_count_{suffix}"] = len({str(item.get("department_id") or "") for item in matching_rows if item.get("department_id")})
+        school_updates[f"program_count_{suffix}"] = len({str(item.get("program_id") or "") for item in matching_rows if item.get("program_id")})
+    school_updates["department_count"] = len({str(item.get("department_id") or "") for item in school_directions if item.get("department_id")})
+    school_updates["program_count"] = len({str(item.get("program_id") or "") for item in school_directions if item.get("program_id")})
+    call_supabase(
+        lambda: (
+            supabase.table("major_catalog_schools")
+            .update(school_updates)
+            .eq("id", school_id)
+            .eq("sync_run_id", sync_run_id)
+            .execute()
+        ),
+        operation_name="question portal published major catalog school aggregate update",
+    )
+
+    for region_key in {previous_region_key, next_region_key}:
+        region_schools_response = call_supabase(
+            lambda region_key=region_key: (
+                supabase.table("major_catalog_schools")
+                .select("id")
+                .eq("region_name", region_key)
+                .eq("sync_run_id", sync_run_id)
+                .execute()
+            ),
+            operation_name="question portal published major catalog region school lookup",
+        )
+        region_school_ids = [str(item.get("id") or "") for item in (region_schools_response.data or []) if item.get("id")]
+        region_directions: list[dict] = []
+        for start in range(0, len(region_school_ids), 150):
+            school_ids = region_school_ids[start : start + 150]
+            if not school_ids:
+                continue
+            response = call_supabase(
+                lambda school_ids=school_ids: (
+                    supabase.table("major_catalog_directions")
+                    .select("school_id,program_id,exam_code")
+                    .eq("sync_run_id", sync_run_id)
+                    .in_("school_id", school_ids)
+                    .execute()
+                ),
+                operation_name="question portal published major catalog region aggregate lookup",
+            )
+            region_directions.extend(response.data or [])
+        region_updates: dict[str, int] = {}
+        for code in ("", *sorted(MAJOR_CATALOG_EXAM_CODES)):
+            matching_rows = region_directions if not code else [item for item in region_directions if item.get("exam_code") == code]
+            suffix = "" if not code else f"_{code.lower()}"
+            region_updates[f"school_count{suffix}"] = len({str(item.get("school_id") or "") for item in matching_rows if item.get("school_id")})
+            region_updates[f"program_count{suffix}"] = len({str(item.get("program_id") or "") for item in matching_rows if item.get("program_id")})
+        call_supabase(
+            lambda region_key=region_key, region_updates=region_updates: (
+                supabase.table("major_catalog_regions")
+                .update(region_updates)
+                .eq("name", region_key)
+                .eq("sync_run_id", sync_run_id)
+                .execute()
+            ),
+            operation_name="question portal published major catalog region aggregate update",
+        )
+
+    return {
+        "id": record_id,
+        "catalog_year": catalog_year,
+        "region": _display_published_catalog_region(catalog_year, next_region_key),
+        "school_name": update_data["school_name"],
+        "department_name": update_data["department_name"],
+        "program_name": update_data["program_name"],
+        "program_code": update_data["program_code"],
+        "direction_name": update_data["direction_name"],
+        "tutor": update_data["tutor"],
+        "exam_code": update_data["exam_code"],
+        "degree": update_data["degree"],
+        "study_mode": update_data["study_mode"],
+        "synced_student_view": True,
+    }
 
 
 @router.patch("/question-portal/admission/major-catalog/records/{record_id}", response_model=dict)
@@ -2928,7 +3240,18 @@ def question_admin_portal_update_major_catalog_record(
             operation_name="question portal major catalog record lookup",
         )
         if not current_response.data:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该专业目录记录")
+            published_record = _update_published_major_catalog_record(supabase, record_id, update_data)
+            if not published_record:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该专业目录记录")
+            _log_admin_action(
+                supabase,
+                admin_profile,
+                action="update_major_catalog_record",
+                target_type="major_catalog_record",
+                target_id=record_id,
+                details={"fields": sorted(update_data), "resynced_student_view": True},
+            )
+            return published_record
         current_record = current_response.data[0]
         response = call_supabase(
             lambda: (
@@ -3070,29 +3393,37 @@ def question_admin_portal_publish_admission_run(
 def question_admin_portal_announcement_records(
     import_run_id: str | None = Query(default=None, max_length=80),
     record_status: str | None = Query(default=None, alias="status", max_length=20),
+    notice_year: str | None = Query(default=None, max_length=4),
+    region: str | None = Query(default=None, max_length=60),
+    school_id: str | None = Query(default=None, max_length=80),
+    notice_type: str | None = Query(default=None, max_length=30),
+    keyword: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_question_admin_portal_user),
 ) -> dict:
-    supabase = get_supabase_admin()
     if record_status and record_status not in {"draft", "published", "archived"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的公告状态")
+    normalized_year = (notice_year or "").strip()
+    if normalized_year and not re.fullmatch(r"20\d{2}", normalized_year):
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="公告年份必须为 20xx")
+    normalized_notice_type = (notice_type or "").strip()
+    if normalized_notice_type and normalized_notice_type not in {"brochure", "scoreline_retest"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的公告类型")
     try:
-        query = supabase.table("school_announcement_records").select("*", count="exact")
-        if import_run_id:
-            query = query.eq("import_run_id", import_run_id)
-        if record_status:
-            query = query.eq("status", record_status)
-        response = call_supabase(
-            lambda: (
-                query.order("sort_order")
-                .order("notice_date", desc=True)
-                .range(offset, offset + limit - 1)
-                .execute()
-            ),
-            operation_name="question portal announcement record list",
+        # Match the student-facing page exactly: only the currently published
+        # announcement snapshot participates in searching and filter options.
+        _ = import_run_id, record_status
+        result = list_published_announcement_records(
+            year=normalized_year or None,
+            notice_type=normalized_notice_type or None,
+            region=(region or "").strip() or None,
+            school_id=(school_id or "").strip() or None,
+            keyword=(keyword or "").strip() or None,
+            limit=limit,
+            offset=offset,
         )
-        return {"items": response.data or [], "count": max(0, _safe_int(response.count, 0))}
+        return result
     except Exception as exc:
         logger.warning("Question portal announcement record list unavailable (error_type=%s)", type(exc).__name__)
         raise HTTPException(
@@ -3231,6 +3562,33 @@ def _home_content_write_data(payload: AdminHomeContentUpsertRequest, admin_profi
     return data
 
 
+def _ensure_home_content_slot_capacity(supabase, data: dict, exclude_id: str | None = None) -> None:
+    """Keep published homepage content within the fixed student-home slots."""
+    slot = str(data.get("slot") or "")
+    if data.get("status") != "published" or slot not in HOME_CONTENT_SLOT_LIMITS:
+        return
+
+    query = (
+        supabase.table("home_content_items")
+        .select("id", count="exact")
+        .eq("slot", slot)
+        .eq("status", "published")
+    )
+    if exclude_id:
+        query = query.neq("id", exclude_id)
+    response = call_supabase(
+        lambda: query.execute(),
+        operation_name="question portal home content capacity check",
+    )
+    limit = HOME_CONTENT_SLOT_LIMITS[slot]
+    if _safe_int(response.count, 0) >= limit:
+        label = HOME_CONTENT_SLOT_LABELS[slot]
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=f"{label}最多只能发布 {limit} 个，请先下架现有内容",
+        )
+
+
 @router.post("/question-portal/home-content", response_model=AdminHomeContentItem)
 def question_admin_portal_create_home_content(
     payload: AdminHomeContentUpsertRequest,
@@ -3240,6 +3598,7 @@ def question_admin_portal_create_home_content(
     data["created_by"] = admin_profile.get("id")
     supabase = get_supabase_admin()
     try:
+        _ensure_home_content_slot_capacity(supabase, data)
         response = call_supabase(
             lambda: supabase.table("home_content_items").insert(data).execute(),
             operation_name="question portal home content create",
@@ -3272,6 +3631,16 @@ def question_admin_portal_update_home_content(
     data = _home_content_write_data(payload, admin_profile)
     supabase = get_supabase_admin()
     try:
+        existing_response = call_supabase(
+            lambda: supabase.table("home_content_items").select("id,slot").eq("id", content_id).limit(1).execute(),
+            operation_name="question portal home content lookup",
+        )
+        if not existing_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该首页内容")
+        existing_slot = str(existing_response.data[0].get("slot") or "")
+        if data["slot"] != existing_slot:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="首页内容位置不可修改")
+        _ensure_home_content_slot_capacity(supabase, data, exclude_id=content_id)
         response = call_supabase(
             lambda: supabase.table("home_content_items").update(data).eq("id", content_id).execute(),
             operation_name="question portal home content update",

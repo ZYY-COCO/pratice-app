@@ -18,6 +18,7 @@ from app.services.supabase_resilience import call_supabase, is_missing_supabase_
 
 
 router = APIRouter(tags=["首页运营"])
+HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 2}
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
@@ -102,11 +103,9 @@ def get_home_content() -> dict[str, Any]:
                 "coverTone": str(item.get("tone") or "is-blue"),
             })
     # These limits match the actual first-screen surfaces in the student app.
-    # Additional published rows remain available in the admin history but do
-    # not silently expand or destabilize the mobile homepage.
     return {
-        "focus": focus[:3],
-        "news": news[:2],
+        "focus": focus[:HOME_CONTENT_SLOT_LIMITS["focus"]],
+        "news": news[:HOME_CONTENT_SLOT_LIMITS["news"]],
         "managedSlots": managed_slots,
     }
 

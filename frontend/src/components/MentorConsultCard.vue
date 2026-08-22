@@ -50,7 +50,7 @@
         <text>{{ mentor.priceLabel }}</text>
         <view>{{ mentor.consultationWindowMinutes || 60 }}分钟咨询窗口</view>
       </view>
-      <button class="mentor-consult-button" @tap.stop="emit('consult')">{{ mentor.actionLabel }}</button>
+      <button class="mentor-consult-button" @tap.stop="emit('consult')">{{ viewOnly ? '查看' : mentor.actionLabel }}</button>
     </view>
   </view>
 </template>
@@ -62,6 +62,10 @@ defineProps({
     required: true
   },
   favorite: {
+    type: Boolean,
+    default: false
+  },
+  viewOnly: {
     type: Boolean,
     default: false
   }

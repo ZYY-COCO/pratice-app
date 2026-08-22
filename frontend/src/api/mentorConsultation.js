@@ -33,6 +33,21 @@ export function fetchMyMentorProfile() {
   })
 }
 
+export function fetchMyMentorProfileChangeRequest() {
+  return request({
+    url: '/mentor-consultation/me/mentor-profile/change-request',
+    method: 'GET'
+  })
+}
+
+export function createMyMentorProfileChangeRequest(payload) {
+  return request({
+    url: '/mentor-consultation/me/mentor-profile/change-request',
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function updateMyMentorAvailability(onlineStatus) {
   return request({
     url: '/mentor-consultation/me/mentor-profile/availability',
@@ -175,5 +190,25 @@ export function createMentorConsultationReview(orderId, payload) {
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/review`,
     method: 'POST',
     data: payload
+  })
+}
+
+export function createMentorConsultationReport(orderId, payload) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/reports`,
+    method: 'POST',
+    data: payload,
+    timeout: 20000
+  })
+}
+
+export function uploadMentorConsultationReportEvidence(reportId, { filePath, file, fileName }) {
+  return uploadFileRequest({
+    url: `/mentor-consultation/reports/${encodeURIComponent(reportId)}/evidence`,
+    filePath,
+    file,
+    fileName,
+    name: 'file',
+    timeout: 120000
   })
 }

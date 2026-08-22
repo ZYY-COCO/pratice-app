@@ -76,7 +76,7 @@
       <view class="mentor-detail-bottom-space"></view>
     </scroll-view>
 
-    <view v-if="mentor" class="mentor-detail-action-bar">
+    <view v-if="mentor" class="mentor-detail-action-bar" :class="{ 'mentor-detail-action-bar-self': isCurrentMentorProfile }">
       <button class="mentor-detail-favorite" :class="{ active: isFavorite }" @tap="toggleFavorite">
         <text>{{ isFavorite ? '♥' : '♡' }}</text>
         <view>{{ isFavorite ? '已收藏' : '收藏' }}</view>
@@ -85,7 +85,8 @@
         <strong>{{ mentor.priceLabel }} / 次</strong>
         <text>{{ mentor.consultationWindowMinutes || 60 }}分钟咨询窗口</text>
       </view>
-      <button class="mentor-detail-primary" @tap="startConsultation">{{ mentor.actionLabel }}</button>
+      <button v-if="canShowConsultationAction" class="mentor-detail-primary" @tap="startConsultation">{{ mentor.actionLabel }}</button>
+      <view v-else-if="!currentMentorProfileResolved" class="mentor-detail-primary-placeholder" aria-hidden="true"></view>
     </view>
   </view>
 </template>
@@ -96,6 +97,7 @@ import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
   fetchMentorProfile,
+  fetchMyMentorProfile,
   fetchMyMentorFavorites,
   toggleMentorFavoriteRequest
 } from '../../api/mentorConsultation'
@@ -111,18 +113,36 @@ import { isLoggedIn } from '../../utils/auth'
 const mentor = ref(null)
 const favoriteIds = ref([])
 const detailLoading = ref(false)
+const currentMentorProfileId = ref('')
+const currentMentorProfileResolved = ref(!isLoggedIn())
+let currentMentorProfileRequest = null
 
 const isFavorite = computed(() => mentor.value && favoriteIds.value.includes(mentor.value.id))
+const isCurrentMentorProfile = computed(() => (
+  Boolean(currentMentorProfileId.value)
+  && String(mentor.value?.id || '') === currentMentorProfileId.value
+))
+const canShowConsultationAction = computed(() => (
+  currentMentorProfileResolved.value && !isCurrentMentorProfile.value
+))
 
 onLoad((options) => {
+  const viewerMentorId = String(options?.viewerMentorId || '').trim()
+  if (viewerMentorId) {
+    // 列表页已确认过本人档案时，详情页直接复用结果，避免先按普通用户闪现操作按钮。
+    currentMentorProfileId.value = viewerMentorId
+    currentMentorProfileResolved.value = true
+  }
   favoriteIds.value = getMentorFavoriteIds()
   void loadFavoriteIds()
+  void loadCurrentMentorProfileId({ preserveResolved: Boolean(viewerMentorId) })
   void loadMentorDetail(options?.id)
 })
 
 onShow(() => {
   favoriteIds.value = getMentorFavoriteIds()
   void loadFavoriteIds({ silent: true })
+  void loadCurrentMentorProfileId({ preserveResolved: true })
 })
 
 function detailSkillLabel(skill) {
@@ -166,6 +186,38 @@ async function loadFavoriteIds({ silent = false } = {}) {
   }
 }
 
+function loadCurrentMentorProfileId({ preserveResolved = false } = {}) {
+  if (!isLoggedIn()) {
+    currentMentorProfileId.value = ''
+    currentMentorProfileResolved.value = true
+    return Promise.resolve('')
+  }
+  if (currentMentorProfileRequest) return currentMentorProfileRequest
+  if (!preserveResolved) currentMentorProfileResolved.value = false
+
+  currentMentorProfileRequest = fetchMyMentorProfile()
+    .then((payload) => {
+      currentMentorProfileId.value = String(payload?.mentor?.id || '').trim()
+      currentMentorProfileResolved.value = true
+      return currentMentorProfileId.value
+    })
+    .catch((error) => {
+      // 404 明确表示当前用户不是已认证前辈；其他网络异常保留中性占位，避免误展示咨询按钮。
+      if (Number(error?.statusCode) === 404) {
+        currentMentorProfileId.value = ''
+        currentMentorProfileResolved.value = true
+      } else if (currentMentorProfileId.value) {
+        currentMentorProfileResolved.value = true
+      }
+      return ''
+    })
+    .finally(() => {
+      currentMentorProfileRequest = null
+    })
+
+  return currentMentorProfileRequest
+}
+
 async function toggleFavorite() {
   if (!mentor.value) return
   if (!isLoggedIn()) {
@@ -186,6 +238,7 @@ async function toggleFavorite() {
 
 function startConsultation() {
   if (!mentor.value) return
+  if (isCurrentMentorProfile.value) return
   if (mentor.value.onlineStatus !== 'online' && mentor.value.acceptsBooking === false) {
     uni.showToast({ title: '该前辈暂未开放预约', icon: 'none' })
     return
@@ -439,6 +492,7 @@ function goHome() {
   gap: 16rpx;
   box-shadow: 0 -10rpx 30rpx rgba(52, 120, 246, 0.06);
 }
+.mentor-detail-action-bar-self { grid-template-columns: 78rpx minmax(0, 1fr); }
 
 .mentor-detail-favorite {
   width: 72rpx;
@@ -489,8 +543,32 @@ function goHome() {
   box-shadow: 0 10rpx 22rpx rgba(52, 120, 246, 0.2);
 }
 
+.mentor-detail-primary-placeholder {
+  position: relative;
+  width: 100%;
+  height: 74rpx;
+  min-height: 74rpx;
+  overflow: hidden;
+  border-radius: 20rpx;
+  background: #edf3fb;
+}
+
+.mentor-detail-primary-placeholder::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background: linear-gradient(90deg, transparent 0%, rgba(255, 255, 255, 0.66) 50%, transparent 100%);
+  transform: translateX(-100%);
+  animation: mentor-detail-action-placeholder 1.35s ease-in-out infinite;
+}
+
+@keyframes mentor-detail-action-placeholder {
+  to { transform: translateX(100%); }
+}
+
 @media (max-width: 350px) {
   .mentor-detail-action-bar { grid-template-columns: 66rpx minmax(0, 1fr) 170rpx; gap: 12rpx; padding-right: 18rpx; padding-left: 18rpx; }
+  .mentor-detail-action-bar-self { grid-template-columns: 66rpx minmax(0, 1fr); }
   .mentor-detail-primary { font-size: 22rpx; }
 }
 </style>

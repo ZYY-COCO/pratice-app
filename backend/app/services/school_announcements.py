@@ -234,6 +234,76 @@ def _school_summary(
     }
 
 
+def list_published_announcement_records(
+    *,
+    year: str | None = None,
+    notice_type: str | None = None,
+    region: str | None = None,
+    school_id: str | None = None,
+    keyword: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> dict[str, Any]:
+    """Return the published announcement records and filter options used by students."""
+    index = get_announcement_index()
+    normalized_year = _normalized_year(year)
+    normalized_type = _normalized_type(notice_type)
+    normalized_region = (region or "").strip()
+    normalized_school_id = (school_id or "").strip()
+    normalized_keyword = (keyword or "").strip()
+    visible_notices = _filtered(
+        year=normalized_year,
+        notice_type=normalized_type,
+        region=normalized_region,
+        school_id=normalized_school_id,
+        keyword=normalized_keyword,
+    )
+    filter_notices = _filtered(year=normalized_year, notice_type=normalized_type)
+    records = [
+        {
+            "id": item.get("id") or "",
+            "notice_year": item.get("year") or "",
+            "region": item.get("region") or "",
+            "school_id": item.get("school_id") or "",
+            "school_name": item.get("school_name") or "",
+            "unit_name": item.get("unit_name") or "",
+            "notice_type": item.get("notice_type") or "",
+            "title": item.get("title") or "",
+            "summary": item.get("summary") or "",
+            "notice_date": item.get("notice_date"),
+            "source_url": item.get("source_url"),
+            "content_text": item.get("content_text") or "",
+            "sort_order": int(item.get("sort_order") or 0),
+            "status": "published",
+            "is_published": True,
+        }
+        for item in visible_notices
+        if item.get("id") and item.get("school_name")
+    ]
+    records.sort(key=lambda item: str(item.get("notice_date") or ""), reverse=True)
+    records.sort(key=lambda item: int(item.get("sort_order") or 0))
+    schools = {
+        (
+            str(item.get("school_id") or ""),
+            str(item.get("region") or ""),
+            str(item.get("school_name") or ""),
+        )
+        for item in filter_notices
+        if item.get("school_id") and item.get("region") and item.get("school_name")
+    }
+    return {
+        "items": records[offset : offset + limit],
+        "count": len(records),
+        "filter_years": sorted({str(item.get("year") or "") for item in filter_notices if item.get("year")}, reverse=True),
+        "filter_regions": sorted({str(item.get("region") or "") for item in filter_notices if item.get("region")}),
+        "filter_schools": [
+            {"id": school_id, "region": school_region, "name": school_name}
+            for school_id, school_region, school_name in sorted(schools, key=lambda item: (item[1], item[2], item[0]))
+        ],
+        "statistics": index.get("statistics") or {},
+    }
+
+
 def list_regions(year: str | None = None, notice_type: str | None = None) -> dict[str, Any]:
     index = get_announcement_index()
     notices = _filtered(year=year, notice_type=notice_type)

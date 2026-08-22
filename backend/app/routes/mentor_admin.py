@@ -6,12 +6,19 @@ from datetime import datetime, timezone
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
-from app.dependencies import require_question_admin_portal_user
+from app.dependencies import require_question_admin_portal_user, require_question_admin_user
 from app.schemas.mentor_consultation import (
+    AdminMentorConsultationReportDetailResponse,
+    AdminMentorConsultationReportEvidenceItem,
+    AdminMentorConsultationReportItem,
+    AdminMentorConsultationReportListResponse,
+    AdminMentorConsultationReportStatusUpdateRequest,
     AdminMentorAvailabilitySlotCreateRequest,
     AdminMentorAvailabilitySlotItem,
     AdminMentorAvailabilitySlotListResponse,
     AdminMentorAvailabilitySlotUpdateRequest,
+    AdminMentorProfileChangeDecisionRequest,
+    AdminMentorProfileChangeRequestListResponse,
     AdminMentorProfileCreateRequest,
     AdminMentorProfileItem,
     AdminMentorProfileListResponse,
@@ -21,9 +28,11 @@ from app.schemas.mentor_consultation import (
     AdminMentorVerificationDecisionRequest,
     MentorVerificationApplicationItem,
     MentorVerificationDocumentItem,
+    MentorProfileChangeRequestItem,
 )
 from app.services.mentor_consultation import (
     ADMIN_PROFILE_FIELDS,
+    CONSULTATION_MESSAGE_FIELDS,
     fetch_mentor_aggregates,
     fetch_mentor_skills,
     mask_mentor_name,
@@ -39,10 +48,25 @@ logger = logging.getLogger(__name__)
 ADMIN_MENTOR_MAX_LIMIT = 100
 MENTOR_VERIFICATION_DOCUMENT_BUCKET = "mentor-verification-documents"
 MENTOR_APPLICATION_MAX_LIMIT = 100
+MENTOR_PROFILE_CHANGE_REQUEST_MAX_LIMIT = 100
 MENTOR_APPLICATION_FIELDS = (
     "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
     "exam_type,score,skills,bio,price_cents,application_status,admin_note,reviewed_by,"
     "reviewed_at,created_at,updated_at"
+)
+MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET = "mentor-consultation-report-evidence"
+MENTOR_CONSULTATION_REPORT_MAX_LIMIT = 100
+MENTOR_CONSULTATION_REPORT_FIELDS = (
+    "id,order_id,reporter_user_id,reporter_role,target_role,target_user_id,target_mentor_id,"
+    "issue_type,content,status,admin_note,handled_by,handled_at,created_at,updated_at"
+)
+MENTOR_CONSULTATION_REPORT_ORDER_FIELDS = (
+    "id,order_no,consultation_type,order_status,questionnaire,price_cents,"
+    "started_at,ended_at,created_at"
+)
+MENTOR_PROFILE_CHANGE_REQUEST_FIELDS = (
+    "id,mentor_id,owner_user_id,school,major,exam_type,score,skills,bio,price_cents,"
+    "request_status,admin_note,reviewed_by,reviewed_at,created_at,updated_at"
 )
 
 
@@ -170,6 +194,22 @@ def _log_application_action(supabase, admin_profile: dict, action: str, applicat
         logger.warning("Mentor application admin action log skipped (error_type=%s)", type(exc).__name__)
 
 
+def _log_consultation_report_action(supabase, admin_profile: dict, action: str, report_id: str, details: dict | None = None) -> None:
+    try:
+        call_supabase(
+            lambda: supabase.table("admin_action_logs").insert({
+                "admin_user_id": admin_profile.get("id"),
+                "action": action,
+                "target_type": "mentor_consultation_report",
+                "target_id": report_id,
+                "details": details or {},
+            }).execute(),
+            operation_name="mentor consultation report admin action log",
+        )
+    except Exception as exc:
+        logger.warning("Mentor consultation report action log skipped (error_type=%s)", type(exc).__name__)
+
+
 def _serialize_mentor_application(row: dict, *, document_count: int = 0) -> dict:
     return {
         "id": str(row.get("id") or ""),
@@ -191,6 +231,58 @@ def _serialize_mentor_application(row: dict, *, document_count: int = 0) -> dict
         "updated_at": row.get("updated_at") or None,
         "document_count": max(0, int(document_count or 0)),
     }
+
+
+def _serialize_mentor_profile_change_request(row: dict) -> dict:
+    return {
+        "id": str(row.get("id") or ""),
+        "mentor_id": str(row.get("mentor_id") or ""),
+        "owner_user_id": str(row.get("owner_user_id") or ""),
+        "school": str(row.get("school") or ""),
+        "major": str(row.get("major") or ""),
+        "exam_type": str(row.get("exam_type") or "Z001"),
+        "score": int(row.get("score") or 0),
+        "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else [])[:4],
+        "bio": str(row.get("bio") or ""),
+        "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
+        "request_status": str(row.get("request_status") or "pending"),
+        "admin_note": row.get("admin_note") or None,
+        "reviewed_at": row.get("reviewed_at") or None,
+        "created_at": row.get("created_at") or None,
+        "updated_at": row.get("updated_at") or None,
+    }
+
+
+def _get_mentor_profile_change_request_or_404(supabase, request_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profile_change_requests")
+            .select(MENTOR_PROFILE_CHANGE_REQUEST_FIELDS)
+            .eq("id", request_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin mentor profile change request lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到资料修改申请")
+    return response.data[0]
+
+
+def _log_profile_change_request_action(supabase, admin_profile: dict, action: str, request_id: str, details: dict | None = None) -> None:
+    try:
+        call_supabase(
+            lambda: supabase.table("admin_action_logs").insert({
+                "admin_user_id": admin_profile.get("id"),
+                "action": action,
+                "target_type": "mentor_profile_change_request",
+                "target_id": request_id,
+                "details": details or {},
+            }).execute(),
+            operation_name="mentor profile change request admin action log",
+        )
+    except Exception as exc:
+        logger.warning("Mentor profile change request admin action log skipped (error_type=%s)", type(exc).__name__)
 
 
 def _fetch_application_users(supabase, user_ids: list[str]) -> dict[str, dict]:
@@ -228,6 +320,149 @@ def _fetch_application_document_counts(supabase, application_ids: list[str]) -> 
         if application_id:
             counts[application_id] = counts.get(application_id, 0) + 1
     return counts
+
+
+def _fetch_report_mentors(supabase, mentor_ids: list[str]) -> dict[str, dict]:
+    ids = list(dict.fromkeys(str(mentor_id) for mentor_id in mentor_ids if mentor_id))
+    if not ids:
+        return {}
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profiles")
+            .select("id,legal_name,display_name,school,major,owner_user_id")
+            .in_("id", ids)
+            .execute()
+        ),
+        operation_name="consultation report mentor lookup",
+    )
+    return {str(row.get("id") or ""): row for row in (response.data or [])}
+
+
+def _fetch_report_orders(supabase, order_ids: list[str]) -> dict[str, dict]:
+    ids = list(dict.fromkeys(str(order_id) for order_id in order_ids if order_id))
+    if not ids:
+        return {}
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_orders")
+            .select(MENTOR_CONSULTATION_REPORT_ORDER_FIELDS)
+            .in_("id", ids)
+            .execute()
+        ),
+        operation_name="consultation report order lookup",
+    )
+    return {str(row.get("id") or ""): row for row in (response.data or [])}
+
+
+def _fetch_report_evidence_counts(supabase, report_ids: list[str]) -> dict[str, int]:
+    ids = list(dict.fromkeys(str(report_id) for report_id in report_ids if report_id))
+    if not ids:
+        return {}
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_report_evidence")
+            .select("report_id")
+            .in_("report_id", ids)
+            .execute()
+        ),
+        operation_name="consultation report evidence count lookup",
+    )
+    counts = {report_id: 0 for report_id in ids}
+    for row in response.data or []:
+        report_id = str(row.get("report_id") or "")
+        if report_id:
+            counts[report_id] = counts.get(report_id, 0) + 1
+    return counts
+
+
+def _serialize_report_user(user: dict | None, role: str) -> dict:
+    profile = user or {}
+    return {
+        "id": str(profile.get("id") or ""),
+        "role": role,
+        "display_name": str(profile.get("nickname") or profile.get("email") or profile.get("phone") or "用户"),
+        "nickname": profile.get("nickname") or None,
+        "email": profile.get("email") or None,
+        "phone": profile.get("phone") or None,
+    }
+
+
+def _serialize_admin_consultation_report(
+    row: dict,
+    users: dict[str, dict],
+    mentors: dict[str, dict],
+    orders: dict[str, dict],
+    *,
+    evidence_count: int = 0,
+) -> dict:
+    reporter_id = str(row.get("reporter_user_id") or "")
+    target_user_id = str(row.get("target_user_id") or "")
+    target_mentor_id = str(row.get("target_mentor_id") or "")
+    target_role = str(row.get("target_role") or "mentor")
+    if target_role == "mentor":
+        target_mentor = mentors.get(target_mentor_id, {})
+        target = {
+            "id": target_mentor_id,
+            "role": "mentor",
+            "display_name": str(target_mentor.get("display_name") or target_mentor.get("legal_name") or "认证前辈"),
+            "school": target_mentor.get("school") or None,
+            "major": target_mentor.get("major") or None,
+        }
+    else:
+        target = _serialize_report_user(users.get(target_user_id), "applicant")
+
+    order = orders.get(str(row.get("order_id") or ""), {})
+    return {
+        "id": str(row.get("id") or ""),
+        "order_id": str(row.get("order_id") or ""),
+        "reporter_role": str(row.get("reporter_role") or "applicant"),
+        "target_role": target_role,
+        "issue_type": str(row.get("issue_type") or "其他问题"),
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "created_at": row.get("created_at") or None,
+        "reporter": _serialize_report_user(users.get(reporter_id), str(row.get("reporter_role") or "applicant")),
+        "target": target,
+        "order_no": str(order.get("order_no") or "") or None,
+        "admin_note": row.get("admin_note") or None,
+        "handled_at": row.get("handled_at") or None,
+        "evidence_count": max(0, int(evidence_count or 0)),
+    }
+
+
+def _report_evidence_admin_item(supabase, row: dict) -> dict:
+    stored_url = str(row.get("file_url") or "")
+    file_url = stored_url
+    if stored_url:
+        try:
+            signed = supabase.storage.from_(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET).create_signed_url(stored_url, 3600)
+            if isinstance(signed, dict):
+                file_url = str(signed.get("signedURL") or signed.get("signedUrl") or stored_url)
+        except Exception as exc:
+            logger.warning("Consultation report evidence signing failed (error_type=%s)", type(exc).__name__)
+    return {
+        "id": str(row.get("id") or ""),
+        "file_name": str(row.get("file_name") or "举报凭证"),
+        "mime_type": row.get("mime_type") or None,
+        "created_at": row.get("created_at") or None,
+        "file_url": file_url,
+    }
+
+
+def _get_consultation_report_or_404(supabase, report_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_reports")
+            .select(MENTOR_CONSULTATION_REPORT_FIELDS)
+            .eq("id", report_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin consultation report lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该举报记录")
+    return response.data[0]
 
 
 def _mentor_document_admin_item(supabase, row: dict) -> dict:
@@ -461,6 +696,106 @@ def decide_admin_mentor_verification_application(
     except Exception as exc:
         logger.warning("Admin mentor application decision failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请处理失败") from exc
+
+
+@router.get("/profile-change-requests", response_model=AdminMentorProfileChangeRequestListResponse)
+def list_admin_mentor_profile_change_requests(
+    request_status: str | None = Query(default=None, max_length=20),
+    keyword: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=50, ge=1, le=MENTOR_PROFILE_CHANGE_REQUEST_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminMentorProfileChangeRequestListResponse:
+    normalized_status = str(request_status or "").strip().lower()
+    normalized_keyword = str(keyword or "").strip().lower()
+    if normalized_status and normalized_status not in {"pending", "approved", "rejected"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的资料修改状态")
+
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("mentor_profile_change_requests").select(MENTOR_PROFILE_CHANGE_REQUEST_FIELDS, count="exact")
+        if normalized_status:
+            query = query.eq("request_status", normalized_status)
+        response = call_supabase(
+            lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+            operation_name="admin mentor profile change request list",
+        )
+        rows = response.data or []
+        if normalized_keyword:
+            rows = [
+                row for row in rows
+                if normalized_keyword in " ".join(
+                    str(row.get(field) or "") for field in ("school", "major", "exam_type", "owner_user_id")
+                ).lower()
+            ]
+        return AdminMentorProfileChangeRequestListResponse(
+            items=[MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(row)) for row in rows],
+            count=len(rows) if normalized_keyword else int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin mentor profile change request list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改申请暂时不可用") from exc
+
+
+@router.get("/profile-change-requests/{request_id}", response_model=MentorProfileChangeRequestItem)
+def get_admin_mentor_profile_change_request(
+    request_id: str,
+    _: dict = Depends(require_question_admin_portal_user),
+) -> MentorProfileChangeRequestItem:
+    supabase = get_supabase_admin()
+    try:
+        return MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(
+            _get_mentor_profile_change_request_or_404(supabase, request_id)
+        ))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin mentor profile change request detail unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改申请详情暂时不可用") from exc
+
+
+@router.post("/profile-change-requests/{request_id}/decision", response_model=MentorProfileChangeRequestItem)
+def decide_admin_mentor_profile_change_request(
+    request_id: str,
+    payload: AdminMentorProfileChangeDecisionRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> MentorProfileChangeRequestItem:
+    supabase = get_supabase_admin()
+    try:
+        request_row = _get_mentor_profile_change_request_or_404(supabase, request_id)
+        if request_row.get("request_status") != "pending":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该资料修改申请已经处理")
+
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "resolve_mentor_profile_change_request",
+                {
+                    "p_request_id": request_id,
+                    "p_decision": payload.decision,
+                    "p_reviewer_user_id": admin_profile.get("id"),
+                    "p_admin_note": payload.admin_note.strip() if payload.admin_note else None,
+                },
+            ).execute(),
+            operation_name="admin mentor profile change request decision",
+        )
+        resolved = response.data[0] if isinstance(response.data, list) and response.data else response.data
+        if not isinstance(resolved, dict):
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改审核处理失败")
+        _log_profile_change_request_action(
+            supabase,
+            admin_profile,
+            "approve_mentor_profile_change_request" if payload.decision == "approve" else "reject_mentor_profile_change_request",
+            request_id,
+            {"mentor_id": str(request_row.get("mentor_id") or ""), "admin_note": payload.admin_note.strip() if payload.admin_note else None},
+        )
+        return MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(resolved))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin mentor profile change request decision failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="资料修改审核处理失败") from exc
 
 
 @router.get("/mentors", response_model=AdminMentorProfileListResponse)
@@ -778,3 +1113,175 @@ def update_admin_mentor_slot(
     except Exception as exc:
         logger.warning("Admin mentor slot update failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="预约时段更新失败") from exc
+
+
+@router.get("/reports", response_model=AdminMentorConsultationReportListResponse)
+def list_admin_mentor_consultation_reports(
+    report_status: str | None = Query(default=None, alias="status", max_length=20),
+    limit: int = Query(default=50, ge=1, le=MENTOR_CONSULTATION_REPORT_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_user),
+) -> AdminMentorConsultationReportListResponse:
+    normalized_status = str(report_status or "").strip().lower()
+    valid_statuses = {"pending", "reviewing", "resolved", "dismissed"}
+    if normalized_status and normalized_status not in valid_statuses:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的举报处理状态")
+
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("mentor_consultation_reports").select(MENTOR_CONSULTATION_REPORT_FIELDS, count="exact")
+        if normalized_status:
+            query = query.eq("status", normalized_status)
+        response = call_supabase(
+            lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+            operation_name="admin consultation report list",
+        )
+        rows = response.data or []
+        users = _fetch_application_users(
+            supabase,
+            [
+                str(row.get("reporter_user_id") or "")
+                for row in rows
+            ] + [
+                str(row.get("target_user_id") or "")
+                for row in rows
+            ],
+        )
+        mentors = _fetch_report_mentors(supabase, [str(row.get("target_mentor_id") or "") for row in rows])
+        orders = _fetch_report_orders(supabase, [str(row.get("order_id") or "") for row in rows])
+        evidence_counts = _fetch_report_evidence_counts(supabase, [str(row.get("id") or "") for row in rows])
+        return AdminMentorConsultationReportListResponse(
+            items=[
+                AdminMentorConsultationReportItem(**_serialize_admin_consultation_report(
+                    row,
+                    users,
+                    mentors,
+                    orders,
+                    evidence_count=evidence_counts.get(str(row.get("id") or ""), 0),
+                ))
+                for row in rows
+            ],
+            count=int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin consultation report list failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报列表暂时不可用") from exc
+
+
+@router.get("/reports/{report_id}", response_model=AdminMentorConsultationReportDetailResponse)
+def get_admin_mentor_consultation_report(
+    report_id: str,
+    _: dict = Depends(require_question_admin_user),
+) -> AdminMentorConsultationReportDetailResponse:
+    supabase = get_supabase_admin()
+    try:
+        report = _get_consultation_report_or_404(supabase, report_id)
+        users = _fetch_application_users(
+            supabase,
+            [str(report.get("reporter_user_id") or ""), str(report.get("target_user_id") or "")],
+        )
+        mentors = _fetch_report_mentors(supabase, [str(report.get("target_mentor_id") or "")])
+        orders = _fetch_report_orders(supabase, [str(report.get("order_id") or "")])
+        evidence_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_evidence")
+                .select("id,file_url,file_name,mime_type,created_at")
+                .eq("report_id", report_id)
+                .order("created_at")
+                .limit(3)
+                .execute()
+            ),
+            operation_name="admin consultation report evidence list",
+        )
+        evidence = [
+            AdminMentorConsultationReportEvidenceItem(**_report_evidence_admin_item(supabase, row))
+            for row in (evidence_response.data or [])
+        ]
+        message_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_messages")
+                .select(CONSULTATION_MESSAGE_FIELDS)
+                .eq("order_id", str(report.get("order_id") or ""))
+                .order("created_at")
+                .limit(200)
+                .execute()
+            ),
+            operation_name="admin consultation report message list",
+        )
+        item = AdminMentorConsultationReportItem(**_serialize_admin_consultation_report(
+            report,
+            users,
+            mentors,
+            orders,
+            evidence_count=len(evidence),
+        ))
+        return AdminMentorConsultationReportDetailResponse(
+            report=item,
+            evidence=evidence,
+            order=orders.get(str(report.get("order_id") or ""), {}),
+            messages=message_response.data or [],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin consultation report detail failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报详情暂时不可用") from exc
+
+
+@router.patch("/reports/{report_id}/status", response_model=AdminMentorConsultationReportItem)
+def update_admin_mentor_consultation_report_status(
+    report_id: str,
+    payload: AdminMentorConsultationReportStatusUpdateRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> AdminMentorConsultationReportItem:
+    supabase = get_supabase_admin()
+    try:
+        _get_consultation_report_or_404(supabase, report_id)
+        normalized_note = str(payload.admin_note or "").strip() or None
+        terminal = payload.status in {"resolved", "dismissed"}
+        update_data = {
+            "status": payload.status,
+            "admin_note": normalized_note,
+            "handled_by": admin_profile.get("id") if payload.status != "pending" else None,
+            "handled_at": datetime.now(timezone.utc).isoformat() if terminal else None,
+        }
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_reports")
+                .update(update_data)
+                .eq("id", report_id)
+                .execute()
+            ),
+            operation_name="admin consultation report status update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该举报记录")
+        row = response.data[0]
+        users = _fetch_application_users(
+            supabase,
+            [str(row.get("reporter_user_id") or ""), str(row.get("target_user_id") or "")],
+        )
+        mentors = _fetch_report_mentors(supabase, [str(row.get("target_mentor_id") or "")])
+        orders = _fetch_report_orders(supabase, [str(row.get("order_id") or "")])
+        evidence_counts = _fetch_report_evidence_counts(supabase, [str(row.get("id") or "")])
+        _log_consultation_report_action(
+            supabase,
+            admin_profile,
+            "update_mentor_consultation_report_status",
+            report_id,
+            {"status": payload.status},
+        )
+        return AdminMentorConsultationReportItem(**_serialize_admin_consultation_report(
+            row,
+            users,
+            mentors,
+            orders,
+            evidence_count=evidence_counts.get(str(row.get("id") or ""), 0),
+        ))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin consultation report status update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报状态更新失败") from exc
