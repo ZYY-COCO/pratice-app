@@ -409,6 +409,7 @@ class MentorConsultationMessageCreateRequest(BaseModel):
     message_type: MentorMessageType = "text"
     content: str = Field(default="", max_length=5000)
     duration_seconds: int | None = Field(default=None, ge=0, le=3600)
+    client_message_id: str | None = Field(default=None, min_length=1, max_length=80)
 
 
 class MentorConsultationMessageItem(BaseModel):
@@ -417,6 +418,7 @@ class MentorConsultationMessageItem(BaseModel):
     message_type: MentorMessageType
     content: str = ""
     duration_seconds: int | None = None
+    client_message_id: str | None = None
     created_at: str | None = None
 
 

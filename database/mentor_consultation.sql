@@ -97,6 +97,7 @@ create table if not exists public.mentor_consultation_messages (
   content text not null default '' check (char_length(content) <= 5000),
   media_url text,
   duration_seconds integer check (duration_seconds between 0 and 3600),
+  client_message_id text,
   created_at timestamptz not null default now()
 );
 
@@ -178,6 +179,9 @@ create index if not exists idx_mentor_orders_mentor_status_created
 
 create index if not exists idx_mentor_messages_order_created
   on public.mentor_consultation_messages (order_id, created_at);
+
+create unique index if not exists uq_mentor_messages_client_delivery
+  on public.mentor_consultation_messages (order_id, sender_user_id, client_message_id);
 
 create index if not exists idx_mentor_reviews_mentor_created
   on public.mentor_reviews (mentor_id, created_at desc)

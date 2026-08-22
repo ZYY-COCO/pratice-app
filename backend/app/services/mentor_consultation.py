@@ -28,7 +28,7 @@ CONSULTATION_ORDER_FIELDS = (
 )
 
 CONSULTATION_MESSAGE_FIELDS = (
-    "id,order_id,sender_role,message_type,content,duration_seconds,created_at"
+    "id,order_id,sender_role,message_type,content,duration_seconds,client_message_id,created_at"
 )
 
 
@@ -244,5 +244,6 @@ def serialize_mentor_message(row: dict) -> dict:
         "message_type": str(row.get("message_type") or "text"),
         "content": str(row.get("content") or ""),
         "duration_seconds": int(row["duration_seconds"]) if row.get("duration_seconds") is not None else None,
+        "client_message_id": str(row.get("client_message_id") or "") or None,
         "created_at": row.get("created_at") or None,
     }

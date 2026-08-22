@@ -1620,6 +1620,7 @@ def complete_mentor_consultation_order(
 @router.get("/orders/{order_id}/messages", response_model=MentorConsultationMessageListResponse)
 def list_mentor_consultation_messages(
     order_id: UUID,
+    after: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=200),
     user_id: str = Depends(get_current_user_id),
 ) -> MentorConsultationMessageListResponse:
@@ -1627,21 +1628,23 @@ def list_mentor_consultation_messages(
     supabase = get_supabase_admin()
     try:
         _get_order_participant(supabase, normalized_order_id, user_id)
+        query = (
+            supabase.table("mentor_consultation_messages")
+            .select(CONSULTATION_MESSAGE_FIELDS)
+            .eq("order_id", normalized_order_id)
+        )
+        if after is not None:
+            query = query.gt("created_at", after.isoformat())
         response = call_supabase(
-            lambda: (
-                supabase.table("mentor_consultation_messages")
-                .select(CONSULTATION_MESSAGE_FIELDS, count="exact")
-                .eq("order_id", normalized_order_id)
-                .order("created_at")
-                .limit(limit)
-                .execute()
-            ),
+            lambda: query.order("created_at", desc=after is None).limit(limit).execute(),
             operation_name="consultation message list",
         )
         rows = response.data or []
+        if after is None:
+            rows.reverse()
         return MentorConsultationMessageListResponse(
             items=[MentorConsultationMessageItem(**serialize_mentor_message(row)) for row in rows],
-            count=int(response.count or len(rows)),
+            count=len(rows),
         )
     except HTTPException:
         raise
@@ -1663,18 +1666,24 @@ def create_mentor_consultation_message(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="消息内容不能为空")
 
     normalized_order_id = str(order_id)
+    client_message_id = str(payload.client_message_id or "").strip() or None
     supabase = get_supabase_admin()
     try:
         order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
         _assert_order_status(order, {"in_progress"}, "本次咨询已结束，暂不能继续发送消息")
+        message = {
+            "order_id": normalized_order_id,
+            "sender_role": participant_role,
+            "sender_user_id": user_id,
+            "message_type": "text",
+            "content": content,
+            "client_message_id": client_message_id,
+        }
         response = call_supabase(
-            lambda: supabase.table("mentor_consultation_messages").insert({
-                "order_id": normalized_order_id,
-                "sender_role": participant_role,
-                "sender_user_id": user_id,
-                "message_type": "text",
-                "content": content,
-            }).execute(),
+            lambda: supabase.table("mentor_consultation_messages").upsert(
+                message,
+                on_conflict="order_id,sender_user_id,client_message_id",
+            ).execute(),
             operation_name="consultation message create",
         )
         if not response.data:

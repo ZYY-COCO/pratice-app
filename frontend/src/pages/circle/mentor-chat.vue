@@ -48,7 +48,11 @@
                 <template v-else-if="message.type === 'image'"><view class="mentor-chat-image-placeholder">咨询图片（示意）</view></template>
                 <template v-else>{{ message.content }}</template>
               </view>
-              <view class="mentor-chat-time">{{ formatTime(message.createdAt) }}</view>
+              <view class="mentor-chat-time">
+                <text>{{ formatTime(message.createdAt) }}</text>
+                <text v-if="message.deliveryState === 'sending'" class="mentor-chat-delivery sending">发送中</text>
+                <text v-else-if="message.deliveryState === 'failed'" class="mentor-chat-delivery failed" @tap.stop="retryMessage(message)">发送失败，点击重试</text>
+              </view>
             </view>
           </view>
         </template>
@@ -136,7 +140,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
   completeMentorConsultationOrder,
@@ -156,6 +160,11 @@ import {
 
 const VOICE_WAVE_MIN_SCALE = 0.11
 const VOICE_WAVE_PROFILE = [0.18, 0.26, 0.37, 0.51, 0.68, 0.84, 0.96, 1, 0.96, 0.84, 0.68, 0.51, 0.37, 0.26, 0.18]
+const CHAT_MESSAGE_POLL_INTERVAL = 1500
+const CHAT_POLL_RETRY_INTERVAL = 3200
+const CHAT_ORDER_POLL_INTERVAL = 12000
+const CHAT_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000
+const CHAT_CURSOR_OVERLAP_MS = 2000
 
 const mentor = ref(null)
 const viewerRole = ref('applicant')
@@ -183,6 +192,12 @@ const voiceWaveVisible = ref(false)
 const voiceWaveHeights = ref(createVoiceWaveHeights())
 let serviceTimer = null
 let messagePollTimer = null
+let orderPollTimer = null
+let messagePollInFlight = false
+let orderPollInFlight = false
+let messageCursor = ''
+let chatLoadPromise = null
+let pageVisible = true
 let voiceAudioStream = null
 let voiceAudioContext = null
 let voiceAudioSource = null
@@ -222,28 +237,44 @@ onLoad((options) => {
 })
 
 onShow(() => {
+  pageVisible = true
   if (orderId.value) void loadChatData({ silent: true })
 })
 
+onHide(() => {
+  pageVisible = false
+  stopChatTimers()
+})
+
 onBeforeUnmount(() => {
+  pageVisible = false
   stopChatTimers()
   stopVoiceRecordingResources({ hideImmediately: true })
 })
 
 async function loadChatData({ silent = false } = {}) {
   if (!orderId.value) return
-  try {
-    const [order, messagePayload] = await Promise.all([
-      fetchMentorConsultationOrder(orderId.value),
-      fetchMentorConsultationMessages(orderId.value)
-    ])
-    applyOrder(order)
-    const incoming = Array.isArray(messagePayload?.items) ? messagePayload.items : []
-    messages.value = incoming.map(normalizeMessage)
-    scrollToBottom()
-  } catch (error) {
-    if (!silent) uni.showToast({ title: error?.detail || '咨询聊天加载失败', icon: 'none' })
-  }
+  if (chatLoadPromise) return chatLoadPromise
+
+  chatLoadPromise = Promise.all([
+    fetchMentorConsultationOrder(orderId.value),
+    fetchMentorConsultationMessages(orderId.value, { limit: 100 })
+  ])
+    .then(([order, messagePayload]) => {
+      applyOrder(order)
+      const incoming = Array.isArray(messagePayload?.items) ? messagePayload.items : []
+      if (mergeRemoteMessages(incoming)) scrollToBottom()
+      startMessagePolling()
+      startOrderPolling()
+    })
+    .catch((error) => {
+      if (!silent) uni.showToast({ title: error?.detail || '咨询聊天加载失败', icon: 'none' })
+    })
+    .finally(() => {
+      chatLoadPromise = null
+    })
+
+  return chatLoadPromise
 }
 
 async function loadMentor(mentorId) {
@@ -274,7 +305,6 @@ function applyOrder(order) {
   }
   syncServiceRemainingSeconds()
   startServiceTimer()
-  startMessagePolling()
 }
 
 function normalizeMessage(message = {}) {
@@ -285,8 +315,67 @@ function normalizeMessage(message = {}) {
     type: String(message.type || message.message_type || 'text'),
     content: String(message.content || ''),
     duration: message.duration || (message.duration_seconds ? formatDuration(message.duration_seconds) : ''),
-    createdAt: message.createdAt || message.created_at || Date.now()
+    createdAt: message.createdAt || message.created_at || Date.now(),
+    clientMessageId: String(message.clientMessageId || message.client_message_id || ''),
+    deliveryState: message.deliveryState || 'sent'
   }
+}
+
+function mergeRemoteMessages(incoming = []) {
+  const remoteMessages = incoming.map(normalizeMessage)
+  if (!remoteMessages.length) return false
+
+  const next = [...messages.value]
+  let changed = false
+  for (const remoteMessage of remoteMessages) {
+    const existingIndex = next.findIndex((item) => item.id === remoteMessage.id)
+    if (existingIndex >= 0) {
+      if (next[existingIndex].deliveryState !== 'sent') {
+        next[existingIndex] = remoteMessage
+        changed = true
+      }
+      continue
+    }
+
+    const optimisticIndex = next.findIndex((item) => isMatchingOptimisticMessage(item, remoteMessage))
+    if (optimisticIndex >= 0) {
+      next[optimisticIndex] = remoteMessage
+    } else {
+      next.push(remoteMessage)
+    }
+    changed = true
+  }
+
+  updateMessageCursor(remoteMessages)
+  if (changed) messages.value = next
+  return changed
+}
+
+function isMatchingOptimisticMessage(localMessage, remoteMessage) {
+  if (!localMessage || localMessage.deliveryState === 'sent') return false
+  if (localMessage.clientMessageId && localMessage.clientMessageId === remoteMessage.clientMessageId) return true
+  if (localMessage.sender !== remoteMessage.sender || localMessage.type !== remoteMessage.type) return false
+  if (localMessage.content !== remoteMessage.content) return false
+  return Math.abs(toTimestamp(localMessage.createdAt) - toTimestamp(remoteMessage.createdAt)) <= CHAT_RECONCILIATION_WINDOW_MS
+}
+
+function updateMessageCursor(remoteMessages = []) {
+  for (const message of remoteMessages) {
+    if (!message.createdAt) continue
+    if (!messageCursor || toTimestamp(message.createdAt) > toTimestamp(messageCursor)) {
+      messageCursor = String(message.createdAt)
+    }
+  }
+}
+
+function toTimestamp(value) {
+  const timestamp = value instanceof Date ? value.getTime() : Date.parse(String(value || ''))
+  return Number.isFinite(timestamp) ? timestamp : 0
+}
+
+function getIncrementalMessageCursor() {
+  const timestamp = toTimestamp(messageCursor)
+  return timestamp ? new Date(Math.max(0, timestamp - CHAT_CURSOR_OVERLAP_MS)).toISOString() : ''
 }
 
 function isOwnMessage(message = {}) {
@@ -312,29 +401,131 @@ function startServiceTimer() {
 }
 
 function startMessagePolling() {
-  if (messagePollTimer || consultationEnded.value) return
-  messagePollTimer = setInterval(() => {
-    void loadChatData({ silent: true })
-  }, 5000)
+  if (messagePollTimer || consultationEnded.value || !orderId.value || !pageVisible) return
+  scheduleNextMessagePoll(CHAT_MESSAGE_POLL_INTERVAL)
+}
+
+function scheduleNextMessagePoll(delay) {
+  if (consultationEnded.value || !orderId.value || !pageVisible) return
+  if (messagePollTimer) clearTimeout(messagePollTimer)
+  messagePollTimer = setTimeout(async () => {
+    messagePollTimer = null
+    const synced = await syncLatestMessages()
+    scheduleNextMessagePoll(synced ? CHAT_MESSAGE_POLL_INTERVAL : CHAT_POLL_RETRY_INTERVAL)
+  }, delay)
+}
+
+async function syncLatestMessages({ full = false } = {}) {
+  if (!pageVisible || !orderId.value || messagePollInFlight) return true
+  messagePollInFlight = true
+  try {
+    const after = full ? '' : getIncrementalMessageCursor()
+    const payload = await fetchMentorConsultationMessages(orderId.value, {
+      limit: 100,
+      ...(after ? { after } : {})
+    })
+    const incoming = Array.isArray(payload?.items) ? payload.items : []
+    if (mergeRemoteMessages(incoming)) scrollToBottom()
+    return true
+  } catch (error) {
+    return false
+  } finally {
+    messagePollInFlight = false
+  }
+}
+
+function startOrderPolling() {
+  if (orderPollTimer || consultationEnded.value || !orderId.value || !pageVisible) return
+  scheduleNextOrderPoll(CHAT_ORDER_POLL_INTERVAL)
+}
+
+function scheduleNextOrderPoll(delay) {
+  if (consultationEnded.value || !orderId.value || !pageVisible) return
+  if (orderPollTimer) clearTimeout(orderPollTimer)
+  orderPollTimer = setTimeout(async () => {
+    orderPollTimer = null
+    const synced = await syncCurrentOrder()
+    scheduleNextOrderPoll(synced ? CHAT_ORDER_POLL_INTERVAL : CHAT_POLL_RETRY_INTERVAL)
+  }, delay)
+}
+
+async function syncCurrentOrder() {
+  if (!pageVisible || !orderId.value || orderPollInFlight) return true
+  orderPollInFlight = true
+  try {
+    applyOrder(await fetchMentorConsultationOrder(orderId.value))
+    return true
+  } catch (error) {
+    return false
+  } finally {
+    orderPollInFlight = false
+  }
 }
 
 function stopChatTimers() {
   if (serviceTimer) clearInterval(serviceTimer)
-  if (messagePollTimer) clearInterval(messagePollTimer)
+  if (messagePollTimer) clearTimeout(messagePollTimer)
+  if (orderPollTimer) clearTimeout(orderPollTimer)
   serviceTimer = null
   messagePollTimer = null
+  orderPollTimer = null
 }
 
-async function sendText() {
+function sendText() {
   const content = messageInput.value.trim()
   if (!content || consultationEnded.value || !orderId.value) return
+
+  const clientMessageId = createClientMessageId()
+  const localMessageId = `local-${clientMessageId}`
+  messages.value = [...messages.value, {
+    id: localMessageId,
+    sender: isMentorViewer.value ? 'mentor' : 'user',
+    type: 'text',
+    content,
+    createdAt: new Date().toISOString(),
+    clientMessageId,
+    deliveryState: 'sending'
+  }]
+  messageInput.value = ''
+  scrollToBottom()
+  void sendPendingMessage(localMessageId)
+}
+
+async function sendPendingMessage(localMessageId) {
+  const pendingMessage = messages.value.find((item) => item.id === localMessageId)
+  if (!pendingMessage || pendingMessage.deliveryState !== 'sending') return
   try {
-    const message = await createMentorConsultationMessage(orderId.value, { message_type: 'text', content })
-    messages.value = [...messages.value, normalizeMessage(message)]
-    messageInput.value = ''
+    const message = await createMentorConsultationMessage(orderId.value, {
+      message_type: 'text',
+      content: pendingMessage.content,
+      client_message_id: pendingMessage.clientMessageId
+    })
+    const confirmedMessage = normalizeMessage(message)
+    messages.value = messages.value.map((item) => item.id === localMessageId ? confirmedMessage : item)
+    updateMessageCursor([confirmedMessage])
     scrollToBottom()
+    scheduleNextMessagePoll(0)
   } catch (error) {
-    uni.showToast({ title: error?.detail || '消息发送失败', icon: 'none' })
+    messages.value = messages.value.map((item) => item.id === localMessageId
+      ? { ...item, deliveryState: 'failed' }
+      : item)
+  }
+}
+
+function createClientMessageId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 14)}`
+}
+
+async function retryMessage(message) {
+  if (!message || message.deliveryState !== 'failed') return
+  messages.value = messages.value.map((item) => item.id === message.id
+    ? { ...item, deliveryState: 'sending' }
+    : item)
+  const synced = await syncLatestMessages({ full: true })
+  const pendingMessage = messages.value.find((item) => item.id === message.id)
+  if (synced && pendingMessage?.deliveryState === 'sending') {
+    void sendPendingMessage(message.id)
   }
 }
 
@@ -656,4 +847,9 @@ function goBack() {
 .mentor-chat-recording-overlay{position:fixed;z-index:30;top:50%;left:50%;box-sizing:border-box;width:100%;padding:0 36rpx;transform:translate(-50%,-50%);pointer-events:none;display:flex;justify-content:center;opacity:1;transition:opacity 160ms ease}.mentor-chat-recording-overlay.ending{opacity:0}.mentor-chat-recording-bubble{box-sizing:border-box;min-width:284rpx;height:178rpx;padding:32rpx 30rpx;border:2rpx solid rgba(255,255,255,.34);border-radius:34rpx;background:var(--gyt-primary-gradient,linear-gradient(135deg,#3478f6,#68a0ff));box-shadow:0 22rpx 54rpx var(--gyt-primary-shadow,rgba(52,120,246,.2));display:flex;align-items:center;justify-content:center}.mentor-chat-waveform{height:94rpx;display:flex;align-items:center;justify-content:center;gap:7rpx}.mentor-chat-wave-bar{display:block;width:7rpx;min-width:7rpx;height:82rpx;min-height:82rpx;border-radius:999rpx;background:rgba(255,255,255,.96);transform-origin:center;transition:transform 72ms cubic-bezier(.2,.8,.2,1);will-change:transform}
 .mentor-review-mask{position:fixed;z-index:10;inset:0;padding:32rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));background:rgba(19,37,66,.35);display:flex;align-items:flex-end}.mentor-review-sheet{width:100%;padding:20rpx 28rpx 28rpx;border-radius:30rpx;background:#fff;box-shadow:0 -16rpx 46rpx rgba(28,62,117,.16)}.mentor-review-handle{width:64rpx;height:7rpx;margin:0 auto 22rpx;border-radius:999rpx;background:#dce6f4}.mentor-review-title{color:#273a55;font-size:29rpx;font-weight:900}.mentor-review-subtitle{margin-top:7rpx;color:#8796aa;font-size:20rpx;line-height:1.45;font-weight:650}.mentor-review-stars{display:flex;gap:12rpx;margin-top:22rpx}.mentor-review-stars button{width:54rpx;height:54rpx;margin:0;padding:0;border:0;background:transparent;color:#d3dce8;font-size:42rpx;line-height:1}.mentor-review-stars button::after,.mentor-review-tags button::after,.mentor-review-submit::after{border:0}.mentor-review-stars button.active{color:#f2a437}.mentor-review-tags{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-review-tags button{min-height:48rpx;margin:0;padding:0 15rpx;border:2rpx solid #dce7f8;border-radius:14rpx;background:#fbfdff;color:#71839d;font-size:20rpx;font-weight:750}.mentor-review-tags button.active{border-color:#b9d2ff;background:#edf4ff;color:#3478f6}.mentor-review-sheet textarea{box-sizing:border-box;width:100%;min-height:144rpx;margin-top:20rpx;padding:16rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#fbfdff;color:#3a4f6e;font-size:21rpx;line-height:1.5}.mentor-review-count{margin-top:7rpx;color:#9aa9ba;text-align:right;font-size:18rpx}.mentor-review-submit{width:100%;min-height:72rpx;margin-top:16rpx;border:0;border-radius:20rpx;background:#3478f6;color:#fff;font-size:24rpx;font-weight:900;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}
 @media(max-width:350px){.mentor-chat-completed-bar{grid-template-columns:minmax(0,1fr) 142rpx 98rpx}.mentor-chat-completed-bar button{font-size:17rpx}.mentor-chat-input-bar{gap:7rpx;padding-right:12rpx;padding-left:12rpx}.mentor-chat-tool{width:54rpx;min-width:54rpx;height:54rpx;min-height:54rpx;padding:8rpx}.mentor-chat-send{min-width:100rpx;font-size:21rpx}}
+.mentor-chat-time { min-height: 22rpx; display: flex; align-items: center; gap: 10rpx; }
+.mentor-chat-message-row.user .mentor-chat-time { justify-content: flex-end; }
+.mentor-chat-delivery { white-space: nowrap; }
+.mentor-chat-delivery.sending { color: #8291a5; }
+.mentor-chat-delivery.failed { color: #cf5b63; font-weight: 800; }
 </style>

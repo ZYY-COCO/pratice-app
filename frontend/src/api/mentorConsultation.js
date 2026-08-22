@@ -173,7 +173,8 @@ export function fetchMentorConsultationMessages(orderId, params = {}) {
   return request({
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/messages`,
     method: 'GET',
-    data: params
+    data: params,
+    timeout: 6500
   })
 }
 
@@ -181,7 +182,8 @@ export function createMentorConsultationMessage(orderId, payload) {
   return request({
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/messages`,
     method: 'POST',
-    data: payload
+    data: payload,
+    timeout: 8000
   })
 }
 
