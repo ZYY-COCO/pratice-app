@@ -19,6 +19,11 @@ from app.dependencies import (
 from app.schemas.admin import (
     AdminCommunityBulkFeaturedRequest,
     AdminCommunityBulkFeaturedResponse,
+    AdminCommunityAppealItem,
+    AdminCommunityAppealListResponse,
+    AdminCommunityAppealStatusUpdateRequest,
+    AdminCommunityCommentItem,
+    AdminCommunityCommentVisibilityRequest,
     AdminCommunityBulkVisibilityRequest,
     AdminCommunityBulkVisibilityResponse,
     AdminCommunityOverviewResponse,
@@ -26,6 +31,9 @@ from app.schemas.admin import (
     AdminCommunityPostItem,
     AdminCommunityPostListResponse,
     AdminCommunityPostVisibilityRequest,
+    AdminCommunityReportItem,
+    AdminCommunityReportListResponse,
+    AdminCommunityReportStatusUpdateRequest,
     AdminAnnouncementRecordUpdateRequest,
     AdminFeedbackListResponse,
     AdminFeedbackStatusRequest,
@@ -97,6 +105,7 @@ from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
 from app.services.school_announcements import get_bundled_announcement_index, list_published_announcement_records
 from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
+from app.services.user_notifications import create_user_notification
 
 router = APIRouter(prefix="/admin", tags=["admin"])
 logger = logging.getLogger(__name__)
@@ -113,6 +122,7 @@ QUESTION_ADMIN_DASHBOARD_PERIOD_DAYS = {0, 7, 30}
 QUESTION_ADMIN_DASHBOARD_DEFAULT_MIN_ATTEMPTS = 1
 QUESTION_ADMIN_DASHBOARD_FALLBACK_MAX_ROWS = 20_000
 QUESTION_ADMIN_DASHBOARD_FALLBACK_ACTIVITY_MAX_ROWS = 10_000
+MENTOR_CONSULTATION_ACTIVE_ORDER_STATUSES = {"pending_accept", "accepted", "booked", "in_progress"}
 COMMUNITY_ADMIN_POST_LIMIT = 20
 COMMUNITY_ADMIN_POST_MAX_LIMIT = 50
 COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT = 5_000
@@ -124,6 +134,28 @@ COMMUNITY_ADMIN_POST_SORTS = {
     "likes": ("like_count", True),
     "comments": ("comment_count", True),
 }
+COMMUNITY_ADMIN_REPORT_LIMIT = 50
+COMMUNITY_ADMIN_REPORT_MAX_LIMIT = 100
+COMMUNITY_ADMIN_REPORT_STATUSES = {"pending", "reviewing", "resolved", "dismissed"}
+COMMUNITY_ADMIN_REPORT_TARGET_TYPES = {"post", "comment"}
+COMMUNITY_ADMIN_REPORT_ACTIONS = {
+    "none",
+    "hide_post",
+    "restore_post",
+    "hide_comment",
+    "restore_comment",
+}
+COMMUNITY_ADMIN_REPORT_FIELDS = (
+    "id,reporter_user_id,target_type,post_id,comment_id,target_user_id,reason,content,status,"
+    "moderation_action,admin_note,handled_by,handled_at,created_at,updated_at"
+)
+COMMUNITY_ADMIN_APPEAL_LIMIT = 50
+COMMUNITY_ADMIN_APPEAL_MAX_LIMIT = 100
+COMMUNITY_ADMIN_APPEAL_ACTIONS = {"none", "restore_post", "restore_comment", "uphold"}
+COMMUNITY_ADMIN_APPEAL_FIELDS = (
+    "id,appellant_user_id,target_type,post_id,comment_id,content,status,moderation_action,"
+    "admin_note,handled_by,handled_at,created_at,updated_at"
+)
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 OPERATIONS_IMPORT_BATCH_SIZE = 500
@@ -589,6 +621,173 @@ def _community_post_detail_row(supabase, post_id: str) -> dict:
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community post not found")
+    return response.data[0]
+
+
+def _fetch_community_report_users(supabase, user_ids: list[str]) -> dict[str, dict]:
+    ids = list(dict.fromkeys(str(user_id) for user_id in user_ids if user_id))
+    if not ids:
+        return {}
+    response = call_supabase(
+        lambda: (
+            supabase.table("users")
+            .select("id,nickname,email,phone")
+            .in_("id", ids)
+            .execute()
+        ),
+        operation_name="admin community report user lookup",
+    )
+    return {
+        str(row.get("id") or ""): row
+        for row in (response.data or [])
+        if row.get("id")
+    }
+
+
+def _community_report_user_item(user_id: str, users: dict[str, dict]) -> dict:
+    user = users.get(user_id, {})
+    return {
+        "id": user_id,
+        "display_name": str(user.get("nickname") or user.get("email") or user.get("phone") or "用户"),
+        "email": user.get("email") or None,
+        "phone": user.get("phone") or None,
+    }
+
+
+def _fetch_community_report_targets(supabase, rows: list[dict]) -> tuple[dict[str, dict], dict[str, dict]]:
+    post_ids = list(dict.fromkeys(str(row.get("post_id") or "") for row in rows if row.get("post_id")))
+    comment_ids = list(dict.fromkeys(str(row.get("comment_id") or "") for row in rows if row.get("comment_id")))
+    posts: dict[str, dict] = {}
+    comments: dict[str, dict] = {}
+    if post_ids:
+        post_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .select("id,author_id,author_name,title,content,is_published")
+                .in_("id", post_ids)
+                .execute()
+            ),
+            operation_name="admin community report post target lookup",
+        )
+        posts = {
+            str(row.get("id") or ""): row
+            for row in (post_response.data or [])
+            if row.get("id")
+        }
+    if comment_ids:
+        comment_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .select("id,author_id,author_name,content,is_published")
+                .in_("id", comment_ids)
+                .execute()
+            ),
+            operation_name="admin community report comment target lookup",
+        )
+        comments = {
+            str(row.get("id") or ""): row
+            for row in (comment_response.data or [])
+            if row.get("id")
+        }
+    return posts, comments
+
+
+def _serialize_admin_community_report(
+    row: dict,
+    users: dict[str, dict],
+    posts: dict[str, dict],
+    comments: dict[str, dict],
+) -> dict:
+    target_type = str(row.get("target_type") or "post")
+    post = posts.get(str(row.get("post_id") or ""), {})
+    comment = comments.get(str(row.get("comment_id") or ""), {})
+    target_content = comment if target_type == "comment" else post
+    target_user_id = str(row.get("target_user_id") or target_content.get("author_id") or "")
+    target_name = str(target_content.get("author_name") or "用户")
+    return {
+        "id": str(row.get("id") or ""),
+        "target_type": target_type,
+        "post_id": str(row.get("post_id") or ""),
+        "comment_id": str(row.get("comment_id") or "") or None,
+        "reporter": _community_report_user_item(str(row.get("reporter_user_id") or ""), users),
+        "target": {
+            **_community_report_user_item(target_user_id, users),
+            "display_name": target_name or _community_report_user_item(target_user_id, users)["display_name"],
+        },
+        "post_title": str(post.get("title") or "研圈帖子"),
+        "target_excerpt": str(target_content.get("content") or "")[:180],
+        "reason": str(row.get("reason") or "其他问题"),
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "moderation_action": str(row.get("moderation_action") or "none"),
+        "admin_note": row.get("admin_note") or None,
+        "created_at": row.get("created_at") or None,
+        "handled_at": row.get("handled_at") or None,
+    }
+
+
+def _get_community_report_or_404(supabase, report_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_reports")
+            .select(COMMUNITY_ADMIN_REPORT_FIELDS)
+            .eq("id", report_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin community report lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该内容举报")
+    return response.data[0]
+
+
+def _serialize_admin_community_appeal(
+    row: dict,
+    users: dict[str, dict],
+    posts: dict[str, dict],
+    comments: dict[str, dict],
+) -> dict:
+    target_type = str(row.get("target_type") or "post")
+    post = posts.get(str(row.get("post_id") or ""), {})
+    comment = comments.get(str(row.get("comment_id") or ""), {})
+    target_content = comment if target_type == "comment" else post
+    target_user_id = str(target_content.get("author_id") or "")
+    target_name = str(target_content.get("author_name") or "用户")
+    return {
+        "id": str(row.get("id") or ""),
+        "target_type": target_type,
+        "post_id": str(row.get("post_id") or ""),
+        "comment_id": str(row.get("comment_id") or "") or None,
+        "appellant": _community_report_user_item(str(row.get("appellant_user_id") or ""), users),
+        "target": {
+            **_community_report_user_item(target_user_id, users),
+            "display_name": target_name or _community_report_user_item(target_user_id, users)["display_name"],
+        },
+        "post_title": str(post.get("title") or "研圈帖子"),
+        "target_excerpt": str(target_content.get("content") or "")[:180],
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "moderation_action": str(row.get("moderation_action") or "none"),
+        "admin_note": row.get("admin_note") or None,
+        "created_at": row.get("created_at") or None,
+        "handled_at": row.get("handled_at") or None,
+    }
+
+
+def _get_community_appeal_or_404(supabase, appeal_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_appeals")
+            .select(COMMUNITY_ADMIN_APPEAL_FIELDS)
+            .eq("id", appeal_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin community appeal lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该内容申诉")
     return response.data[0]
 
 
@@ -1134,6 +1333,156 @@ def _log_admin_action(supabase, admin_profile: dict, action: str, target_type: s
     except Exception:
         # The audit-log migration may not be applied yet; admin actions should still work.
         return
+
+
+def _find_active_mentor_consultation_orders_for_user(supabase, user_id: str) -> list[dict]:
+    """Return every paid-or-in-service consultation that must be settled before account disable."""
+
+    active_statuses = sorted(MENTOR_CONSULTATION_ACTIVE_ORDER_STATUSES)
+    applicant_response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_orders")
+            .select("id,order_no,order_status,applicant_user_id,mentor_id")
+            .eq("applicant_user_id", user_id)
+            .in_("order_status", active_statuses)
+            .order("created_at", desc=True)
+            .limit(20)
+            .execute()
+        ),
+        operation_name="user disable applicant consultation lookup",
+    )
+    active_orders = list(applicant_response.data or [])
+
+    mentor_response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profiles")
+            .select("id")
+            .eq("owner_user_id", user_id)
+            .limit(20)
+            .execute()
+        ),
+        operation_name="user disable mentor profile lookup",
+    )
+    mentor_ids = list(dict.fromkeys(
+        str(row.get("id") or "")
+        for row in (mentor_response.data or [])
+        if row.get("id")
+    ))
+    if mentor_ids:
+        received_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .select("id,order_no,order_status,applicant_user_id,mentor_id")
+                .in_("mentor_id", mentor_ids)
+                .in_("order_status", active_statuses)
+                .order("created_at", desc=True)
+                .limit(20)
+                .execute()
+            ),
+            operation_name="user disable received consultation lookup",
+        )
+        active_orders.extend(received_response.data or [])
+
+    deduplicated: dict[str, dict] = {}
+    for order in active_orders:
+        order_id = str(order.get("id") or "")
+        if order_id:
+            deduplicated[order_id] = order
+    return list(deduplicated.values())
+
+
+def _apply_community_target_filter(query, *, target_type: str, target_ids: list[str]):
+    """Apply the same post/comment identity rule to reports and author appeals."""
+
+    normalized_ids = list(dict.fromkeys(str(target_id) for target_id in target_ids if target_id))
+    if target_type == "post":
+        return (
+            query.eq("target_type", "post")
+            .in_("post_id", normalized_ids)
+            .is_("comment_id", "null")
+        )
+    return query.eq("target_type", "comment").in_("comment_id", normalized_ids)
+
+
+def _sync_community_visibility_cases(
+    supabase,
+    *,
+    target_type: str,
+    target_ids: list[str],
+    is_published: bool,
+    admin_profile: dict,
+    now_iso: str,
+    admin_note: str | None = None,
+    exclude_report_id: str | None = None,
+) -> dict[str, int]:
+    """Keep reporter and author case records aligned with a direct visibility change.
+
+    A manager may act from the post list, a report, or an appeal. All three paths
+    must leave reporters and content authors with the same final visible outcome.
+    """
+
+    normalized_ids = list(dict.fromkeys(str(target_id) for target_id in target_ids if target_id))
+    if target_type not in {"post", "comment"} or not normalized_ids:
+        return {"reports": 0, "appeals": 0}
+
+    hide_action = f"hide_{target_type}"
+    restore_action = f"restore_{target_type}"
+    report_status = "dismissed" if is_published else "resolved"
+    note = admin_note or (
+        "平台复核后已恢复该内容的公开展示。"
+        if is_published
+        else "平台内容运营已暂时下架该内容；如有异议可在内容处理记录提交申诉。"
+    )
+    report_count = 0
+    appeal_count = 0
+
+    def update_reports(*, statuses: list[str] | None = None, prior_hide_only: bool = False) -> int:
+        query = supabase.table("circle_community_reports").update({
+            "status": report_status,
+            "moderation_action": restore_action if is_published else hide_action,
+            "admin_note": note,
+            "handled_by": admin_profile.get("id"),
+            "handled_at": now_iso,
+        })
+        query = _apply_community_target_filter(query, target_type=target_type, target_ids=normalized_ids)
+        if exclude_report_id:
+            query = query.neq("id", exclude_report_id)
+        if statuses:
+            query = query.in_("status", statuses)
+        if prior_hide_only:
+            query = query.eq("moderation_action", hide_action)
+        response = call_supabase(
+            query.execute,
+            operation_name="admin community visibility report sync",
+        )
+        return len(response.data or [])
+
+    try:
+        report_count += update_reports(statuses=["pending", "reviewing"])
+        # If an author appeal or a direct management action restores a previously
+        # hidden target, reporters need the updated final result as well.
+        if is_published:
+            report_count += update_reports(prior_hide_only=True)
+            appeal_query = supabase.table("circle_community_appeals").update({
+                "status": "resolved",
+                "moderation_action": restore_action,
+                "admin_note": note,
+                "handled_by": admin_profile.get("id"),
+                "handled_at": now_iso,
+            })
+            appeal_query = _apply_community_target_filter(
+                appeal_query,
+                target_type=target_type,
+                target_ids=normalized_ids,
+            ).in_("status", ["pending", "reviewing"])
+            appeal_response = call_supabase(
+                appeal_query.execute,
+                operation_name="admin community visibility appeal sync",
+            )
+            appeal_count = len(appeal_response.data or [])
+    except Exception as exc:
+        logger.warning("Community visibility case sync skipped (error_type=%s)", type(exc).__name__)
+    return {"reports": report_count, "appeals": appeal_count}
 
 
 def _operations_dataset_tables(dataset: str) -> dict[str, str]:
@@ -2242,6 +2591,22 @@ def question_admin_portal_update_user_disabled(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不能停用当前登录账号")
     supabase = get_supabase_admin()
     try:
+        if payload.disabled:
+            active_consultation_orders = _find_active_mentor_consultation_orders_for_user(supabase, user_id)
+            if active_consultation_orders:
+                order_references = "、".join(
+                    str(order.get("order_no") or order.get("id") or "")
+                    for order in active_consultation_orders[:3]
+                )
+                remaining_count = max(0, len(active_consultation_orders) - 3)
+                suffix = f" 等 {remaining_count + 3} 笔" if remaining_count else ""
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail=(
+                        f"该用户仍有待履约的前辈咨询订单（{order_references}{suffix}），"
+                        "请先在“前辈咨询 - 咨询订单”完成退款、结束服务或纠纷处置后再停用账号"
+                    ),
+                )
         response = call_supabase(
             lambda: (
                 supabase.table("users")
@@ -3689,6 +4054,17 @@ def question_admin_community_overview(
                 .select("id", count="exact")
                 .gte("created_at", _to_iso(today_start))
             ),
+            total_reports=_count_table(supabase, "circle_community_reports"),
+            pending_reports=_count_query(
+                supabase.table("circle_community_reports")
+                .select("id", count="exact")
+                .eq("status", "pending")
+            ),
+            reviewing_reports=_count_query(
+                supabase.table("circle_community_reports")
+                .select("id", count="exact")
+                .eq("status", "reviewing")
+            ),
         )
     except Exception as exc:
         logger.warning("Admin community overview unavailable (error_type=%s)", type(exc).__name__)
@@ -3794,15 +4170,18 @@ def question_admin_community_post_detail(
             operation_name="admin community post comments",
         )
         comments = [
-            {
-                "id": str(row.get("id") or ""),
-                "author_id": str(row.get("author_id")) if row.get("author_id") else None,
-                "author_name": str(row.get("author_name") or "研友"),
-                "author_avatar": str(row.get("author_avatar") or "研"),
-                "content": str(row.get("content") or ""),
-                "like_count": _safe_int(row.get("like_count"), 0),
-                "created_at": row.get("created_at"),
-            }
+            AdminCommunityCommentItem(
+                id=str(row.get("id") or ""),
+                author_id=str(row.get("author_id")) if row.get("author_id") else None,
+                author_name=str(row.get("author_name") or "研友"),
+                author_avatar=str(row.get("author_avatar") or "研"),
+                content=str(row.get("content") or ""),
+                like_count=_safe_int(row.get("like_count"), 0),
+                is_published=bool(row.get("is_published", True)),
+                moderation_note=row.get("moderation_note") or None,
+                moderated_at=row.get("moderated_at") or None,
+                created_at=row.get("created_at"),
+            )
             for row in (comments_response.data or [])
         ]
         return AdminCommunityPostDetailResponse(
@@ -3829,23 +4208,42 @@ def question_admin_bulk_update_community_post_visibility(
 ) -> AdminCommunityBulkVisibilityResponse:
     supabase = get_supabase_admin()
     try:
+        now_iso = _to_iso(_now())
         response = call_supabase(
             lambda: (
                 supabase.table("circle_community_posts")
-                .update({"is_published": payload.is_published, "updated_at": _to_iso(_now())})
+                .update({
+                    "is_published": payload.is_published,
+                    "moderation_note": None if payload.is_published else "平台内容运营处置：该内容暂时下架，如有异议可在内容处理记录提交申诉。",
+                    "moderated_at": now_iso,
+                    "updated_at": now_iso,
+                })
                 .in_("id", payload.ids)
                 .execute()
             ),
             operation_name="admin community bulk visibility update",
         )
         updated_count = len(response.data or [])
+        case_sync = _sync_community_visibility_cases(
+            supabase,
+            target_type="post",
+            target_ids=[str(row.get("id") or "") for row in (response.data or [])],
+            is_published=payload.is_published,
+            admin_profile=admin_profile,
+            now_iso=now_iso,
+        )
         _log_admin_action(
             supabase,
             admin_profile,
             action="publish_community_posts" if payload.is_published else "archive_community_posts",
             target_type="community_post",
             target_id=None,
-            details={"post_ids": payload.ids, "updated_count": updated_count},
+            details={
+                "post_ids": payload.ids,
+                "updated_count": updated_count,
+                "synced_report_count": case_sync["reports"],
+                "synced_appeal_count": case_sync["appeals"],
+            },
         )
         return AdminCommunityBulkVisibilityResponse(updated_count=updated_count)
     except Exception as exc:
@@ -3908,10 +4306,16 @@ def question_admin_update_community_post_visibility(
 ) -> AdminCommunityPostItem:
     supabase = get_supabase_admin()
     try:
+        now_iso = _to_iso(_now())
         response = call_supabase(
             lambda: (
                 supabase.table("circle_community_posts")
-                .update({"is_published": payload.is_published, "updated_at": _to_iso(_now())})
+                .update({
+                    "is_published": payload.is_published,
+                    "moderation_note": None if payload.is_published else "平台内容运营处置：该内容暂时下架，如有异议可在内容处理记录提交申诉。",
+                    "moderated_at": now_iso,
+                    "updated_at": now_iso,
+                })
                 .eq("id", post_id)
                 .execute()
             ),
@@ -3919,15 +4323,48 @@ def question_admin_update_community_post_visibility(
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community post not found")
+        row = response.data[0]
+        content_author_id = str(row.get("author_id") or "").strip()
+        if content_author_id:
+            create_user_notification(
+                supabase,
+                recipient_user_id=content_author_id,
+                category="community",
+                notification_type="community_content_moderation",
+                title="你的研圈帖子已恢复展示" if payload.is_published else "你的研圈帖子已被下架",
+                summary="平台已恢复你的帖子展示。" if payload.is_published else "平台已对你的帖子执行下架处理。",
+                content=str(row.get("moderation_note") or "").strip() or "可在“我的举报”的内容处理记录中查看详情。",
+                related_type="community_post",
+                related_id=f"{post_id}:direct_visibility:{'restore' if payload.is_published else 'hide'}",
+                route_path="/pages/circle/community-reports?tab=content",
+                delivery_payload={
+                    "surface": "community_moderation",
+                    "target_type": "post",
+                    "target_id": post_id,
+                    "moderation_action": "restore_post" if payload.is_published else "hide_post",
+                },
+            )
+        case_sync = _sync_community_visibility_cases(
+            supabase,
+            target_type="post",
+            target_ids=[post_id],
+            is_published=payload.is_published,
+            admin_profile=admin_profile,
+            now_iso=now_iso,
+        )
         _log_admin_action(
             supabase,
             admin_profile,
             action="publish_community_post" if payload.is_published else "archive_community_post",
             target_type="community_post",
             target_id=post_id,
-            details={"is_published": payload.is_published},
+            details={
+                "is_published": payload.is_published,
+                "synced_report_count": case_sync["reports"],
+                "synced_appeal_count": case_sync["appeals"],
+            },
         )
-        return _build_admin_community_post_item(response.data[0])
+        return _build_admin_community_post_item(row)
     except HTTPException:
         raise
     except Exception as exc:
@@ -3935,6 +4372,580 @@ def question_admin_update_community_post_visibility(
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="社区帖子状态更新失败",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/posts/{post_id}/comments/{comment_id}/visibility",
+    response_model=AdminCommunityCommentItem,
+)
+def question_admin_update_community_comment_visibility(
+    post_id: str,
+    comment_id: str,
+    payload: AdminCommunityCommentVisibilityRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityCommentItem:
+    """Allow moderators to act on a comment discovered from any post, not only a report queue."""
+
+    supabase = get_supabase_admin()
+    try:
+        now_iso = _to_iso(_now())
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .update({
+                    "is_published": payload.is_published,
+                    "moderation_note": None if payload.is_published else "平台内容运营处置：该评论暂时下架，如有异议可在内容处理记录提交申诉。",
+                    "moderated_at": now_iso,
+                })
+                .eq("id", comment_id)
+                .eq("post_id", post_id)
+                .execute()
+            ),
+            operation_name="admin community comment visibility update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community comment not found")
+        row = response.data[0]
+        content_author_id = str(row.get("author_id") or "").strip()
+        if content_author_id:
+            create_user_notification(
+                supabase,
+                recipient_user_id=content_author_id,
+                category="community",
+                notification_type="community_content_moderation",
+                title="你的研圈评论已恢复展示" if payload.is_published else "你的研圈评论已被下架",
+                summary="平台已恢复你的评论展示。" if payload.is_published else "平台已对你的评论执行下架处理。",
+                content=str(row.get("moderation_note") or "").strip() or "可在“我的举报”的内容处理记录中查看详情。",
+                related_type="community_comment",
+                related_id=f"{comment_id}:direct_visibility:{'restore' if payload.is_published else 'hide'}",
+                route_path="/pages/circle/community-reports?tab=content",
+                delivery_payload={
+                    "surface": "community_moderation",
+                    "target_type": "comment",
+                    "target_id": comment_id,
+                    "post_id": post_id,
+                    "moderation_action": "restore_comment" if payload.is_published else "hide_comment",
+                },
+            )
+        case_sync = _sync_community_visibility_cases(
+            supabase,
+            target_type="comment",
+            target_ids=[comment_id],
+            is_published=payload.is_published,
+            admin_profile=admin_profile,
+            now_iso=now_iso,
+        )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="publish_community_comment" if payload.is_published else "archive_community_comment",
+            target_type="community_comment",
+            target_id=comment_id,
+            details={
+                "post_id": post_id,
+                "is_published": payload.is_published,
+                "synced_report_count": case_sync["reports"],
+                "synced_appeal_count": case_sync["appeals"],
+            },
+        )
+        return AdminCommunityCommentItem(
+            id=str(row.get("id") or ""),
+            author_id=str(row.get("author_id")) if row.get("author_id") else None,
+            author_name=str(row.get("author_name") or "研友"),
+            author_avatar=str(row.get("author_avatar") or "研"),
+            content=str(row.get("content") or ""),
+            like_count=_safe_int(row.get("like_count"), 0),
+            is_published=bool(row.get("is_published", True)),
+            moderation_note=row.get("moderation_note") or None,
+            moderated_at=row.get("moderated_at") or None,
+            created_at=row.get("created_at") or None,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community comment visibility update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="社区评论状态更新失败",
+        ) from exc
+
+
+@router.get("/question-portal/community/reports", response_model=AdminCommunityReportListResponse)
+def question_admin_community_reports(
+    report_status: str | None = Query(default=None, alias="status", max_length=20),
+    target_type: str | None = Query(default=None, max_length=20),
+    keyword: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=COMMUNITY_ADMIN_REPORT_LIMIT, ge=1, le=COMMUNITY_ADMIN_REPORT_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityReportListResponse:
+    normalized_status = str(report_status or "").strip().lower()
+    normalized_target_type = str(target_type or "").strip().lower()
+    normalized_keyword = str(keyword or "").strip()
+    if normalized_status and normalized_status not in COMMUNITY_ADMIN_REPORT_STATUSES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的举报处理状态")
+    if normalized_target_type and normalized_target_type not in COMMUNITY_ADMIN_REPORT_TARGET_TYPES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的举报对象类型")
+
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("circle_community_reports").select(COMMUNITY_ADMIN_REPORT_FIELDS, count="exact")
+        if normalized_status:
+            query = query.eq("status", normalized_status)
+        if normalized_target_type:
+            query = query.eq("target_type", normalized_target_type)
+        if normalized_keyword:
+            query = query.or_(f"reason.ilike.%{normalized_keyword}%,content.ilike.%{normalized_keyword}%")
+        response = call_supabase(
+            lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+            operation_name="admin community report list",
+        )
+        rows = response.data or []
+        posts, comments = _fetch_community_report_targets(supabase, rows)
+        users = _fetch_community_report_users(
+            supabase,
+            [str(row.get("reporter_user_id") or "") for row in rows]
+            + [str(row.get("target_user_id") or "") for row in rows]
+            + [str(row.get("author_id") or "") for row in posts.values()]
+            + [str(row.get("author_id") or "") for row in comments.values()],
+        )
+        return AdminCommunityReportListResponse(
+            items=[
+                AdminCommunityReportItem(**_serialize_admin_community_report(row, users, posts, comments))
+                for row in rows
+            ],
+            count=int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community report list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="内容举报列表暂时不可用",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/reports/{report_id}",
+    response_model=AdminCommunityReportItem,
+)
+def question_admin_update_community_report(
+    report_id: str,
+    payload: AdminCommunityReportStatusUpdateRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityReportItem:
+    normalized_note = str(payload.admin_note or "").strip() or None
+    action = payload.moderation_action
+    if action not in COMMUNITY_ADMIN_REPORT_ACTIONS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的内容处置动作")
+    if payload.status in {"resolved", "dismissed"} and not normalized_note:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="结案时请填写对举报人的处理说明")
+    if action != "none" and payload.status not in {"resolved", "dismissed"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="执行内容处置时请同步将举报结案")
+    if action in {"hide_post", "hide_comment"} and payload.status != "resolved":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="下架内容时请将举报标记为已处理")
+    if action in {"restore_post", "restore_comment"} and payload.status != "dismissed":
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="恢复内容时请将举报标记为已驳回")
+
+    supabase = get_supabase_admin()
+    try:
+        report = _get_community_report_or_404(supabase, report_id)
+        target_type = str(report.get("target_type") or "post")
+        allowed_actions = (
+            {"none", "hide_post", "restore_post"}
+            if target_type == "post"
+            else {"none", "hide_comment", "restore_comment"}
+        )
+        if action not in allowed_actions:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="该举报对象不支持此处置动作")
+
+        now_iso = _to_iso(_now())
+        moderated_target: dict | None = None
+        if action in {"hide_post", "restore_post"}:
+            target_response = call_supabase(
+                lambda: (
+                    supabase.table("circle_community_posts")
+                    .update({
+                        "is_published": action == "restore_post",
+                        "moderation_note": None if action == "restore_post" else normalized_note,
+                        "moderated_at": now_iso,
+                        "updated_at": now_iso,
+                    })
+                    .eq("id", str(report.get("post_id") or ""))
+                    .execute()
+                ),
+                operation_name="admin community report post moderation",
+            )
+            if not target_response.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="被举报帖子已不存在")
+            moderated_target = target_response.data[0]
+        elif action in {"hide_comment", "restore_comment"}:
+            target_response = call_supabase(
+                lambda: (
+                    supabase.table("circle_community_comments")
+                    .update({
+                        "is_published": action == "restore_comment",
+                        "moderation_note": None if action == "restore_comment" else normalized_note,
+                        "moderated_at": now_iso,
+                    })
+                    .eq("id", str(report.get("comment_id") or ""))
+                    .eq("post_id", str(report.get("post_id") or ""))
+                    .execute()
+                ),
+                operation_name="admin community report comment moderation",
+            )
+            if not target_response.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="被举报评论已不存在")
+            moderated_target = target_response.data[0]
+
+        terminal = payload.status in {"resolved", "dismissed"}
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_reports")
+                .update({
+                    "status": payload.status,
+                    "moderation_action": action,
+                    "admin_note": normalized_note,
+                    "handled_by": admin_profile.get("id") if payload.status != "pending" else None,
+                    "handled_at": now_iso if terminal else None,
+                })
+                .eq("id", report_id)
+                .execute()
+            ),
+            operation_name="admin community report status update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该内容举报")
+        updated = response.data[0]
+        if payload.status != "pending":
+            is_reviewing = payload.status == "reviewing"
+            create_user_notification(
+                supabase,
+                recipient_user_id=str(updated.get("reporter_user_id") or ""),
+                category="community",
+                notification_type="community_report_status",
+                title="你的研圈举报已受理" if is_reviewing else "你的研圈举报处理结果已更新",
+                summary="平台正在核实你提交的举报。" if is_reviewing else "平台已更新本次举报的处理结论。",
+                content=normalized_note or (
+                    "平台正在结合内容与相关材料进行核实，请留意后续处理进度。"
+                    if is_reviewing
+                    else "平台已完成核查，感谢你协助维护研圈环境。"
+                ),
+                related_type="community_report",
+                related_id=str(updated.get("id") or report_id),
+                route_path="/pages/circle/community-reports?tab=reports",
+            )
+        if moderated_target:
+            content_author_id = str(moderated_target.get("author_id") or "").strip()
+            target_id = str(moderated_target.get("id") or "").strip()
+            restored = action in {"restore_post", "restore_comment"}
+            if content_author_id and target_id:
+                create_user_notification(
+                    supabase,
+                    recipient_user_id=content_author_id,
+                    category="community",
+                    notification_type="community_content_moderation",
+                    title="你的研圈内容已恢复展示" if restored else "你的研圈内容已被下架",
+                    summary=(
+                        "平台已恢复你的内容展示。"
+                        if restored
+                        else "平台已对你的内容执行下架处理。"
+                    ),
+                    content=normalized_note or (
+                        "如需了解处理详情，可在“我的举报”的内容处理记录中查看。"
+                    ),
+                    related_type=f"community_{target_type}",
+                    related_id=f"{target_id}:{action}:{report_id}",
+                    route_path="/pages/circle/community-reports?tab=content",
+                    delivery_payload={
+                        "surface": "community_moderation",
+                        "target_type": target_type,
+                        "target_id": target_id,
+                        "moderation_action": action,
+                        "report_id": report_id,
+                    },
+                )
+        case_sync = {"reports": 0, "appeals": 0}
+        if action != "none":
+            target_id = str(report.get("comment_id") or "") if target_type == "comment" else str(report.get("post_id") or "")
+            case_sync = _sync_community_visibility_cases(
+                supabase,
+                target_type=target_type,
+                target_ids=[target_id],
+                is_published=action in {"restore_post", "restore_comment"},
+                admin_profile=admin_profile,
+                now_iso=now_iso,
+                admin_note=normalized_note,
+                exclude_report_id=report_id,
+            )
+        posts, comments = _fetch_community_report_targets(supabase, [updated])
+        users = _fetch_community_report_users(
+            supabase,
+            [
+                str(updated.get("reporter_user_id") or ""),
+                str(updated.get("target_user_id") or ""),
+                *[str(row.get("author_id") or "") for row in posts.values()],
+                *[str(row.get("author_id") or "") for row in comments.values()],
+            ],
+        )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="resolve_community_report",
+            target_type="community_report",
+            target_id=report_id,
+            details={
+                "status": payload.status,
+                "moderation_action": action,
+                "post_id": str(updated.get("post_id") or ""),
+                "comment_id": str(updated.get("comment_id") or "") or None,
+                "related_report_count": case_sync["reports"],
+                "synced_appeal_count": case_sync["appeals"],
+            },
+        )
+        return AdminCommunityReportItem(**_serialize_admin_community_report(updated, users, posts, comments))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community report update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="内容举报处理失败",
+        ) from exc
+
+
+@router.get("/question-portal/community/appeals", response_model=AdminCommunityAppealListResponse)
+def question_admin_community_appeals(
+    appeal_status: str | None = Query(default=None, alias="status", max_length=20),
+    target_type: str | None = Query(default=None, max_length=20),
+    keyword: str | None = Query(default=None, max_length=120),
+    limit: int = Query(default=COMMUNITY_ADMIN_APPEAL_LIMIT, ge=1, le=COMMUNITY_ADMIN_APPEAL_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityAppealListResponse:
+    normalized_status = str(appeal_status or "").strip().lower()
+    normalized_target_type = str(target_type or "").strip().lower()
+    normalized_keyword = str(keyword or "").strip()
+    if normalized_status and normalized_status not in COMMUNITY_ADMIN_REPORT_STATUSES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的申诉处理状态")
+    if normalized_target_type and normalized_target_type not in COMMUNITY_ADMIN_REPORT_TARGET_TYPES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的申诉内容类型")
+
+    supabase = get_supabase_admin()
+    try:
+        query = supabase.table("circle_community_appeals").select(COMMUNITY_ADMIN_APPEAL_FIELDS, count="exact")
+        if normalized_status:
+            query = query.eq("status", normalized_status)
+        if normalized_target_type:
+            query = query.eq("target_type", normalized_target_type)
+        if normalized_keyword:
+            query = query.ilike("content", f"%{normalized_keyword}%")
+        response = call_supabase(
+            lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+            operation_name="admin community appeal list",
+        )
+        rows = response.data or []
+        posts, comments = _fetch_community_report_targets(supabase, rows)
+        users = _fetch_community_report_users(
+            supabase,
+            [str(row.get("appellant_user_id") or "") for row in rows]
+            + [str(row.get("author_id") or "") for row in posts.values()]
+            + [str(row.get("author_id") or "") for row in comments.values()],
+        )
+        return AdminCommunityAppealListResponse(
+            items=[
+                AdminCommunityAppealItem(**_serialize_admin_community_appeal(row, users, posts, comments))
+                for row in rows
+            ],
+            count=int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community appeal list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="内容申诉列表暂时不可用",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/appeals/{appeal_id}",
+    response_model=AdminCommunityAppealItem,
+)
+def question_admin_update_community_appeal(
+    appeal_id: str,
+    payload: AdminCommunityAppealStatusUpdateRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityAppealItem:
+    normalized_note = str(payload.admin_note or "").strip() or None
+    action = payload.moderation_action
+    terminal = payload.status in {"resolved", "dismissed"}
+    if action not in COMMUNITY_ADMIN_APPEAL_ACTIONS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的申诉处置动作")
+    if terminal and not normalized_note:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="结案时请填写对申诉人的处理说明")
+
+    supabase = get_supabase_admin()
+    try:
+        appeal = _get_community_appeal_or_404(supabase, appeal_id)
+        target_type = str(appeal.get("target_type") or "post")
+        allowed_actions = (
+            {"none", "restore_post", "uphold"}
+            if target_type == "post"
+            else {"none", "restore_comment", "uphold"}
+        )
+        if action not in allowed_actions:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="该申诉对象不支持此处置动作")
+        if action in {"restore_post", "restore_comment"} and payload.status != "resolved":
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="恢复内容时请将申诉标记为已处理")
+        if action == "uphold" and payload.status != "dismissed":
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="维持原处置时请将申诉标记为已驳回")
+
+        now_iso = _to_iso(_now())
+        restored_target: dict | None = None
+        if action == "restore_post":
+            response = call_supabase(
+                lambda: (
+                    supabase.table("circle_community_posts")
+                    .update({
+                        "is_published": True,
+                        "moderation_note": None,
+                        "moderated_at": now_iso,
+                        "updated_at": now_iso,
+                    })
+                    .eq("id", str(appeal.get("post_id") or ""))
+                    .execute()
+                ),
+                operation_name="admin community appeal post restore",
+            )
+            if not response.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="申诉帖子已不存在")
+            restored_target = response.data[0]
+        elif action == "restore_comment":
+            response = call_supabase(
+                lambda: (
+                    supabase.table("circle_community_comments")
+                    .update({
+                        "is_published": True,
+                        "moderation_note": None,
+                        "moderated_at": now_iso,
+                    })
+                    .eq("id", str(appeal.get("comment_id") or ""))
+                    .eq("post_id", str(appeal.get("post_id") or ""))
+                    .execute()
+                ),
+                operation_name="admin community appeal comment restore",
+            )
+            if not response.data:
+                raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="申诉评论已不存在")
+            restored_target = response.data[0]
+
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_appeals")
+                .update({
+                    "status": payload.status,
+                    "moderation_action": action,
+                    "admin_note": normalized_note,
+                    "handled_by": admin_profile.get("id") if payload.status != "pending" else None,
+                    "handled_at": now_iso if terminal else None,
+                })
+                .eq("id", appeal_id)
+                .execute()
+            ),
+            operation_name="admin community appeal status update",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该内容申诉")
+        updated = response.data[0]
+        if payload.status != "pending":
+            is_reviewing = payload.status == "reviewing"
+            create_user_notification(
+                supabase,
+                recipient_user_id=str(updated.get("appellant_user_id") or ""),
+                category="community",
+                notification_type="community_appeal_status",
+                title="你的内容申诉已受理" if is_reviewing else "你的内容申诉处理结果已更新",
+                summary="平台正在复核你提交的申诉。" if is_reviewing else "平台已更新本次申诉的处理结论。",
+                content=normalized_note or (
+                    "平台正在结合内容与相关材料进行复核，请留意后续处理进度。"
+                    if is_reviewing
+                    else "平台已完成复核，处理结果已同步到你的内容处理记录。"
+                ),
+                related_type="community_appeal",
+                related_id=str(updated.get("id") or appeal_id),
+                route_path="/pages/circle/community-reports?tab=content",
+            )
+        if restored_target:
+            content_author_id = str(restored_target.get("author_id") or "").strip()
+            target_id = str(restored_target.get("id") or "").strip()
+            if content_author_id and target_id:
+                create_user_notification(
+                    supabase,
+                    recipient_user_id=content_author_id,
+                    category="community",
+                    notification_type="community_content_moderation",
+                    title="你的研圈内容已恢复展示",
+                    summary="平台已根据复核结果恢复你的内容展示。",
+                    content=normalized_note or "如需了解复核详情，可在“我的举报”的内容处理记录中查看。",
+                    related_type=f"community_{target_type}",
+                    related_id=f"{target_id}:{action}:{appeal_id}",
+                    route_path="/pages/circle/community-reports?tab=content",
+                    delivery_payload={
+                        "surface": "community_moderation",
+                        "target_type": target_type,
+                        "target_id": target_id,
+                        "moderation_action": action,
+                        "appeal_id": appeal_id,
+                    },
+                )
+        case_sync = {"reports": 0, "appeals": 0}
+        if action in {"restore_post", "restore_comment"}:
+            target_id = str(appeal.get("comment_id") or "") if target_type == "comment" else str(appeal.get("post_id") or "")
+            case_sync = _sync_community_visibility_cases(
+                supabase,
+                target_type=target_type,
+                target_ids=[target_id],
+                is_published=True,
+                admin_profile=admin_profile,
+                now_iso=now_iso,
+                admin_note=normalized_note,
+            )
+        posts, comments = _fetch_community_report_targets(supabase, [updated])
+        users = _fetch_community_report_users(
+            supabase,
+            [
+                str(updated.get("appellant_user_id") or ""),
+                *[str(row.get("author_id") or "") for row in posts.values()],
+                *[str(row.get("author_id") or "") for row in comments.values()],
+            ],
+        )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action="resolve_community_appeal",
+            target_type="community_appeal",
+            target_id=appeal_id,
+            details={
+                "status": payload.status,
+                "moderation_action": action,
+                "post_id": str(updated.get("post_id") or ""),
+                "comment_id": str(updated.get("comment_id") or "") or None,
+                "synced_report_count": case_sync["reports"],
+                "synced_appeal_count": case_sync["appeals"],
+            },
+        )
+        return AdminCommunityAppealItem(**_serialize_admin_community_appeal(updated, users, posts, comments))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community appeal update failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="内容申诉处理失败",
         ) from exc
 
 

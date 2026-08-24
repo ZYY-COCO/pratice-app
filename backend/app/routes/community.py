@@ -11,11 +11,20 @@ from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.community import (
+    COMMUNITY_EXPERIENCE_CATEGORIES,
     CommunityCommentItem,
     CommunityCommentLikeResponse,
     CommunityCommentPreview,
+    CommunityModerationAppealCreateRequest,
+    CommunityModerationAppealItem,
+    CommunityModerationStatusItem,
+    CommunityModerationStatusListResponse,
     CommunityCreateCommentRequest,
     CommunityCreateCommentResponse,
+    CommunityCreateReportRequest,
+    CommunityDeleteCommentResponse,
+    CommunityDeletePostsRequest,
+    CommunityDeletePostsResponse,
     CommunityImageUploadResponse,
     CommunityLikeItem,
     CommunityLikeListResponse,
@@ -26,11 +35,14 @@ from app.schemas.community import (
     CommunityPostDetailResponse,
     CommunityPostItem,
     CommunityPostListResponse,
+    CommunityReportItem,
+    CommunityReportListResponse,
     CommunityPostStats,
     CommunityViewRequest,
     CommunityViewResponse,
 )
 from app.services.supabase_resilience import call_supabase
+from app.services.user_notifications import create_user_notification
 
 
 logger = logging.getLogger(__name__)
@@ -45,6 +57,25 @@ COMMUNITY_IMAGE_CONTENT_TYPES = {
 COMMUNITY_POST_TYPES = {"chat", "experience"}
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 COMMUNITY_STAT_UPDATE_ATTEMPTS = 4
+COMMUNITY_APPEAL_FIELDS = (
+    "id,appellant_user_id,target_type,post_id,comment_id,content,status,moderation_action,"
+    "admin_note,handled_by,handled_at,created_at,updated_at"
+)
+COMMUNITY_POST_REPORT_REASONS = {
+    "虚假或误导信息",
+    "广告或引流",
+    "骚扰、辱骂或不当言行",
+    "泄露隐私",
+    "违规交易或收费",
+    "其他问题",
+}
+COMMUNITY_COMMENT_REPORT_REASONS = {
+    "骚扰、辱骂或不当言行",
+    "广告或引流",
+    "虚假或误导信息",
+    "泄露隐私",
+    "其他问题",
+}
 COMMUNITY_RETIRED_SEED_POST_IDS = frozenset(
     {
         "0b46a665-7b7d-4e0c-a62c-f42282f4e101",
@@ -59,6 +90,7 @@ COMMUNITY_RETIRED_SEED_POST_IDS = frozenset(
     }
 )
 _community_post_type_column_available: bool | None = None
+_community_comment_visibility_column_available: bool | None = None
 
 
 def _relative_time(value: str | None) -> str:
@@ -105,6 +137,14 @@ def _community_post_type(row: dict) -> str:
     return post_type if post_type in COMMUNITY_POST_TYPES else "chat"
 
 
+def _is_public_verified_experience_post(row: dict, verified_author_ids: set[str]) -> bool:
+    return (
+        _community_post_type(row) == "experience"
+        and str(row.get("author_id") or "") in verified_author_ids
+        and str(row.get("category") or "") in COMMUNITY_EXPERIENCE_CATEGORIES
+    )
+
+
 def _normalise_media(value: object) -> list[dict]:
     if not isinstance(value, list):
         return []
@@ -118,6 +158,14 @@ def _normalise_media(value: object) -> list[dict]:
 def _is_missing_post_type_column_error(exc: Exception) -> bool:
     message = str(exc).lower()
     return "post_type" in message and ("does not exist" in message or "42703" in message)
+
+
+def _is_missing_comment_visibility_column_error(exc: Exception) -> bool:
+    message = str(exc).lower()
+    return (
+        "is_published" in message
+        and ("circle_community_comments" in message or "42703" in message or "does not exist" in message)
+    )
 
 
 def _create_legacy_post_media(media: list[dict], post_type: str) -> list[dict]:
@@ -210,6 +258,30 @@ def _fetch_community_profiles(supabase, user_ids: list[str]) -> dict[str, dict]:
     }
 
 
+def _fetch_verified_mentor_owner_ids(supabase, user_ids: list[str]) -> set[str]:
+    """Return account IDs that currently own a visible, verified mentor profile."""
+
+    ids = list(dict.fromkeys(str(user_id) for user_id in user_ids if user_id))
+    if not ids:
+        return set()
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profiles")
+            .select("owner_user_id")
+            .in_("owner_user_id", ids)
+            .eq("verification_status", "verified")
+            .eq("is_published", True)
+            .execute()
+        ),
+        operation_name="circle community verified author lookup",
+    )
+    return {
+        str(row.get("owner_user_id") or "")
+        for row in (response.data or [])
+        if row.get("owner_user_id")
+    }
+
+
 def _community_avatar_url(row: dict, profiles: dict[str, dict]) -> str | None:
     profile = profiles.get(str(row.get("author_id") or ""), {})
     avatar_url = str(profile.get("avatar_url") or "").strip()
@@ -217,19 +289,35 @@ def _community_avatar_url(row: dict, profiles: dict[str, dict]) -> str | None:
 
 
 def _fetch_comment_previews(supabase, post_ids: list[str]) -> dict[str, list[CommunityCommentPreview]]:
+    global _community_comment_visibility_column_available
     if not post_ids:
         return {}
 
-    response = call_supabase(
-        lambda: (
+    def fetch_preview_rows(include_visibility: bool):
+        query = (
             supabase.table("circle_community_comments")
             .select("post_id,author_name,content,created_at")
             .in_("post_id", post_ids)
             .order("created_at", desc=True)
-            .execute()
-        ),
-        operation_name="circle community comment preview lookup",
-    )
+        )
+        if include_visibility:
+            query = query.eq("is_published", True)
+        return call_supabase(
+            query.execute,
+            operation_name="circle community comment preview lookup",
+        )
+
+    if _community_comment_visibility_column_available is not False:
+        try:
+            response = fetch_preview_rows(True)
+            _community_comment_visibility_column_available = True
+        except Exception as exc:
+            if not _is_missing_comment_visibility_column_error(exc):
+                raise
+            _community_comment_visibility_column_available = False
+            response = fetch_preview_rows(False)
+    else:
+        response = fetch_preview_rows(False)
     previews: dict[str, list[CommunityCommentPreview]] = {}
     for row in response.data or []:
         post_id = str(row.get("post_id") or "")
@@ -250,6 +338,7 @@ def _post_item(
     liked_post_ids: set[str],
     previews: dict[str, list[CommunityCommentPreview]],
     profiles: dict[str, dict],
+    verified_author_ids: set[str] | None = None,
 ) -> CommunityPostItem:
     post_id = str(row.get("id"))
     content = str(row.get("content") or "")
@@ -276,6 +365,7 @@ def _post_item(
         ),
         is_featured=bool(row.get("is_featured")),
         liked=post_id in liked_post_ids,
+        author_verified=str(row.get("author_id") or "") in (verified_author_ids or set()),
     )
 
 
@@ -319,18 +409,36 @@ def _get_post_row(supabase, post_id: str) -> dict:
     return response.data[0]
 
 
-def _get_comment_row(supabase, post_id: str, comment_id: str) -> dict:
-    response = call_supabase(
-        lambda: (
+def _get_comment_row(supabase, post_id: str, comment_id: str, *, visible_only: bool = True) -> dict:
+    global _community_comment_visibility_column_available
+
+    def fetch_comment(include_visibility: bool):
+        query = (
             supabase.table("circle_community_comments")
             .select("*")
             .eq("id", comment_id)
             .eq("post_id", post_id)
             .limit(1)
-            .execute()
-        ),
-        operation_name="circle community comment lookup",
-    )
+        )
+        if include_visibility:
+            query = query.eq("is_published", True)
+        return call_supabase(
+            query.execute,
+            operation_name="circle community comment lookup",
+        )
+
+    should_filter_visibility = visible_only and _community_comment_visibility_column_available is not False
+    if should_filter_visibility:
+        try:
+            response = fetch_comment(True)
+            _community_comment_visibility_column_available = True
+        except Exception as exc:
+            if not _is_missing_comment_visibility_column_error(exc):
+                raise
+            _community_comment_visibility_column_available = False
+            response = fetch_comment(False)
+    else:
+        response = fetch_comment(False)
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle comment not found")
     return response.data[0]
@@ -601,6 +709,389 @@ def _current_author(supabase, user_id: str) -> tuple[str, str, str | None]:
     return name, _first_character(name), avatar_url
 
 
+def _notify_community_post_interaction(
+    supabase,
+    *,
+    post: dict,
+    actor_user_id: str,
+    interaction: str,
+    related_id: str,
+    comment_content: str = "",
+) -> None:
+    """Write a recipient-scoped notice when someone interacts with another user's post."""
+
+    recipient_user_id = str(post.get("author_id") or "").strip()
+    post_id = str(post.get("id") or "").strip()
+    if not recipient_user_id or not post_id or recipient_user_id == str(actor_user_id or ""):
+        return
+
+    actor_name, _, _ = _current_author(supabase, actor_user_id)
+    post_title = str(post.get("title") or "").strip() or "你的研圈帖子"
+    route_path = (
+        "/pages/home/index?tab=circle&section=community"
+        f"&communityTab={_community_post_type(post)}&postId={post_id}"
+    )
+    if interaction == "comment":
+        title = "你的帖子收到了新评论"
+        summary = f"{actor_name[:30]} 评论了“{post_title[:48]}”"
+        content = comment_content.strip()[:180] or "对方在你的帖子下留下了一条评论。"
+        notification_type = "community_post_comment"
+    else:
+        title = "你的帖子收到了新的赞"
+        summary = f"{actor_name[:30]} 赞了“{post_title[:48]}”"
+        content = "点击查看帖子详情和最新互动。"
+        notification_type = "community_post_like"
+
+    create_user_notification(
+        supabase,
+        recipient_user_id=recipient_user_id,
+        category="community",
+        notification_type=notification_type,
+        title=title,
+        summary=summary,
+        content=content,
+        related_type="community_post",
+        related_id=related_id or post_id,
+        route_path=route_path,
+        delivery_payload={
+            "surface": "community_post",
+            "interaction": interaction,
+            "post_id": post_id,
+            "actor_user_id": str(actor_user_id or ""),
+        },
+    )
+
+
+def _current_verified_mentor_author(supabase, user_id: str) -> dict:
+    """Experience posts represent verified predecessors, not anonymous community claims."""
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profiles")
+            .select("id,display_name,avatar_label,avatar_tone,avatar_url")
+            .eq("owner_user_id", user_id)
+            .eq("verification_status", "verified")
+            .eq("is_published", True)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle experience author verification",
+    )
+    if not response.data:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="经验贴仅限已完成认证并公开展示的前辈发布",
+        )
+    return response.data[0]
+
+
+def _serialize_community_report(row: dict, posts: dict[str, dict], comments: dict[str, dict]) -> dict:
+    target_type = str(row.get("target_type") or "post")
+    post = posts.get(str(row.get("post_id") or ""), {})
+    comment = comments.get(str(row.get("comment_id") or ""), {})
+    if target_type == "comment":
+        target_title = str(post.get("title") or "帖子评论")
+        target_excerpt = str(comment.get("content") or "")[:160]
+    else:
+        target_title = str(post.get("title") or "研圈帖子")
+        target_excerpt = str(post.get("content") or "")[:160]
+    return {
+        "id": str(row.get("id") or ""),
+        "target_type": target_type,
+        "post_id": str(row.get("post_id") or ""),
+        "comment_id": str(row.get("comment_id") or "") or None,
+        "reason": str(row.get("reason") or "其他问题"),
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "moderation_action": str(row.get("moderation_action") or "none"),
+        "admin_note": row.get("admin_note") or None,
+        "target_title": target_title,
+        "target_excerpt": target_excerpt,
+        "created_at": row.get("created_at") or None,
+        "handled_at": row.get("handled_at") or None,
+    }
+
+
+def _fetch_community_report_targets(supabase, rows: list[dict]) -> tuple[dict[str, dict], dict[str, dict]]:
+    post_ids = list(dict.fromkeys(str(row.get("post_id") or "") for row in rows if row.get("post_id")))
+    comment_ids = list(dict.fromkeys(str(row.get("comment_id") or "") for row in rows if row.get("comment_id")))
+    posts: dict[str, dict] = {}
+    comments: dict[str, dict] = {}
+    if post_ids:
+        post_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .select("id,title,content")
+                .in_("id", post_ids)
+                .execute()
+            ),
+            operation_name="circle community report post target lookup",
+        )
+        posts = {
+            str(row.get("id") or ""): row
+            for row in (post_response.data or [])
+            if row.get("id")
+        }
+    if comment_ids:
+        comment_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .select("id,content")
+                .in_("id", comment_ids)
+                .execute()
+            ),
+            operation_name="circle community report comment target lookup",
+        )
+        comments = {
+            str(row.get("id") or ""): row
+            for row in (comment_response.data or [])
+            if row.get("id")
+        }
+    return posts, comments
+
+
+def _create_community_report(
+    supabase,
+    *,
+    post_id: str,
+    comment_id: str | None,
+    payload: CommunityCreateReportRequest,
+    user_id: str,
+) -> CommunityReportItem:
+    post = _get_post_row(supabase, post_id)
+    target_type = "comment" if comment_id else "post"
+    target = _get_comment_row(supabase, post_id, comment_id) if comment_id else post
+    if str(target.get("author_id") or "") == user_id:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不能举报自己发布的内容")
+
+    reason = str(payload.reason or "").strip()
+    content = str(payload.content or "").strip()
+    allowed_reasons = COMMUNITY_COMMENT_REPORT_REASONS if comment_id else COMMUNITY_POST_REPORT_REASONS
+    if reason not in allowed_reasons:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请选择有效的举报原因")
+    if len(content) < 10:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请至少填写 10 个字的举报说明")
+
+    duplicate_query = (
+        supabase.table("circle_community_reports")
+        .select("id")
+        .eq("reporter_user_id", user_id)
+        .eq("target_type", target_type)
+        .eq("post_id", post_id)
+        .limit(1)
+    )
+    if comment_id:
+        duplicate_query = duplicate_query.eq("comment_id", comment_id)
+    else:
+        duplicate_query = duplicate_query.is_("comment_id", "null")
+    duplicate_response = call_supabase(
+        duplicate_query.execute,
+        operation_name="circle community report duplicate lookup",
+    )
+    if duplicate_response.data:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="你已举报过该内容，可在我的举报中查看处理进度")
+
+    response = call_supabase(
+        lambda: supabase.table("circle_community_reports").insert({
+            "reporter_user_id": user_id,
+            "target_type": target_type,
+            "post_id": post_id,
+            "comment_id": comment_id,
+            "target_user_id": str(target.get("author_id") or "") or None,
+            "reason": reason,
+            "content": content,
+        }).execute(),
+        operation_name="circle community report create",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报提交失败")
+    report = response.data[0]
+    return CommunityReportItem(**_serialize_community_report(
+        report,
+        {post_id: post},
+        {str(comment_id): target} if comment_id else {},
+    ))
+
+
+def _serialize_community_appeal(row: dict) -> CommunityModerationAppealItem:
+    return CommunityModerationAppealItem(
+        id=str(row.get("id") or ""),
+        target_type=str(row.get("target_type") or "post"),
+        post_id=str(row.get("post_id") or ""),
+        comment_id=str(row.get("comment_id") or "") or None,
+        content=str(row.get("content") or ""),
+        status=str(row.get("status") or "pending"),
+        moderation_action=str(row.get("moderation_action") or "none"),
+        admin_note=row.get("admin_note") or None,
+        created_at=row.get("created_at") or None,
+        handled_at=row.get("handled_at") or None,
+    )
+
+
+def _get_owned_moderation_target_or_404(
+    supabase,
+    *,
+    target_type: str,
+    target_id: str,
+    user_id: str,
+) -> tuple[dict, str, str | None]:
+    if target_type == "post":
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .select("*")
+                .eq("id", target_id)
+                .eq("author_id", user_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community owned post moderation lookup",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到可申诉的帖子")
+        return response.data[0], str(target_id), None
+
+    if target_type == "comment":
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .select("*")
+                .eq("id", target_id)
+                .eq("author_id", user_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community owned comment moderation lookup",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到可申诉的评论")
+        target = response.data[0]
+        return target, str(target.get("post_id") or ""), str(target_id)
+
+    raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的内容类型")
+
+
+def _fetch_my_community_content_status(
+    supabase,
+    user_id: str,
+    *,
+    limit: int,
+) -> list[CommunityModerationStatusItem]:
+    post_response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_posts")
+            .select("id,title,content,is_published,moderation_note,moderated_at,created_at")
+            .eq("author_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        ),
+        operation_name="circle community own moderation post list",
+    )
+    comment_response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_comments")
+            .select("id,post_id,content,is_published,moderation_note,moderated_at,created_at")
+            .eq("author_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit)
+            .execute()
+        ),
+        operation_name="circle community own moderation comment list",
+    )
+    appeal_response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_appeals")
+            .select(COMMUNITY_APPEAL_FIELDS)
+            .eq("appellant_user_id", user_id)
+            .order("created_at", desc=True)
+            .limit(limit * 2)
+            .execute()
+        ),
+        operation_name="circle community own appeal list",
+    )
+
+    appeals_by_target: dict[str, dict] = {}
+    for appeal in appeal_response.data or []:
+        target_type = str(appeal.get("target_type") or "post")
+        target_id = str(appeal.get("comment_id") or "") if target_type == "comment" else str(appeal.get("post_id") or "")
+        if target_id and f"{target_type}:{target_id}" not in appeals_by_target:
+            appeals_by_target[f"{target_type}:{target_id}"] = appeal
+
+    posts = {
+        str(row.get("id") or ""): row
+        for row in (post_response.data or [])
+        if row.get("id")
+    }
+    comment_rows = comment_response.data or []
+    # 评论作者并不一定是帖子作者；补齐父帖标题，才能让用户在处理记录里
+    # 准确辨认被下架或申诉的那条评论属于哪篇帖子。
+    parent_post_ids = list(dict.fromkeys(
+        str(row.get("post_id") or "")
+        for row in comment_rows
+        if row.get("post_id") and str(row.get("post_id") or "") not in posts
+    ))
+    if parent_post_ids:
+        parent_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .select("id,title")
+                .in_("id", parent_post_ids)
+                .execute()
+            ),
+            operation_name="circle community moderation parent post lookup",
+        )
+        posts.update({
+            str(row.get("id") or ""): row
+            for row in (parent_response.data or [])
+            if row.get("id")
+        })
+    items: list[CommunityModerationStatusItem] = []
+    for post_id, post in posts.items():
+        appeal = appeals_by_target.get(f"post:{post_id}")
+        if bool(post.get("is_published", True)) and not post.get("moderation_note") and not appeal:
+            continue
+        items.append(CommunityModerationStatusItem(
+            target_type="post",
+            target_id=post_id,
+            post_id=post_id,
+            title=str(post.get("title") or "研圈帖子"),
+            excerpt=str(post.get("content") or "")[:240],
+            is_published=bool(post.get("is_published")),
+            moderation_note=post.get("moderation_note") or None,
+            moderated_at=post.get("moderated_at") or None,
+            appeal=_serialize_community_appeal(appeal) if appeal else None,
+        ))
+
+    for comment in comment_rows:
+        comment_id = str(comment.get("id") or "")
+        post_id = str(comment.get("post_id") or "")
+        if not comment_id or not post_id:
+            continue
+        appeal = appeals_by_target.get(f"comment:{comment_id}")
+        if bool(comment.get("is_published", True)) and not comment.get("moderation_note") and not appeal:
+            continue
+        post = posts.get(post_id, {})
+        items.append(CommunityModerationStatusItem(
+            target_type="comment",
+            target_id=comment_id,
+            post_id=post_id,
+            comment_id=comment_id,
+            title=str(post.get("title") or "研圈评论"),
+            excerpt=str(comment.get("content") or "")[:240],
+            is_published=bool(comment.get("is_published")),
+            moderation_note=comment.get("moderation_note") or None,
+            moderated_at=comment.get("moderated_at") or None,
+            appeal=_serialize_community_appeal(appeal) if appeal else None,
+        ))
+
+    return sorted(
+        items,
+        key=lambda item: str(item.appeal.created_at if item.appeal else item.moderated_at or ""),
+        reverse=True,
+    )[:limit]
+
+
 def _raise_community_service_error(exc: Exception) -> None:
     logger.warning("Circle community service error (error_type=%s)", type(exc).__name__)
     raise HTTPException(
@@ -614,6 +1105,7 @@ def list_community_posts(
     post_type: Literal["chat", "experience"] = Query(default="chat"),
     category: str | None = Query(default=None, max_length=24),
     featured_only: bool = Query(default=False),
+    sort_by: Literal["latest", "hot"] = Query(default="latest"),
     limit: int = Query(default=12, ge=1, le=30),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostListResponse:
@@ -621,15 +1113,16 @@ def list_community_posts(
 
     supabase = get_supabase_admin()
     try:
-        query_limit = min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 30)
+        # Experience posts need enough candidates for the verified-author filter
+        # below; otherwise a handful of legacy unverified rows can make a valid
+        # feed look empty even when verified shares exist later in the result.
+        query_limit = 30 if post_type == "experience" else min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 30)
 
         def build_post_list_query(include_post_type: bool):
             query = (
                 supabase.table("circle_community_posts")
                 .select("*")
                 .eq("is_published", True)
-                .order("created_at", desc=True)
-                .limit(query_limit)
             )
             if include_post_type:
                 query = query.eq("post_type", post_type)
@@ -637,7 +1130,15 @@ def list_community_posts(
                 query = query.eq("is_featured", True)
             if category and category != "全部":
                 query = query.eq("category", category)
-            return query
+            if sort_by == "hot":
+                return (
+                    query.order("like_count", desc=True)
+                    .order("comment_count", desc=True)
+                    .order("view_count", desc=True)
+                    .order("created_at", desc=True)
+                    .limit(query_limit)
+                )
+            return query.order("created_at", desc=True).limit(query_limit)
 
         if _community_post_type_column_available is not False:
             try:
@@ -667,21 +1168,37 @@ def list_community_posts(
             row
             for row in rows
             if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
-        ][:limit]
+        ]
         post_ids = [str(row.get("id")) for row in rows if row.get("id")]
-        with ThreadPoolExecutor(max_workers=3) as executor:
+        with ThreadPoolExecutor(max_workers=4) as executor:
             profiles_future = executor.submit(
                 _fetch_community_profiles,
+                supabase,
+                [str(row.get("author_id") or "") for row in rows],
+            )
+            verified_authors_future = executor.submit(
+                _fetch_verified_mentor_owner_ids,
                 supabase,
                 [str(row.get("author_id") or "") for row in rows],
             )
             liked_post_ids_future = executor.submit(_fetch_liked_post_ids, supabase, user_id, post_ids)
             previews_future = executor.submit(_fetch_comment_previews, supabase, post_ids)
             profiles = profiles_future.result()
+            verified_author_ids = verified_authors_future.result()
             liked_post_ids = liked_post_ids_future.result()
             previews = previews_future.result()
+        if post_type == "experience":
+            rows = [
+                row
+                for row in rows
+                if _is_public_verified_experience_post(row, verified_author_ids)
+            ]
+        rows = rows[:limit]
         return CommunityPostListResponse(
-            items=[_post_item(row, liked_post_ids, previews, profiles) for row in rows],
+            items=[
+                _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
+                for row in rows
+            ],
             count=len(rows),
         )
     except HTTPException:
@@ -742,20 +1259,39 @@ def list_liked_community_posts(
         ]
         post_ids = [str(row.get("id")) for row in rows]
 
-        with ThreadPoolExecutor(max_workers=2) as executor:
+        with ThreadPoolExecutor(max_workers=3) as executor:
             profiles_future = executor.submit(
                 _fetch_community_profiles,
                 supabase,
                 [str(row.get("author_id") or "") for row in rows],
             )
+            verified_authors_future = executor.submit(
+                _fetch_verified_mentor_owner_ids,
+                supabase,
+                [str(row.get("author_id") or "") for row in rows],
+            )
             previews_future = executor.submit(_fetch_comment_previews, supabase, post_ids)
             profiles = profiles_future.result()
+            verified_author_ids = verified_authors_future.result()
             previews = previews_future.result()
+
+        rows = [
+            row
+            for row in rows
+            if _community_post_type(row) != "experience"
+            or _is_public_verified_experience_post(row, verified_author_ids)
+        ]
 
         return CommunityLikedPostListResponse(
             items=[
                 CommunityLikedPostItem(
-                    **_post_item(row, set(post_ids), previews, profiles).model_dump(),
+                    **_post_item(
+                        row,
+                        set(post_ids),
+                        previews,
+                        profiles,
+                        verified_author_ids,
+                    ).model_dump(),
                     liked_at=liked_at_by_post_id.get(str(row.get("id"))),
                 )
                 for row in rows
@@ -768,27 +1304,316 @@ def list_liked_community_posts(
         _raise_community_service_error(exc)
 
 
+@router.get("/my-posts", response_model=CommunityPostListResponse)
+def list_my_community_posts(
+    post_type: Literal["all", "chat", "experience"] = Query(default="all"),
+    sort_by: Literal["latest", "hot"] = Query(default="latest"),
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityPostListResponse:
+    """Return the current user's published posts, newest first."""
+
+    global _community_post_type_column_available
+
+    supabase = get_supabase_admin()
+    try:
+        query_limit = min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 200)
+
+        def build_my_post_query(include_post_type: bool):
+            query = (
+                supabase.table("circle_community_posts")
+                .select("*")
+                .eq("author_id", user_id)
+                .eq("is_published", True)
+                .order("created_at", desc=True)
+                .limit(query_limit)
+            )
+            if include_post_type and post_type != "all":
+                query = query.eq("post_type", post_type)
+            if sort_by == "hot":
+                return (
+                    query.order("like_count", desc=True)
+                    .order("comment_count", desc=True)
+                    .order("view_count", desc=True)
+                    .order("created_at", desc=True)
+                    .limit(query_limit)
+                )
+            return query.order("created_at", desc=True).limit(query_limit)
+
+        if _community_post_type_column_available is not False:
+            try:
+                response = call_supabase(
+                    lambda: build_my_post_query(True).execute(),
+                    operation_name="circle community own post list",
+                )
+                _community_post_type_column_available = True
+                rows = response.data or []
+            except Exception as exc:
+                if not _is_missing_post_type_column_error(exc):
+                    raise
+                _community_post_type_column_available = False
+                response = call_supabase(
+                    lambda: build_my_post_query(False).execute(),
+                    operation_name="circle community own post list legacy",
+                )
+                rows = response.data or []
+        else:
+            response = call_supabase(
+                lambda: build_my_post_query(False).execute(),
+                operation_name="circle community own post list legacy",
+            )
+            rows = response.data or []
+
+        rows = [
+            row
+            for row in rows
+            if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
+            and (post_type == "all" or _community_post_type(row) == post_type)
+        ][:limit]
+        post_ids = [str(row.get("id")) for row in rows if row.get("id")]
+
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            profiles_future = executor.submit(_fetch_community_profiles, supabase, [user_id])
+            verified_authors_future = executor.submit(_fetch_verified_mentor_owner_ids, supabase, [user_id])
+            liked_post_ids_future = executor.submit(_fetch_liked_post_ids, supabase, user_id, post_ids)
+            previews_future = executor.submit(_fetch_comment_previews, supabase, post_ids)
+            profiles = profiles_future.result()
+            verified_author_ids = verified_authors_future.result()
+            liked_post_ids = liked_post_ids_future.result()
+            previews = previews_future.result()
+
+        return CommunityPostListResponse(
+            items=[
+                _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
+                for row in rows
+            ],
+            count=len(rows),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.delete("/my-posts", response_model=CommunityDeletePostsResponse)
+def delete_my_community_posts(
+    payload: CommunityDeletePostsRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityDeletePostsResponse:
+    """Delete only posts owned by the current user, including their cascaded interactions."""
+
+    post_ids = list(dict.fromkeys(str(post_id) for post_id in payload.post_ids))
+    if not post_ids:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请选择要删除的帖子")
+
+    supabase = get_supabase_admin()
+    try:
+        report_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_reports")
+                .select("post_id")
+                .in_("post_id", post_ids)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community own post report protection lookup",
+        )
+        if report_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="包含已进入平台处理的帖子，暂不能删除",
+            )
+        appeal_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_appeals")
+                .select("post_id")
+                .in_("post_id", post_ids)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community own post appeal protection lookup",
+        )
+        if appeal_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="包含已有内容申诉留档的帖子，为保留平台处理记录暂不能删除",
+            )
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .delete()
+                .in_("id", post_ids)
+                .eq("author_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community own post delete",
+        )
+        deleted_post_ids = [
+            str(row.get("id"))
+            for row in (response.data or [])
+            if row.get("id")
+        ]
+        return CommunityDeletePostsResponse(
+            deleted_post_ids=deleted_post_ids,
+            deleted_count=len(deleted_post_ids),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.get("/my-reports", response_model=CommunityReportListResponse)
+def list_my_community_reports(
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityReportListResponse:
+    """Let reporters see the platform's current conclusion and next action."""
+
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_reports")
+                .select(
+                    "id,target_type,post_id,comment_id,reason,content,status,moderation_action,"
+                    "admin_note,created_at,handled_at"
+                )
+                .eq("reporter_user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ),
+            operation_name="circle community own report list",
+        )
+        rows = response.data or []
+        posts, comments = _fetch_community_report_targets(supabase, rows)
+        return CommunityReportListResponse(
+            items=[CommunityReportItem(**_serialize_community_report(row, posts, comments)) for row in rows],
+            count=len(rows),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.get("/my-content-status", response_model=CommunityModerationStatusListResponse)
+def list_my_community_content_status(
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityModerationStatusListResponse:
+    """Keep content authors informed when their own post or comment enters moderation."""
+
+    supabase = get_supabase_admin()
+    try:
+        items = _fetch_my_community_content_status(supabase, user_id, limit=limit)
+        return CommunityModerationStatusListResponse(items=items, count=len(items))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.post(
+    "/moderation/{target_type}/{target_id}/appeals",
+    response_model=CommunityModerationAppealItem,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_community_moderation_appeal(
+    target_type: Literal["post", "comment"],
+    target_id: str,
+    payload: CommunityModerationAppealCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityModerationAppealItem:
+    """Let the owner request a human review after their content is taken down."""
+
+    supabase = get_supabase_admin()
+    try:
+        target, post_id, comment_id = _get_owned_moderation_target_or_404(
+            supabase,
+            target_type=target_type,
+            target_id=target_id,
+            user_id=user_id,
+        )
+        if bool(target.get("is_published")):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该内容当前正常展示，无需提交申诉")
+
+        duplicate_query = (
+            supabase.table("circle_community_appeals")
+            .select("id")
+            .eq("appellant_user_id", user_id)
+            .eq("target_type", target_type)
+            .eq("post_id", post_id)
+            .limit(1)
+        )
+        if comment_id:
+            duplicate_query = duplicate_query.eq("comment_id", comment_id)
+        else:
+            duplicate_query = duplicate_query.is_("comment_id", "null")
+        duplicate_response = call_supabase(
+            duplicate_query.execute,
+            operation_name="circle community appeal duplicate lookup",
+        )
+        if duplicate_response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该内容已提交过申诉，可在内容处理记录中查看进度")
+
+        response = call_supabase(
+            lambda: supabase.table("circle_community_appeals").insert({
+                "appellant_user_id": user_id,
+                "target_type": target_type,
+                "post_id": post_id,
+                "comment_id": comment_id,
+                "content": str(payload.content or "").strip(),
+            }).execute(),
+            operation_name="circle community appeal create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="申诉提交失败")
+        return _serialize_community_appeal(response.data[0])
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
 @router.get("/posts/{post_id}", response_model=CommunityPostDetailResponse)
 def get_community_post(
     post_id: str,
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostDetailResponse:
+    global _community_comment_visibility_column_available
     supabase = get_supabase_admin()
     try:
         row = _get_post_row(supabase, post_id)
         liked_post_ids = _fetch_liked_post_ids(supabase, user_id, [post_id])
         previews = _fetch_comment_previews(supabase, [post_id])
-        comments_response = call_supabase(
-            lambda: (
+        def fetch_comment_rows(include_visibility: bool):
+            query = (
                 supabase.table("circle_community_comments")
                 .select("*")
                 .eq("post_id", post_id)
                 .order("created_at", desc=False)
                 .limit(200)
-                .execute()
-            ),
-            operation_name="circle community comment list",
-        )
+            )
+            if include_visibility:
+                query = query.eq("is_published", True)
+            return call_supabase(
+                query.execute,
+                operation_name="circle community comment list",
+            )
+
+        if _community_comment_visibility_column_available is not False:
+            try:
+                comments_response = fetch_comment_rows(True)
+                _community_comment_visibility_column_available = True
+            except Exception as exc:
+                if not _is_missing_comment_visibility_column_error(exc):
+                    raise
+                _community_comment_visibility_column_available = False
+                comments_response = fetch_comment_rows(False)
+        else:
+            comments_response = fetch_comment_rows(False)
         comment_rows = comments_response.data or []
         liked_comment_ids = _fetch_liked_comment_ids(
             supabase,
@@ -802,12 +1627,46 @@ def get_community_post(
                 for item in [row, *comment_rows]
             ],
         )
+        verified_author_ids = _fetch_verified_mentor_owner_ids(
+            supabase,
+            [str(item.get("author_id") or "") for item in [row, *comment_rows]],
+        )
+        if (
+            _community_post_type(row) == "experience"
+            and not _is_public_verified_experience_post(row, verified_author_ids)
+        ):
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该经验贴当前未满足公开展示条件")
         return CommunityPostDetailResponse(
-            post=_post_item(row, liked_post_ids, previews, profiles),
+            post=_post_item(row, liked_post_ids, previews, profiles, verified_author_ids),
             comments=[
                 _comment_item(item, user_id, profiles, liked_comment_ids)
                 for item in comment_rows
             ],
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.post(
+    "/posts/{post_id}/reports",
+    response_model=CommunityReportItem,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_community_post_report(
+    post_id: str,
+    payload: CommunityCreateReportRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityReportItem:
+    supabase = get_supabase_admin()
+    try:
+        return _create_community_report(
+            supabase,
+            post_id=post_id,
+            comment_id=None,
+            payload=payload,
+            user_id=user_id,
         )
     except HTTPException:
         raise
@@ -872,12 +1731,21 @@ def create_community_post(
     supabase = get_supabase_admin()
     try:
         author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
+        author_tone = "blue"
+        author_verified = False
+        if payload.post_type == "experience":
+            mentor_author = _current_verified_mentor_author(supabase, user_id)
+            author_name = str(mentor_author.get("display_name") or author_name)
+            author_avatar = _first_character(mentor_author.get("avatar_label") or author_name)
+            author_tone = str(mentor_author.get("avatar_tone") or "blue")
+            author_avatar_url = str(mentor_author.get("avatar_url") or "").strip() or author_avatar_url
+            author_verified = True
         media = [item.model_dump(by_alias=True) for item in payload.media[:9]]
         post_data = {
             "author_id": user_id,
             "author_name": author_name,
             "author_avatar": author_avatar,
-            "author_tone": "blue",
+            "author_tone": author_tone,
             "category": payload.category.strip(),
             "title": payload.title.strip(),
             "content": payload.content.strip(),
@@ -915,6 +1783,7 @@ def create_community_post(
             set(),
             {},
             {user_id: {"avatar_url": author_avatar_url}},
+            {user_id} if author_verified else set(),
         )
     except HTTPException:
         raise
@@ -929,7 +1798,16 @@ def toggle_community_like(
 ) -> CommunityLikeResponse:
     supabase = get_supabase_admin()
     try:
+        post = _get_post_row(supabase, post_id)
         is_liked, like_count = _toggle_community_like_without_rpc(supabase, post_id, user_id)
+        if is_liked:
+            _notify_community_post_interaction(
+                supabase,
+                post=post,
+                actor_user_id=user_id,
+                interaction="like",
+                related_id=f"{post_id}:like:{user_id}",
+            )
         return CommunityLikeResponse(
             post_id=post_id,
             is_liked=is_liked,
@@ -1026,7 +1904,7 @@ def create_community_comment(
 ) -> CommunityCreateCommentResponse:
     supabase = get_supabase_admin()
     try:
-        _get_post_row(supabase, post_id)
+        post = _get_post_row(supabase, post_id)
         author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
         comment_response = call_supabase(
             lambda: supabase.table("circle_community_comments").insert(
@@ -1043,15 +1921,121 @@ def create_community_comment(
         if not comment_response.data:
             raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Circle comment create failed")
 
+        comment = comment_response.data[0]
+        _notify_community_post_interaction(
+            supabase,
+            post=post,
+            actor_user_id=user_id,
+            interaction="comment",
+            related_id=str(comment.get("id") or post_id),
+            comment_content=str(comment.get("content") or payload.content or ""),
+        )
         updated_post = _get_post_row(supabase, post_id)
         return CommunityCreateCommentResponse(
             comment=_comment_item(
-                comment_response.data[0],
+                comment,
                 user_id,
                 {user_id: {"avatar_url": author_avatar_url}},
                 set(),
             ),
             comment_count=int(updated_post.get("comment_count") or 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.delete(
+    "/posts/{post_id}/comments/{comment_id}",
+    response_model=CommunityDeleteCommentResponse,
+)
+def delete_community_comment(
+    post_id: str,
+    comment_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityDeleteCommentResponse:
+    """Authors can retract an ordinary comment unless it is already evidence in a case."""
+
+    supabase = get_supabase_admin()
+    try:
+        _get_post_row(supabase, post_id)
+        comment = _get_comment_row(supabase, post_id, comment_id, visible_only=False)
+        if str(comment.get("author_id") or "") != user_id:
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只能删除自己发布的评论")
+        report_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_reports")
+                .select("id")
+                .eq("comment_id", comment_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community own comment report protection lookup",
+        )
+        if report_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该评论已进入平台处理记录，暂不能删除",
+            )
+        appeal_response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_appeals")
+                .select("id")
+                .eq("comment_id", comment_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="circle community own comment appeal protection lookup",
+        )
+        if appeal_response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该评论已有内容申诉留档，为保留平台处理记录暂不能删除",
+            )
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_comments")
+                .delete()
+                .eq("id", comment_id)
+                .eq("post_id", post_id)
+                .eq("author_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community own comment delete",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该评论")
+        updated_post = _get_post_row(supabase, post_id)
+        return CommunityDeleteCommentResponse(
+            comment_id=comment_id,
+            comment_count=int(updated_post.get("comment_count") or 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.post(
+    "/posts/{post_id}/comments/{comment_id}/reports",
+    response_model=CommunityReportItem,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_community_comment_report(
+    post_id: str,
+    comment_id: str,
+    payload: CommunityCreateReportRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityReportItem:
+    supabase = get_supabase_admin()
+    try:
+        return _create_community_report(
+            supabase,
+            post_id=post_id,
+            comment_id=comment_id,
+            payload=payload,
+            user_id=user_id,
         )
     except HTTPException:
         raise

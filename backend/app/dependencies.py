@@ -9,7 +9,6 @@ from typing import Annotated
 
 from fastapi import Depends, Header, HTTPException, status
 
-from app.config import get_settings
 from app.db import get_supabase_admin
 from app.services.supabase_resilience import call_supabase, is_authentication_error
 
@@ -229,10 +228,8 @@ def get_current_user_profile(user_id: Annotated[str, Depends(get_current_user_id
 
 
 def is_admin_profile(profile: dict) -> bool:
-    settings = get_settings()
     role = str(profile.get("role") or "user").strip().lower()
-    email = str(profile.get("email") or "").strip().lower()
-    return role == "admin" or email in settings.admin_email_set
+    return role == "admin"
 
 
 def require_admin_user(profile: Annotated[dict, Depends(get_current_user_profile)]) -> dict:

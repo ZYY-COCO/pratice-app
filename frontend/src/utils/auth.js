@@ -4,7 +4,6 @@ const AUTH_USER_KEY = 'authUser'
 const AUTH_EXPIRES_AT_KEY = 'authExpiresAt'
 const SESSION_TTL_DAYS = 30
 const ACCESS_TOKEN_REFRESH_MARGIN_MS = 60 * 1000
-const MIN_REFRESH_TOKEN_LENGTH = 16
 
 export function saveAuthSession(session) {
   const accessToken = String(session?.accessToken || '').trim()
@@ -39,7 +38,7 @@ export function getRefreshToken() {
 }
 
 export function isUsableRefreshToken(value = '') {
-  return String(value || '').trim().length >= MIN_REFRESH_TOKEN_LENGTH
+  return Boolean(String(value || '').trim())
 }
 
 export function isAccessTokenExpiring(token = '') {

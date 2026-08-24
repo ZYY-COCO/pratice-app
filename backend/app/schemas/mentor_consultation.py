@@ -28,7 +28,20 @@ MentorPaymentStatus = Literal["unpaid", "paid", "refunding", "refunded", "failed
 MentorMessageType = Literal["text", "image", "voice", "system"]
 MentorSenderRole = Literal["applicant", "mentor", "system"]
 MentorConsultationReportRole = Literal["applicant", "mentor"]
+MentorConsultationReportParticipantRole = Literal["reporter", "respondent"]
 MentorConsultationReportStatus = Literal["pending", "reviewing", "resolved", "dismissed"]
+MentorConsultationCasePriority = Literal["normal", "high", "urgent"]
+MentorConsultationReportAppealDecision = Literal["none", "uphold", "reopen"]
+MentorConsultationReportResolution = Literal[
+    "none",
+    "continue_service",
+    "refund_full",
+    "refund_partial",
+    "close_service",
+    "warn_participant",
+    "hide_review",
+    "restore_review",
+]
 
 
 class MentorAvailabilitySlotItem(BaseModel):
@@ -369,6 +382,41 @@ class MentorConsultationOrderCreateRequest(BaseModel):
     consultation_type: MentorConsultationType
     slot_id: UUID | None = None
     questionnaire: MentorConsultationQuestionnaire
+    service_rules_version: str = Field(min_length=1, max_length=32)
+    service_rules_accepted: bool
+
+
+class MentorConsultationPaymentIntentResponse(BaseModel):
+    order_id: str
+    order_no: str
+    provider: str
+    provider_order_id: str
+    amount_cents: int = Field(ge=0)
+    currency: str = "CNY"
+    status: Literal["pending", "paid"]
+    checkout_url: str | None = None
+    message: str
+
+
+class MentorConsultationPaymentWebhookRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    provider: str = Field(min_length=1, max_length=80)
+    provider_event_id: str = Field(min_length=1, max_length=160)
+    order_no: str = Field(min_length=1, max_length=80)
+    payment_reference: str = Field(min_length=1, max_length=160)
+    status: Literal["paid", "failed", "refunded", "refund_failed"]
+    amount_cents: int = Field(ge=0, le=100000)
+    refund_amount_cents: int | None = Field(default=None, ge=0, le=100000)
+    refund_reference: str | None = Field(default=None, max_length=160)
+    failure_reason: str | None = Field(default=None, max_length=500)
+    raw_payload: dict | None = None
+
+
+class MentorConsultationPaymentWebhookResponse(BaseModel):
+    detail: str
+    order: "MentorConsultationOrderItem"
+    idempotent: bool = False
 
 
 class MentorConsultationOrderItem(BaseModel):
@@ -388,6 +436,11 @@ class MentorConsultationOrderItem(BaseModel):
     expires_at: str | None = None
     started_at: str | None = None
     ended_at: str | None = None
+    applicant_completion_confirmed_at: str | None = None
+    mentor_completion_confirmed_at: str | None = None
+    refund_amount: float | int = Field(default=0, ge=0)
+    refund_reference: str | None = None
+    rejection_reason: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -401,6 +454,7 @@ class MentorConsultationDecisionRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     decision: Literal["accept", "reject"]
+    reason: str = Field(default="", max_length=500)
 
 
 class MentorConsultationMessageCreateRequest(BaseModel):
@@ -446,6 +500,41 @@ class MentorConsultationReportCreateRequest(BaseModel):
     content: str = Field(min_length=20, max_length=500)
 
 
+class MentorConsultationReportResponseRequest(BaseModel):
+    """A respondent's factual explanation for an open consultation report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=20, max_length=500)
+
+
+class MentorConsultationReportAppealCreateRequest(BaseModel):
+    """A participant's one-time request to review a closed consultation report."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=20, max_length=500)
+
+
+class MentorConsultationReportAppealItem(BaseModel):
+    id: str
+    report_id: str
+    appellant_role: MentorConsultationReportParticipantRole
+    content: str
+    status: MentorConsultationReportStatus = "pending"
+    decision: MentorConsultationReportAppealDecision = "none"
+    admin_note: str | None = None
+    evidence_count: int = Field(default=0, ge=0)
+    first_response_due_at: str | None = None
+    first_response_at: str | None = None
+    priority: MentorConsultationCasePriority = "normal"
+    escalation_level: int = Field(default=0, ge=0)
+    escalated_at: str | None = None
+    sla_status: str = "on_track"
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
 class MentorConsultationReportItem(BaseModel):
     id: str
     order_id: str
@@ -453,19 +542,68 @@ class MentorConsultationReportItem(BaseModel):
     target_role: MentorConsultationReportRole
     issue_type: str
     content: str
+    respondent_content: str | None = None
+    responded_at: str | None = None
+    participation_role: MentorConsultationReportParticipantRole = "reporter"
+    can_respond: bool = False
     status: MentorConsultationReportStatus = "pending"
+    resolution: MentorConsultationReportResolution = "none"
+    refund_amount: float | int = Field(default=0, ge=0)
+    admin_note: str | None = None
+    reporter_evidence_count: int = Field(default=0, ge=0)
+    respondent_evidence_count: int = Field(default=0, ge=0)
+    can_appeal: bool = False
+    appeal_id: str | None = None
+    appeal_status: MentorConsultationReportStatus | None = None
+    appeal_decision: MentorConsultationReportAppealDecision | None = None
+    appeal_content: str | None = None
+    appeal_admin_note: str | None = None
+    appeal_evidence_count: int = Field(default=0, ge=0)
+    appeal_created_at: str | None = None
+    appeal_handled_at: str | None = None
+    appeal_first_response_due_at: str | None = None
+    appeal_first_response_at: str | None = None
+    appeal_priority: MentorConsultationCasePriority | None = None
+    appeal_escalation_level: int = Field(default=0, ge=0)
+    appeal_escalated_at: str | None = None
+    appeal_sla_status: str | None = None
+    first_response_due_at: str | None = None
+    first_response_at: str | None = None
+    priority: MentorConsultationCasePriority = "normal"
+    escalation_level: int = Field(default=0, ge=0)
+    escalated_at: str | None = None
+    sla_status: str = "on_track"
     created_at: str | None = None
+    handled_at: str | None = None
 
 
 class MentorConsultationReportCreateResponse(MentorConsultationReportItem):
     pass
 
 
+class MentorConsultationReportListResponse(BaseModel):
+    items: list[MentorConsultationReportItem] = Field(default_factory=list)
+    count: int = 0
+
+
 class MentorConsultationReportEvidenceUploadResponse(BaseModel):
     id: str
     file_name: str
     mime_type: str | None = None
+    submitter_role: MentorConsultationReportParticipantRole = "reporter"
     created_at: str | None = None
+
+
+class MentorConsultationReportAppealEvidenceUploadResponse(BaseModel):
+    id: str
+    file_name: str
+    mime_type: str | None = None
+    created_at: str | None = None
+
+
+class MentorConsultationReportAppealListResponse(BaseModel):
+    items: list[MentorConsultationReportAppealItem] = Field(default_factory=list)
+    count: int = 0
 
 
 class AdminMentorConsultationReportItem(MentorConsultationReportItem):
@@ -482,19 +620,108 @@ class AdminMentorConsultationReportListResponse(BaseModel):
     count: int = 0
 
 
+class AdminMentorConsultationReportAppealItem(MentorConsultationReportAppealItem):
+    appellant: dict = Field(default_factory=dict)
+    report: dict = Field(default_factory=dict)
+    order_no: str | None = None
+
+
 class AdminMentorConsultationReportEvidenceItem(MentorConsultationReportEvidenceUploadResponse):
     file_url: str
+
+
+class AdminMentorConsultationReviewItem(BaseModel):
+    """Backoffice-only projection of the review attached to a consultation order."""
+
+    id: str
+    order_id: str
+    mentor_id: str
+    reviewer_user_id: str | None = None
+    reviewer_display_name: str = "匿名用户"
+    rating: float | int = Field(ge=1, le=5)
+    tags: list[str] = Field(default_factory=list)
+    content: str = ""
+    is_published: bool = True
+    created_at: str | None = None
 
 
 class AdminMentorConsultationReportDetailResponse(BaseModel):
     report: AdminMentorConsultationReportItem
     evidence: list[AdminMentorConsultationReportEvidenceItem] = Field(default_factory=list)
+    review: AdminMentorConsultationReviewItem | None = None
     order: dict = Field(default_factory=dict)
     messages: list[dict] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
+
+
+class AdminMentorConsultationReportAppealEvidenceItem(MentorConsultationReportAppealEvidenceUploadResponse):
+    file_url: str
+
+
+class AdminMentorConsultationReportAppealListResponse(BaseModel):
+    items: list[AdminMentorConsultationReportAppealItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminMentorConsultationReportAppealDetailResponse(BaseModel):
+    appeal: AdminMentorConsultationReportAppealItem
+    evidence: list[AdminMentorConsultationReportAppealEvidenceItem] = Field(default_factory=list)
+    report: AdminMentorConsultationReportItem
+    report_evidence: list[AdminMentorConsultationReportEvidenceItem] = Field(default_factory=list)
+    order: dict = Field(default_factory=dict)
+    messages: list[dict] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
 
 
 class AdminMentorConsultationReportStatusUpdateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     status: MentorConsultationReportStatus
+    resolution: MentorConsultationReportResolution = "none"
+    refund_amount: float | int = Field(default=0, ge=0, le=1000)
     admin_note: str | None = Field(default=None, max_length=1000)
+    priority: MentorConsultationCasePriority | None = None
+
+
+class AdminMentorConsultationReportAppealStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: MentorConsultationReportStatus
+    decision: MentorConsultationReportAppealDecision = "none"
+    admin_note: str | None = Field(default=None, max_length=1000)
+    priority: MentorConsultationCasePriority | None = None
+
+
+class AdminMentorConsultationOrderItem(MentorConsultationOrderItem):
+    """Backoffice order projection with the parties and current support workload."""
+
+    applicant: dict = Field(default_factory=dict)
+    mentor: dict = Field(default_factory=dict)
+    slot: dict | None = None
+    report_count: int = 0
+    open_report_count: int = 0
+    overdue_report_count: int = 0
+    escalated_report_count: int = 0
+    latest_report_status: MentorConsultationReportStatus | None = None
+    attention: str | None = None
+    attention_reason: str | None = None
+
+
+class AdminMentorConsultationOrderListResponse(BaseModel):
+    items: list[AdminMentorConsultationOrderItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminMentorConsultationOrderDetailResponse(BaseModel):
+    order: AdminMentorConsultationOrderItem
+    reports: list[AdminMentorConsultationReportItem] = Field(default_factory=list)
+    messages: list[dict] = Field(default_factory=list)
+    events: list[dict] = Field(default_factory=list)
+
+
+class AdminMentorConsultationOrderInterventionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    action: Literal["notify_participants", "refund_full", "refund_partial", "close_service"]
+    refund_amount: float | int = Field(default=0, ge=0, le=1000)
+    admin_note: str = Field(min_length=1, max_length=1000)

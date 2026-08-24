@@ -3,11 +3,12 @@
 
 begin;
 
--- 经验贴保留考试代码，研友聊收敛为四个学科标签。
+-- 经验贴保留考试代码/阶段标签，研友聊保留通用讨论和四个学科标签。
 update public.circle_community_posts
 set category = case
   when post_type = 'experience' then
     case
+      when category in ('专业课', '复试') then category
       when category = 'Z002'
         or category = '数学基础'
         or title ilike '%Z002%'
@@ -15,7 +16,7 @@ set category = case
         then 'Z002'
       else 'Z001'
     end
-  when category in ('中华文化', '数学基础', '英语运用', '逻辑推理') then category
+  when category in ('备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理') then category
   when category = 'Z002'
     or title ilike '%Z002%'
     or title ilike '%数学%'
@@ -58,8 +59,8 @@ $$;
 alter table public.circle_community_posts
   add constraint circle_community_posts_category_check
   check (
-    (post_type = 'chat' and category in ('中华文化', '数学基础', '英语运用', '逻辑推理'))
-    or (post_type = 'experience' and category in ('Z001', 'Z002'))
+    (post_type = 'chat' and category in ('备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理'))
+    or (post_type = 'experience' and category in ('Z001', 'Z002', '专业课', '复试'))
   );
 
 do $$

@@ -270,6 +270,9 @@ class AdminCommunityOverviewResponse(BaseModel):
     published_posts: int = 0
     archived_posts: int = 0
     today_posts: int = 0
+    total_reports: int = 0
+    pending_reports: int = 0
+    reviewing_reports: int = 0
 
 
 class AdminCommunityPostItem(BaseModel):
@@ -298,10 +301,29 @@ class AdminCommunityPostListResponse(BaseModel):
 
 class AdminCommunityPostDetailResponse(BaseModel):
     post: AdminCommunityPostItem
-    comments: list[dict] = Field(default_factory=list)
+    comments: list["AdminCommunityCommentItem"] = Field(default_factory=list)
+
+
+class AdminCommunityCommentItem(BaseModel):
+    id: str
+    author_id: str | None = None
+    author_name: str = "研友"
+    author_avatar: str = "研"
+    content: str = ""
+    like_count: int = 0
+    is_published: bool = True
+    moderation_note: str | None = None
+    moderated_at: str | None = None
+    created_at: str | None = None
 
 
 class AdminCommunityPostVisibilityRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    is_published: bool
+
+
+class AdminCommunityCommentVisibilityRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     is_published: bool
@@ -327,6 +349,79 @@ class AdminCommunityBulkFeaturedRequest(BaseModel):
 
 class AdminCommunityBulkFeaturedResponse(BaseModel):
     updated_count: int
+
+
+class AdminCommunityReportItem(BaseModel):
+    id: str
+    target_type: Literal["post", "comment"]
+    post_id: str
+    comment_id: str | None = None
+    reporter: dict = Field(default_factory=dict)
+    target: dict = Field(default_factory=dict)
+    post_title: str = ""
+    target_excerpt: str = ""
+    reason: str
+    content: str = ""
+    status: Literal["pending", "reviewing", "resolved", "dismissed"] = "pending"
+    moderation_action: Literal[
+        "none",
+        "hide_post",
+        "restore_post",
+        "hide_comment",
+        "restore_comment",
+    ] = "none"
+    admin_note: str | None = None
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
+class AdminCommunityReportListResponse(BaseModel):
+    items: list[AdminCommunityReportItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminCommunityReportStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["pending", "reviewing", "resolved", "dismissed"]
+    moderation_action: Literal[
+        "none",
+        "hide_post",
+        "restore_post",
+        "hide_comment",
+        "restore_comment",
+    ] = "none"
+    admin_note: str | None = Field(default=None, max_length=1000)
+
+
+class AdminCommunityAppealItem(BaseModel):
+    id: str
+    target_type: Literal["post", "comment"]
+    post_id: str
+    comment_id: str | None = None
+    appellant: dict = Field(default_factory=dict)
+    target: dict = Field(default_factory=dict)
+    post_title: str = ""
+    target_excerpt: str = ""
+    content: str
+    status: Literal["pending", "reviewing", "resolved", "dismissed"] = "pending"
+    moderation_action: Literal["none", "restore_post", "restore_comment", "uphold"] = "none"
+    admin_note: str | None = None
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
+class AdminCommunityAppealListResponse(BaseModel):
+    items: list[AdminCommunityAppealItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminCommunityAppealStatusUpdateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    status: Literal["pending", "reviewing", "resolved", "dismissed"]
+    moderation_action: Literal["none", "restore_post", "restore_comment", "uphold"] = "none"
+    admin_note: str | None = Field(default=None, max_length=1000)
 
 
 class QuestionAdminPortalOperationsOverviewResponse(BaseModel):

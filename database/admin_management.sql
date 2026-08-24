@@ -33,9 +33,8 @@ create index if not exists idx_users_disabled_at on public.users(disabled_at);
 create index if not exists idx_questions_status on public.questions(status);
 create index if not exists idx_beta_feedback_status on public.beta_feedback(status);
 
-update public.users
-set role = 'admin'
-where lower(email) = '2221073755@qq.com';
+-- Mobile administrators are granted explicitly by setting users.role = 'admin'.
+-- Mentor verification and question_admin_access never imply this role.
 
 revoke insert (role, disabled_at) on public.users from anon, authenticated;
 revoke update (role, disabled_at) on public.users from anon, authenticated;

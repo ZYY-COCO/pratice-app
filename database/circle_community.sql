@@ -11,8 +11,8 @@ create table if not exists public.circle_community_posts (
   post_type text not null default 'chat'
     check (post_type in ('chat', 'experience')),
   category text not null check (
-    (post_type = 'chat' and category in ('中华文化', '数学基础', '英语运用', '逻辑推理'))
-    or (post_type = 'experience' and category in ('Z001', 'Z002'))
+    (post_type = 'chat' and category in ('备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理'))
+    or (post_type = 'experience' and category in ('Z001', 'Z002', '专业课', '复试'))
   ),
   title text not null check (char_length(btrim(title)) between 1 and 80),
   content text not null check (char_length(btrim(content)) between 1 and 3000),

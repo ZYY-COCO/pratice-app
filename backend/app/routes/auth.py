@@ -1363,8 +1363,8 @@ def login(payload: LoginRequest) -> AuthResponse:
 @router.post("/refresh", response_model=AuthResponse)
 def refresh_session(payload: RefreshTokenRequest) -> AuthResponse:
     refresh_token = str(payload.refresh_token or "").strip()
-    if len(refresh_token) < 16:
-        logger.info("Refresh token rejected before upstream request: token is too short")
+    if not refresh_token:
+        logger.info("Refresh token rejected before upstream request: token is missing")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Refresh token is invalid or expired",

@@ -20,6 +20,15 @@ class Settings(BaseSettings):
     smtp_from_name: str = "港澳台考研刷题"
     smtp_use_tls: bool = False
     payment_webhook_secret: str | None = None
+    mentor_consultation_service_rules_version: str = "2026-08-23"
+    mentor_consultation_demo_payment_enabled: bool = False
+    mentor_consultation_payment_provider: str = "unconfigured"
+    mentor_consultation_payment_checkout_url: str | None = None
+    mentor_consultation_lifecycle_interval_seconds: int = 60
+    mentor_consultation_report_first_response_hours: int = 48
+    mentor_consultation_urgent_report_first_response_hours: int = 12
+    mentor_consultation_report_appeal_first_response_hours: int = 48
+    mentor_consultation_report_sla_warning_hours: int = 6
     deepseek_api_key: str | None = None
     deepseek_base_url: str = "https://api.deepseek.com"
     deepseek_model: str = "deepseek-v4-flash"
@@ -46,8 +55,9 @@ class Settings(BaseSettings):
     wechat_miniprogram_app_id: str | None = None
     wechat_miniprogram_app_secret: str | None = None
     wechat_auth_password_secret: str | None = None
-    admin_emails: str = "2221073755@qq.com"
-
+    # Retained only so older server env files remain parseable. Administrator
+    # access is derived from public.users.role, never from an email allowlist.
+    admin_emails: str = ""
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8")
 
     @property
@@ -61,15 +71,6 @@ class Settings(BaseSettings):
         return bool(
             self.smtp_host and self.smtp_username and self.smtp_password and self.smtp_from_email
         )
-
-    @property
-    def admin_email_set(self) -> set[str]:
-        return {
-            email.strip().lower()
-            for email in self.admin_emails.split(",")
-            if email.strip()
-        }
-
 
 @lru_cache
 def get_settings() -> Settings:

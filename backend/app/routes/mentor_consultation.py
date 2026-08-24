@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
+from typing import Annotated
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, Depends, File, Header, HTTPException, Query, UploadFile, status
 
+from app.config import get_settings
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
 from app.schemas.mentor_consultation import (
@@ -16,9 +19,18 @@ from app.schemas.mentor_consultation import (
     MentorConsultationOrderCreateRequest,
     MentorConsultationOrderItem,
     MentorConsultationOrderListResponse,
+    MentorConsultationPaymentIntentResponse,
+    MentorConsultationPaymentWebhookRequest,
+    MentorConsultationPaymentWebhookResponse,
     MentorConsultationReportCreateRequest,
     MentorConsultationReportCreateResponse,
+    MentorConsultationReportAppealCreateRequest,
+    MentorConsultationReportAppealEvidenceUploadResponse,
+    MentorConsultationReportAppealItem,
+    MentorConsultationReportAppealListResponse,
     MentorConsultationReportEvidenceUploadResponse,
+    MentorConsultationReportListResponse,
+    MentorConsultationReportResponseRequest,
     MentorConsultationReviewCreateRequest,
     MentorConsultationReviewCreateResponse,
     MentorAvailabilitySlotItem,
@@ -53,7 +65,17 @@ from app.services.mentor_consultation import (
     serialize_mentor_review,
     serialize_mentor_slot,
 )
+from app.services.mentor_consultation_lifecycle import (
+    refresh_expired_mentor_consultation_order,
+    release_terminal_mentor_booking_slot,
+)
+from app.services.mentor_consultation_sla import (
+    first_response_deadline,
+    initial_report_priority,
+    serialize_case_sla,
+)
 from app.services.supabase_resilience import call_supabase
+from app.services.user_notifications import create_user_notification
 
 
 router = APIRouter(prefix="/mentor-consultation", tags=["前辈咨询"])
@@ -67,7 +89,7 @@ ORDER_MENTOR_FIELDS = (
     "id,owner_user_id,online_status,accepts_booking,price_cents,"
     "consultation_window_minutes,is_published,verification_status"
 )
-ORDER_PAYMENT_WINDOW_MINUTES = 10
+ORDER_MENTOR_RESPONSE_WINDOW_MINUTES = 10
 ORDER_LIST_MAX_LIMIT = 100
 MENTOR_SLOT_MAX_LIMIT = 100
 MENTOR_SLOT_WINDOW_MINUTES = 60
@@ -87,6 +109,7 @@ MENTOR_VERIFICATION_DOCUMENT_CONTENT_TYPES = {
     "image/webp": "webp",
 }
 MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET = "mentor-consultation-report-evidence"
+MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET = "mentor-consultation-report-appeal-evidence"
 MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES = 8 * 1024 * 1024
 MENTOR_CONSULTATION_REPORT_EVIDENCE_CONTENT_TYPES = {
     "image/jpeg": "jpg",
@@ -110,12 +133,19 @@ MENTOR_CONSULTATION_REPORT_ISSUE_TYPES = {
         "恶意占用时段或爽约",
         "侵犯隐私",
         "发布不当内容",
+        "恶意评价或失实反馈",
         "其他问题",
     },
 }
+MENTOR_REVIEW_DISPUTE_ISSUE_TYPE = "恶意评价或失实反馈"
 MENTOR_CONSULTATION_REPORT_FIELDS = (
-    "id,order_id,reporter_user_id,reporter_role,target_role,target_user_id,target_mentor_id,"
-    "issue_type,content,status,admin_note,handled_by,handled_at,created_at,updated_at"
+    "id,order_id,reporter_user_id,reporter_role,respondent_user_id,target_role,target_user_id,target_mentor_id,"
+    "issue_type,content,respondent_content,responded_at,status,resolution,refund_amount_cents,admin_note,handled_by,handled_at,"
+    "first_response_due_at,first_response_at,priority,escalation_level,escalated_at,created_at,updated_at"
+)
+MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS = (
+    "id,report_id,appellant_user_id,appellant_role,content,status,decision,admin_note,handled_by,handled_at,"
+    "first_response_due_at,first_response_at,priority,escalation_level,escalated_at,created_at,updated_at"
 )
 MENTOR_VERIFICATION_APPLICATION_FIELDS = (
     "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
@@ -259,6 +289,26 @@ def _ensure_mentor_consultation_report_evidence_bucket(storage) -> None:
         )
     except Exception:
         storage.get_bucket(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET)
+
+
+def _ensure_mentor_consultation_report_appeal_evidence_bucket(storage) -> None:
+    try:
+        storage.get_bucket(MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET)
+        return
+    except Exception:
+        pass
+
+    try:
+        storage.create_bucket(
+            MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET,
+            options={
+                "public": False,
+                "file_size_limit": MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES,
+                "allowed_mime_types": list(MENTOR_CONSULTATION_REPORT_EVIDENCE_CONTENT_TYPES),
+            },
+        )
+    except Exception:
+        storage.get_bucket(MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET)
 
 
 def _serialize_mentor_verification_application(row: dict, *, document_count: int = 0) -> dict:
@@ -452,7 +502,114 @@ def _get_order_participant(supabase, order_id: str, user_id: str) -> tuple[dict,
     raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该咨询订单")
 
 
-def _serialize_consultation_report(row: dict) -> dict:
+def _get_consultation_report_participation_role(row: dict, user_id: str) -> str | None:
+    if str(row.get("reporter_user_id") or "") == user_id:
+        return "reporter"
+    # target_user_id is retained as a safe read fallback for records created before the
+    # respondent column was backfilled by the incremental migration.
+    respondent_user_id = str(row.get("respondent_user_id") or row.get("target_user_id") or "")
+    if respondent_user_id == user_id:
+        return "respondent"
+    return None
+
+
+def _serialize_consultation_report_appeal(row: dict, *, evidence_count: int = 0) -> dict:
+    settings = get_settings()
+    sla = serialize_case_sla(
+        row,
+        fallback_first_response_hours=settings.mentor_consultation_report_appeal_first_response_hours,
+        warning_hours=settings.mentor_consultation_report_sla_warning_hours,
+    )
+    return {
+        "id": str(row.get("id") or ""),
+        "report_id": str(row.get("report_id") or ""),
+        "appellant_role": str(row.get("appellant_role") or "reporter"),
+        "content": str(row.get("content") or ""),
+        "status": str(row.get("status") or "pending"),
+        "decision": str(row.get("decision") or "none"),
+        "admin_note": row.get("admin_note") or None,
+        "evidence_count": max(0, int(evidence_count or 0)),
+        **sla,
+        "created_at": row.get("created_at") or None,
+        "handled_at": row.get("handled_at") or None,
+    }
+
+
+def _fetch_consultation_report_appeal_summary(
+    supabase,
+    report_ids: list[str],
+    user_id: str,
+) -> dict[str, dict]:
+    ids = list(dict.fromkeys(str(report_id) for report_id in report_ids if report_id))
+    if not ids or not user_id:
+        return {}
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeals")
+                .select(MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS)
+                .in_("report_id", ids)
+                .eq("appellant_user_id", user_id)
+                .execute()
+            ),
+            operation_name="consultation report appeal summary lookup",
+        )
+    except Exception as exc:
+        logger.warning("Consultation report appeal summary unavailable (error_type=%s)", type(exc).__name__)
+        return {}
+    rows = response.data or []
+    appeal_ids = [str(row.get("id") or "") for row in rows if row.get("id")]
+    evidence_counts = {appeal_id: 0 for appeal_id in appeal_ids}
+    if appeal_ids:
+        try:
+            evidence_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_report_appeal_evidence")
+                    .select("appeal_id")
+                    .in_("appeal_id", appeal_ids)
+                    .execute()
+                ),
+                operation_name="consultation report appeal evidence summary lookup",
+            )
+        except Exception as exc:
+            logger.warning("Consultation report appeal evidence summary unavailable (error_type=%s)", type(exc).__name__)
+            evidence_response = None
+        for evidence in ((evidence_response.data if evidence_response else []) or []):
+            appeal_id = str(evidence.get("appeal_id") or "")
+            if appeal_id in evidence_counts:
+                evidence_counts[appeal_id] += 1
+    return {
+        str(row.get("report_id") or ""): {
+            **row,
+            "evidence_count": evidence_counts.get(str(row.get("id") or ""), 0),
+        }
+        for row in rows
+        if row.get("report_id")
+    }
+
+
+def _serialize_consultation_report(
+    row: dict,
+    *,
+    user_id: str | None = None,
+    evidence_summary: dict | None = None,
+    appeal_summary: dict | None = None,
+) -> dict:
+    participation_role = _get_consultation_report_participation_role(row, user_id) if user_id else "reporter"
+    summary = evidence_summary or {}
+    appeal = appeal_summary or {}
+    report_status = str(row.get("status") or "pending")
+    settings = get_settings()
+    sla = serialize_case_sla(
+        row,
+        fallback_first_response_hours=settings.mentor_consultation_report_first_response_hours,
+        warning_hours=settings.mentor_consultation_report_sla_warning_hours,
+    )
+    appeal_sla = serialize_case_sla(
+        appeal,
+        fallback_first_response_hours=settings.mentor_consultation_report_appeal_first_response_hours,
+        warning_hours=settings.mentor_consultation_report_sla_warning_hours,
+    ) if appeal else {}
     return {
         "id": str(row.get("id") or ""),
         "order_id": str(row.get("order_id") or ""),
@@ -460,18 +617,65 @@ def _serialize_consultation_report(row: dict) -> dict:
         "target_role": str(row.get("target_role") or "mentor"),
         "issue_type": str(row.get("issue_type") or "其他问题"),
         "content": str(row.get("content") or ""),
-        "status": str(row.get("status") or "pending"),
+        "respondent_content": str(row.get("respondent_content") or "") or None,
+        "responded_at": row.get("responded_at") or None,
+        "participation_role": participation_role or "reporter",
+        "can_respond": participation_role == "respondent" and report_status in {"pending", "reviewing"},
+        "status": report_status,
+        "resolution": str(row.get("resolution") or "none"),
+        "refund_amount": round(max(0, int(row.get("refund_amount_cents") or 0)) / 100, 2),
+        "admin_note": row.get("admin_note") or None,
+        "reporter_evidence_count": max(0, int(summary.get("reporter") or 0)),
+        "respondent_evidence_count": max(0, int(summary.get("respondent") or 0)),
+        "can_appeal": bool(participation_role and report_status in {"resolved", "dismissed"} and not appeal),
+        "appeal_id": str(appeal.get("id") or "") or None,
+        "appeal_status": str(appeal.get("status") or "") or None,
+        "appeal_decision": str(appeal.get("decision") or "") or None,
+        "appeal_content": str(appeal.get("content") or "") or None,
+        "appeal_admin_note": appeal.get("admin_note") or None,
+        "appeal_evidence_count": max(0, int(appeal.get("evidence_count") or 0)),
+        "appeal_created_at": appeal.get("created_at") or None,
+        "appeal_handled_at": appeal.get("handled_at") or None,
+        "appeal_first_response_due_at": appeal_sla.get("first_response_due_at") or None,
+        "appeal_first_response_at": appeal_sla.get("first_response_at") or None,
+        "appeal_priority": appeal_sla.get("priority") or None,
+        "appeal_escalation_level": max(0, int(appeal_sla.get("escalation_level") or 0)),
+        "appeal_escalated_at": appeal_sla.get("escalated_at") or None,
+        "appeal_sla_status": appeal_sla.get("sla_status") or None,
+        **sla,
         "created_at": row.get("created_at") or None,
+        "handled_at": row.get("handled_at") or None,
     }
 
 
-def _get_owned_consultation_report_or_404(supabase, report_id: str, user_id: str) -> dict:
+def _fetch_consultation_report_evidence_summary(supabase, report_ids: list[str]) -> dict[str, dict[str, int]]:
+    ids = list(dict.fromkeys(str(report_id) for report_id in report_ids if report_id))
+    if not ids:
+        return {}
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_report_evidence")
+            .select("report_id,submitter_role")
+            .in_("report_id", ids)
+            .execute()
+        ),
+        operation_name="consultation report evidence summary lookup",
+    )
+    summary = {report_id: {"reporter": 0, "respondent": 0} for report_id in ids}
+    for row in response.data or []:
+        report_id = str(row.get("report_id") or "")
+        submitter_role = str(row.get("submitter_role") or "reporter")
+        if report_id in summary and submitter_role in {"reporter", "respondent"}:
+            summary[report_id][submitter_role] += 1
+    return summary
+
+
+def _get_participant_consultation_report_or_404(supabase, report_id: str, user_id: str) -> tuple[dict, str]:
     response = call_supabase(
         lambda: (
             supabase.table("mentor_consultation_reports")
             .select(MENTOR_CONSULTATION_REPORT_FIELDS)
             .eq("id", report_id)
-            .eq("reporter_user_id", user_id)
             .limit(1)
             .execute()
         ),
@@ -479,33 +683,17 @@ def _get_owned_consultation_report_or_404(supabase, report_id: str, user_id: str
     )
     if not response.data:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该举报记录")
-    return response.data[0]
+    report = response.data[0]
+    participation_role = _get_consultation_report_participation_role(report, user_id)
+    if not participation_role:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="无权访问该举报记录")
+    return report, participation_role
 
 
 def _refresh_pending_accept_status(supabase, order: dict) -> dict:
-    if str(order.get("order_status") or "") != "pending_accept":
-        return order
-    expires_at = _as_utc_datetime(order.get("expires_at"))
-    if expires_at is None or expires_at > _utc_now():
-        return order
+    """Resolve visible orders with the same server-side lifecycle rules."""
 
-    response = call_supabase(
-        lambda: (
-            supabase.table("mentor_consultation_orders")
-            .update({
-                "order_status": "timeout",
-                "payment_status": "refunded",
-                "ended_at": _utc_now().isoformat(),
-            })
-            .eq("id", str(order.get("id") or ""))
-            .eq("order_status", "pending_accept")
-            .execute()
-        ),
-        operation_name="consultation order timeout refresh",
-    )
-    if response.data:
-        return response.data[0]
-    return _get_order_or_404(supabase, str(order.get("id") or ""))
+    return refresh_expired_mentor_consultation_order(supabase, order)
 
 
 def _assert_order_status(order: dict, allowed: set[str], message: str) -> None:
@@ -526,6 +714,343 @@ def _insert_system_message(supabase, order_id: str, content: str) -> None:
         )
     except Exception as exc:
         logger.warning("Consultation system message skipped (error_type=%s)", type(exc).__name__)
+
+
+def _insert_order_event(
+    supabase,
+    order_id: str,
+    *,
+    event_type: str,
+    actor_role: str,
+    actor_user_id: str | None = None,
+    details: dict | None = None,
+) -> None:
+    """Keep an append-only business trail independent of chat display messages."""
+
+    try:
+        call_supabase(
+            lambda: supabase.table("mentor_consultation_order_events").insert({
+                "order_id": order_id,
+                "actor_user_id": actor_user_id,
+                "actor_role": actor_role,
+                "event_type": event_type,
+                "details": details or {},
+            }).execute(),
+            operation_name="consultation order event create",
+        )
+    except Exception as exc:
+        logger.warning("Consultation order event skipped (event=%s error_type=%s)", event_type, type(exc).__name__)
+
+
+def _configured_payment_provider() -> str:
+    provider = str(get_settings().mentor_consultation_payment_provider or "").strip()
+    return provider[:80] or "unconfigured"
+
+
+def _is_demo_payment_reference(reference: object) -> bool:
+    return str(reference or "").upper().startswith(("DEMO-", "MOCK-"))
+
+
+def _build_payment_reference(order: dict) -> str:
+    existing = str(order.get("payment_reference") or "").strip()
+    if existing and not _is_demo_payment_reference(existing):
+        return existing
+    return f"MCON-{str(order.get('order_no') or '')}"
+
+
+def _build_checkout_url(order: dict, payment_reference: str) -> str | None:
+    template = str(get_settings().mentor_consultation_payment_checkout_url or "").strip()
+    if not template:
+        return None
+    return (
+        template
+        .replace("{order_no}", str(order.get("order_no") or ""))
+        .replace("{payment_reference}", payment_reference)
+        .replace("{amount_cents}", str(max(0, int(order.get("price_cents") or 0))))
+    )
+
+
+def _refund_payment_status_for_order(order: dict) -> str:
+    """Only historical/demo money can be settled synchronously inside the app."""
+
+    return "refunded" if _is_demo_payment_reference(order.get("payment_reference")) else "refunding"
+
+
+def _new_refund_reference(prefix: str, order: dict) -> str:
+    return f"{prefix}-{str(order.get('order_no') or '')}-{uuid4().hex[:8].upper()}"
+
+
+def _mark_mentor_consultation_order_paid(
+    supabase,
+    order: dict,
+    *,
+    payment_reference: str,
+    operation_name: str,
+    allowed_payment_statuses: set[str] | None = None,
+) -> dict:
+    """Move a pending order into the paid service flow after a verified callback.
+
+    Booking-slot reservation deliberately happens in the same conditional flow as
+    the order transition.  If either write loses a race, the slot is released and
+    the caller receives a recoverable conflict instead of a fake successful pay.
+    """
+
+    order_id = str(order.get("id") or "")
+    current_status = str(order.get("order_status") or "")
+    current_payment_status = str(order.get("payment_status") or "")
+    permitted_statuses = allowed_payment_statuses or {"unpaid", "failed"}
+    if current_status in {"pending_accept", "booked"} and current_payment_status == "paid":
+        return order
+    _assert_order_status(order, {"pending_payment"}, "该订单当前无法确认支付")
+    if current_payment_status not in permitted_statuses:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该订单当前支付状态不可确认")
+
+    reserved_slot_id: str | None = None
+    try:
+        now = _utc_now()
+        consultation_type = str(order.get("consultation_type") or "instant")
+        update_data: dict[str, object] = {
+            "payment_status": "paid",
+            "payment_reference": payment_reference,
+        }
+        if consultation_type == "booking":
+            slot_id = str(order.get("slot_id") or "")
+            if not slot_id:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="预约订单缺少预约时段")
+            slot = _get_slot_or_404(supabase, slot_id)
+            if str(slot.get("mentor_id") or "") != str(order.get("mentor_id") or ""):
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="预约时段与订单不匹配")
+            starts_at = _as_utc_datetime(slot.get("starts_at"))
+            if starts_at is not None and starts_at <= now:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该预约时段已过期，请重新选择")
+            slot_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_availability_slots")
+                    .update({"status": "booked"})
+                    .eq("id", slot_id)
+                    .eq("status", "available")
+                    .execute()
+                ),
+                operation_name="consultation booking slot reserve",
+            )
+            if not slot_response.data:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该预约时段刚刚被占用，请重新选择")
+            reserved_slot_id = slot_id
+            update_data.update({"order_status": "booked", "expires_at": None})
+        else:
+            update_data.update({
+                "order_status": "pending_accept",
+                "expires_at": (now + timedelta(minutes=ORDER_MENTOR_RESPONSE_WINDOW_MINUTES)).isoformat(),
+            })
+
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .update(update_data)
+                .eq("id", order_id)
+                .eq("order_status", "pending_payment")
+                .in_("payment_status", list(permitted_statuses))
+                .execute()
+            ),
+            operation_name=operation_name,
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+        reserved_slot_id = None
+        paid_order = response.data[0]
+        _notify_mentor_of_paid_consultation_order(supabase, paid_order)
+        return paid_order
+    except Exception:
+        if reserved_slot_id:
+            try:
+                call_supabase(
+                    lambda: (
+                        supabase.table("mentor_availability_slots")
+                        .update({"status": "available"})
+                        .eq("id", reserved_slot_id)
+                        .eq("status", "booked")
+                        .execute()
+                    ),
+                    operation_name="consultation booking slot payment rollback",
+                )
+            except Exception as rollback_error:
+                logger.warning("Consultation booking slot rollback skipped (error_type=%s)", type(rollback_error).__name__)
+        raise
+
+
+def _notify_mentor_of_paid_consultation_order(supabase, order: dict) -> None:
+    """Create the source-of-truth in-app notification for a newly paid mentor order."""
+
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    if not order_id or not mentor_id:
+        return
+
+    try:
+        mentor = _get_order_mentor_or_404(supabase, mentor_id)
+        recipient_user_id = str(mentor.get("owner_user_id") or "").strip()
+        if not recipient_user_id:
+            return
+
+        consultation_type = str(order.get("consultation_type") or "instant")
+        is_booking = consultation_type == "booking"
+        title = "新的预约咨询已确认" if is_booking else "新的即时咨询待接单"
+        summary = (
+            "有考生已完成预约，请提前查看咨询资料。"
+            if is_booking
+            else "有考生已支付咨询费用，正在等待你的确认。"
+        )
+        content = (
+            "预约时间已为你保留，点击查看时间和咨询信息。"
+            if is_booking
+            else "请在 10 分钟内前往咨询主页处理；超时后订单将自动关闭。"
+        )
+        route_path = f"/pages/circle/mentor-apply?mode=center&orderId={order_id}"
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="consultation",
+            notification_type="mentor_order_created",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_order",
+            related_id=order_id,
+            route_path=route_path,
+            delivery_payload={
+                "surface": "mentor_order",
+                "audience": "mentor",
+                "order_id": order_id,
+                "order_no": str(order.get("order_no") or ""),
+                "consultation_type": consultation_type,
+                "order_status": str(order.get("order_status") or ""),
+                "expires_at": str(order.get("expires_at") or "") or None,
+                "native_push": {
+                    "title": title,
+                    "body": summary,
+                    "route_path": route_path,
+                },
+            },
+        )
+    except Exception as exc:
+        # 消息投递异常不影响支付确认；订单页仍可作为前辈的兜底入口。
+        logger.warning("Mentor order notification write skipped (order_id=%s error_type=%s)", order_id, type(exc).__name__)
+
+
+def _notify_consultation_chat_message(
+    supabase,
+    *,
+    order: dict,
+    mentor: dict,
+    sender_role: str,
+    sender_user_id: str,
+    message: dict,
+) -> None:
+    """Notify only the other consultation participant after a persisted chat message."""
+
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    message_id = str(message.get("id") or "").strip()
+    if not order_id or not mentor_id or not message_id:
+        return
+
+    is_mentor_sender = sender_role == "mentor"
+    recipient_user_id = str(
+        order.get("applicant_user_id") if is_mentor_sender else mentor.get("owner_user_id")
+    ).strip()
+    if not recipient_user_id or recipient_user_id == str(sender_user_id or ""):
+        return
+
+    sender_label = "前辈" if is_mentor_sender else "咨询用户"
+    route_path = (
+        f"/pages/circle/mentor-chat?mentorId={mentor_id}&orderId={order_id}"
+        "&role=applicant&from=my-consultations"
+        if is_mentor_sender
+        else f"/pages/circle/mentor-apply?mode=center&orderId={order_id}"
+    )
+    content = str(message.get("content") or "").strip()[:180] or "对方发来了一条新消息。"
+    create_user_notification(
+        supabase,
+        recipient_user_id=recipient_user_id,
+        category="consultation",
+        notification_type="mentor_chat_message",
+        title="新的咨询消息",
+        summary=f"{sender_label}发来一条新消息",
+        content=content,
+        related_type="mentor_consultation_message",
+        related_id=message_id,
+        route_path=route_path,
+        delivery_payload={
+            "surface": "mentor_chat",
+            "order_id": order_id,
+            "mentor_id": mentor_id,
+            "sender_role": sender_role,
+            "sender_user_id": str(sender_user_id or ""),
+            "message_id": message_id,
+            "native_push": {
+                "title": "新的咨询消息",
+                "body": content,
+                "route_path": route_path,
+            },
+        },
+    )
+
+
+def _notify_consultation_applicant_order_status(
+    supabase,
+    *,
+    order: dict,
+    event: str,
+    detail: str = "",
+) -> None:
+    """Keep the consultation owner informed when the mentor changes a visible order state."""
+
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    recipient_user_id = str(order.get("applicant_user_id") or "").strip()
+    if not order_id or not mentor_id or not recipient_user_id:
+        return
+
+    if event == "accepted":
+        title = "你的咨询已被前辈接单"
+        summary = "咨询已开始，可以进入聊天与前辈沟通。"
+        content = detail or "本次咨询窗口已开启，请及时进入聊天页面。"
+        route_path = f"/pages/circle/mentor-chat?mentorId={mentor_id}&orderId={order_id}&role=applicant&from=my-consultations"
+    elif event == "started":
+        title = "你的预约咨询已开始"
+        summary = "前辈已开启本次预约咨询。"
+        content = detail or "现在可以进入聊天页面与前辈沟通。"
+        route_path = f"/pages/circle/mentor-chat?mentorId={mentor_id}&orderId={order_id}&role=applicant&from=my-consultations"
+    elif event == "cancelled":
+        title = "本次咨询已被前辈取消"
+        summary = "订单状态与退款进度已同步到你的咨询记录。"
+        content = detail or "你可以在“我的咨询”中查看处理说明。"
+        route_path = "/pages/circle/my-consultations"
+    else:
+        title = "本次咨询暂未被接单"
+        summary = "前辈暂未接受本次咨询，退款状态已同步到咨询记录。"
+        content = detail or "你可以在“我的咨询”中查看处理说明和订单状态。"
+        route_path = "/pages/circle/my-consultations"
+
+    create_user_notification(
+        supabase,
+        recipient_user_id=recipient_user_id,
+        category="consultation",
+        notification_type="mentor_order_status",
+        title=title,
+        summary=summary,
+        content=content,
+        related_type="mentor_consultation_order",
+        related_id=f"{order_id}:{event}",
+        route_path=route_path,
+        delivery_payload={
+            "surface": "mentor_order",
+            "event": event,
+            "order_id": order_id,
+            "mentor_id": mentor_id,
+            "order_status": str(order.get("order_status") or ""),
+        },
+    )
 
 
 @router.get("/me/verification-application", response_model=MentorVerificationApplicationStatusResponse)
@@ -1277,6 +1802,12 @@ def create_mentor_consultation_order(
 ) -> MentorConsultationOrderItem:
     mentor_id = str(payload.mentor_id)
     consultation_type = payload.consultation_type
+    rules_version = str(payload.service_rules_version or "").strip()
+    if not payload.service_rules_accepted or rules_version != get_settings().mentor_consultation_service_rules_version:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="请阅读并同意当前版本的咨询服务与纠纷处理规则后再提交订单",
+        )
     questionnaire = payload.questionnaire.model_dump()
     for required_field in ("name", "school", "major"):
         questionnaire[required_field] = str(questionnaire.get(required_field) or "").strip()
@@ -1284,6 +1815,8 @@ def create_mentor_consultation_order(
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="请完整填写咨询基本信息")
     questionnaire["grade"] = str(questionnaire.get("grade") or "其他").strip()[:40] or "其他"
     questionnaire["question"] = str(questionnaire.get("question") or "").strip()
+    questionnaire["service_rules_version"] = rules_version
+    questionnaire["service_rules_accepted_at"] = _utc_now().isoformat()
 
     supabase = get_supabase_admin()
     try:
@@ -1334,7 +1867,22 @@ def create_mentor_consultation_order(
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="咨询订单创建失败")
-        return _serialize_order_item(response.data[0])
+        created_order = response.data[0]
+        _insert_order_event(
+            supabase,
+            str(created_order.get("id") or ""),
+            event_type="consultation_order_created",
+            actor_role="applicant",
+            actor_user_id=user_id,
+            details={
+                "consultation_type": consultation_type,
+                "slot_id": str(payload.slot_id) if payload.slot_id is not None else None,
+                "price_cents": max(0, price_cents),
+                "service_rules_version": rules_version,
+                "service_rules_accepted": True,
+            },
+        )
+        return _serialize_order_item(created_order)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1342,108 +1890,555 @@ def create_mentor_consultation_order(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="咨询订单创建失败") from exc
 
 
+@router.post("/orders/{order_id}/payment-intent", response_model=MentorConsultationPaymentIntentResponse)
+def create_mentor_consultation_payment_intent(
+    order_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationPaymentIntentResponse:
+    """Create a payment hand-off without treating order creation as payment success."""
+
+    normalized_order_id = str(order_id)
+    supabase = get_supabase_admin()
+    try:
+        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        if participant_role != "applicant":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅咨询发起人可以创建支付订单")
+        order = _refresh_pending_accept_status(supabase, order)
+        current_status = str(order.get("order_status") or "")
+        current_payment_status = str(order.get("payment_status") or "")
+        payment_reference = _build_payment_reference(order)
+        if current_status in {"pending_accept", "accepted", "booked", "in_progress", "completed"} and current_payment_status == "paid":
+            return MentorConsultationPaymentIntentResponse(
+                order_id=normalized_order_id,
+                order_no=str(order.get("order_no") or ""),
+                provider=_configured_payment_provider(),
+                provider_order_id=payment_reference,
+                amount_cents=max(0, int(order.get("price_cents") or 0)),
+                status="paid",
+                checkout_url=None,
+                message="该咨询订单已完成支付确认。",
+            )
+        _assert_order_status(order, {"pending_payment"}, "该订单当前无法创建支付订单")
+        if current_payment_status not in {"unpaid", "failed"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该订单当前支付状态不可继续支付")
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .update({"payment_status": "unpaid", "payment_reference": payment_reference})
+                .eq("id", normalized_order_id)
+                .eq("applicant_user_id", user_id)
+                .eq("order_status", "pending_payment")
+                .in_("payment_status", ["unpaid", "failed"])
+                .execute()
+            ),
+            operation_name="consultation payment intent create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+        updated_order = response.data[0]
+        checkout_url = _build_checkout_url(updated_order, payment_reference)
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="consultation_payment_intent_created",
+            actor_role="applicant",
+            actor_user_id=user_id,
+            details={
+                "provider": _configured_payment_provider(),
+                "payment_reference": payment_reference,
+                "price_cents": max(0, int(updated_order.get("price_cents") or 0)),
+                "checkout_configured": bool(checkout_url),
+            },
+        )
+        return MentorConsultationPaymentIntentResponse(
+            order_id=normalized_order_id,
+            order_no=str(updated_order.get("order_no") or ""),
+            provider=_configured_payment_provider(),
+            provider_order_id=payment_reference,
+            amount_cents=max(0, int(updated_order.get("price_cents") or 0)),
+            status="pending",
+            checkout_url=checkout_url,
+            message=(
+                "支付订单已生成，完成支付后系统会自动确认。"
+                if checkout_url
+                else "支付订单已生成，当前尚未配置支付跳转；订单会保持待支付，平台不会将其标记为已支付。"
+            ),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation payment intent create failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="支付订单暂时不可用") from exc
+
+
+@router.post("/payments/webhook", response_model=MentorConsultationPaymentWebhookResponse)
+def handle_mentor_consultation_payment_webhook(
+    payload: MentorConsultationPaymentWebhookRequest,
+    x_payment_webhook_secret: Annotated[str | None, Header()] = None,
+) -> MentorConsultationPaymentWebhookResponse:
+    """Apply confirmed payment/refund results from the configured payment channel.
+
+    The provider must send a stable event id.  Repeated delivery is recognized by
+    the already-transitioned order and returns the same current order instead of
+    performing a second state change.
+    """
+
+    settings = get_settings()
+    expected_secret = str(settings.payment_webhook_secret or "")
+    if not expected_secret:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="支付回调尚未配置")
+    if not x_payment_webhook_secret or not secrets.compare_digest(x_payment_webhook_secret, expected_secret):
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="支付回调校验失败")
+    expected_provider = _configured_payment_provider()
+    if expected_provider == "unconfigured":
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="咨询支付渠道尚未配置")
+    if payload.provider != expected_provider:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="支付渠道与当前订单配置不匹配")
+
+    supabase = get_supabase_admin()
+    try:
+        lookup = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .select(CONSULTATION_ORDER_FIELDS)
+                .eq("order_no", payload.order_no)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation payment callback order lookup",
+        )
+        if not lookup.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到对应的咨询订单")
+        order = _refresh_pending_accept_status(supabase, lookup.data[0])
+        order_id = str(order.get("id") or "")
+        expected_amount = max(0, int(order.get("price_cents") or 0))
+        if int(payload.amount_cents) != expected_amount:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="支付金额与咨询订单不一致")
+        existing_reference = str(order.get("payment_reference") or "")
+        if existing_reference and existing_reference != payload.payment_reference:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="支付流水号与咨询订单不一致")
+
+        callback_details = {
+            "provider": payload.provider,
+            "provider_event_id": payload.provider_event_id,
+            "payment_reference": payload.payment_reference,
+            "amount_cents": int(payload.amount_cents),
+        }
+        current_payment_status = str(order.get("payment_status") or "")
+        if payload.status == "paid":
+            if current_payment_status == "paid" and str(order.get("payment_reference") or "") == payload.payment_reference:
+                return MentorConsultationPaymentWebhookResponse(
+                    detail="支付结果已处理",
+                    order=_serialize_order_item(order),
+                    idempotent=True,
+                )
+            try:
+                paid_order = _mark_mentor_consultation_order_paid(
+                    supabase,
+                    order,
+                    payment_reference=payload.payment_reference,
+                    operation_name="consultation payment callback confirm",
+                )
+            except HTTPException:
+                refreshed_order = _get_order_or_404(supabase, order_id)
+                if str(refreshed_order.get("payment_status") or "") == "paid" and str(refreshed_order.get("payment_reference") or "") == payload.payment_reference:
+                    return MentorConsultationPaymentWebhookResponse(
+                        detail="支付结果已处理",
+                        order=_serialize_order_item(refreshed_order),
+                        idempotent=True,
+                    )
+                raise
+            _insert_order_event(
+                supabase,
+                order_id,
+                event_type="consultation_payment_confirmed",
+                actor_role="system",
+                details=callback_details,
+            )
+            _insert_system_message(
+                supabase,
+                order_id,
+                (
+                    "平台已确认咨询费用，咨询请求已发送给前辈；请等待前辈在 10 分钟内确认接单。"
+                    if str(paid_order.get("consultation_type") or "") == "instant"
+                    else "平台已确认预约咨询费用，前辈可在预约时段开始咨询。"
+                ),
+            )
+            return MentorConsultationPaymentWebhookResponse(
+                detail="支付确认成功",
+                order=_serialize_order_item(paid_order),
+            )
+
+        if payload.status == "failed":
+            if current_payment_status == "failed" and not order.get("refund_reference") and existing_reference == payload.payment_reference:
+                return MentorConsultationPaymentWebhookResponse(
+                    detail="支付失败结果已处理",
+                    order=_serialize_order_item(order),
+                    idempotent=True,
+                )
+            _assert_order_status(order, {"pending_payment"}, "该订单当前无法更新支付结果")
+            response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_orders")
+                    .update({"payment_status": "failed", "payment_reference": payload.payment_reference})
+                    .eq("id", order_id)
+                    .eq("order_status", "pending_payment")
+                    .in_("payment_status", ["unpaid", "failed"])
+                    .execute()
+                ),
+                operation_name="consultation payment callback failure",
+            )
+            if not response.data:
+                refreshed_order = _get_order_or_404(supabase, order_id)
+                if (
+                    str(refreshed_order.get("payment_status") or "") == "failed"
+                    and not refreshed_order.get("refund_reference")
+                    and str(refreshed_order.get("payment_reference") or "") == payload.payment_reference
+                ):
+                    return MentorConsultationPaymentWebhookResponse(
+                        detail="支付失败结果已处理",
+                        order=_serialize_order_item(refreshed_order),
+                        idempotent=True,
+                    )
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+            callback_details["failure_reason"] = str(payload.failure_reason or "") or None
+            _insert_order_event(supabase, order_id, event_type="consultation_payment_failed", actor_role="system", details=callback_details)
+            _insert_system_message(supabase, order_id, "本次支付未完成，订单仍处于待支付状态；请重新发起支付或取消订单。")
+            return MentorConsultationPaymentWebhookResponse(
+                detail="已记录支付失败结果",
+                order=_serialize_order_item(response.data[0]),
+            )
+
+        expected_refund_amount = max(0, int(order.get("refund_amount_cents") or 0))
+        callback_refund_amount = int(payload.refund_amount_cents if payload.refund_amount_cents is not None else expected_refund_amount)
+        if not order.get("refund_reference") or payload.refund_reference != str(order.get("refund_reference") or ""):
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="退款流水号与咨询订单不一致")
+        if callback_refund_amount != expected_refund_amount:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="退款金额与咨询订单不一致")
+        callback_details.update({"refund_reference": payload.refund_reference, "refund_amount_cents": callback_refund_amount})
+        if payload.status == "refunded":
+            if current_payment_status == "refunded":
+                return MentorConsultationPaymentWebhookResponse(
+                    detail="退款结果已处理",
+                    order=_serialize_order_item(order),
+                    idempotent=True,
+                )
+            if current_payment_status != "refunding":
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该订单当前不处于退款处理中")
+            response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_orders")
+                    .update({"payment_status": "refunded"})
+                    .eq("id", order_id)
+                    .eq("payment_status", "refunding")
+                    .execute()
+                ),
+                operation_name="consultation refund callback confirm",
+            )
+            if not response.data:
+                refreshed_order = _get_order_or_404(supabase, order_id)
+                if str(refreshed_order.get("payment_status") or "") == "refunded" and str(refreshed_order.get("refund_reference") or "") == payload.refund_reference:
+                    return MentorConsultationPaymentWebhookResponse(
+                        detail="退款结果已处理",
+                        order=_serialize_order_item(refreshed_order),
+                        idempotent=True,
+                    )
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+            _insert_order_event(supabase, order_id, event_type="consultation_refund_completed", actor_role="system", details=callback_details)
+            _insert_system_message(supabase, order_id, f"平台已确认退款完成，退款金额 ¥{callback_refund_amount / 100:.2f} 将原路退回。")
+            return MentorConsultationPaymentWebhookResponse(
+                detail="退款确认成功",
+                order=_serialize_order_item(response.data[0]),
+            )
+
+        if current_payment_status == "failed" and order.get("refund_reference"):
+            return MentorConsultationPaymentWebhookResponse(
+                detail="退款异常结果已处理",
+                order=_serialize_order_item(order),
+                idempotent=True,
+            )
+        if current_payment_status != "refunding":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该订单当前不处于退款处理中")
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .update({"payment_status": "failed"})
+                .eq("id", order_id)
+                .eq("payment_status", "refunding")
+                .execute()
+            ),
+            operation_name="consultation refund callback failure",
+        )
+        if not response.data:
+            refreshed_order = _get_order_or_404(supabase, order_id)
+            if str(refreshed_order.get("payment_status") or "") == "failed" and str(refreshed_order.get("refund_reference") or "") == payload.refund_reference:
+                return MentorConsultationPaymentWebhookResponse(
+                    detail="退款异常结果已处理",
+                    order=_serialize_order_item(refreshed_order),
+                    idempotent=True,
+                )
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+        callback_details["failure_reason"] = str(payload.failure_reason or "") or None
+        _insert_order_event(supabase, order_id, event_type="consultation_refund_failed", actor_role="system", details=callback_details)
+        _insert_system_message(supabase, order_id, "退款处理出现异常，平台已收到提醒并会继续跟进；你可以在平台处理进度查看结果。")
+        return MentorConsultationPaymentWebhookResponse(
+            detail="已记录退款异常",
+            order=_serialize_order_item(response.data[0]),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation payment webhook failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="支付回调处理暂时不可用") from exc
+
+
 @router.post("/orders/{order_id}/mock-pay", response_model=MentorConsultationOrderItem)
 def mock_pay_mentor_consultation_order(
     order_id: UUID,
     user_id: str = Depends(get_current_user_id),
 ) -> MentorConsultationOrderItem:
+    if not get_settings().mentor_consultation_demo_payment_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="咨询服务当前未启用")
     normalized_order_id = str(order_id)
     supabase = get_supabase_admin()
-    reserved_slot_id: str | None = None
     try:
         order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
         if participant_role != "applicant":
-            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅咨询发起人可以支付订单")
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅咨询发起人可以确认本次咨询")
         order = _refresh_pending_accept_status(supabase, order)
         order_status = str(order.get("order_status") or "")
-        if order_status in {"pending_accept", "booked"} and str(order.get("payment_status") or "") == "paid":
+        payment_status = str(order.get("payment_status") or "")
+        is_no_payment_order = _is_demo_payment_reference(order.get("payment_reference"))
+        if payment_status == "paid" and is_no_payment_order and order_status in {
+            "pending_accept", "accepted", "booked", "in_progress", "completed"
+        }:
             return _serialize_order_item(order)
-        _assert_order_status(order, {"pending_payment"}, "该订单当前无法支付")
-
-        now = _utc_now()
+        _assert_order_status(order, {"pending_payment"}, "该订单当前无法确认")
         consultation_type = str(order.get("consultation_type") or "instant")
-        update_data = {
-            "payment_status": "paid",
-            "payment_reference": f"MOCK-{str(order.get('order_no') or '')}-{uuid4().hex[:6].upper()}",
-        }
-        if consultation_type == "booking":
-            slot_id = str(order.get("slot_id") or "")
-            if not slot_id:
-                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="预约订单缺少预约时段")
-            slot = _get_slot_or_404(supabase, slot_id)
-            if str(slot.get("mentor_id") or "") != str(order.get("mentor_id") or ""):
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="预约时段与订单不匹配")
-            starts_at = _as_utc_datetime(slot.get("starts_at"))
-            if starts_at is not None and starts_at <= now:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该预约时段已过期，请重新选择")
-            slot_response = call_supabase(
-                lambda: (
-                    supabase.table("mentor_availability_slots")
-                    .update({"status": "booked"})
-                    .eq("id", slot_id)
-                    .eq("status", "available")
-                    .execute()
-                ),
-                operation_name="consultation booking slot reserve",
-            )
-            if not slot_response.data:
-                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该预约时段刚刚被占用，请重新选择")
-            reserved_slot_id = slot_id
-            update_data.update({"order_status": "booked", "expires_at": None})
-        else:
-            update_data.update({
-                "order_status": "pending_accept",
-                "expires_at": (now + timedelta(minutes=ORDER_PAYMENT_WINDOW_MINUTES)).isoformat(),
-            })
+        paid_order = _mark_mentor_consultation_order_paid(
+            supabase,
+            order,
+            payment_reference=f"DEMO-{str(order.get('order_no') or '')}-{uuid4().hex[:6].upper()}",
+            operation_name="consultation local no-payment confirmation",
+        )
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="consultation_demo_payment_recorded",
+            actor_role="applicant",
+            actor_user_id=user_id,
+            details={
+                "payment_reference": paid_order.get("payment_reference"),
+                "consultation_type": consultation_type,
+                "price_cents": int(order.get("price_cents") or 0),
+                "order_status": str(paid_order.get("order_status") or ""),
+                "payment_exempt": True,
+            },
+        )
+        _insert_system_message(
+            supabase,
+            normalized_order_id,
+            (
+                "已确认本次咨询，咨询请求已发送给前辈；请等待前辈在 10 分钟内确认接单。"
+                if consultation_type == "instant"
+                else "已确认本次预约，前辈可在预约时段开始咨询。"
+            ),
+        )
+        return _serialize_order_item(paid_order)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation no-payment confirmation failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="咨询服务暂时不可用") from exc
 
+
+@router.post("/orders/{order_id}/local-rehearsal-complete", response_model=MentorConsultationOrderItem)
+def complete_mentor_consultation_local_rehearsal(
+    order_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationOrderItem:
+    """Close a local rehearsal without requiring a second account confirmation."""
+
+    if not get_settings().mentor_consultation_demo_payment_enabled:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="咨询服务当前未启用")
+    normalized_order_id = str(order_id)
+    supabase = get_supabase_admin()
+    try:
+        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        if participant_role != "applicant":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅咨询发起人可以结束本次咨询")
+        order = _refresh_pending_accept_status(supabase, order)
+        if str(order.get("order_status") or "") == "completed":
+            return _serialize_order_item(order)
+        if not _is_demo_payment_reference(order.get("payment_reference")):
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="当前订单暂不支持该操作")
+        _assert_order_status(order, {"in_progress"}, "该订单当前尚未开始咨询")
+
+        now_iso = _utc_now().isoformat()
         response = call_supabase(
             lambda: (
                 supabase.table("mentor_consultation_orders")
-                .update(update_data)
+                .update({
+                    "order_status": "completed",
+                    "applicant_completion_confirmed_at": now_iso,
+                    "mentor_completion_confirmed_at": now_iso,
+                    "ended_at": now_iso,
+                })
                 .eq("id", normalized_order_id)
-                .eq("applicant_user_id", user_id)
-                .eq("order_status", "pending_payment")
+                .eq("order_status", "in_progress")
                 .execute()
             ),
-            operation_name="consultation mock payment",
+            operation_name="consultation local rehearsal complete",
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
-        reserved_slot_id = None
-        return _serialize_order_item(response.data[0])
+        completed_order = response.data[0]
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="completion_confirmed",
+            actor_role="applicant",
+            actor_user_id=user_id,
+            details={"mode": "local_rehearsal", "both_parties_confirmed": True},
+        )
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="consultation_completed",
+            actor_role="system",
+            details={"completion": "local_rehearsal"},
+        )
+        _insert_system_message(
+            supabase,
+            normalized_order_id,
+            "本次咨询已结束并进入评价阶段；聊天、问题反馈和后台处理记录会继续保留。",
+        )
+        return _serialize_order_item(completed_order)
     except HTTPException:
-        if reserved_slot_id:
-            try:
-                call_supabase(
-                    lambda: (
-                        supabase.table("mentor_availability_slots")
-                        .update({"status": "available"})
-                        .eq("id", reserved_slot_id)
-                        .eq("status", "booked")
-                        .execute()
-                    ),
-                    operation_name="consultation booking slot release",
-                )
-            except Exception as rollback_error:
-                logger.warning("Consultation booking slot rollback skipped (error_type=%s)", type(rollback_error).__name__)
         raise
     except Exception as exc:
-        if reserved_slot_id:
-            try:
-                call_supabase(
-                    lambda: (
-                        supabase.table("mentor_availability_slots")
-                        .update({"status": "available"})
-                        .eq("id", reserved_slot_id)
-                        .eq("status", "booked")
-                        .execute()
-                    ),
-                    operation_name="consultation booking slot failure release",
-                )
-            except Exception as rollback_error:
-                logger.warning("Consultation booking slot rollback skipped (error_type=%s)", type(rollback_error).__name__)
-        logger.warning("Consultation mock payment failed (error_type=%s)", type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="模拟支付暂时不可用") from exc
+        logger.warning("Consultation local rehearsal completion failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="结束咨询暂时不可用") from exc
+
+
+@router.post("/orders/{order_id}/cancel", response_model=MentorConsultationOrderItem)
+def cancel_mentor_consultation_order(
+    order_id: UUID,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationOrderItem:
+    """Let either participant end an unstarted consultation with an auditable result."""
+
+    normalized_order_id = str(order_id)
+    supabase = get_supabase_admin()
+    try:
+        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        order = _refresh_pending_accept_status(supabase, order)
+        order_status = str(order.get("order_status") or "")
+        if order_status == "cancelled":
+            return _serialize_order_item(order)
+        allowed_statuses = (
+            {"pending_payment", "pending_accept", "accepted", "booked"}
+            if participant_role == "applicant"
+            else {"accepted", "booked"}
+        )
+        _assert_order_status(
+            order,
+            allowed_statuses,
+            (
+                "即时咨询请先选择暂不接受；已开始或已结束的咨询请通过平台介入处理"
+                if participant_role == "mentor"
+                else "咨询已开始或已结束，请通过平台介入处理"
+            ),
+        )
+
+        paid = str(order.get("payment_status") or "") == "paid"
+        now_iso = _utc_now().isoformat()
+        next_payment_status = _refund_payment_status_for_order(order) if paid else "unpaid"
+        update_data = {
+            "order_status": "cancelled",
+            "payment_status": next_payment_status,
+            "ended_at": now_iso,
+            "refund_amount_cents": int(order.get("price_cents") or 0) if paid else 0,
+            "refund_reference": (
+                _new_refund_reference("CANCEL", order)
+                if paid else None
+            ),
+        }
+        update_query = (
+            supabase.table("mentor_consultation_orders")
+            .update(update_data)
+            .eq("id", normalized_order_id)
+            .eq("order_status", order_status)
+        )
+        # The applicant id is a useful database-level guard for a user
+        # cancellation.  A mentor is verified through the current owner binding
+        # above, because that owner relationship lives on mentor_profiles.
+        if participant_role == "applicant":
+            update_query = update_query.eq("applicant_user_id", user_id)
+        response = call_supabase(
+            update_query.execute,
+            operation_name="consultation order cancel",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+        release_terminal_mentor_booking_slot(supabase, order)
+        cancelled_by_mentor = participant_role == "mentor"
+        _insert_system_message(
+            supabase,
+            normalized_order_id,
+            (
+                "认证前辈因暂时无法服务，已取消本次咨询。"
+                if cancelled_by_mentor
+                else "咨询订单已由咨询用户取消。"
+            ) + (
+                "测试退款已完成。" if next_payment_status == "refunded" else "费用已进入退款处理，完成后会自动同步。"
+                if paid
+                else ""
+            ) + (
+                "如有异议，可在平台处理进度提交问题反馈。"
+                if cancelled_by_mentor
+                else ""
+            ),
+        )
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type=f"order_cancelled_by_{participant_role}",
+            actor_role=participant_role,
+            actor_user_id=user_id,
+            details={
+                "was_paid": paid,
+                "payment_status": next_payment_status,
+                "refund_amount_cents": update_data["refund_amount_cents"],
+                "consultation_type": str(order.get("consultation_type") or ""),
+            },
+        )
+        if paid:
+            _insert_order_event(
+                supabase,
+                normalized_order_id,
+                event_type=("consultation_refund_completed" if next_payment_status == "refunded" else "consultation_refund_requested"),
+                actor_role=participant_role,
+                actor_user_id=user_id,
+                details={
+                    "refund_amount_cents": update_data["refund_amount_cents"],
+                    "refund_reference": update_data["refund_reference"],
+                    "reason": "order_cancelled",
+                },
+            )
+        cancelled_order = response.data[0]
+        if cancelled_by_mentor:
+            _notify_consultation_applicant_order_status(
+                supabase,
+                order=cancelled_order,
+                event="cancelled",
+            )
+        return _serialize_order_item(cancelled_order)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation order cancel failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="取消咨询订单失败") from exc
 
 
 @router.get("/me/orders", response_model=MentorConsultationOrderListResponse)
@@ -1507,11 +2502,30 @@ def decide_mentor_consultation_order(
         order = _refresh_pending_accept_status(supabase, order)
         _assert_order_status(order, {"pending_accept"}, "该订单当前无法处理接单")
 
-        now = _utc_now().isoformat()
+        now = _utc_now()
+        now_iso = now.isoformat()
+        rejection_reason = str(payload.reason or "").strip()
+        rejection_payment_status = _refund_payment_status_for_order(order)
+        questionnaire = dict(order.get("questionnaire") or {})
         update_data = (
-            {"order_status": "accepted", "accepted_at": now, "expires_at": None}
+            {
+                "order_status": "in_progress",
+                "accepted_at": now_iso,
+                "started_at": now_iso,
+                "expires_at": None,
+            }
             if payload.decision == "accept"
-            else {"order_status": "rejected", "payment_status": "refunded", "ended_at": now}
+            else {
+                "order_status": "rejected",
+                "payment_status": rejection_payment_status,
+                "ended_at": now_iso,
+                "refund_amount_cents": int(order.get("price_cents") or 0),
+                "refund_reference": _new_refund_reference("REJECT", order),
+                "questionnaire": {
+                    **questionnaire,
+                    **({"mentor_rejection_reason": rejection_reason} if rejection_reason else {}),
+                },
+            }
         )
         response = call_supabase(
             lambda: (
@@ -1525,7 +2539,68 @@ def decide_mentor_consultation_order(
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
-        return _serialize_order_item(response.data[0])
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="mentor_order_decision",
+            actor_role="mentor",
+            actor_user_id=user_id,
+            details={
+                "decision": payload.decision,
+                "start_deadline": update_data.get("expires_at"),
+                "rejection_reason": rejection_reason or None,
+            },
+        )
+        if payload.decision == "accept":
+            _insert_system_message(
+                supabase,
+                normalized_order_id,
+                f"认证前辈已确认接单，本次 {int(order.get('consultation_window_minutes') or 60)} 分钟咨询已开始。",
+            )
+            _insert_order_event(
+                supabase,
+                normalized_order_id,
+                event_type="consultation_started",
+                actor_role="mentor",
+                actor_user_id=user_id,
+                details={"started_after_acceptance": True},
+            )
+        else:
+            _insert_order_event(
+                supabase,
+                normalized_order_id,
+                event_type=("consultation_refund_completed" if rejection_payment_status == "refunded" else "consultation_refund_requested"),
+                actor_role="mentor",
+                actor_user_id=user_id,
+                details={
+                    "refund_amount_cents": int(order.get("price_cents") or 0),
+                    "refund_reference": update_data.get("refund_reference"),
+                    "reason": "mentor_rejected",
+                },
+            )
+            _insert_system_message(
+                supabase,
+                normalized_order_id,
+                (
+                    f"认证前辈暂未接受本次咨询。说明：{rejection_reason}。测试退款已完成。"
+                    if rejection_reason and rejection_payment_status == "refunded"
+                    else "认证前辈暂未接受本次咨询；测试退款已完成。"
+                )
+                if rejection_payment_status == "refunded"
+                else (
+                    f"认证前辈暂未接受本次咨询。说明：{rejection_reason}。平台已提交退款处理，完成后会自动同步。"
+                    if rejection_reason
+                    else "认证前辈暂未接受本次咨询，平台已提交退款处理，完成后会自动同步。"
+                ),
+            )
+        updated_order = response.data[0]
+        _notify_consultation_applicant_order_status(
+            supabase,
+            order=updated_order,
+            event="accepted" if payload.decision == "accept" else "rejected",
+            detail=rejection_reason if payload.decision != "accept" else "",
+        )
+        return _serialize_order_item(updated_order)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1541,7 +2616,9 @@ def start_mentor_consultation_order(
     normalized_order_id = str(order_id)
     supabase = get_supabase_admin()
     try:
-        order, _, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        if participant_role != "mentor":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="仅认证前辈可以开始本次咨询")
         order = _refresh_pending_accept_status(supabase, order)
         order_status = str(order.get("order_status") or "")
         if order_status == "in_progress":
@@ -1562,7 +2639,7 @@ def start_mentor_consultation_order(
         response = call_supabase(
             lambda: (
                 supabase.table("mentor_consultation_orders")
-                .update({"order_status": "in_progress", "started_at": _utc_now().isoformat()})
+                .update({"order_status": "in_progress", "started_at": _utc_now().isoformat(), "expires_at": None})
                 .eq("id", normalized_order_id)
                 .eq("order_status", order_status)
                 .execute()
@@ -1576,7 +2653,20 @@ def start_mentor_consultation_order(
             normalized_order_id,
             f"前辈已接受咨询，本次 {int(order.get('consultation_window_minutes') or 60)} 分钟咨询窗口已开始。",
         )
-        return _serialize_order_item(response.data[0])
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="consultation_started",
+            actor_role=participant_role,
+            actor_user_id=user_id,
+        )
+        started_order = response.data[0]
+        _notify_consultation_applicant_order_status(
+            supabase,
+            order=started_order,
+            event="started",
+        )
+        return _serialize_order_item(started_order)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1592,24 +2682,66 @@ def complete_mentor_consultation_order(
     normalized_order_id = str(order_id)
     supabase = get_supabase_admin()
     try:
-        order, _, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
         if str(order.get("order_status") or "") == "completed":
             return _serialize_order_item(order)
         _assert_order_status(order, {"in_progress"}, "该订单当前还没有开始咨询")
-        response = call_supabase(
-            lambda: (
-                supabase.table("mentor_consultation_orders")
-                .update({"order_status": "completed", "ended_at": _utc_now().isoformat()})
-                .eq("id", normalized_order_id)
-                .eq("order_status", "in_progress")
-                .execute()
-            ),
-            operation_name="consultation order complete",
+        confirmation_field = (
+            "mentor_completion_confirmed_at"
+            if participant_role == "mentor"
+            else "applicant_completion_confirmed_at"
         )
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
-        _insert_system_message(supabase, normalized_order_id, "本次咨询已结束，聊天记录会继续保留。")
-        return _serialize_order_item(response.data[0])
+        now_iso = _utc_now().isoformat()
+        if not order.get(confirmation_field):
+            response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_orders")
+                    .update({confirmation_field: now_iso})
+                    .eq("id", normalized_order_id)
+                    .eq("order_status", "in_progress")
+                    .execute()
+                ),
+                operation_name="consultation completion confirmation",
+            )
+            if not response.data:
+                raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="订单状态已变化，请刷新后重试")
+            _insert_order_event(
+                supabase,
+                normalized_order_id,
+                event_type="completion_confirmed",
+                actor_role=participant_role,
+                actor_user_id=user_id,
+            )
+
+        current = _get_order_or_404(supabase, normalized_order_id)
+        applicant_confirmed = bool(current.get("applicant_completion_confirmed_at"))
+        mentor_confirmed = bool(current.get("mentor_completion_confirmed_at"))
+        if applicant_confirmed and mentor_confirmed:
+            completed_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_orders")
+                    .update({"order_status": "completed", "ended_at": now_iso})
+                    .eq("id", normalized_order_id)
+                    .eq("order_status", "in_progress")
+                    .execute()
+                ),
+                operation_name="consultation order complete after mutual confirmation",
+            )
+            final_order = completed_response.data[0] if completed_response.data else _get_order_or_404(supabase, normalized_order_id)
+            if completed_response.data and str(final_order.get("order_status") or "") == "completed":
+                _insert_system_message(supabase, normalized_order_id, "双方已确认本次咨询完成，聊天记录会继续保留。")
+                _insert_order_event(
+                    supabase,
+                    normalized_order_id,
+                    event_type="consultation_completed",
+                    actor_role="system",
+                    details={"completion": "mutual_confirmation"},
+                )
+            return _serialize_order_item(final_order)
+
+        other_party = "前辈" if participant_role == "applicant" else "咨询用户"
+        _insert_system_message(supabase, normalized_order_id, f"{ '咨询用户' if participant_role == 'applicant' else '前辈' }已提交结束确认，等待{other_party}确认。")
+        return _serialize_order_item(current)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1621,10 +2753,13 @@ def complete_mentor_consultation_order(
 def list_mentor_consultation_messages(
     order_id: UUID,
     after: datetime | None = Query(default=None),
+    before: datetime | None = Query(default=None),
     limit: int = Query(default=100, ge=1, le=200),
     user_id: str = Depends(get_current_user_id),
 ) -> MentorConsultationMessageListResponse:
     normalized_order_id = str(order_id)
+    if after is not None and before is not None:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="聊天记录游标不能同时使用前后两个方向")
     supabase = get_supabase_admin()
     try:
         _get_order_participant(supabase, normalized_order_id, user_id)
@@ -1635,6 +2770,8 @@ def list_mentor_consultation_messages(
         )
         if after is not None:
             query = query.gt("created_at", after.isoformat())
+        if before is not None:
+            query = query.lt("created_at", before.isoformat())
         response = call_supabase(
             lambda: query.order("created_at", desc=after is None).limit(limit).execute(),
             operation_name="consultation message list",
@@ -1669,8 +2806,25 @@ def create_mentor_consultation_message(
     client_message_id = str(payload.client_message_id or "").strip() or None
     supabase = get_supabase_admin()
     try:
-        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        order, participant_role, mentor = _get_order_participant(supabase, normalized_order_id, user_id)
         _assert_order_status(order, {"in_progress"}, "本次咨询已结束，暂不能继续发送消息")
+        confirmation_field = (
+            "mentor_completion_confirmed_at"
+            if participant_role == "mentor"
+            else "applicant_completion_confirmed_at"
+        )
+        if order.get(confirmation_field):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="你已确认结束本次咨询，正在等待对方确认",
+            )
+        started_at = _as_utc_datetime(order.get("started_at"))
+        consultation_minutes = max(15, min(180, int(order.get("consultation_window_minutes") or 60)))
+        if started_at and started_at + timedelta(minutes=consultation_minutes) <= _utc_now():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="本次服务时间已到，请双方确认结束或发起平台介入",
+            )
         message = {
             "order_id": normalized_order_id,
             "sender_role": participant_role,
@@ -1688,7 +2842,16 @@ def create_mentor_consultation_message(
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="消息发送失败")
-        return MentorConsultationMessageItem(**serialize_mentor_message(response.data[0]))
+        saved_message = response.data[0]
+        _notify_consultation_chat_message(
+            supabase,
+            order=order,
+            mentor=mentor,
+            sender_role=participant_role,
+            sender_user_id=user_id,
+            message=saved_message,
+        )
+        return MentorConsultationMessageItem(**serialize_mentor_message(saved_message))
     except HTTPException:
         raise
     except Exception as exc:
@@ -1753,6 +2916,57 @@ def create_mentor_consultation_review(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="评价提交失败") from exc
 
 
+@router.get("/me/reports", response_model=MentorConsultationReportListResponse)
+def list_my_mentor_consultation_reports(
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportListResponse:
+    """Both parties can trace platform handling progress and the final order outcome."""
+
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_reports")
+                .select(MENTOR_CONSULTATION_REPORT_FIELDS, count="exact")
+                .or_(
+                    f"reporter_user_id.eq.{user_id},respondent_user_id.eq.{user_id},target_user_id.eq.{user_id}"
+                )
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ),
+            operation_name="my consultation report list",
+        )
+        rows = response.data or []
+        evidence_summary = _fetch_consultation_report_evidence_summary(
+            supabase,
+            [str(row.get("id") or "") for row in rows],
+        )
+        appeal_summary = _fetch_consultation_report_appeal_summary(
+            supabase,
+            [str(row.get("id") or "") for row in rows],
+            user_id,
+        )
+        return MentorConsultationReportListResponse(
+            items=[
+                MentorConsultationReportCreateResponse(**_serialize_consultation_report(
+                    row,
+                    user_id=user_id,
+                    evidence_summary=evidence_summary.get(str(row.get("id") or "")),
+                    appeal_summary=appeal_summary.get(str(row.get("id") or "")),
+                ))
+                for row in rows
+            ],
+            count=int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("My consultation report list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报记录暂时不可用") from exc
+
+
 @router.post(
     "/orders/{order_id}/reports",
     response_model=MentorConsultationReportCreateResponse,
@@ -1775,6 +2989,24 @@ def create_mentor_consultation_report(
         if not content or len(content) < 20:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="举报说明请至少填写 20 个字")
 
+        if issue_type == MENTOR_REVIEW_DISPUTE_ISSUE_TYPE:
+            review_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_reviews")
+                    .select("id")
+                    .eq("order_id", normalized_order_id)
+                    .eq("mentor_id", str(mentor.get("id") or ""))
+                    .limit(1)
+                    .execute()
+                ),
+                operation_name="consultation review dispute lookup",
+            )
+            if not review_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="该订单暂未产生服务评价，无法提交评价争议反馈",
+                )
+
         existing_response = call_supabase(
             lambda: (
                 supabase.table("mentor_consultation_reports")
@@ -1787,7 +3019,10 @@ def create_mentor_consultation_report(
             operation_name="consultation report duplicate lookup",
         )
         if existing_response.data:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="本次咨询已提交过举报，如需补充请联系平台")
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="本次咨询已提交过问题反馈；如需补充凭证，请在“平台处理进度”中找到该记录后继续上传",
+            )
 
         target_user_id = None
         target_mentor_id = None
@@ -1801,28 +3036,133 @@ def create_mentor_consultation_report(
             if not target_user_id:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到被举报咨询用户")
 
+        settings = get_settings()
+        case_priority = initial_report_priority(issue_type)
+        first_response_hours = (
+            settings.mentor_consultation_urgent_report_first_response_hours
+            if case_priority == "urgent"
+            else settings.mentor_consultation_report_first_response_hours
+        )
+        first_response_due_at = first_response_deadline(
+            now=_utc_now(),
+            hours=first_response_hours,
+        )
+
         response = call_supabase(
             lambda: supabase.table("mentor_consultation_reports").insert({
                 "order_id": normalized_order_id,
                 "reporter_user_id": user_id,
                 "reporter_role": reporter_role,
+                "respondent_user_id": target_user_id,
                 "target_role": target_role,
                 "target_user_id": target_user_id,
                 "target_mentor_id": target_mentor_id,
                 "issue_type": issue_type,
                 "content": content,
                 "status": "pending",
+                "first_response_due_at": first_response_due_at,
+                "priority": case_priority,
+                "escalation_level": 0,
             }).execute(),
             operation_name="consultation report create",
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报提交失败")
-        return MentorConsultationReportCreateResponse(**_serialize_consultation_report(response.data[0]))
+        _insert_order_event(
+            supabase,
+            normalized_order_id,
+            event_type="consultation_report_created",
+            actor_role=reporter_role,
+            actor_user_id=user_id,
+            details={"report_id": str(response.data[0].get("id") or ""), "issue_type": issue_type},
+        )
+        _insert_system_message(
+            supabase,
+            normalized_order_id,
+            (
+                "平台已收到本次咨询的问题反馈。为保障双方权益，发起方可在“平台处理进度”补充凭证，"
+                "被反馈方可提交说明与凭证；平台将结合订单、聊天和双方材料核实。"
+                f"本案最迟将在 {first_response_hours} 小时内获得平台首次响应。"
+            ),
+        )
+        return MentorConsultationReportCreateResponse(**_serialize_consultation_report(
+            response.data[0],
+            user_id=user_id,
+        ))
     except HTTPException:
         raise
     except Exception as exc:
         logger.warning("Consultation report create failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="举报提交暂时不可用") from exc
+
+
+@router.post(
+    "/reports/{report_id}/response",
+    response_model=MentorConsultationReportCreateResponse,
+)
+def respond_to_mentor_consultation_report(
+    report_id: UUID,
+    payload: MentorConsultationReportResponseRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportCreateResponse:
+    """Allow the reported participant to make or update a factual response before closure."""
+
+    normalized_report_id = str(report_id)
+    content = str(payload.content or "").strip()
+    if len(content) < 20:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="回应说明请至少填写 20 个字")
+
+    supabase = get_supabase_admin()
+    try:
+        report, participation_role = _get_participant_consultation_report_or_404(
+            supabase,
+            normalized_report_id,
+            user_id,
+        )
+        if participation_role != "respondent":
+            raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="只有被反馈方可以提交回应")
+        if str(report.get("status") or "pending") not in {"pending", "reviewing"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该反馈已处理，不能继续提交回应")
+
+        responded_at = _utc_now().isoformat()
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_reports")
+                .update({"respondent_content": content, "responded_at": responded_at})
+                .eq("id", normalized_report_id)
+                .in_("status", ["pending", "reviewing"])
+                .execute()
+            ),
+            operation_name="consultation report respondent response",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该反馈状态已变化，请刷新后重试")
+        updated = response.data[0]
+        order_id = str(updated.get("order_id") or "")
+        _insert_order_event(
+            supabase,
+            order_id,
+            event_type="consultation_report_responded",
+            actor_role=str(updated.get("target_role") or "applicant"),
+            actor_user_id=user_id,
+            details={"report_id": normalized_report_id},
+        )
+        _insert_system_message(
+            supabase,
+            order_id,
+            "被反馈方已补充本次咨询的说明。平台正在结合双方材料、订单和聊天记录核实。",
+        )
+        evidence_summary = _fetch_consultation_report_evidence_summary(supabase, [normalized_report_id])
+        return MentorConsultationReportCreateResponse(**_serialize_consultation_report(
+            updated,
+            user_id=user_id,
+            evidence_summary=evidence_summary.get(normalized_report_id),
+        ))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation report response failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="回应提交暂时不可用") from exc
 
 
 @router.post(
@@ -1836,7 +3176,7 @@ async def upload_mentor_consultation_report_evidence(
     user_id: str = Depends(get_current_user_id),
 ) -> MentorConsultationReportEvidenceUploadResponse:
     data = await file.read(MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES + 1)
-    filename = str(file.filename or "举报凭证").strip()[:255] or "举报凭证"
+    filename = str(file.filename or "咨询凭证").strip()[:255] or "咨询凭证"
     await file.close()
 
     if not data:
@@ -1853,7 +3193,11 @@ async def upload_mentor_consultation_report_evidence(
     bucket = None
     storage_path = ""
     try:
-        report = _get_owned_consultation_report_or_404(supabase, normalized_report_id, user_id)
+        report, participation_role = _get_participant_consultation_report_or_404(
+            supabase,
+            normalized_report_id,
+            user_id,
+        )
         if str(report.get("status") or "pending") not in {"pending", "reviewing"}:
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该举报已处理，不能继续补充凭证")
         count_response = call_supabase(
@@ -1861,17 +3205,18 @@ async def upload_mentor_consultation_report_evidence(
                 supabase.table("mentor_consultation_report_evidence")
                 .select("id", count="exact")
                 .eq("report_id", normalized_report_id)
+                .eq("submitter_role", participation_role)
                 .limit(1)
                 .execute()
             ),
             operation_name="consultation report evidence limit check",
         )
         if int(count_response.count or 0) >= 3:
-            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="最多上传 3 张凭证图片")
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="每一方最多上传 3 张凭证图片")
 
         _ensure_mentor_consultation_report_evidence_bucket(supabase.storage)
         bucket = supabase.storage.from_(MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET)
-        storage_path = f"{user_id}/{normalized_report_id}/{uuid4().hex}.{extension}"
+        storage_path = f"{user_id}/{normalized_report_id}/{participation_role}/{uuid4().hex}.{extension}"
         bucket.upload(
             storage_path,
             data,
@@ -1887,13 +3232,274 @@ async def upload_mentor_consultation_report_evidence(
                 "file_url": storage_path,
                 "file_name": filename,
                 "mime_type": content_type,
+                "submitter_role": participation_role,
             }).execute(),
             operation_name="consultation report evidence create",
         )
         if not response.data:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="凭证图片保存失败")
         evidence = response.data[0]
+        _insert_order_event(
+            supabase,
+            str(report.get("order_id") or ""),
+            event_type="consultation_report_evidence_uploaded",
+            actor_role=(str(report.get("reporter_role") or "applicant") if participation_role == "reporter" else str(report.get("target_role") or "applicant")),
+            actor_user_id=user_id,
+            details={"report_id": normalized_report_id, "submitter_role": participation_role},
+        )
         return MentorConsultationReportEvidenceUploadResponse(
+            id=str(evidence.get("id") or ""),
+            file_name=str(evidence.get("file_name") or filename),
+            mime_type=evidence.get("mime_type") or content_type,
+            submitter_role=str(evidence.get("submitter_role") or participation_role),
+            created_at=evidence.get("created_at") or None,
+        )
+    except HTTPException:
+        if bucket and storage_path:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        raise
+    except Exception as exc:
+        if bucket and storage_path:
+            try:
+                bucket.remove([storage_path])
+            except Exception:
+                pass
+        logger.warning("Consultation report evidence upload failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="凭证图片上传失败") from exc
+
+
+@router.get("/me/report-appeals", response_model=MentorConsultationReportAppealListResponse)
+def list_my_mentor_consultation_report_appeals(
+    limit: int = Query(default=100, ge=1, le=200),
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportAppealListResponse:
+    """Let a participant trace every review request they submitted."""
+
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeals")
+                .select(MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS, count="exact")
+                .eq("appellant_user_id", user_id)
+                .order("created_at", desc=True)
+                .limit(limit)
+                .execute()
+            ),
+            operation_name="my consultation report appeal list",
+        )
+        rows = response.data or []
+        appeal_ids = [str(row.get("id") or "") for row in rows if row.get("id")]
+        evidence_counts = {appeal_id: 0 for appeal_id in appeal_ids}
+        if appeal_ids:
+            evidence_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_consultation_report_appeal_evidence")
+                    .select("appeal_id")
+                    .in_("appeal_id", appeal_ids)
+                    .execute()
+                ),
+                operation_name="my consultation report appeal evidence count",
+            )
+            for evidence in evidence_response.data or []:
+                appeal_id = str(evidence.get("appeal_id") or "")
+                if appeal_id in evidence_counts:
+                    evidence_counts[appeal_id] += 1
+        return MentorConsultationReportAppealListResponse(
+            items=[
+                MentorConsultationReportAppealItem(**_serialize_consultation_report_appeal(
+                    row,
+                    evidence_count=evidence_counts.get(str(row.get("id") or ""), 0),
+                ))
+                for row in rows
+            ],
+            count=int(response.count or len(rows)),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("My consultation report appeal list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="复核记录暂时不可用") from exc
+
+
+@router.post(
+    "/reports/{report_id}/appeals",
+    response_model=MentorConsultationReportAppealItem,
+    status_code=status.HTTP_201_CREATED,
+)
+def create_mentor_consultation_report_appeal(
+    report_id: UUID,
+    payload: MentorConsultationReportAppealCreateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportAppealItem:
+    """Give either party one documented chance to request a review after a decision."""
+
+    normalized_report_id = str(report_id)
+    content = str(payload.content or "").strip()
+    supabase = get_supabase_admin()
+    try:
+        report, participation_role = _get_participant_consultation_report_or_404(
+            supabase,
+            normalized_report_id,
+            user_id,
+        )
+        if str(report.get("status") or "pending") not in {"resolved", "dismissed"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="当前问题反馈仍在处理中，暂不需要申请复核")
+        duplicate_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeals")
+                .select("id")
+                .eq("report_id", normalized_report_id)
+                .eq("appellant_user_id", user_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation report appeal duplicate lookup",
+        )
+        if duplicate_response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="你已申请过本次复核，可在平台处理进度查看结果")
+        settings = get_settings()
+        first_response_hours = settings.mentor_consultation_report_appeal_first_response_hours
+        first_response_due_at = first_response_deadline(
+            now=_utc_now(),
+            hours=first_response_hours,
+        )
+        response = call_supabase(
+            lambda: supabase.table("mentor_consultation_report_appeals").insert({
+                "report_id": normalized_report_id,
+                "appellant_user_id": user_id,
+                "appellant_role": participation_role,
+                "content": content,
+                "status": "pending",
+                "decision": "none",
+                "first_response_due_at": first_response_due_at,
+                "priority": "normal",
+                "escalation_level": 0,
+            }).execute(),
+            operation_name="consultation report appeal create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="复核申请提交失败")
+        appeal = response.data[0]
+        actor_role = str(report.get("reporter_role") or "applicant") if participation_role == "reporter" else str(report.get("target_role") or "applicant")
+        _insert_order_event(
+            supabase,
+            str(report.get("order_id") or ""),
+            event_type="consultation_report_appeal_created",
+            actor_role=actor_role,
+            actor_user_id=user_id,
+            details={"report_id": normalized_report_id, "appeal_id": str(appeal.get("id") or ""), "appellant_role": participation_role},
+        )
+        actor_label = "咨询用户" if actor_role == "applicant" else "认证前辈"
+        _insert_system_message(
+            supabase,
+            str(report.get("order_id") or ""),
+            (
+                f"{actor_label}已申请复核本次平台处理结果。平台将重新核对双方说明、凭证、订单和聊天记录。"
+                f"复核申请最迟将在 {first_response_hours} 小时内获得平台首次响应。"
+            ),
+        )
+        return MentorConsultationReportAppealItem(**_serialize_consultation_report_appeal(appeal))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Consultation report appeal create failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="复核申请暂时不可用") from exc
+
+
+@router.post(
+    "/report-appeals/{appeal_id}/evidence",
+    response_model=MentorConsultationReportAppealEvidenceUploadResponse,
+    status_code=status.HTTP_201_CREATED,
+)
+async def upload_mentor_consultation_report_appeal_evidence(
+    appeal_id: UUID,
+    file: UploadFile = File(...),
+    user_id: str = Depends(get_current_user_id),
+) -> MentorConsultationReportAppealEvidenceUploadResponse:
+    data = await file.read(MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES + 1)
+    filename = str(file.filename or "复核凭证").strip()[:255] or "复核凭证"
+    await file.close()
+    if not data:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="凭证图片为空")
+    if len(data) > MAX_MENTOR_CONSULTATION_REPORT_EVIDENCE_BYTES:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="单张凭证图片不能超过 8 MB")
+    detected = _detect_mentor_verification_document_content_type(data)
+    if not detected:
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="凭证仅支持 PNG、JPG 或 WebP 图片")
+
+    normalized_appeal_id = str(appeal_id)
+    content_type, extension = detected
+    supabase = get_supabase_admin()
+    bucket = None
+    storage_path = ""
+    try:
+        appeal_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeals")
+                .select(MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS)
+                .eq("id", normalized_appeal_id)
+                .eq("appellant_user_id", user_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation report appeal lookup",
+        )
+        if not appeal_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到可补充的复核申请")
+        appeal = appeal_response.data[0]
+        if str(appeal.get("status") or "pending") not in {"pending", "reviewing"}:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该复核已处理，不能继续补充凭证")
+        count_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeal_evidence")
+                .select("id", count="exact")
+                .eq("appeal_id", normalized_appeal_id)
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation report appeal evidence limit check",
+        )
+        if int(count_response.count or 0) >= 3:
+            raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="每次复核最多上传 3 张凭证图片")
+        report, participation_role = _get_participant_consultation_report_or_404(
+            supabase,
+            str(appeal.get("report_id") or ""),
+            user_id,
+        )
+        _ensure_mentor_consultation_report_appeal_evidence_bucket(supabase.storage)
+        bucket = supabase.storage.from_(MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET)
+        storage_path = f"{user_id}/{normalized_appeal_id}/{uuid4().hex}.{extension}"
+        bucket.upload(
+            storage_path,
+            data,
+            file_options={"content-type": content_type, "cache-control": "31536000", "upsert": "false"},
+        )
+        response = call_supabase(
+            lambda: supabase.table("mentor_consultation_report_appeal_evidence").insert({
+                "appeal_id": normalized_appeal_id,
+                "file_url": storage_path,
+                "file_name": filename,
+                "mime_type": content_type,
+            }).execute(),
+            operation_name="consultation report appeal evidence create",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="复核凭证保存失败")
+        evidence = response.data[0]
+        actor_role = str(report.get("reporter_role") or "applicant") if participation_role == "reporter" else str(report.get("target_role") or "applicant")
+        _insert_order_event(
+            supabase,
+            str(report.get("order_id") or ""),
+            event_type="consultation_report_appeal_evidence_uploaded",
+            actor_role=actor_role,
+            actor_user_id=user_id,
+            details={"report_id": str(report.get("id") or ""), "appeal_id": normalized_appeal_id},
+        )
+        return MentorConsultationReportAppealEvidenceUploadResponse(
             id=str(evidence.get("id") or ""),
             file_name=str(evidence.get("file_name") or filename),
             mime_type=evidence.get("mime_type") or content_type,
@@ -1912,5 +3518,5 @@ async def upload_mentor_consultation_report_evidence(
                 bucket.remove([storage_path])
             except Exception:
                 pass
-        logger.warning("Consultation report evidence upload failed (error_type=%s)", type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="凭证图片上传失败") from exc
+        logger.warning("Consultation report appeal evidence upload failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="复核凭证上传失败") from exc

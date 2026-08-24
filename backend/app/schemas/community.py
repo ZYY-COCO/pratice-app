@@ -1,9 +1,10 @@
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
-COMMUNITY_CHAT_CATEGORIES = {"中华文化", "数学基础", "英语运用", "逻辑推理"}
+COMMUNITY_CHAT_CATEGORIES = {"备考日常", "中华文化", "数学基础", "英语运用", "逻辑推理"}
 COMMUNITY_EXPERIENCE_CATEGORIES = {"Z001", "Z002", "专业课", "复试"}
 
 
@@ -46,11 +47,28 @@ class CommunityPostItem(BaseModel):
     stats: CommunityPostStats = Field(default_factory=CommunityPostStats)
     is_featured: bool = False
     liked: bool = False
+    author_verified: bool = False
 
 
 class CommunityPostListResponse(BaseModel):
     items: list[CommunityPostItem]
     count: int = 0
+
+
+class CommunityDeletePostsRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    post_ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class CommunityDeletePostsResponse(BaseModel):
+    deleted_post_ids: list[str] = Field(default_factory=list)
+    deleted_count: int = 0
+
+
+class CommunityDeleteCommentResponse(BaseModel):
+    comment_id: str
+    comment_count: int = 0
 
 
 class CommunityLikedPostItem(CommunityPostItem):
@@ -111,7 +129,7 @@ class CommunityCreatePostRequest(BaseModel):
             message = (
                 "经验贴分类仅支持 Z001、Z002、专业课、复试"
                 if self.post_type == "experience"
-                else "研友聊分类仅支持中华文化、数学基础、英语运用、逻辑推理"
+                else "研友聊分类仅支持备考日常、中华文化、数学基础、英语运用、逻辑推理"
             )
             raise ValueError(message)
         return self
@@ -140,6 +158,86 @@ class CommunityCreateCommentRequest(BaseModel):
 class CommunityCreateCommentResponse(BaseModel):
     comment: CommunityCommentItem
     comment_count: int
+
+
+CommunityReportTargetType = Literal["post", "comment"]
+CommunityReportStatus = Literal["pending", "reviewing", "resolved", "dismissed"]
+CommunityModerationAction = Literal[
+    "none",
+    "hide_post",
+    "restore_post",
+    "hide_comment",
+    "restore_comment",
+]
+
+
+class CommunityCreateReportRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=1, max_length=60)
+    content: str = Field(min_length=10, max_length=500)
+
+
+class CommunityReportItem(BaseModel):
+    id: str
+    target_type: CommunityReportTargetType
+    post_id: str
+    comment_id: str | None = None
+    reason: str
+    content: str = ""
+    status: CommunityReportStatus = "pending"
+    moderation_action: CommunityModerationAction = "none"
+    admin_note: str | None = None
+    target_title: str = ""
+    target_excerpt: str = ""
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
+class CommunityReportListResponse(BaseModel):
+    items: list[CommunityReportItem] = Field(default_factory=list)
+    count: int = 0
+
+
+CommunityAppealStatus = Literal["pending", "reviewing", "resolved", "dismissed"]
+CommunityAppealModerationAction = Literal["none", "restore_post", "restore_comment", "uphold"]
+
+
+class CommunityModerationAppealCreateRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    content: str = Field(min_length=10, max_length=500)
+
+
+class CommunityModerationAppealItem(BaseModel):
+    id: str
+    target_type: CommunityReportTargetType
+    post_id: str
+    comment_id: str | None = None
+    content: str
+    status: CommunityAppealStatus = "pending"
+    moderation_action: CommunityAppealModerationAction = "none"
+    admin_note: str | None = None
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
+class CommunityModerationStatusItem(BaseModel):
+    target_type: CommunityReportTargetType
+    target_id: str
+    post_id: str
+    comment_id: str | None = None
+    title: str = ""
+    excerpt: str = ""
+    is_published: bool = False
+    moderation_note: str | None = None
+    moderated_at: str | None = None
+    appeal: CommunityModerationAppealItem | None = None
+
+
+class CommunityModerationStatusListResponse(BaseModel):
+    items: list[CommunityModerationStatusItem] = Field(default_factory=list)
+    count: int = 0
 
 
 class CommunityViewRequest(BaseModel):

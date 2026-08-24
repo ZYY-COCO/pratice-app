@@ -24,7 +24,9 @@ ADMIN_PROFILE_FIELDS = (
 CONSULTATION_ORDER_FIELDS = (
     "id,order_no,applicant_user_id,mentor_id,slot_id,consultation_type,order_status,"
     "payment_status,questionnaire,price_cents,consultation_window_minutes,"
-    "payment_reference,accepted_at,expires_at,started_at,ended_at,created_at,updated_at"
+    "payment_reference,accepted_at,expires_at,started_at,ended_at,"
+    "applicant_completion_confirmed_at,mentor_completion_confirmed_at,"
+    "refund_amount_cents,refund_reference,created_at,updated_at"
 )
 
 CONSULTATION_MESSAGE_FIELDS = (
@@ -208,6 +210,7 @@ def serialize_mentor_slot(row: dict) -> dict:
 
 def serialize_mentor_order(row: dict) -> dict:
     questionnaire = row.get("questionnaire") if isinstance(row.get("questionnaire"), dict) else {}
+    rejection_reason = str(questionnaire.get("mentor_rejection_reason") or "").strip() or None
     return {
         "id": str(row.get("id") or ""),
         "order_no": str(row.get("order_no") or ""),
@@ -232,6 +235,11 @@ def serialize_mentor_order(row: dict) -> dict:
         "expires_at": row.get("expires_at") or None,
         "started_at": row.get("started_at") or None,
         "ended_at": row.get("ended_at") or None,
+        "applicant_completion_confirmed_at": row.get("applicant_completion_confirmed_at") or None,
+        "mentor_completion_confirmed_at": row.get("mentor_completion_confirmed_at") or None,
+        "refund_amount": round(max(0, int(row.get("refund_amount_cents") or 0)) / 100, 2),
+        "refund_reference": row.get("refund_reference") or None,
+        "rejection_reason": rejection_reason,
         "created_at": row.get("created_at") or None,
         "updated_at": row.get("updated_at") or None,
     }
