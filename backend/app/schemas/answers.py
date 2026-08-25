@@ -3,6 +3,7 @@ from pydantic import BaseModel, Field
 
 class SubmitAnswerRequest(BaseModel):
     question_id: str
+    client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
     selected_answer: str = Field(pattern="^[ABCD]$")
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
@@ -10,6 +11,7 @@ class SubmitAnswerRequest(BaseModel):
 
 class SubmitBatchAnswerItem(BaseModel):
     question_id: str
+    client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
     selected_answer: str = Field(pattern="^[ABCD]$")
     used_time: int = Field(default=0, ge=0)
 
@@ -21,6 +23,7 @@ class SubmitBatchAnswerRequest(BaseModel):
 
 class MarkUnfamiliarRequest(BaseModel):
     question_id: str
+    client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 
@@ -33,6 +36,13 @@ class SubmitAnswerResponse(BaseModel):
     explanation: str
     added_to_wrong_questions: bool
     ability_accuracy: float | None = None
+    submission_id: str | None = None
+    client_submission_id: str | None = None
+    stats_exam_code: str | None = None
+    persisted: bool = True
+    idempotent: bool = False
+    is_first_attempt: bool | None = None
+    attempt_number: int | None = None
 
 
 class SubmitBatchAnswerResponse(BaseModel):
@@ -67,6 +77,10 @@ class AnswerHistoryItem(BaseModel):
     selected_answer: str
     is_correct: bool
     used_time: int | None = 0
+    client_submission_id: str | None = None
+    stats_exam_code: str | None = None
+    attempt_number: int = 1
+    is_first_attempt: bool = False
     created_at: str
     question: AnswerHistoryQuestion | None = None
 

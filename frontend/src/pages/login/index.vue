@@ -343,7 +343,7 @@ const wordmarkSrc = '/static/gangyantong-wordmark.png'
 // #endif
 
 // #ifndef MP-WEIXIN
-const wordmarkSrc = '/static/gangyantong-home-wordmark-4k.png'
+const wordmarkSrc = '/static/gangyantong-home-wordmark.webp'
 // #endif
 
 const mode = ref('login')
@@ -354,8 +354,8 @@ const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
 const HOME_PAGE = '/pages/home/index'
 const QUESTION_PORTAL_PAGE_PREFIXES = [
-  '/pages/admin/question-desktop',
-  '/pages/admin/question-image-import'
+  '/pages-sub-admin/admin/question-desktop',
+  '/pages-sub-admin/admin/question-image-import'
 ]
 const PHONE_AUTH_ENABLED = false
 let WECHAT_AUTH_ENABLED = false
@@ -858,7 +858,7 @@ async function redirectSessionIfNeeded() {
 async function resolvePostLoginDestination() {
   try {
     await fetchQuestionAdminPortalMe()
-    return '/pages/admin/question-desktop'
+    return '/pages-sub-admin/admin/question-desktop'
   } catch {
     // Permission is intentionally checked by the server. Ordinary users keep
     // their original redirect, while question-bank managers enter the portal.

@@ -7,3 +7,11 @@ export function submitBetaFeedback(payload) {
     data: payload
   })
 }
+
+export function fetchMyFeedback(params = {}) {
+  return request({
+    url: '/feedback/me',
+    method: 'GET',
+    data: params
+  })
+}

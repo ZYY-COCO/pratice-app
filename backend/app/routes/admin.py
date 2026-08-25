@@ -104,7 +104,11 @@ from app.services.major_catalog import get_major_catalog, list_published_catalog
 from app.services.question_catalog import validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
 from app.services.school_announcements import get_bundled_announcement_index, list_published_announcement_records
-from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
+from app.services.supabase_resilience import (
+    call_supabase,
+    is_missing_supabase_relation_error,
+    is_transient_supabase_error,
+)
 from app.services.user_notifications import create_user_notification
 
 router = APIRouter(prefix="/admin", tags=["admin"])
@@ -966,6 +970,33 @@ def _assert_bulk_question_ids_manageable(supabase, question_ids: list[str]) -> N
             )
 
 
+def _find_question_reference_ids(supabase, question_ids: list[str]) -> set[str]:
+    """Find user/AI records that would be cascaded by a physical question delete."""
+
+    referenced: set[str] = set()
+    reference_tables = (
+        "user_answers",
+        "wrong_questions",
+        "favorite_questions",
+        "ai_training_session_questions",
+    )
+    for index in range(0, len(question_ids), QUESTION_BULK_SELECT_PAGE_SIZE):
+        batch_ids = question_ids[index : index + QUESTION_BULK_SELECT_PAGE_SIZE]
+        for table_name in reference_tables:
+            try:
+                response = supabase.table(table_name).select("question_id").in_("question_id", batch_ids).execute()
+            except Exception as exc:
+                if is_missing_supabase_relation_error(exc):
+                    continue
+                raise
+            referenced.update(
+                str(row.get("question_id"))
+                for row in (response.data or [])
+                if row.get("question_id")
+            )
+    return referenced
+
+
 def _build_question_status_update_data(question_status: str, admin_profile: dict, current: datetime) -> dict:
     update_data = {
         "status": question_status,
@@ -1000,6 +1031,16 @@ def _update_question_statuses_by_ids(
 
 
 def _delete_questions_by_ids(supabase, question_ids: list[str]) -> int:
+    referenced_ids = _find_question_reference_ids(supabase, question_ids)
+    if referenced_ids:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail=(
+                f"其中 {len(referenced_ids)} 道题已有作答、错题、收藏或 AI 训练记录，"
+                "为保护学习统计请先归档题目，不执行物理删除"
+            ),
+        )
+
     deleted_count = 0
     for index in range(0, len(question_ids), QUESTION_BULK_UPDATE_CHUNK_SIZE):
         batch_ids = question_ids[index : index + QUESTION_BULK_UPDATE_CHUNK_SIZE]
@@ -2384,7 +2425,29 @@ def admin_update_feedback_status(
         target_id=feedback_id,
         details={"status": payload.status},
     )
-    return response.data[0]
+    updated_feedback = response.data[0]
+    feedback_user_id = str(updated_feedback.get("user_id") or "").strip()
+    if feedback_user_id:
+        status_copy = {
+            "open": ("你的反馈已重新进入处理中", "平台正在继续核实你提交的问题。"),
+            "reviewed": ("你的反馈已有处理进展", "平台已查看反馈，并记录了当前处理进展。"),
+            "resolved": ("你的反馈已处理完成", "平台已完成本次反馈处理，请查看处理结果。"),
+            "ignored": ("你的反馈处理结果已更新", "平台已完成评估，请查看本次反馈的处理说明。"),
+        }.get(payload.status, ("你的反馈状态已更新", "请查看最新处理结果。"))
+        admin_note = str(updated_feedback.get("admin_note") or "").strip()
+        create_user_notification(
+            supabase,
+            recipient_user_id=feedback_user_id,
+            category="official",
+            notification_type="feedback_status_updated",
+            title=status_copy[0],
+            summary=admin_note or status_copy[1],
+            content=admin_note or status_copy[1],
+            related_type="beta_feedback",
+            related_id=f"{feedback_id}:{payload.status}",
+            route_path="/pages/feedback/index",
+        )
+    return updated_feedback
 
 
 @router.get("/question-portal/me", response_model=QuestionAdminPortalMeResponse)

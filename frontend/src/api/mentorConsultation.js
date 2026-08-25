@@ -130,11 +130,45 @@ export function createMentorConsultationOrder(payload) {
   })
 }
 
-export function mockPayMentorConsultationOrder(orderId) {
+export function fetchMentorConsultationPaymentCapability() {
+  return request({
+    url: '/mentor-consultation/payment-capability',
+    method: 'GET',
+    header: { Authorization: '' },
+    authRedirect: false
+  })
+}
+
+// 仅由本地开发态的免支付确认调用；服务端仍要求显式开启本地开关。
+export function confirmMentorConsultationLocalRehearsal(orderId) {
   return request({
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/mock-pay`,
     method: 'POST',
     data: {}
+  })
+}
+
+export function createMentorConsultationPaymentIntent(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/payment-intent`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function cancelMentorConsultationOrder(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/cancel`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+export function fetchMyMentorConsultationOrders(params = {}) {
+  return request({
+    url: '/mentor-consultation/me/orders',
+    method: 'GET',
+    data: params
   })
 }
 
@@ -145,11 +179,11 @@ export function fetchMentorConsultationOrder(orderId) {
   })
 }
 
-export function decideMentorConsultationOrder(orderId, decision) {
+export function decideMentorConsultationOrder(orderId, decision, reason = '') {
   return request({
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/decision`,
     method: 'POST',
-    data: { decision }
+    data: { decision, reason: String(reason || '').trim() }
   })
 }
 
@@ -164,6 +198,15 @@ export function startMentorConsultationOrder(orderId) {
 export function completeMentorConsultationOrder(orderId) {
   return request({
     url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/complete`,
+    method: 'POST',
+    data: {}
+  })
+}
+
+// 仅由本地开发态的免支付流程调用，自动完成双方结束确认。
+export function completeMentorConsultationLocalRehearsal(orderId) {
+  return request({
+    url: `/mentor-consultation/orders/${encodeURIComponent(orderId)}/local-rehearsal-complete`,
     method: 'POST',
     data: {}
   })
@@ -204,9 +247,46 @@ export function createMentorConsultationReport(orderId, payload) {
   })
 }
 
+export function fetchMyMentorConsultationReports(params = {}) {
+  return request({
+    url: '/mentor-consultation/me/reports',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function respondToMentorConsultationReport(reportId, payload) {
+  return request({
+    url: `/mentor-consultation/reports/${encodeURIComponent(reportId)}/response`,
+    method: 'POST',
+    data: payload,
+    timeout: 20000
+  })
+}
+
 export function uploadMentorConsultationReportEvidence(reportId, { filePath, file, fileName }) {
   return uploadFileRequest({
     url: `/mentor-consultation/reports/${encodeURIComponent(reportId)}/evidence`,
+    filePath,
+    file,
+    fileName,
+    name: 'file',
+    timeout: 120000
+  })
+}
+
+export function createMentorConsultationReportAppeal(reportId, payload) {
+  return request({
+    url: `/mentor-consultation/reports/${encodeURIComponent(reportId)}/appeals`,
+    method: 'POST',
+    data: payload,
+    timeout: 20000
+  })
+}
+
+export function uploadMentorConsultationReportAppealEvidence(appealId, { filePath, file, fileName }) {
+  return uploadFileRequest({
+    url: `/mentor-consultation/report-appeals/${encodeURIComponent(appealId)}/evidence`,
     filePath,
     file,
     fileName,

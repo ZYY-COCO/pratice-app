@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, Query
+from fastapi import APIRouter, Depends, Query
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
@@ -66,7 +66,6 @@ def history(
 @router.post("/submit", response_model=SubmitAnswerResponse)
 def submit(
     payload: SubmitAnswerRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
 ) -> SubmitAnswerResponse:
     supabase = get_supabase_admin()
@@ -79,8 +78,7 @@ def submit(
         requested_exam_code=payload.exam_code,
         include_ability_accuracy=False,
     )
-    background_tasks.add_task(
-        persist_answer_submission,
+    persisted = persist_answer_submission(
         user_id=user_id,
         question={
             "id": result["question_id"],
@@ -93,14 +91,16 @@ def submit(
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,
         is_correct=result["is_correct"],
+        client_submission_id=payload.client_submission_id,
     )
+    result.update(persisted)
+    result["ability_accuracy"] = persisted.get("ability_accuracy")
     return SubmitAnswerResponse(**result)
 
 
 @router.post("/submit-batch", response_model=SubmitBatchAnswerResponse)
 def submit_batch(
     payload: SubmitBatchAnswerRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
 ) -> SubmitBatchAnswerResponse:
     supabase = get_supabase_admin()
@@ -116,8 +116,7 @@ def submit_batch(
             requested_exam_code=payload.exam_code,
             include_ability_accuracy=False,
         )
-        background_tasks.add_task(
-            persist_answer_submission,
+        persisted = persist_answer_submission(
             user_id=user_id,
             question={
                 "id": result["question_id"],
@@ -130,7 +129,10 @@ def submit_batch(
             selected_answer=item.selected_answer,
             used_time=item.used_time,
             is_correct=result["is_correct"],
+            client_submission_id=item.client_submission_id,
         )
+        result.update(persisted)
+        result["ability_accuracy"] = persisted.get("ability_accuracy")
         items.append(SubmitAnswerResponse(**result))
 
     return SubmitBatchAnswerResponse(items=items)
@@ -148,7 +150,7 @@ def mark_unfamiliar(
         question_id=payload.question_id,
         requested_exam_code=payload.exam_code,
     )
-    persist_answer_submission(
+    persisted = persist_answer_submission(
         user_id=user_id,
         question={
             "id": result["question_id"],
@@ -161,5 +163,8 @@ def mark_unfamiliar(
         selected_answer=result["selected_answer"],
         used_time=payload.used_time,
         is_correct=False,
+        client_submission_id=payload.client_submission_id,
     )
+    result.update(persisted)
+    result["ability_accuracy"] = persisted.get("ability_accuracy")
     return SubmitAnswerResponse(**result)

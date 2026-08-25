@@ -76,11 +76,18 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 
 <style scoped>
 .mentor-card {
-  padding: 28rpx;
-  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
+  padding: 26rpx;
+  border: 2rpx solid rgba(229, 226, 224, 0.94);
   border-radius: 30rpx;
-  background: var(--gyt-panel-bg, #ffffff);
-  box-shadow: 0 16rpx 38rpx rgba(52, 120, 246, 0.08);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 10rpx 28rpx rgba(48, 42, 38, 0.05);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
@@ -104,18 +111,18 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 .mentor-service-row,
 .mentor-card-footer {
   justify-content: space-between;
-  gap: 18rpx;
+  gap: 10rpx;
 }
 
 .mentor-person {
   min-width: 0;
   flex: 1;
-  gap: 16rpx;
+  gap: 14rpx;
 }
 
 .mentor-avatar {
-  width: 74rpx;
-  height: 74rpx;
+  width: 82rpx;
+  height: 82rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.84);
   border-radius: 50%;
   color: #3478f6;
@@ -127,6 +134,7 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   line-height: 1;
   font-weight: 900;
   flex-shrink: 0;
+  box-shadow: 0 6rpx 16rpx rgba(35, 76, 139, 0.1);
 }
 
 .mentor-avatar image {
@@ -162,10 +170,11 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 
 .mentor-name-row {
   min-width: 0;
-  gap: 10rpx;
+  gap: 8rpx;
 }
 
 .mentor-name {
+  min-width: 0;
   color: #172033;
   overflow: hidden;
   font-size: 29rpx;
@@ -176,11 +185,11 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-verified {
-  padding: 5rpx 10rpx;
+  padding: 5rpx 9rpx;
   border-radius: 999rpx;
   background: #eaf2ff;
   color: #3478f6;
-  font-size: 18rpx;
+  font-size: 17rpx;
   line-height: 1.2;
   font-weight: 800;
   flex-shrink: 0;
@@ -188,9 +197,9 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 
 .mentor-school {
   margin-top: 7rpx;
-  color: #65758b;
+  color: #5f6f85;
   overflow: hidden;
-  font-size: 21rpx;
+  font-size: 22rpx;
   line-height: 1.25;
   font-weight: 700;
   text-overflow: ellipsis;
@@ -198,10 +207,10 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-favorite {
-  width: 56rpx;
-  height: 56rpx;
-  min-width: 56rpx;
-  min-height: 56rpx;
+  width: 54rpx;
+  height: 54rpx;
+  min-width: 54rpx;
+  min-height: 54rpx;
   margin: 0;
   padding: 0;
   border: 0;
@@ -211,7 +220,7 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 35rpx;
+  font-size: 32rpx;
   line-height: 1;
   transition: transform 180ms ease, color 180ms ease, background-color 180ms ease;
 }
@@ -232,25 +241,37 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-major-row {
-  margin-top: 23rpx;
-  color: #41556e;
-  font-size: 24rpx;
+  margin-top: 20rpx;
+  padding: 16rpx 18rpx;
+  border-radius: 18rpx;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: #354b68;
+  font-size: 23rpx;
   line-height: 1.35;
   font-weight: 800;
 }
 
+.mentor-major-row > text:first-child {
+  min-width: 0;
+  flex: 1;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 .mentor-score {
   color: #3478f6;
-  font-size: 22rpx;
+  font-size: 21rpx;
+  font-weight: 900;
   white-space: nowrap;
 }
 
 .mentor-bio {
-  margin-top: 14rpx;
-  color: #65758b;
-  font-size: 23rpx;
-  line-height: 1.62;
-  font-weight: 600;
+  margin-top: 16rpx;
+  color: #56667d;
+  font-size: 22rpx;
+  line-height: 1.6;
+  font-weight: 560;
   display: -webkit-box;
   overflow: hidden;
   -webkit-box-orient: vertical;
@@ -258,25 +279,27 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-skills {
-  margin-top: 18rpx;
+  min-height: 46rpx;
+  margin-top: 14rpx;
+  overflow: hidden;
   display: flex;
   flex-wrap: wrap;
-  gap: 10rpx;
+  gap: 9rpx;
 }
 
 .mentor-skills text {
   padding: 8rpx 13rpx;
-  border-radius: 14rpx;
+  border-radius: 999rpx;
   background: rgba(237, 244, 255, 0.92);
   color: #4b6fa8;
-  font-size: 20rpx;
+  font-size: 18rpx;
   line-height: 1.2;
   font-weight: 800;
 }
 
 .mentor-service-row {
-  margin-top: 21rpx;
-  padding-top: 19rpx;
+  margin-top: 18rpx;
+  padding-top: 16rpx;
   border-top: 2rpx solid rgba(78, 113, 151, 0.1);
 }
 
@@ -285,7 +308,7 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: 8rpx 14rpx;
+  gap: 6rpx 12rpx;
   color: #728198;
   font-size: 20rpx;
   line-height: 1.3;
@@ -304,8 +327,8 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   color: #718197;
   display: inline-flex;
   align-items: center;
-  gap: 7rpx;
-  font-size: 19rpx;
+  gap: 5rpx;
+  font-size: 18rpx;
   line-height: 1.2;
   font-weight: 800;
   white-space: nowrap;
@@ -318,8 +341,8 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-status-dot {
-  width: 10rpx;
-  height: 10rpx;
+  width: 9rpx;
+  height: 9rpx;
   border-radius: 50%;
   background: #a5b0bf;
 }
@@ -330,27 +353,27 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-card-footer {
-  margin-top: 23rpx;
+  margin-top: 18rpx;
 }
 
 .mentor-price text {
   color: #172033;
-  font-size: 31rpx;
+  font-size: 29rpx;
   line-height: 1.1;
   font-weight: 900;
 }
 
 .mentor-price view {
-  margin-top: 7rpx;
+  margin-top: 6rpx;
   color: #8694a8;
-  font-size: 19rpx;
+  font-size: 18rpx;
   line-height: 1.2;
   font-weight: 650;
 }
 
 .mentor-consult-button {
-  min-width: 164rpx;
-  min-height: 66rpx;
+  min-width: 168rpx;
+  min-height: 70rpx;
   margin: 0;
   padding: 0 22rpx;
   border: 0;
@@ -360,7 +383,7 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 23rpx;
+  font-size: 22rpx;
   line-height: 1.2;
   font-weight: 900;
   box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.18));
@@ -370,19 +393,20 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 
 @media (max-width: 350px) {
   .mentor-card {
-    padding: 23rpx;
+    padding: 22rpx;
   }
 
   .mentor-verified {
-    padding-right: 8rpx;
-    padding-left: 8rpx;
-    font-size: 17rpx;
+    padding-right: 7rpx;
+    padding-left: 7rpx;
+    font-size: 15rpx;
   }
 
   .mentor-consult-button {
-    min-width: 146rpx;
+    min-width: 148rpx;
     padding-right: 16rpx;
     padding-left: 16rpx;
+    font-size: 20rpx;
   }
 }
 </style>

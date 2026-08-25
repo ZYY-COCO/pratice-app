@@ -1,44 +1,23 @@
 <template>
   <view class="page liked-posts-page" :style="pageInlineStyle">
-    <view class="liked-posts-topbar">
-      <button class="liked-posts-back" hover-class="none" aria-label="返回" @tap="goBack">
-        <image src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
-      <view class="liked-posts-title">赞过的帖子</view>
-      <view class="liked-posts-topbar-spacer"></view>
-    </view>
-    <view class="liked-posts-header-spacer"></view>
-
-    <view class="liked-posts-summary">
-      <view class="liked-posts-summary-icon">赞</view>
-      <view class="liked-posts-summary-copy">
-        <view class="liked-posts-summary-title">我的研圈点赞</view>
-        <view class="liked-posts-summary-desc">按点赞时间展示，随时回看你认可的内容。</view>
-      </view>
-      <view class="liked-posts-summary-count">
-        <text class="liked-posts-summary-number">{{ likedPosts.length }}</text>
-        <text class="liked-posts-summary-label">篇</text>
-      </view>
-    </view>
-
-    <view class="liked-posts-list-head">
-      <text>最近点赞</text>
-      <text>取消点赞后会从这里移除</text>
-    </view>
+    <AppPageHeader title="赞过的帖子" @back="goBack" />
 
     <view v-if="loading" class="liked-posts-state-card">正在同步你赞过的帖子...</view>
     <view v-else-if="error" class="liked-posts-state-card liked-posts-state-card--warning">
       <text>{{ error }}</text>
       <button hover-class="none" @tap="loadLikedPosts">重新加载</button>
     </view>
-    <view v-else-if="likedPosts.length === 0" class="liked-posts-empty-card">
-      <view class="liked-posts-empty-icon">赞</view>
-      <view class="liked-posts-empty-title">还没有点赞过帖子</view>
-      <view class="liked-posts-empty-copy">在研圈看到有帮助的内容时点个赞，它会自动收藏到这里。</view>
-      <button class="liked-posts-empty-action" hover-class="none" @tap="goToCircle">去研圈看看</button>
+    <view v-else-if="likedPosts.length === 0" class="liked-posts-empty-state" aria-label="暂无点赞帖子">
+      <image
+        class="liked-posts-empty-image"
+        src="/static/ui-icons/empty-favorites.svg"
+        mode="aspectFit"
+        alt="暂无点赞帖子"
+      />
     </view>
 
-    <view v-else class="liked-posts-list">
+    <scroll-view v-else scroll-y class="liked-posts-list-scroll" @scrolltolower="loadMoreLikedPosts">
+      <view class="liked-posts-list">
       <view v-for="post in likedPosts" :key="post.id" class="liked-post-card" @tap="openPost(post)">
         <view class="liked-post-card-header">
           <view class="liked-post-avatar" :class="`tone-${post.tone}`">
@@ -81,7 +60,11 @@
           </button>
         </view>
       </view>
-    </view>
+      </view>
+      <view class="liked-posts-load-state" @tap="loadMoreLikedPosts">
+        {{ loadingMore ? '正在加载更多…' : hasMore ? '继续下滑加载更多' : '已加载全部点赞' }}
+      </view>
+    </scroll-view>
 
     <!-- #ifdef H5 -->
     <IcpFooter />
@@ -93,6 +76,7 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import { fetchLikedCommunityPosts, toggleCommunityPostLike } from '../../api/community'
 import { isLoggedIn } from '../../utils/auth'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
@@ -105,6 +89,9 @@ const likedPosts = ref([])
 const loading = ref(false)
 const error = ref('')
 const likingPostId = ref('')
+const loadingMore = ref(false)
+const nextCursor = ref('')
+const hasMore = ref(false)
 
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
@@ -116,18 +103,38 @@ onShow(() => {
 })
 
 async function loadLikedPosts() {
-  if (loading.value) return
+  if (loading.value || loadingMore.value) return
   loading.value = true
+  nextCursor.value = ''
+  hasMore.value = false
   error.value = ''
   try {
-    const response = await fetchLikedCommunityPosts({ limit: 100 })
+    const response = await fetchLikedCommunityPosts({ limit: 30 })
     likedPosts.value = Array.isArray(response?.items)
       ? response.items.map(normalizeLikedPost).filter((item) => item.id)
       : []
+    nextCursor.value = String(response?.next_cursor || '')
+    hasMore.value = response?.has_more === true
   } catch (requestError) {
     error.value = requestError?.detail || '赞过的帖子读取失败，请稍后重试'
   } finally {
     loading.value = false
+  }
+}
+
+async function loadMoreLikedPosts() {
+  if (loading.value || loadingMore.value || !hasMore.value || !nextCursor.value) return
+  loadingMore.value = true
+  try {
+    const response = await fetchLikedCommunityPosts({ limit: 30, cursor: nextCursor.value })
+    const nextItems = Array.isArray(response?.items) ? response.items.map(normalizeLikedPost).filter((item) => item.id) : []
+    likedPosts.value = [...likedPosts.value, ...nextItems.filter((item) => !likedPosts.value.some((existing) => existing.id === item.id))]
+    nextCursor.value = String(response?.next_cursor || '')
+    hasMore.value = response?.has_more === true
+  } catch (requestError) {
+    uni.showToast({ title: requestError?.detail || '更多点赞记录读取失败', icon: 'none' })
+  } finally {
+    loadingMore.value = false
   }
 }
 
@@ -188,10 +195,6 @@ function openPost(post) {
   })
 }
 
-function goToCircle() {
-  uni.navigateTo({ url: '/pages/home/index?tab=circle&section=community&communityTab=chat' })
-}
-
 function goLogin() {
   uni.reLaunch({
     url: `/pages/login/index?redirect=${encodeURIComponent('/pages/circle/liked-posts')}`
@@ -221,172 +224,29 @@ function formatDateTime(value) {
 
 <style scoped>
 .liked-posts-page {
-  min-height: 100vh;
-  min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 18rpx) 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
+  height: 100vh;
+  height: 100dvh;
+  padding: 0;
   box-sizing: border-box;
-  overflow-x: hidden;
+  overflow: hidden;
   background:
     radial-gradient(circle at 91% 2%, var(--gyt-primary-soft, #eef5ff) 0, transparent 30%),
     var(--gyt-page-bg, #f5f7fb);
-}
-
-.liked-posts-topbar {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 24;
-  min-height: 96rpx;
-  padding: 18rpx 24rpx;
-  box-sizing: border-box;
-  display: grid;
-  grid-template-columns: 60rpx 1fr 60rpx;
-  align-items: center;
-  gap: 12rpx;
-  background: rgba(248, 250, 255, 0.78);
-  box-shadow: 0 12rpx 28rpx rgba(25, 48, 89, 0.04);
-  -webkit-backdrop-filter: blur(18rpx);
-  backdrop-filter: blur(18rpx);
-}
-
-.liked-posts-back,
-.liked-posts-topbar-spacer {
-  width: 60rpx;
-  height: 60rpx;
-}
-
-.liked-posts-back {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 22rpx;
-  background: #ffffff;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 10rpx 26rpx rgba(25, 48, 89, 0.06);
+  flex-direction: column;
 }
 
-.liked-posts-back::after,
 .liked-posts-state-card button::after,
-.liked-posts-empty-action::after,
 .liked-post-unlike::after {
   border: 0;
 }
 
-.liked-posts-back image {
-  width: 28rpx;
-  height: 28rpx;
-}
-
-.liked-posts-title {
-  color: #172033;
-  font-size: 31rpx;
-  line-height: 1.2;
-  font-weight: 900;
-  text-align: center;
-}
-
-.liked-posts-header-spacer {
-  width: 100%;
-  height: 102rpx;
-}
-
-.liked-posts-summary {
-  min-height: 150rpx;
-  padding: 24rpx;
-  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
-  border-radius: 30rpx;
-  background: linear-gradient(135deg, #ffffff, var(--gyt-primary-soft, #eef5ff));
-  box-shadow: 0 14rpx 32rpx rgba(25, 48, 89, 0.06);
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  box-sizing: border-box;
-}
-
-.liked-posts-summary-icon {
-  width: 76rpx;
-  height: 76rpx;
-  border-radius: 24rpx;
-  background: var(--gyt-primary, #3478f6);
-  color: #ffffff;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 32rpx;
-  line-height: 1;
-  font-weight: 900;
-  box-shadow: 0 12rpx 24rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2));
-  flex-shrink: 0;
-}
-
-.liked-posts-summary-copy {
-  min-width: 0;
-  flex: 1;
-}
-
-.liked-posts-summary-title {
-  color: #172033;
-  font-size: 29rpx;
-  line-height: 1.25;
-  font-weight: 900;
-}
-
-.liked-posts-summary-desc {
-  margin-top: 8rpx;
-  color: #68758c;
-  font-size: 22rpx;
-  line-height: 1.55;
-}
-
-.liked-posts-summary-count {
-  padding-left: 10rpx;
-  color: var(--gyt-primary, #3478f6);
-  white-space: nowrap;
-}
-
-.liked-posts-summary-number {
-  font-size: 40rpx;
-  line-height: 1;
-  font-weight: 900;
-}
-
-.liked-posts-summary-label {
-  margin-left: 4rpx;
-  font-size: 22rpx;
-  font-weight: 800;
-}
-
-.liked-posts-list-head {
-  margin: 30rpx 4rpx 18rpx;
-  display: flex;
-  align-items: baseline;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.liked-posts-list-head text:first-child {
-  color: #172033;
-  font-size: 29rpx;
-  line-height: 1.2;
-  font-weight: 900;
-}
-
-.liked-posts-list-head text:last-child {
-  color: #8a97ac;
-  font-size: 20rpx;
-  line-height: 1.3;
-  text-align: right;
-}
-
-.liked-posts-state-card,
-.liked-posts-empty-card {
+.liked-posts-state-card {
+  margin: 0 24rpx;
   padding: 42rpx 30rpx;
-  border: 2rpx solid #e4ebf8;
+  border: 2rpx solid var(--gyt-primary-border, #e4ebf8);
   border-radius: 28rpx;
-  background: rgba(255, 255, 255, 0.94);
+  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.94));
   color: #6c7890;
   font-size: 24rpx;
   line-height: 1.6;
@@ -412,66 +272,41 @@ function formatDateTime(value) {
   font-weight: 800;
 }
 
-.liked-posts-empty-card {
-  padding-top: 54rpx;
-  padding-bottom: 50rpx;
-}
-
-.liked-posts-empty-icon {
-  width: 84rpx;
-  height: 84rpx;
-  margin: 0 auto 20rpx;
-  border-radius: 28rpx;
-  background: var(--gyt-primary-soft, #eef5ff);
-  color: var(--gyt-primary, #3478f6);
+.liked-posts-empty-state {
+  width: 100%;
+  min-height: 320rpx;
+  flex: 1 1 320rpx;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 34rpx;
-  font-weight: 900;
 }
 
-.liked-posts-empty-title {
-  color: #172033;
-  font-size: 28rpx;
-  line-height: 1.3;
-  font-weight: 900;
-}
-
-.liked-posts-empty-copy {
-  max-width: 500rpx;
-  margin: 12rpx auto 0;
-  color: #7d8aa0;
-  font-size: 22rpx;
-  line-height: 1.65;
-}
-
-.liked-posts-empty-action {
-  height: 72rpx;
-  margin-top: 28rpx;
-  padding: 0 34rpx;
-  border: 0;
-  border-radius: 22rpx;
-  background: var(--gyt-primary, #3478f6);
-  color: #ffffff;
-  font-size: 24rpx;
-  line-height: 72rpx;
-  font-weight: 900;
-  box-shadow: 0 12rpx 24rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.18));
+.liked-posts-empty-image {
+  width: 240rpx;
+  height: 240rpx;
+  max-width: 150px;
+  max-height: 150px;
+  display: block;
+  opacity: 0.92;
 }
 
 .liked-posts-list {
+  padding: 0 24rpx;
   display: flex;
   flex-direction: column;
   gap: 18rpx;
 }
 
+.liked-posts-list-scroll { min-height: 0; flex: 1; }
+.liked-posts-load-state { padding: 22rpx 24rpx calc(24rpx + env(safe-area-inset-bottom)); color: #8a97aa; font-size: 19rpx; line-height: 1.4; font-weight: 750; text-align: center; }
+
+
 .liked-post-card {
   padding: 26rpx;
-  border: 2rpx solid #e5edf9;
+  border: 2rpx solid var(--gyt-primary-border, #e5edf9);
   border-radius: 30rpx;
-  background: rgba(255, 255, 255, 0.96);
-  box-shadow: 0 12rpx 30rpx rgba(25, 48, 89, 0.055);
+  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.96));
+  box-shadow: 0 12rpx 30rpx var(--gyt-primary-shadow, rgba(25, 48, 89, 0.055));
   box-sizing: border-box;
 }
 
@@ -663,18 +498,4 @@ function formatDateTime(value) {
   opacity: 0.68;
 }
 
-/* #ifdef MP-WEIXIN */
-.liked-posts-page {
-  padding-top: var(--mp-page-content-top, 96px);
-}
-
-.liked-posts-topbar {
-  top: var(--mp-page-content-top, 96px);
-  min-height: var(--mp-page-header-height, 40px);
-}
-
-.liked-posts-header-spacer {
-  height: calc(var(--mp-page-header-height, 40px) + 24rpx);
-}
-/* #endif */
 </style>

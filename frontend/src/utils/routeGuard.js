@@ -2,13 +2,26 @@ import { isLoggedIn } from './auth'
 
 const LOGIN_PAGE = '/pages/login/index'
 const HOME_PAGE = '/pages/home/index'
+const PUBLIC_PAGE_PATHS = new Set([
+  HOME_PAGE,
+  LOGIN_PAGE,
+  '/pages-sub-data/major-catalog/index',
+  '/pages-sub-data/school-announcements/index',
+  '/pages-sub-consultation/consultation/mentor-detail',
+  '/pages/version/index',
+  '/pages/subjects/index',
+  '/pages/pro/index',
+  '/pages/about/index',
+  '/pages/legal/user-agreement',
+  '/pages-sub-admin/admin/question-login'
+])
 
 export function enforceAuthOnCurrentPage() {
   setTimeout(() => {
     const currentUrl = getCurrentPageUrl()
     const currentPath = stripQuery(currentUrl)
 
-    if (!currentPath || currentPath === LOGIN_PAGE || isLoggedIn()) {
+    if (!currentPath || isPublicRoute(currentPath) || isLoggedIn()) {
       return
     }
 
@@ -16,6 +29,10 @@ export function enforceAuthOnCurrentPage() {
       url: `${LOGIN_PAGE}?redirect=${encodeURIComponent(currentUrl)}`
     })
   }, 0)
+}
+
+export function isPublicRoute(url = '') {
+  return PUBLIC_PAGE_PATHS.has(stripQuery(url))
 }
 
 export function redirectIfAlreadyAuthed(targetUrl = HOME_PAGE) {

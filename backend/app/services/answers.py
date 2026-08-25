@@ -1,5 +1,6 @@
 from collections import OrderedDict
 from datetime import datetime, timezone
+import logging
 from threading import Lock
 from time import monotonic
 
@@ -8,9 +9,11 @@ from supabase import Client
 
 from app.db import get_supabase_admin
 from app.services.question_sources import is_ai_generated_question
+from app.services.supabase_resilience import call_supabase, is_missing_supabase_relation_error
 
 VERSION_EXAM_CODES = {"Z001", "Z002"}
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
+logger = logging.getLogger(__name__)
 
 # Question lists already read complete active question records before answers
 # are stripped from the API response.  Retain only the grading fields in a
@@ -237,27 +240,200 @@ def persist_answer_submission(
     selected_answer: str,
     used_time: int,
     is_correct: bool,
-) -> None:
+    client_submission_id: str | None = None,
+) -> dict:
+    """Persist one answer synchronously and return its durable submission facts.
+
+    The third-batch migration exposes one transaction RPC.  A small synchronous
+    compatibility path remains for a rolling local deployment before that SQL is
+    applied; it keeps the UI usable while clearly logging that atomic guarantees
+    start after the migration.
+    """
+
+    supabase = get_supabase_admin()
+    question_id = str(question["id"])
+    normalized_client_id = str(client_submission_id or "").strip() or None
+    rpc_payload = {
+        "p_user_id": user_id,
+        "p_question_id": question_id,
+        "p_client_submission_id": normalized_client_id,
+        "p_selected_answer": selected_answer,
+        "p_is_correct": bool(is_correct),
+        "p_used_time": int(used_time or 0),
+        "p_exam_code": str(question.get("exam_code") or ""),
+        "p_subject": str(question.get("subject") or ""),
+        "p_module": str(question.get("module") or ""),
+        "p_submodule": str(question.get("submodule") or ""),
+        "p_is_ai_generated": is_ai_generated_question(question),
+    }
+
     try:
-        supabase = get_supabase_admin()
-        question_id = question["id"]
+        response = call_supabase(
+            lambda: supabase.rpc("record_answer_submission", rpc_payload).execute(),
+            operation_name="answer submission atomic record",
+        )
+        data = response.data
+        if isinstance(data, list):
+            data = data[0] if data else None
+        if not isinstance(data, dict):
+            raise RuntimeError("answer submission RPC returned no result")
+        return data
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_text = str(exc).lower()
+        if "answer_submission_conflict" in error_text:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="同一提交标识已用于不同答案，请生成新的提交标识后重试",
+            ) from exc
+        if not is_missing_supabase_relation_error(exc):
+            logger.warning(
+                "Atomic answer submission failed (question_id=%s error_type=%s)",
+                question_id,
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="作答记录暂时无法保存，请稍后重试",
+            ) from exc
 
-        supabase.table("user_answers").insert(
-            {
-                "user_id": user_id,
-                "question_id": question_id,
-                "selected_answer": selected_answer,
-                "is_correct": is_correct,
-                "used_time": used_time,
-            }
-        ).execute()
+        logger.warning(
+            "Answer reliability migration is not deployed; using compatibility persistence "
+            "(question_id=%s)",
+            question_id,
+        )
+        return _persist_answer_submission_compatibility(
+            supabase=supabase,
+            user_id=user_id,
+            question=question,
+            selected_answer=selected_answer,
+            used_time=used_time,
+            is_correct=is_correct,
+            client_submission_id=normalized_client_id,
+        )
 
-        if not is_correct and not is_ai_generated_question(question):
-            record_wrong_question(supabase, user_id, question_id)
 
-        update_ability_stats(supabase, user_id, question, is_correct)
-    except Exception as exc:  # noqa: BLE001
-        print(f"persist_answer_submission failed for user_id={user_id}, question_id={question['id']}: {exc}")
+def _persist_answer_submission_compatibility(
+    *,
+    supabase: Client,
+    user_id: str,
+    question: dict,
+    selected_answer: str,
+    used_time: int,
+    is_correct: bool,
+    client_submission_id: str | None,
+) -> dict:
+    """Rolling-deployment fallback; the migration RPC is the production path."""
+
+    question_id = str(question["id"])
+    client_column_available = True
+    existing = []
+    if client_submission_id:
+        try:
+            existing = (
+                supabase.table("user_answers")
+                .select("id,question_id,stats_exam_code,selected_answer,is_correct,used_time,client_submission_id,attempt_number,is_first_attempt")
+                .eq("user_id", user_id)
+                .eq("client_submission_id", client_submission_id)
+                .limit(1)
+                .execute()
+                .data
+                or []
+            )
+        except Exception as exc:
+            if not is_missing_supabase_relation_error(exc):
+                raise HTTPException(
+                    status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    detail="作答记录暂时无法保存，请稍后重试",
+                ) from exc
+            client_column_available = False
+
+    if existing:
+        row = existing[0]
+        if (
+            str(row.get("question_id")) != question_id
+            or str(row.get("stats_exam_code")) != str(question.get("exam_code") or "")
+            or str(row.get("selected_answer")) != str(selected_answer)
+            or bool(row.get("is_correct")) != bool(is_correct)
+            or int(row.get("used_time") or 0) != int(used_time or 0)
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="同一提交标识已用于不同答案，请生成新的提交标识后重试",
+            )
+        current = get_current_ability_stats(supabase, user_id, question)
+        return {
+            "submission_id": row.get("id"),
+            "client_submission_id": row.get("client_submission_id") or client_submission_id,
+            "stats_exam_code": row.get("stats_exam_code") or question.get("exam_code"),
+            "idempotent": True,
+            "persisted": True,
+            "is_first_attempt": row.get("is_first_attempt"),
+            "attempt_number": row.get("attempt_number"),
+            "ability_accuracy": float(current["accuracy"]) if current else 0,
+        }
+
+    prior_response = (
+        supabase.table("user_answers")
+        .select("id,is_correct,created_at", count="exact")
+        .eq("user_id", user_id)
+        .eq("question_id", question_id)
+        .order("created_at", desc=False)
+        .limit(1)
+        .execute()
+    )
+    is_first_attempt = not bool(prior_response.data)
+    prior_attempt_count = int(prior_response.count or len(prior_response.data or []))
+    answer_payload = {
+        "user_id": user_id,
+        "question_id": question_id,
+        "selected_answer": selected_answer,
+        "is_correct": bool(is_correct),
+        "used_time": int(used_time or 0),
+    }
+    if client_column_available and client_submission_id:
+        answer_payload["client_submission_id"] = client_submission_id
+    if client_column_available:
+        answer_payload.update({
+            "stats_exam_code": str(question.get("exam_code") or ""),
+            "attempt_number": prior_attempt_count + 1,
+            "is_first_attempt": is_first_attempt,
+        })
+
+    try:
+        inserted = supabase.table("user_answers").insert(answer_payload).execute()
+    except Exception as exc:
+        if client_submission_id and client_column_available and "duplicate" in str(exc).lower():
+            return _persist_answer_submission_compatibility(
+                supabase=supabase,
+                user_id=user_id,
+                question=question,
+                selected_answer=selected_answer,
+                used_time=used_time,
+                is_correct=is_correct,
+                client_submission_id=client_submission_id,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="作答记录暂时无法保存，请稍后重试",
+        ) from exc
+
+    if not inserted.data:
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="作答记录暂时无法保存，请稍后重试")
+    if not is_correct and not is_ai_generated_question(question):
+        record_wrong_question(supabase, user_id, question_id)
+    stats = update_ability_stats(supabase, user_id, question, is_correct)
+    return {
+        "submission_id": inserted.data[0].get("id"),
+        "client_submission_id": inserted.data[0].get("client_submission_id") or client_submission_id,
+        "stats_exam_code": inserted.data[0].get("stats_exam_code") or question.get("exam_code"),
+        "idempotent": False,
+        "persisted": True,
+        "is_first_attempt": is_first_attempt,
+        "attempt_number": answer_payload.get("attempt_number"),
+        "ability_accuracy": float(stats.get("accuracy") or 0),
+    }
 
 
 def submit_answer(
@@ -329,20 +505,31 @@ def list_answer_history(
 ) -> dict:
     """Return recent answer records with question details for the practice history page."""
 
-    query = (
-        supabase.table("user_answers")
-        .select("id, question_id, selected_answer, is_correct, used_time, created_at, questions(*)")
-        .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .range(offset, offset + limit - 1)
-    )
+    def build_query(fields: str):
+        query = (
+            supabase.table("user_answers")
+            .select(fields)
+            .eq("user_id", user_id)
+            .order("created_at", desc=True)
+            .range(offset, offset + limit - 1)
+        )
+        if status_filter == "correct":
+            query = query.eq("is_correct", True)
+        elif status_filter == "wrong":
+            query = query.eq("is_correct", False)
+        return query
 
-    if status_filter == "correct":
-        query = query.eq("is_correct", True)
-    elif status_filter == "wrong":
-        query = query.eq("is_correct", False)
-
-    response = query.execute()
+    try:
+        response = build_query(
+            "id,question_id,client_submission_id,stats_exam_code,attempt_number,is_first_attempt,"
+            "selected_answer,is_correct,used_time,created_at,questions(*)"
+        ).execute()
+    except Exception as exc:
+        if not is_missing_supabase_relation_error(exc):
+            raise
+        response = build_query(
+            "id,question_id,selected_answer,is_correct,used_time,created_at,questions(*)"
+        ).execute()
     items: list[dict] = []
     for row in response.data or []:
         question = row.get("questions")
@@ -355,6 +542,10 @@ def list_answer_history(
                 "selected_answer": row["selected_answer"],
                 "is_correct": row["is_correct"],
                 "used_time": row.get("used_time", 0),
+                "client_submission_id": row.get("client_submission_id"),
+                "stats_exam_code": row.get("stats_exam_code"),
+                "attempt_number": int(row.get("attempt_number") or 1),
+                "is_first_attempt": bool(row.get("is_first_attempt")),
                 "created_at": row["created_at"],
                 "question": question,
             }

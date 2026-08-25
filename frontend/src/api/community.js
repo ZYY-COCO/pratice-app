@@ -17,6 +17,46 @@ export function fetchLikedCommunityPosts(params = {}) {
   })
 }
 
+export function fetchMyCommunityPosts(params = {}) {
+  return request({
+    url: '/circle/community/my-posts',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function deleteMyCommunityPosts(postIds = []) {
+  return request({
+    url: '/circle/community/my-posts',
+    method: 'DELETE',
+    data: { post_ids: postIds }
+  })
+}
+
+export function fetchMyCommunityReports(params = {}) {
+  return request({
+    url: '/circle/community/my-reports',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchMyCommunityContentStatus(params = {}) {
+  return request({
+    url: '/circle/community/my-content-status',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function createCommunityModerationAppeal(targetType, targetId, payload) {
+  return request({
+    url: `/circle/community/moderation/${encodeURIComponent(targetType)}/${encodeURIComponent(targetId)}/appeals`,
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function fetchCommunityPost(postId) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}`,
@@ -72,6 +112,29 @@ export function fetchCommunityPostLikes(postId, params = {}) {
 export function createCommunityComment(postId, payload) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}/comments`,
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function deleteCommunityComment(postId, commentId) {
+  return request({
+    url: `/circle/community/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}`,
+    method: 'DELETE'
+  })
+}
+
+export function createCommunityPostReport(postId, payload) {
+  return request({
+    url: `/circle/community/posts/${encodeURIComponent(postId)}/reports`,
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function createCommunityCommentReport(postId, commentId, payload) {
+  return request({
+    url: `/circle/community/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/reports`,
     method: 'POST',
     data: payload
   })

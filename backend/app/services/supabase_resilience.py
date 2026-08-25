@@ -37,7 +37,9 @@ _AUTH_MARKERS = (
     "not authenticated",
 )
 _MISSING_RELATION_MARKERS = (
+    "pgrst202",
     "pgrst205",
+    "could not find the function",
     "could not find the table",
     "schema cache",
 )

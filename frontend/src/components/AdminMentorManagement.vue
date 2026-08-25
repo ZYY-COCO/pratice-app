@@ -1,14 +1,14 @@
 <template>
-  <view class="mentor-application-page">
-    <view class="summary-grid">
+  <view class="mentor-application-page" :class="{ 'is-compact': compact }">
+    <view v-if="!compact && activeMailbox === 'applications'" class="summary-grid">
       <view class="summary-card"><text>全部申请</text><strong>{{ applicationCount }}</strong><small>已收到的前辈申请</small></view>
       <view class="summary-card pending"><text>待审核</text><strong>{{ pendingCount }}</strong><small>等待管理员处理</small></view>
       <view class="summary-card approved"><text>已通过</text><strong>{{ approvedCount }}</strong><small>已建立前辈档案</small></view>
       <view class="summary-card rejected"><text>未通过</text><strong>{{ rejectedCount }}</strong><small>已完成审核反馈</small></view>
     </view>
 
-    <view class="application-workspace">
-      <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="filters.keyword" placeholder="搜索申请人、院校或专业" @input="handleSearch" /><button v-if="filters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="statusOptions.map((item) => item.label)" :value-index="statusIndex" aria-label="申请状态" @change="selectStatus" /><button class="refresh-button" :disabled="loading" @tap="refresh">{{ loading ? '刷新中…' : '刷新' }}</button></view>
+    <view v-if="activeMailbox === 'applications'" class="application-workspace">
+      <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="filters.keyword" placeholder="搜索申请人、院校或专业" @input="handleSearch" /><button v-if="filters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="statusOptions.map((item) => item.label)" :value-index="statusIndex" aria-label="申请状态" @change="selectStatus" /><button class="refresh-button" :disabled="loading" @tap="refresh">{{ loading ? '刷新中…' : '刷新' }}</button><button v-if="showMailboxSwitch" class="mailbox-button" @tap="openReportMailbox">举报信箱</button></view>
 
       <view class="table-wrap"><view class="table">
         <view class="grid table-head"><view>申请人</view><view>申请信息</view><view>申请留言</view><view>证明材料</view><view>提交时间</view><view>状态</view><view>操作</view></view>
@@ -38,7 +38,7 @@
     </view>
 
     <view v-if="detailVisible" class="backdrop" @tap="closeApplication"><view class="detail" @tap.stop>
-      <view class="detail-header"><view><text>MENTOR APPLICATION</text><strong>前辈申请详情</strong></view><button :disabled="saving" @tap="closeApplication">×</button></view>
+      <view class="detail-header"><view><text>MENTOR APPLICATION</text><strong>前辈申请详情</strong></view><button class="admin-modal-close" :disabled="saving" @tap="closeApplication">×</button></view>
       <view v-if="detailLoading" class="table-state">正在读取申请详情…</view>
       <scroll-view v-else-if="detail?.application" scroll-y class="detail-scroll"><view class="detail-content">
         <view class="applicant-card"><view class="avatar large">{{ detail.application.legal_name?.slice(0, 1) || '前' }}</view><view><strong>{{ detail.applicant?.nickname || detail.application.legal_name }}</strong><text>{{ detail.applicant?.email || detail.applicant?.phone || shortId(detail.application.applicant_user_id) }}</text></view><text class="status" :class="detail.application.application_status">{{ statusText(detail.application.application_status) }}</text></view>
@@ -50,15 +50,81 @@
         <view v-else-if="detail.application.admin_note" class="admin-note"><text>审核备注</text><strong>{{ detail.application.admin_note }}</strong></view>
       </view></scroll-view>
     </view></view>
+
+    <view v-if="activeMailbox === 'reports'" class="report-mailbox-page">
+      <view v-if="!compact" class="summary-grid report-summary-grid">
+        <view class="summary-card report-total"><text>全部举报</text><strong>{{ reportCount }}</strong><small>来自咨询双方的举报</small></view>
+        <view class="summary-card pending"><text>待处理</text><strong>{{ pendingReportCount }}</strong><small>等待管理员核实</small></view>
+        <view class="summary-card reviewing"><text>处理中</text><strong>{{ reviewingReportCount }}</strong><small>正在跟进处理</small></view>
+        <view class="summary-card resolved"><text>已结案</text><strong>{{ closedReportCount }}</strong><small>已处理或已驳回</small></view>
+      </view>
+
+      <view class="application-workspace report-workspace">
+        <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="reportFilters.keyword" placeholder="搜索举报类型或举报说明" @input="handleSearch" /><button v-if="reportFilters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="reportStatusOptions.map((item) => item.label)" :value-index="reportStatusIndex" aria-label="举报处理状态" @change="selectReportStatus" /><AdminSelect class="report-target-select" :options="reportTargetOptions.map((item) => item.label)" :value-index="reportTargetIndex" aria-label="被举报对象" @change="selectReportTarget" /><AdminSelect class="report-target-select" :options="reportSlaOptions.map((item) => item.label)" :value-index="reportSlaIndex" aria-label="首响时限" @change="selectReportSla" /><AdminSelect class="report-target-select" :options="reportPriorityFilterOptions.map((item) => item.label)" :value-index="reportPriorityFilterIndex" aria-label="问题优先级" @change="selectReportPriorityFilter" /><button class="refresh-button" :disabled="reportLoading" @tap="refresh">{{ reportLoading ? '刷新中…' : '刷新' }}</button><button v-if="showMailboxSwitch" class="mailbox-button active" @tap="openApplicationMailbox">前辈申请</button></view>
+
+        <view class="table-wrap"><view class="table report-table">
+          <view class="report-grid table-head"><view>举报人</view><view>被举报对象</view><view>举报类型</view><view>举报说明</view><view>双方凭证</view><view>处理时限</view><view>举报时间</view><view>状态</view><view>操作</view></view>
+          <view v-if="reportLoading" class="table-state">正在读取举报信…</view>
+          <view v-else-if="reportLoadError" class="table-state error"><text>举报信加载失败，请检查网络和后台权限。</text><button @tap="refresh">重新加载</button></view>
+          <view v-else-if="reports.length === 0" class="table-state">当前筛选下没有举报信</view>
+          <view v-for="item in reports" v-else :key="item.id" class="report-grid row report-row" @tap="openReport(item)">
+            <view class="applicant"><view class="avatar report-avatar">{{ reportPersonInitial(item.reporter) }}</view><view><strong>{{ item.reporter?.display_name || '举报用户' }}</strong><text>{{ reportRoleText(item.reporter_role) }}</text></view></view>
+            <view><strong>{{ item.target?.display_name || '被举报对象' }}</strong><text>{{ reportTargetMeta(item.target) }}</text></view>
+            <view><text class="report-type">{{ item.issue_type }}</text></view>
+            <view class="message">{{ item.content }}</view>
+            <view><text class="document-count">反馈 {{ item.reporter_evidence_count || 0 }} · 回应 {{ item.respondent_evidence_count || 0 }}</text></view>
+            <view><text class="report-sla" :class="item.sla_status">{{ reportSlaLabel(item) }}</text><small>{{ casePriorityText(item.priority) }}</small></view>
+            <view>{{ formatDateTime(item.created_at) }}</view>
+            <view><text class="status report-status" :class="item.status">{{ reportStatusText(item.status) }}</text></view>
+            <view><button class="open-button" @tap.stop="openReport(item)">查看</button></view>
+          </view>
+        </view></view>
+
+        <view class="mentor-pagination">
+          <view class="mentor-pagination-info">共 {{ reportCount }} 条，每页 {{ reportPageSize }} 条</view>
+          <view class="mentor-pagination-actions"><button :disabled="reportPage <= 1 || reportLoading" @tap="changeReportPage(reportPage - 1)">‹</button><view class="mentor-page-current">{{ reportPage }}</view><view class="mentor-page-total">/ {{ reportTotalPages }}</view><button :disabled="reportPage >= reportTotalPages || reportLoading" @tap="changeReportPage(reportPage + 1)">›</button></view>
+        </view>
+      </view>
+
+      <view v-if="reportDetailVisible" class="backdrop" @tap="closeReport"><view class="detail report-detail" @tap.stop>
+        <view class="detail-header"><view><text>CONSULTATION REPORT</text><strong>举报详情</strong></view><button class="admin-modal-close" :disabled="reportSaving" @tap="closeReport">×</button></view>
+        <view v-if="reportDetailLoading" class="table-state">正在读取举报详情…</view>
+        <scroll-view v-else-if="reportDetail?.report" scroll-y class="detail-scroll"><view class="detail-content">
+          <view class="report-party-grid"><view><text>举报人</text><strong>{{ reportDetail.report.reporter?.display_name || '举报用户' }}</strong><small>{{ reportRoleText(reportDetail.report.reporter_role) }}</small></view><view><text>被举报对象</text><strong>{{ reportDetail.report.target?.display_name || '被举报对象' }}</strong><small>{{ reportTargetMeta(reportDetail.report.target) }}</small></view></view>
+          <view class="application-fields report-fields"><view><text>举报类型</text><strong>{{ reportDetail.report.issue_type }}</strong></view><view><text>关联订单</text><strong>{{ reportDetail.report.order_no || '—' }}</strong></view><view><text>举报时间</text><strong>{{ formatDateTime(reportDetail.report.created_at) }}</strong></view><view><text>首次响应时限</text><strong>{{ formatDateTime(reportDetail.report.first_response_due_at) }}</strong></view><view><text>首次响应</text><strong>{{ reportDetail.report.first_response_at ? formatDateTime(reportDetail.report.first_response_at) : reportSlaLabel(reportDetail.report) }}</strong></view><view><text>当前优先级</text><strong>{{ casePriorityText(reportDetail.report.priority) }}</strong></view><view><text>回应时间</text><strong>{{ reportDetail.report.responded_at ? formatDateTime(reportDetail.report.responded_at) : '未回应' }}</strong></view><view><text>处理时间</text><strong>{{ reportDetail.report.handled_at ? formatDateTime(reportDetail.report.handled_at) : '待处理' }}</strong></view></view>
+          <view class="detail-heading">举报说明</view><view class="report-content">{{ reportDetail.report.content }}</view>
+          <view class="detail-heading">举报方凭证</view><view v-if="reportEvidence(reportDetail.evidence, 'reporter').length" class="documents report-documents"><view v-for="evidence in reportEvidence(reportDetail.evidence, 'reporter')" :key="evidence.id" class="document"><image :src="evidence.file_url" mode="aspectFill" /><view><strong>{{ evidence.file_name }}</strong><text>举报方 · {{ formatDateTime(evidence.created_at) }}</text></view></view></view><view v-else class="empty">举报方未上传凭证</view>
+          <view class="detail-heading">被举报方回应</view><view v-if="reportDetail.report.respondent_content" class="report-content response-content">{{ reportDetail.report.respondent_content }}</view><view v-else class="empty">被举报方暂未提交说明</view>
+          <view class="detail-heading">被举报方凭证</view><view v-if="reportEvidence(reportDetail.evidence, 'respondent').length" class="documents report-documents"><view v-for="evidence in reportEvidence(reportDetail.evidence, 'respondent')" :key="evidence.id" class="document"><image :src="evidence.file_url" mode="aspectFill" /><view><strong>{{ evidence.file_name }}</strong><text>被举报方 · {{ formatDateTime(evidence.created_at) }}</text></view></view></view><view v-else class="empty">被举报方未上传凭证</view>
+          <template v-if="reportDetail.review"><view class="detail-heading">关联服务评价</view><view class="review-context-card" :class="{ hidden: !reportDetail.review.is_published }"><view class="application-fields report-fields"><view><text>评分</text><strong>{{ reportDetail.review.rating }} / 5</strong></view><view><text>当前公开状态</text><strong>{{ reportDetail.review.is_published ? '公开展示中' : '已下架' }}</strong></view><view><text>评价人</text><strong>{{ reportDetail.review.reviewer_display_name || '匿名用户' }}</strong></view><view><text>提交时间</text><strong>{{ formatDateTime(reportDetail.review.created_at) }}</strong></view></view><view v-if="reportDetail.review.tags?.length" class="skill-list review-tags"><text v-for="tag in reportDetail.review.tags" :key="tag">{{ tag }}</text></view><view class="report-content" :class="{ 'review-hidden': !reportDetail.review.is_published }">{{ reportDetail.review.content || '评价人未填写文字反馈' }}</view></view></template>
+          <view class="detail-heading">关联聊天记录</view><view v-if="reportDetail.messages?.length" class="report-message-list"><view v-for="message in reportDetail.messages" :key="message.id || `${message.created_at}-${message.content}`" class="report-message" :class="message.sender_role"><text>{{ reportRoleText(message.sender_role) }}</text><strong>{{ reportMessageText(message) }}</strong><small>{{ formatDateTime(message.created_at) }}</small></view></view><view v-else class="empty">暂无可核实的聊天记录</view>
+          <view class="detail-heading">订单事件</view><view v-if="reportDetail.events?.length" class="report-message-list"><view v-for="event in reportDetail.events" :key="event.id || `${event.created_at}-${event.event_type}`" class="report-message event"><text>{{ reportEventLabel(event) }}</text><strong>{{ reportEventDetail(event) }}</strong><small>{{ formatDateTime(event.created_at) }}</small></view></view><view v-else class="empty">暂无订单事件记录</view>
+          <view class="report-review"><view class="detail-heading">处理举报</view><view class="report-review-grid report-resolution-grid"><view class="form-field"><view class="form-label">处理状态</view><AdminSelect class="form-admin-select" :options="reportStatusOptions.slice(1).map((item) => item.label)" :value-index="reportDetailStatusIndex" aria-label="举报处理状态" @change="selectReportDetailStatus" /></view><view class="form-field"><view class="form-label">问题优先级</view><AdminSelect class="form-admin-select" :options="reportPriorityOptions.map((item) => item.label)" :value-index="reportDetailPriorityIndex" aria-label="问题优先级" @change="selectReportDetailPriority" /></view><view class="form-field"><view class="form-label">订单裁决</view><AdminSelect class="form-admin-select" :options="reportResolutionOptions.map((item) => item.label)" :value-index="reportDetailResolutionIndex" aria-label="订单裁决" @change="selectReportResolution" /></view><view v-if="reportResolution === 'refund_partial'" class="form-field"><view class="form-label">部分退款金额（元）</view><input v-model.trim="reportPartialRefundAmount" type="digit" placeholder="需小于订单总金额" /></view><view class="form-field report-note-field"><view class="form-label">管理员备注（结案必填）</view><textarea v-model.trim="reportAdminNote" maxlength="1000" placeholder="填写处理结论或跟进说明；双方会在咨询记录中看到此结果。" /></view></view><view class="review-actions"><button class="approve-button" :disabled="reportSaving" @tap="saveReportStatus">{{ reportSaving ? '保存中…' : '保存处理结果' }}</button></view></view>
+        </view></scroll-view>
+      </view></view>
+    </view>
   </view>
 </template>
 
 <script setup>
-import { computed, onBeforeUnmount, reactive, ref } from 'vue'
-import { decideAdminMentorVerificationApplication, fetchAdminMentorVerificationApplication, fetchAdminMentorVerificationApplications } from '../api/admin'
+import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
+import {
+  decideAdminMentorVerificationApplication,
+  fetchAdminMentorConsultationReport,
+  fetchAdminMentorConsultationReports,
+  fetchAdminMentorVerificationApplication,
+  fetchAdminMentorVerificationApplications,
+  updateAdminMentorConsultationReportStatus
+} from '../api/admin'
 import AdminSelect from './AdminSelect.vue'
 
-const props = defineProps({ preview: Boolean })
+const props = defineProps({
+  preview: Boolean,
+  compact: Boolean,
+  mailbox: { type: String, default: 'applications' },
+  showMailboxSwitch: { type: Boolean, default: true }
+})
+const activeMailbox = ref(normalizeMailbox(props.mailbox))
 const applications = ref([])
 const applicationCount = ref(0)
 const applicationPage = ref(1)
@@ -72,20 +138,67 @@ const saving = ref(false)
 const pendingDecision = ref('')
 const reviewNote = ref('')
 const filters = reactive({ keyword: '', application_status: '' })
+const reports = ref([])
+const reportCount = ref(0)
+const reportPage = ref(1)
+const reportPageSize = 20
+const reportLoading = ref(false)
+const reportLoadError = ref(false)
+const reportDetailVisible = ref(false)
+const reportDetailLoading = ref(false)
+const reportDetail = ref(null)
+const reportSaving = ref(false)
+const reportAdminNote = ref('')
+const reportDetailStatus = ref('pending')
+const reportDetailPriority = ref('normal')
+const reportResolution = ref('none')
+const reportPartialRefundAmount = ref('')
+const reportFilters = reactive({ keyword: '', status: '', target_role: '', priority: '', sla_state: '' })
 let searchTimer = null
 
 const statusOptions = [{ label: '全部申请状态', value: '' }, { label: '待审核', value: 'pending' }, { label: '已通过', value: 'approved' }, { label: '未通过', value: 'rejected' }]
+const reportStatusOptions = [{ label: '全部处理状态', value: '' }, { label: '待处理', value: 'pending' }, { label: '处理中', value: 'reviewing' }, { label: '已处理', value: 'resolved' }, { label: '已驳回', value: 'dismissed' }]
+const reportSlaOptions = [{ label: '全部首响时限', value: '' }, { label: '已超时', value: 'overdue' }, { label: '临近超时', value: 'due_soon' }, { label: '已升级', value: 'escalated' }]
+const reportPriorityFilterOptions = [{ label: '全部优先级', value: '' }, { label: '普通', value: 'normal' }, { label: '高', value: 'high' }, { label: '紧急', value: 'urgent' }]
+const reportPriorityOptions = [{ label: '普通', value: 'normal' }, { label: '高', value: 'high' }, { label: '紧急', value: 'urgent' }]
+const reportResolutionOptions = [{ label: '不执行订单裁决', value: 'none' }, { label: '建议继续服务', value: 'continue_service' }, { label: '全额退款并结束', value: 'refund_full' }, { label: '部分退款并结束', value: 'refund_partial' }, { label: '平台结束服务', value: 'close_service' }, { label: '提醒相关参与方', value: 'warn_participant' }, { label: '下架关联服务评价', value: 'hide_review' }, { label: '恢复关联服务评价', value: 'restore_review' }]
+const reportTargetOptions = [{ label: '全部被举报对象', value: '' }, { label: '认证前辈', value: 'mentor' }, { label: '咨询用户', value: 'applicant' }]
 const statusIndex = computed(() => Math.max(0, statusOptions.findIndex((item) => item.value === filters.application_status)))
+const reportStatusIndex = computed(() => Math.max(0, reportStatusOptions.findIndex((item) => item.value === reportFilters.status)))
+const reportTargetIndex = computed(() => Math.max(0, reportTargetOptions.findIndex((item) => item.value === reportFilters.target_role)))
+const reportSlaIndex = computed(() => Math.max(0, reportSlaOptions.findIndex((item) => item.value === reportFilters.sla_state)))
+const reportPriorityFilterIndex = computed(() => Math.max(0, reportPriorityFilterOptions.findIndex((item) => item.value === reportFilters.priority)))
+const reportDetailStatusIndex = computed(() => Math.max(0, reportStatusOptions.slice(1).findIndex((item) => item.value === reportDetailStatus.value)))
+const reportDetailPriorityIndex = computed(() => Math.max(0, reportPriorityOptions.findIndex((item) => item.value === reportDetailPriority.value)))
+const reportDetailResolutionIndex = computed(() => Math.max(0, reportResolutionOptions.findIndex((item) => item.value === reportResolution.value)))
 const applicationTotalPages = computed(() => Math.max(1, Math.ceil(applicationCount.value / applicationPageSize)))
+const reportTotalPages = computed(() => Math.max(1, Math.ceil(reportCount.value / reportPageSize)))
 const pendingCount = computed(() => applications.value.filter((item) => item.application_status === 'pending').length)
 const approvedCount = computed(() => applications.value.filter((item) => item.application_status === 'approved').length)
 const rejectedCount = computed(() => applications.value.filter((item) => item.application_status === 'rejected').length)
+const pendingReportCount = computed(() => reports.value.filter((item) => item.status === 'pending').length)
+const reviewingReportCount = computed(() => reports.value.filter((item) => item.status === 'reviewing').length)
+const closedReportCount = computed(() => reports.value.filter((item) => ['resolved', 'dismissed'].includes(item.status)).length)
 
 refresh()
 onBeforeUnmount(() => { if (searchTimer) clearTimeout(searchTimer) })
 defineExpose({ refresh })
 
+watch(() => props.mailbox, (mailbox) => {
+  const nextMailbox = normalizeMailbox(mailbox)
+  if (nextMailbox === activeMailbox.value) return
+  activeMailbox.value = nextMailbox
+  if (nextMailbox === 'reports') reportPage.value = 1
+  else applicationPage.value = 1
+  refresh()
+})
+
 async function refresh() {
+  if (activeMailbox.value === 'reports') return refreshReports()
+  return refreshApplications()
+}
+
+async function refreshApplications() {
   loading.value = true
   loadError.value = false
   try {
@@ -108,11 +221,58 @@ async function refresh() {
   } finally { loading.value = false }
 }
 
+async function refreshReports() {
+  reportLoading.value = true
+  reportLoadError.value = false
+  try {
+    const response = props.preview ? buildPreviewReportPage() : await fetchAdminMentorConsultationReports({
+      ...reportFilters,
+      limit: reportPageSize,
+      offset: (reportPage.value - 1) * reportPageSize
+    })
+    reports.value = response?.items || []
+    reportCount.value = Number(response?.count || 0)
+    if (reportCount.value > 0 && reports.value.length === 0 && reportPage.value > reportTotalPages.value) {
+      reportPage.value = reportTotalPages.value
+      await refreshReports()
+      return
+    }
+  } catch (error) {
+    reports.value = []
+    reportCount.value = 0
+    reportLoadError.value = true
+  } finally { reportLoading.value = false }
+}
+
 function applyApplicationFilters() { applicationPage.value = 1; refresh() }
-function handleSearch() { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(applyApplicationFilters, 360) }
-function clearSearch() { filters.keyword = ''; applyApplicationFilters() }
+function applyReportFilters() { reportPage.value = 1; refresh() }
+function handleSearch() { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(() => (activeMailbox.value === 'reports' ? applyReportFilters() : applyApplicationFilters()), 360) }
+function clearSearch() { if (activeMailbox.value === 'reports') { reportFilters.keyword = ''; applyReportFilters(); return }; filters.keyword = ''; applyApplicationFilters() }
 function selectStatus(event) { filters.application_status = statusOptions[Number(event?.detail?.value || 0)]?.value || ''; applyApplicationFilters() }
 function changeApplicationPage(page) { const next = Math.max(1, Math.min(applicationTotalPages.value, Number(page) || 1)); if (next !== applicationPage.value) { applicationPage.value = next; refresh() } }
+function selectReportStatus(event) { reportFilters.status = reportStatusOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
+function selectReportTarget(event) { reportFilters.target_role = reportTargetOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
+function selectReportSla(event) { reportFilters.sla_state = reportSlaOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
+function selectReportPriorityFilter(event) { reportFilters.priority = reportPriorityFilterOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
+function changeReportPage(page) { const next = Math.max(1, Math.min(reportTotalPages.value, Number(page) || 1)); if (next !== reportPage.value) { reportPage.value = next; refresh() } }
+
+function openReportMailbox() {
+  detailVisible.value = false
+  activeMailbox.value = 'reports'
+  reportPage.value = 1
+  refresh()
+}
+
+function openApplicationMailbox() {
+  reportDetailVisible.value = false
+  activeMailbox.value = 'applications'
+  applicationPage.value = 1
+  refresh()
+}
+
+function normalizeMailbox(value) {
+  return value === 'reports' ? 'reports' : 'applications'
+}
 
 async function openApplication(item) {
   if (!item?.id || detailLoading.value) return
@@ -143,6 +303,94 @@ async function decideApplication(decision) {
   } catch (error) { uni.showToast({ title: error?.detail || '审核处理失败', icon: 'none' }) } finally { saving.value = false; pendingDecision.value = '' }
 }
 
+async function openReport(item) {
+  if (!item?.id || reportDetailLoading.value) return
+  reportDetailVisible.value = true
+  reportDetailLoading.value = true
+  reportDetail.value = null
+  reportAdminNote.value = ''
+  try {
+    reportDetail.value = props.preview ? previewReportDetail(item) : await fetchAdminMentorConsultationReport(item.id)
+    reportDetailStatus.value = reportDetail.value?.report?.status || 'pending'
+    reportDetailPriority.value = reportDetail.value?.report?.priority || 'normal'
+    reportResolution.value = reportDetail.value?.report?.resolution || 'none'
+    reportPartialRefundAmount.value = reportResolution.value === 'refund_partial' ? String(reportDetail.value?.report?.refund_amount || '') : ''
+    reportAdminNote.value = reportDetail.value?.report?.admin_note || ''
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '举报详情加载失败', icon: 'none' })
+    reportDetailVisible.value = false
+  } finally { reportDetailLoading.value = false }
+}
+
+function closeReport() {
+  if (reportSaving.value) return
+  reportDetailVisible.value = false
+  reportDetail.value = null
+  reportAdminNote.value = ''
+  reportDetailPriority.value = 'normal'
+  reportResolution.value = 'none'
+  reportPartialRefundAmount.value = ''
+}
+
+function selectReportDetailStatus(event) {
+  reportDetailStatus.value = reportStatusOptions.slice(1)[Number(event?.detail?.value || 0)]?.value || 'pending'
+}
+
+function selectReportDetailPriority(event) {
+  reportDetailPriority.value = reportPriorityOptions[Number(event?.detail?.value || 0)]?.value || 'normal'
+}
+
+function selectReportResolution(event) {
+  reportResolution.value = reportResolutionOptions[Number(event?.detail?.value || 0)]?.value || 'none'
+  if (reportResolution.value !== 'refund_partial') reportPartialRefundAmount.value = ''
+}
+
+async function saveReportStatus() {
+  const report = reportDetail.value?.report
+  if (!report?.id || reportSaving.value) return
+  if (['resolved', 'dismissed'].includes(reportDetailStatus.value) && !reportAdminNote.value.trim()) {
+    uni.showToast({ title: '结案时请填写处理结论', icon: 'none' })
+    return
+  }
+  if (reportResolution.value !== 'none' && reportDetailStatus.value !== 'resolved') {
+    uni.showToast({ title: '执行订单裁决时请将举报标记为已处理', icon: 'none' })
+    return
+  }
+  const orderStatus = String(reportDetail.value?.order?.order_status || '')
+  const terminalOrder = ['completed', 'refunded', 'cancelled', 'rejected', 'timeout'].includes(orderStatus)
+  if (['hide_review', 'restore_review'].includes(reportResolution.value) && !reportDetail.value?.review) {
+    uni.showToast({ title: '该订单没有可处置的服务评价', icon: 'none' })
+    return
+  }
+  if (reportResolution.value === 'continue_service' && terminalOrder) {
+    uni.showToast({ title: '该订单已结束，不能再建议继续服务', icon: 'none' })
+    return
+  }
+  const partialRefundAmount = Number(reportPartialRefundAmount.value)
+  const orderAmount = Number(reportDetail.value?.order?.price || 0)
+  if (reportResolution.value === 'refund_partial' && (!Number.isFinite(partialRefundAmount) || partialRefundAmount <= 0 || partialRefundAmount >= orderAmount)) {
+    uni.showToast({ title: '部分退款金额需大于 0 且小于订单总金额', icon: 'none' })
+    return
+  }
+  const confirmed = await confirmDecision(
+    '保存举报处理结果？',
+    '处理状态和管理员备注会写入举报信并保留处理记录。',
+    '确认保存'
+  )
+  if (!confirmed) return
+  reportSaving.value = true
+  try {
+    const updated = props.preview
+      ? { ...report, status: reportDetailStatus.value, priority: reportDetailPriority.value, resolution: reportResolution.value, refund_amount: reportResolution.value === 'refund_partial' ? partialRefundAmount : report.refund_amount, admin_note: reportAdminNote.value || null, first_response_at: report.first_response_at || (reportDetailStatus.value === 'pending' ? null : new Date().toISOString()), handled_at: ['resolved', 'dismissed'].includes(reportDetailStatus.value) ? new Date().toISOString() : null }
+      : await updateAdminMentorConsultationReportStatus(report.id, { status: reportDetailStatus.value, priority: reportDetailPriority.value, resolution: reportResolution.value, refund_amount: reportResolution.value === 'refund_partial' ? partialRefundAmount : 0, admin_note: reportAdminNote.value || null })
+    reports.value = reports.value.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
+    reportDetail.value = { ...reportDetail.value, report: { ...report, ...updated } }
+    uni.showToast({ title: '举报处理结果已保存', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '举报处理状态保存失败', icon: 'none' })
+  } finally { reportSaving.value = false }
+}
+
 function confirmDecision(title, content, confirmText) { return new Promise((resolve) => uni.showModal({ title, content, confirmText, success: (result) => resolve(Boolean(result.confirm)) })) }
 function buildPreviewApplicationPage() {
   const keyword = filters.keyword.trim().toLowerCase()
@@ -160,7 +408,50 @@ function previewApplications() { return [
   { id: 'preview-mentor-application-003', applicant_user_id: 'preview-user-003', legal_name: '周同学', school: '华南理工大学', major: '工商管理', admission_year: 2025, graduation_year: 2027, exam_type: 'application', score: 0, skills: ['院校选择'], bio: '希望分享申请制项目的准备经历。', price: 39, application_status: 'rejected', document_count: 0, created_at: '2026-08-16T03:10:00Z', admin_note: '请补充录取证明后重新申请。' }
 ] }
 function previewApplicationDetail(application) { return { application: { ...application }, applicant: { nickname: application.legal_name, email: 'mentor-applicant@example.com' }, documents: Array.from({ length: application.document_count || 0 }, (_, index) => ({ id: `preview-document-${index}`, file_url: '/static/ui-icons/circle-community.svg', file_name: index ? '学生证照片' : '录取通知书', document_type: index ? 'student_card' : 'admission_notice', created_at: application.created_at })) } }
+function buildPreviewReportPage() {
+  const keyword = reportFilters.keyword.trim().toLowerCase()
+  const filtered = previewReports().filter((item) => {
+    if (reportFilters.status && item.status !== reportFilters.status) return false
+    if (reportFilters.target_role && item.target_role !== reportFilters.target_role) return false
+    if (reportFilters.priority && item.priority !== reportFilters.priority) return false
+    if (reportFilters.sla_state && (reportFilters.sla_state === 'escalated' ? !Number(item.escalation_level || 0) : item.sla_status !== reportFilters.sla_state)) return false
+    if (!keyword) return true
+    return [item.issue_type, item.content].some((value) => String(value || '').toLowerCase().includes(keyword))
+  })
+  const offset = (reportPage.value - 1) * reportPageSize
+  return { items: filtered.slice(offset, offset + reportPageSize), count: filtered.length }
+}
+function previewReports() { return [
+  { id: 'preview-consultation-report-001', order_id: 'preview-order-001', order_no: 'MC202608210001', reporter_role: 'applicant', target_role: 'mentor', issue_type: '服务态度与沟通问题', content: '咨询过程中多次出现不当表达，影响正常沟通体验，希望平台核实本次聊天记录。', status: 'pending', priority: 'urgent', escalation_level: 1, sla_status: 'overdue', first_response_due_at: '2026-08-22T10:20:00Z', created_at: '2026-08-21T10:20:00Z', reporter: { id: 'preview-user-001', role: 'applicant', display_name: '同学 A' }, target: { id: 'preview-mentor-001', role: 'mentor', display_name: '钟*宏', school: '暨南大学', major: '应用经济学' }, evidence_count: 2, reporter_evidence_count: 2, respondent_evidence_count: 0 },
+  { id: 'preview-consultation-report-002', order_id: 'preview-order-002', order_no: 'MC202608180002', reporter_role: 'mentor', target_role: 'applicant', issue_type: '恶意评价或失实反馈', content: '咨询用户在评价中描述的事实与站内聊天记录不符，希望平台结合本次咨询全过程核实。', respondent_content: '评价内容来自个人实际感受，希望平台结合聊天记录核实。', responded_at: '2026-08-18T09:10:00Z', status: 'reviewing', priority: 'high', sla_status: 'responded', first_response_due_at: '2026-08-18T14:30:00Z', first_response_at: '2026-08-18T09:20:00Z', created_at: '2026-08-18T08:30:00Z', reporter: { id: 'preview-mentor-user-001', role: 'mentor', display_name: '林前辈' }, target: { id: 'preview-user-002', role: 'applicant', display_name: '同学 B' }, evidence_count: 2, reporter_evidence_count: 1, respondent_evidence_count: 1 },
+  { id: 'preview-consultation-report-003', order_id: 'preview-order-003', order_no: 'MC202608150003', reporter_role: 'applicant', target_role: 'mentor', issue_type: '其他问题', content: '希望平台协助确认咨询收费与订单信息是否一致。', status: 'resolved', priority: 'normal', sla_status: 'closed', first_response_due_at: '2026-08-16T12:10:00Z', first_response_at: '2026-08-15T13:00:00Z', created_at: '2026-08-15T12:10:00Z', handled_at: '2026-08-16T03:00:00Z', reporter: { id: 'preview-user-003', role: 'applicant', display_name: '同学 C' }, target: { id: 'preview-mentor-002', role: 'mentor', display_name: '陈前辈', school: '中山大学', major: '金融学' }, evidence_count: 0, reporter_evidence_count: 0, respondent_evidence_count: 0 }
+] }
+function previewReportDetail(report) { return {
+  report: { ...report, admin_note: report.status === 'resolved' ? '已核实订单信息并向双方说明处理结果。' : null },
+  evidence: Array.from({ length: report.evidence_count || 0 }, (_, index) => ({ id: `preview-report-evidence-${index}`, file_name: `${index < (report.reporter_evidence_count || 0) ? '举报方' : '被举报方'}凭证 ${index + 1}`, file_url: '/static/ui-icons/report.svg', submitter_role: index < (report.reporter_evidence_count || 0) ? 'reporter' : 'respondent', created_at: report.created_at })),
+  review: report.issue_type === '恶意评价或失实反馈' ? { id: 'preview-review-002', order_id: report.order_id, mentor_id: 'preview-mentor-001', reviewer_display_name: '匿名用户', rating: 1, tags: ['回复较慢'], content: '沟通体验不如预期，部分问题没有及时回应。', is_published: true, created_at: report.created_at } : null,
+  order: { id: report.order_id, order_no: report.order_no },
+  messages: [
+    { id: 'preview-message-1', sender_role: 'applicant', message_type: 'text', content: '你好，想咨询一下备考安排。', created_at: report.created_at },
+    { id: 'preview-message-2', sender_role: 'mentor', message_type: 'text', content: '好的，请先说明你的报考方向。', created_at: report.created_at }
+  ],
+  events: [
+    { id: 'preview-event-1', event_type: 'consultation_report_created', actor_role: report.reporter_role, details: { issue_type: report.issue_type }, created_at: report.created_at },
+    ...(report.responded_at ? [{ id: 'preview-event-2', event_type: 'consultation_report_responded', actor_role: report.target_role, details: {}, created_at: report.responded_at }] : [])
+  ]
+} }
 function statusText(value) { return { pending: '待审核', approved: '已通过', rejected: '未通过' }[value] || '待审核' }
+function reportStatusText(value) { return { pending: '待处理', reviewing: '处理中', resolved: '已处理', dismissed: '已驳回' }[value] || '待处理' }
+function casePriorityText(value) { return { normal: '普通', high: '高优先级', urgent: '紧急' }[value] || '普通' }
+function reportSlaLabel(item = {}) { if (item.first_response_at) return '已首响'; if (item.sla_status === 'overdue') return Number(item.escalation_level || 0) > 0 ? '超时已升级' : '首响超时'; if (item.sla_status === 'due_soon') return '临近超时'; return item.first_response_due_at ? '等待首响' : '未设时限' }
+function reportRoleText(value) { return value === 'mentor' ? '认证前辈' : '咨询用户' }
+function reportTargetMeta(target) { return [target?.school, target?.major].filter(Boolean).join(' · ') || reportRoleText(target?.role) }
+function reportPersonInitial(person) { return String(person?.display_name || '举').slice(0, 1) || '举' }
+function reportMessageText(message) { if (message?.content) return message.content; return message?.message_type === 'image' ? '图片消息' : message?.message_type === 'voice' ? '语音消息' : '系统消息' }
+function reportEvidence(evidence, role) { return (Array.isArray(evidence) ? evidence : []).filter((item) => (item?.submitter_role || 'reporter') === role) }
+function reportEventText(event) { return { consultation_order_created: '创建咨询订单', consultation_payment_intent_created: '创建支付订单', consultation_mock_payment_recorded: '已记录历史模拟支付', consultation_demo_payment_recorded: '已记录测试支付', consultation_payment_confirmed: '支付回调确认成功', consultation_payment_failed: '支付回调确认失败', consultation_refund_requested: '已提交退款处理', consultation_refund_completed: '退款回调确认完成', consultation_refund_failed: '退款回调返回异常', mentor_order_decision: '前辈处理接单', consultation_started: '咨询已开始', completion_confirmed: '一方确认结束', consultation_completed: '双方确认完成', order_cancelled_by_applicant: '咨询用户取消订单', consultation_report_created: '提交问题反馈', consultation_report_responded: '被举报方提交说明', consultation_report_evidence_uploaded: '补充处理凭证', consultation_report_appeal_created: '提交复核申请', consultation_report_appeal_evidence_uploaded: '补充复核凭证', consultation_report_appeal_reviewing: '平台开始复核', consultation_report_reopened_after_appeal: '平台重新开启原案', consultation_report_appeal_resolved: '平台更新复核结果', consultation_report_resolved: '平台更新处理结果', consultation_review_hidden: '平台下架关联评价', consultation_review_restored: '平台恢复关联评价', order_timed_out: '订单超时自动取消', accepted_start_timed_out: '前辈接单后未开始，订单已取消', booking_no_show_timed_out: '预约未开始，订单已取消' }[event?.event_type] || '订单处理事件' }
+function reportEventLabel(event) { return { consultation_report_acknowledged: '平台已受理问题反馈', consultation_report_sla_escalated: '问题反馈首响超时升级', consultation_report_priority_escalated: '问题反馈已调整优先级', consultation_report_appeal_sla_escalated: '复核首响超时升级', consultation_report_appeal_priority_escalated: '复核已调整优先级' }[event?.event_type] || reportEventText(event) }
+function reportEventDetail(event) { const details = event?.details && typeof event.details === 'object' ? event.details : {}; if (event?.event_type === 'consultation_report_created') return details.issue_type ? `问题类型：${details.issue_type}` : '已关联本次咨询订单'; if (event?.event_type === 'consultation_report_evidence_uploaded') return details.submitter_role === 'respondent' ? '被举报方已补充凭证' : '举报方已补充凭证'; if (event?.event_type === 'consultation_report_reopened_after_appeal') return '原问题反馈已重新进入处理中'; if (event?.event_type === 'consultation_report_appeal_resolved') return details.decision === 'uphold' ? '平台维持原处理结论' : '平台已保存复核结果'; if (event?.event_type === 'consultation_review_hidden') return '关联服务评价已停止对外展示'; if (event?.event_type === 'consultation_review_restored') return '关联服务评价已恢复对外展示'; if (event?.event_type === 'consultation_report_resolved') return details.resolution ? `平台裁决：${details.resolution}` : '平台已保存处理结果'; return '已记录到本次订单的处理链路' }
 function examTypeText(value) { return { Z001: 'Z001', Z002: 'Z002', application: '申请制' }[value] || value || '—' }
 function documentTypeText(value) { return { admission_notice: '录取通知书', student_card: '学生证', other: '其他证明' }[value] || '证明材料' }
 function formatPrice(value) { const price = Number(value || 0); return Number.isInteger(price) ? price : price.toFixed(2) }
@@ -315,5 +606,348 @@ function formatDateTime(value) { const date = new Date(value); return Number.isN
     padding-top: 12px;
     padding-bottom: 12px;
   }
+}
+
+.mailbox-button {
+  min-width: 82px;
+  height: 36px;
+  margin: 0;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cfe4df;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #287d6d;
+  background: #f3fbf8;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.mailbox-button.active {
+  border-color: #65c8b3;
+  color: #166d5f;
+  background: #dff6ef;
+}
+
+.mailbox-button::after {
+  border: 0;
+}
+
+.report-mailbox-page {
+  min-height: calc(100vh - 158px);
+  display: flex;
+  flex-direction: column;
+}
+
+.report-summary-grid .summary-card.reviewing {
+  border-top-color: #7b9cc7;
+}
+
+.report-summary-grid .summary-card.resolved {
+  border-top-color: #5fc2aa;
+}
+
+.report-workspace {
+  flex: 1;
+}
+
+.report-target-select {
+  width: 156px;
+  flex: 0 0 156px;
+}
+
+.report-table {
+  min-width: 1300px;
+}
+
+.report-grid {
+  display: grid;
+  grid-template-columns: 1.02fr 1.12fr .96fr 1.65fr .72fr .9fr .78fr .72fr 60px;
+  align-items: center;
+  gap: 14px;
+  padding: 0 18px;
+}
+
+.report-type {
+  display: inline-flex !important;
+  max-width: 100%;
+  margin: 0 !important;
+  padding: 5px 8px;
+  overflow: hidden;
+  border-radius: 5px;
+  box-sizing: border-box;
+  color: #7d6a36 !important;
+  font-size: 9px !important;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  background: #fff5df;
+}
+
+.report-avatar {
+  color: #8a6651;
+  background: #f8eee5;
+}
+
+.report-status.reviewing {
+  color: #4d78a6;
+  background: #eaf2fc;
+}
+
+.report-status.resolved {
+  color: #238b75;
+  background: #e8f7f2;
+}
+
+.report-status.dismissed {
+  color: #8a7680;
+  background: #f0eef1;
+}
+
+.report-sla {
+  display: inline-flex !important;
+  margin: 0 !important;
+  padding: 5px 8px;
+  border-radius: 99px;
+  background: #eef4ff;
+  color: #5279ad !important;
+  font-size: 9px !important;
+  font-weight: 800;
+}
+
+.report-sla.due_soon {
+  background: #fff4df;
+  color: #a7772c !important;
+}
+
+.report-sla.overdue {
+  background: #fceceb;
+  color: #b45f59 !important;
+}
+
+.report-sla.responded,
+.report-sla.closed {
+  background: #e8f7f2;
+  color: #238b75 !important;
+}
+
+.report-grid small {
+  display: block;
+  margin-top: 4px;
+  color: #98a5b2;
+  font-size: 9px;
+}
+
+.report-party-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  margin-bottom: 18px;
+  overflow: hidden;
+  border: 1px solid #e4edef;
+  border-radius: 8px;
+}
+
+.report-party-grid > view {
+  min-width: 0;
+  min-height: 74px;
+  padding: 13px 14px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.report-party-grid > view + view {
+  border-left: 1px solid #e7edf0;
+}
+
+.report-party-grid text,
+.report-party-grid small {
+  color: #98a7b6;
+  font-size: 10px;
+}
+
+.report-party-grid strong {
+  margin-top: 5px;
+  overflow: hidden;
+  color: #40566c;
+  font-size: 12px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-party-grid small {
+  margin-top: 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.report-content {
+  padding: 13px;
+  border: 1px solid #e3ebee;
+  border-radius: 8px;
+  color: #52677b;
+  font-size: 11px;
+  line-height: 1.7;
+  background: #fbfcfd;
+  white-space: pre-wrap;
+}
+
+.review-context-card {
+  padding: 13px;
+  border: 1px solid #dcebe7;
+  border-radius: 9px;
+  background: #fbfefd;
+}
+
+.review-context-card.hidden {
+  border-color: #eadfc9;
+  background: #fffdf8;
+}
+
+.review-context-card .application-fields {
+  margin-top: 0;
+}
+
+.review-tags {
+  margin: 12px 0;
+}
+
+.report-content.review-hidden {
+  color: #8d7751;
+  background: #fffaf0;
+}
+
+.report-documents .document image {
+  object-fit: cover;
+}
+
+.report-message-list {
+  display: grid;
+  gap: 8px;
+}
+
+.report-message {
+  padding: 10px 12px;
+  border: 1px solid #e4ecef;
+  border-radius: 8px;
+  background: #fbfcfd;
+}
+
+.report-message.mentor {
+  border-color: #d7ebe5;
+  background: #f2fbf8;
+}
+
+.report-message text,
+.report-message strong,
+.report-message small {
+  display: block;
+}
+
+.report-message text,
+.report-message small {
+  color: #95a4b1;
+  font-size: 9px;
+}
+
+.report-message strong {
+  margin-top: 4px;
+  color: #4b6177;
+  font-size: 11px;
+  font-weight: 650;
+  line-height: 1.55;
+  white-space: pre-wrap;
+}
+
+.report-message small {
+  margin-top: 5px;
+}
+
+.report-review {
+  margin-top: 20px;
+  padding-top: 1px;
+  border-top: 1px solid #e8eef1;
+}
+
+.report-review-grid {
+  display: grid;
+  grid-template-columns: minmax(150px, .62fr) minmax(0, 1.38fr);
+  gap: 14px;
+}
+
+.report-resolution-grid {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.report-resolution-grid .report-note-field {
+  grid-column: 1 / -1;
+}
+
+.report-review textarea {
+  width: 100%;
+  min-height: 78px;
+  margin-top: 8px;
+  padding: 10px 11px;
+  border: 1px dashed #9fcfc4;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #40566d;
+  font-size: 11px;
+  line-height: 1.5;
+  background: #fbfefd;
+}
+
+.report-review input {
+  width: 100%;
+  height: 36px;
+  margin-top: 8px;
+  padding: 0 11px;
+  border: 1px dashed #9fcfc4;
+  border-radius: 7px;
+  box-sizing: border-box;
+  color: #40566d;
+  font-size: 11px;
+  background: #fbfefd;
+}
+
+.report-review textarea:focus {
+  border-color: #58bba5;
+  background: #ffffff;
+  box-shadow: 0 0 0 3px rgba(80, 208, 180, .09);
+}
+
+@media (max-width: 820px) {
+  .report-mailbox-page {
+    min-height: auto;
+  }
+
+  .report-target-select {
+    width: calc(50% - 5px);
+    flex-basis: calc(50% - 5px);
+  }
+
+  .report-party-grid,
+  .report-review-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .report-party-grid > view + view {
+    border-top: 1px solid #e7edf0;
+    border-left: 0;
+  }
+}
+</style>
+
+<style scoped>
+.mentor-application-page.is-compact {
+  min-height: 0;
+}
+
+.mentor-application-page.is-compact .application-workspace {
+  margin-top: 0;
 }
 </style>

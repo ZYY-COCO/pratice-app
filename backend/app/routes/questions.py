@@ -160,20 +160,55 @@ def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        response = (
-            supabase.table("user_answers")
-            .select("question_id, is_correct, created_at")
-            .eq("user_id", user_id)
-            .order("created_at", desc=False)
-            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
-            .execute()
-        )
+        try:
+            response = (
+                supabase.table("user_answers")
+                .select("question_id, is_correct, created_at, attempt_number, is_first_attempt")
+                .eq("user_id", user_id)
+                .order("created_at", desc=False)
+                .order("id", desc=False)
+                .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+                .execute()
+            )
+        except Exception:
+            # Third-batch rolling deployment compatibility: old rows do not yet
+            # expose the two immutable attempt columns.
+            response = (
+                supabase.table("user_answers")
+                .select("question_id, is_correct, created_at")
+                .eq("user_id", user_id)
+                .order("created_at", desc=False)
+                .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+                .execute()
+            )
         chunk = response.data or []
         rows.extend(chunk)
         if len(chunk) < SUPABASE_PAGE_SIZE:
             break
         offset += SUPABASE_PAGE_SIZE
     return rows
+
+
+def fetch_user_question_progress_rows(supabase, user_id: str) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        response = (
+            supabase.table("user_question_progress")
+            .select(
+                "question_id,first_attempt_is_correct,attempt_count,correct_count,"
+                "last_is_correct,last_answered_at"
+            )
+            .eq("user_id", user_id)
+            .order("last_answered_at", desc=False)
+            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+            .execute()
+        )
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < SUPABASE_PAGE_SIZE:
+            return rows
+        offset += SUPABASE_PAGE_SIZE
 
 
 def fetch_user_answer_rows_for_subject_codes(
@@ -234,39 +269,57 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
 
     stats_by_question: dict[str, dict] = {}
     try:
-        user_answer_rows = fetch_user_answer_rows(supabase, user_id)
+        progress_rows = fetch_user_question_progress_rows(supabase, user_id)
     except Exception:
-        user_answer_rows = []
+        progress_rows = None
 
-    for row in user_answer_rows:
-        question_id = row.get("question_id")
-        question_id_key = str(question_id) if question_id else ""
-        if not question_id_key or question_id_key not in active_question_ids:
-            continue
-        created_at = parse_supabase_datetime(row.get("created_at"))
-        stats = stats_by_question.setdefault(
-            question_id_key,
-            {
-                "attempt_count": 0,
-                "correct_count": 0,
-                "first_is_correct": None,
-                "last_is_correct": False,
-                "last_answer_at": created_at,
-            },
-        )
-        if stats["attempt_count"] == 0:
-            stats["first_is_correct"] = bool(row.get("is_correct"))
-        stats["attempt_count"] += 1
-        if row.get("is_correct"):
-            stats["correct_count"] += 1
-        stats["last_is_correct"] = bool(row.get("is_correct"))
-        stats["last_answer_at"] = created_at
+    if progress_rows is not None:
+        for row in progress_rows:
+            question_id_key = str(row.get("question_id") or "")
+            if not question_id_key or question_id_key not in active_question_ids:
+                continue
+            stats_by_question[question_id_key] = {
+                "attempt_count": int(row.get("attempt_count") or 0),
+                "correct_count": int(row.get("correct_count") or 0),
+                "first_is_correct": row.get("first_attempt_is_correct") is True,
+                "last_is_correct": row.get("last_is_correct") is True,
+                "last_answer_at": parse_supabase_datetime(row.get("last_answered_at")),
+            }
+    else:
+        try:
+            user_answer_rows = fetch_user_answer_rows(supabase, user_id)
+        except Exception:
+            user_answer_rows = []
+
+        for row in user_answer_rows:
+            question_id = row.get("question_id")
+            question_id_key = str(question_id) if question_id else ""
+            if not question_id_key or question_id_key not in active_question_ids:
+                continue
+            created_at = parse_supabase_datetime(row.get("created_at"))
+            stats = stats_by_question.setdefault(
+                question_id_key,
+                {
+                    "attempt_count": 0,
+                    "correct_count": 0,
+                    "first_is_correct": None,
+                    "last_is_correct": False,
+                    "last_answer_at": created_at,
+                },
+            )
+            if stats["attempt_count"] == 0:
+                stats["first_is_correct"] = bool(row.get("is_correct"))
+            stats["attempt_count"] += 1
+            if row.get("is_correct"):
+                stats["correct_count"] += 1
+            stats["last_is_correct"] = bool(row.get("is_correct"))
+            stats["last_answer_at"] = created_at
 
     now = datetime.now(timezone.utc)
-    learned_questions = sum(1 for stats in stats_by_question.values() if stats["last_is_correct"] is True)
+    learned_questions = sum(1 for stats in stats_by_question.values() if stats["first_is_correct"] is True)
     review_due: list[tuple[datetime, str]] = []
     for question_id, stats in stats_by_question.items():
-        last_answer_at = stats["last_answer_at"]
+        last_answer_at = stats["last_answer_at"] or now
         if not stats["last_is_correct"]:
             review_due.append((last_answer_at, question_id))
             continue

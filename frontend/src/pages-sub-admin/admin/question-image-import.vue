@@ -1,0 +1,3916 @@
+<template>
+  <view
+    class="image-import-page"
+    :class="{ embedded: props.embedded, 'sidebar-collapsed': props.sidebarCollapsed, 'preview-mode': editorVisible }"
+    :style="themeInlineStyle"
+  >
+    <AppPageHeader
+      v-if="!props.embedded"
+      title="批量导入"
+      subtitle="识别、预览并提交到待审核"
+      @back="goBack"
+    />
+
+    <view v-if="!editorVisible && !props.embedded" class="import-hero">
+      <view class="hero-copy">
+        <view class="hero-title">批量导入</view>
+        <view class="hero-subtitle">上传 Excel，智能识别字段后进入待审核</view>
+        <view v-if="questionBankName" class="target-bank-chip">导入至：{{ questionBankName }}</view>
+      </view>
+      <view class="hero-actions">
+        <button class="template-btn" @tap="downloadImportTemplate">下载模板</button>
+        <button class="template-guide-btn" @tap="downloadImportGuide">填写说明</button>
+        <button class="history-btn" @tap="showImportHistory">
+          <text class="history-icon">◷</text>
+          <text>导入记录</text>
+        </button>
+      </view>
+    </view>
+
+    <view v-if="loading" class="screen-state">正在验证后台权限...</view>
+    <view v-else-if="!allowed" class="screen-state">当前账号无后台权限</view>
+
+    <view v-else-if="!editorVisible" class="landing-content">
+      <view class="file-drop-zone" @tap="chooseImportFiles" @dragover.prevent @drop.prevent="handleDropFiles">
+        <view class="file-upload-illustration">
+          <view class="file-shape">
+            <view class="file-fold"></view>
+            <text class="file-arrow">↑</text>
+          </view>
+          <view class="file-plus">＋</view>
+        </view>
+        <view class="drop-title">拖拽 Excel 文件到这里</view>
+        <view class="drop-action">或点击选择 .xlsx 文件</view>
+        <view class="drop-formats">支持下载模板、中文/英文表头及常见字段别名</view>
+        <view class="drop-limit">单个文件不超过 20MB</view>
+      </view>
+
+      <view v-if="imageItems.length" class="selected-file-list">
+        <view v-for="item in imageItems" :key="item.id" class="selected-file-card">
+          <view class="file-type-icon" :class="fileTypeTone(item)">
+            <text>{{ fileTypeLabel(item) }}</text>
+          </view>
+          <view class="selected-file-main">
+            <view class="selected-file-name">{{ item.name }}</view>
+            <view class="selected-file-meta">
+              <text>{{ formatSize(item.size) }}</text>
+              <text class="ready-status">● {{ fileReadyText(item) }}</text>
+            </view>
+          </view>
+          <button class="file-delete-btn" @tap.stop="removeImage(item.id)">⌫</button>
+        </view>
+      </view>
+
+      <view class="recognition-card">
+        <view class="landing-section-title">Excel 字段校验</view>
+        <view class="recognition-tags">
+          <view class="recognition-tag blue">题干与选项</view>
+          <view class="recognition-tag green">答案与解析</view>
+          <view class="recognition-tag purple">分类与来源</view>
+        </view>
+      </view>
+
+      <view class="flow-card">
+        <view class="flow-row">
+          <view v-for="(step, index) in landingSteps" :key="step.title" class="flow-step">
+            <view class="flow-icon">
+              <view class="flow-number">{{ index + 1 }}</view>
+              <image class="flow-icon-image" :src="step.iconSrc || ''" mode="aspectFit" />
+            </view>
+            <view class="flow-title">{{ step.title }}</view>
+            <view v-if="index < landingSteps.length - 1" class="flow-arrow">→</view>
+          </view>
+        </view>
+        <view class="flow-note">ⓘ 不会直接发布或进入数据库，请先预览确认后再提交审核。</view>
+      </view>
+    </view>
+
+    <view v-else class="import-content preview-workbench">
+      <view class="preview-status-panel">
+        <view class="preview-status-copy">
+          <view class="status-kicker">IMPORT PREVIEW</view>
+          <view class="status-title">确认待审核</view>
+          <view class="status-subtitle">读取完成后选择题库，确认无误即可提交到待审核区域。</view>
+        </view>
+        <view class="status-metrics">
+          <view class="status-metric">
+            <text class="status-number">{{ totalDraftCount }}</text>
+            <text class="status-label">已读取</text>
+          </view>
+          <view class="status-metric warning">
+            <text class="status-number">{{ reviewIssueCount }}</text>
+            <text class="status-label">需检查</text>
+          </view>
+          <view class="status-metric success">
+            <text class="status-number">{{ importableDraftCount }}</text>
+            <text class="status-label">可入审</text>
+          </view>
+        </view>
+      </view>
+
+      <view class="target-bank-strip" :class="{ missing: !selectedImportBankName }">
+        <view class="target-bank-copy">
+          <view class="target-bank-label">导入题库</view>
+          <view class="target-bank-name">{{ selectedImportBankName || '请先选择要导入的题库文件' }}</view>
+        </view>
+        <button class="target-bank-btn" @tap="openQuestionBankPicker">
+          {{ selectedImportBankName ? '切换' : '选择题库' }}
+        </button>
+      </view>
+
+      <view class="preview-layout">
+        <view class="draft-list-panel">
+          <view class="list-panel-head">
+            <view>
+              <view class="panel-title">题目列表</view>
+              <view class="panel-subtitle">按 Excel 行号追踪，确认后统一提交待审核。</view>
+            </view>
+            <view class="sort-chip">待入审</view>
+          </view>
+
+          <view v-if="draftPreviewEntries.length === 0" class="draft-empty">还没有解析出的题目</view>
+          <view v-else class="preview-table">
+            <button
+              v-for="entry in draftPreviewEntries"
+              :key="entry.draft.id"
+              class="preview-row"
+              :class="[entry.tone, { active: selectedDraftId === entry.draft.id }]"
+              @tap="selectDraft(entry.draft.id)"
+            >
+              <view class="row-main">
+                <view class="row-title">
+                  <text class="row-index">{{ excelRowLabel(entry.draft, entry.index) }}</text>
+                  <MathText class="row-stem" :value="entry.draft.stem || '未填写题干'" />
+                </view>
+                <view class="row-meta">
+                  <text>{{ entry.draft.subject || '未填科目' }}</text>
+                  <text>{{ entry.draft.module || '未填模块' }}</text>
+                  <text>{{ entry.draft.submodule || '未填考点' }}</text>
+                </view>
+              </view>
+              <view class="row-status">{{ entry.status }}</view>
+            </button>
+          </view>
+        </view>
+
+        <view v-if="selectedDraftEntry" class="draft-detail-panel">
+          <view class="detail-head">
+            <view>
+              <view class="detail-kicker">{{ excelRowLabel(selectedDraftEntry.draft, selectedDraftEntry.index) }}</view>
+              <view class="detail-title">题目详情编辑</view>
+              <view class="detail-source">{{ selectedDraftEntry.draft.image_name || 'Excel 导入' }}</view>
+            </view>
+            <view class="detail-status" :class="selectedDraftEntry.tone">{{ selectedDraftEntry.status }}</view>
+          </view>
+
+          <view v-if="selectedDraftEntry.errors.length" class="detail-issue-panel">
+            <view class="issue-panel-head">
+              <view>
+                <view class="issue-kicker">CHECK DETAIL</view>
+                <view class="issue-title">{{ excelRowLabel(selectedDraftEntry.draft, selectedDraftEntry.index) }}：字段需检查</view>
+              </view>
+              <view class="issue-count">{{ selectedDraftEntry.errors.length }} 项</view>
+            </view>
+            <view class="issue-list">
+              <view
+                v-for="(error, errorIndex) in selectedDraftEntry.errors"
+                :key="`${selectedDraftEntry.draft.id}-issue-${errorIndex}`"
+                class="issue-item"
+              >
+                <text class="issue-dot"></text>
+                <text>{{ formatDraftIssue(error, selectedDraftEntry) }}</text>
+              </view>
+            </view>
+          </view>
+
+          <view class="detail-grid">
+            <AdminSelect
+              class="draft-admin-select"
+              :options="subjectLabels"
+              :value-index="draftSubjectIndex(selectedDraftEntry.draft)"
+              prefix="科目："
+              aria-label="科目"
+              @change="handleDraftSubjectChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="draftModuleLabels(selectedDraftEntry.draft)"
+              :value-index="draftModuleIndex(selectedDraftEntry.draft)"
+              prefix="模块："
+              aria-label="模块"
+              @change="handleDraftModuleChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="draftSubmoduleLabels(selectedDraftEntry.draft)"
+              :value-index="draftSubmoduleIndex(selectedDraftEntry.draft)"
+              prefix="考点："
+              aria-label="考点"
+              @change="handleDraftSubmoduleChange(selectedDraftEntry.draft, $event)"
+            />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="difficultyLabels"
+              :value-index="difficultyIndex(selectedDraftEntry.draft.difficulty)"
+              prefix="难度 "
+              aria-label="难度"
+              @change="handleDraftDifficultyChange(selectedDraftEntry.draft, $event)"
+            />
+          </view>
+
+          <view class="draft-meta-grid">
+            <input v-model="selectedDraftEntry.draft.exam_code" class="draft-meta-input" placeholder="考试代码：COMMON / Z001 / Z002" @input="markDryRunDirty" />
+            <AdminSelect
+              class="draft-admin-select"
+              :options="sourceTypeLabels"
+              :value-index="sourceTypeIndex(selectedDraftEntry.draft.source_type)"
+              aria-label="来源类型"
+              @change="handleDraftSourceTypeChange(selectedDraftEntry.draft, $event)"
+            />
+            <input v-model="selectedDraftEntry.draft.source_year" class="draft-meta-input" type="number" placeholder="来源年份（可选）" @input="markDryRunDirty" />
+          </view>
+
+          <MathQuestionPaperPreview
+            v-if="selectedDraftEntry.draft.subject === '数学基础'"
+            class="import-math-preview"
+            :stem="selectedDraftEntry.draft.stem"
+            :option-a="selectedDraftEntry.draft.option_a"
+            :option-b="selectedDraftEntry.draft.option_b"
+            :option-c="selectedDraftEntry.draft.option_c"
+            :option-d="selectedDraftEntry.draft.option_d"
+            :answer="selectedDraftEntry.draft.answer"
+            :explanation="selectedDraftEntry.draft.explanation"
+          />
+
+          <view class="detail-field-label">题干</view>
+          <textarea v-model="selectedDraftEntry.draft.stem" class="draft-textarea stem" placeholder="题干" @input="markDryRunDirty" />
+
+          <view class="detail-field-label">选项与答案</view>
+          <view class="option-editor">
+            <view v-for="option in answerOptions" :key="option" class="option-row" :class="{ selected: selectedDraftEntry.draft.answer === option }">
+              <button class="answer-dot" @tap="setDraftAnswer(selectedDraftEntry.draft, option)">{{ selectedDraftEntry.draft.answer === option ? '●' : '○' }}</button>
+              <text class="option-label">{{ option }}.</text>
+              <input
+                :value="draftOptionValue(selectedDraftEntry.draft, option)"
+                class="option-input"
+                :placeholder="`${option} 选项`"
+                @input="handleDraftOptionInput(selectedDraftEntry.draft, option, $event)"
+              />
+            </view>
+          </view>
+
+          <view class="detail-field-label">解析</view>
+          <textarea v-model="selectedDraftEntry.draft.explanation" class="draft-textarea explanation" placeholder="解析 / 答案理由" @input="markDryRunDirty" />
+
+          <view class="draft-actions">
+            <button class="line-btn" @tap="duplicateDraft(selectedDraftEntry.draft)">复制题目</button>
+            <button class="danger-line-btn" @tap="removeDraft(selectedDraftEntry.draft.id)">删除题目</button>
+          </view>
+        </view>
+        <view v-else class="draft-detail-panel empty-detail">
+          <view class="draft-empty">请选择左侧题目查看详情</view>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="questionBankPickerVisible" class="bank-picker-mask" @tap="closeQuestionBankPicker">
+      <view class="bank-picker-dialog" @tap.stop>
+        <view class="bank-picker-head">
+          <view>
+            <view class="status-kicker">QUESTION BANK</view>
+            <view class="bank-picker-title">选择导入题库</view>
+            <view class="panel-subtitle">导入成功后，题目会进入所选题库的待审核状态。</view>
+          </view>
+          <button class="bank-picker-close" @tap="closeQuestionBankPicker">×</button>
+        </view>
+        <view v-if="questionBanksLoading" class="bank-picker-state">正在读取题库文件...</view>
+        <view v-else-if="questionBankPickerError" class="bank-picker-state">
+          题库文件读取失败，请刷新后重试
+        </view>
+        <view v-else class="bank-picker-list">
+          <button
+            v-for="bank in questionBanks"
+            :key="bank.id"
+            class="bank-picker-card"
+            :class="{ selected: questionBankId === bank.id }"
+            @tap="selectImportQuestionBank(bank)"
+          >
+            <view class="bank-folder-icon">题</view>
+            <view class="bank-picker-main">
+              <view class="bank-picker-name">{{ bank.name }}</view>
+              <view class="bank-picker-date">最近修改：{{ formatBankDate(bank.updated_at) }}</view>
+            </view>
+            <view class="bank-radio">{{ questionBankId === bank.id ? '●' : '○' }}</view>
+          </button>
+        </view>
+      </view>
+    </view>
+
+    <view v-if="allowed && !editorVisible" class="recognize-bottom-bar">
+      <button class="recognize-btn" :disabled="imageItems.length === 0 || recognizingCount > 0" @tap="startRecognition">
+        <text>{{ recognizingCount > 0 ? `正在读取 ${recognizingCount}` : '进入预览' }}</text>
+      </button>
+      <view class="recognize-hint">{{ recognizingCount > 0 ? '正在读取 Excel 内容，请稍候' : (imageItems.length ? `已读取 ${recognizedQuestionCount} 道题，可进入确认待审核` : '请先下载模板并选择 .xlsx 文件') }}</view>
+    </view>
+
+    <view v-if="allowed && editorVisible" class="import-bottom-bar preview-bottom-bar">
+      <view class="bottom-actions">
+        <button class="bottom-btn ghost" :disabled="dryRunLoading || importSaving" @tap="returnToFileSelection">
+          返回上传
+        </button>
+        <button class="bottom-btn primary" :disabled="importSaving || dryRunLoading || drafts.length === 0" @tap="commitImport">
+          {{ importSaving || dryRunLoading ? '提交中' : '提交待审核' }}
+        </button>
+      </view>
+    </view>
+  </view>
+</template>
+
+<script setup>
+import { computed, onMounted, reactive, ref, watch } from 'vue'
+import { onLoad } from '@dcloudio/uni-app'
+import AdminSelect from '../../components/AdminSelect.vue'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.vue'
+import MathText from '../../components/MathText.vue'
+import {
+  commitAdminQuestionImageImport,
+  dryRunAdminQuestionImageImport,
+  fetchAdminQuestionBanks,
+  fetchQuestionAdminPortalMe,
+  recognizeAdminQuestionImportFile
+} from '../../api/admin'
+import { isLoggedIn } from '../../utils/auth'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import { requireWechatPrivacyAuthorization } from '../../utils/wechatPrivacy'
+import { recognizeQuestionImportXlsxFile } from '../../utils/xlsxQuestionImport.mjs'
+import { QUESTION_CATALOG } from './question-admin-catalog'
+
+const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const props = defineProps({
+  embedded: Boolean,
+  sidebarCollapsed: Boolean,
+  devPreview: Boolean,
+  portalEntry: Boolean,
+  questionBankId: {
+    type: String,
+    default: ''
+  },
+  questionBankName: {
+    type: String,
+    default: ''
+  }
+})
+const emit = defineEmits(['preview-mode-change'])
+const loading = ref(true)
+const allowed = ref(false)
+const portalEntry = ref(false)
+const questionBankId = ref('')
+const questionBankName = ref('')
+const questionBanks = ref([])
+const questionBanksLoading = ref(false)
+const questionBankPickerVisible = ref(false)
+const questionBankPickerError = ref(false)
+const editorVisible = ref(false)
+const imageItems = ref([])
+const drafts = ref([])
+const selectedDraftId = ref('')
+const dryRunResult = ref(null)
+const dryRunLoading = ref(false)
+const importSaving = ref(false)
+const answerOptions = ['A', 'B', 'C', 'D']
+const IMPORT_HISTORY_KEY = 'adminQuestionImportHistory'
+
+watch(editorVisible, (visible) => {
+  if (props.embedded) {
+    emit('preview-mode-change', visible)
+  }
+}, { immediate: true })
+const LOCAL_RECOGNITION_TIMEOUT_MS = 15000
+const REMOTE_RECOGNITION_TIMEOUT_MS = 30000
+const landingSteps = [
+  { icon: '▱', title: '选择文件' },
+  { icon: '⌗', title: '读取 Excel' },
+  { icon: '▤', title: '预览确认' },
+  { icon: '✓', title: '进入待审核' }
+]
+const sourceTypeOptions = ['manual', 'source_extracted', 'real_exam']
+const sourceTypeLabels = ['手工录入', '资料整理', '真题']
+
+const landingStepIconPaths = [
+  '/static/admin-icons/import-select-file.svg',
+  '/static/admin-icons/import-scan.svg',
+  '/static/admin-icons/import-preview.svg',
+  '/static/admin-icons/import-safe.svg'
+]
+landingSteps.forEach((step, index) => {
+  step.iconSrc = landingStepIconPaths[index]
+})
+
+const importCatalog = QUESTION_CATALOG
+
+const importDefaults = reactive({
+  subject: '英语运用',
+  module: '语言知识',
+  submodule: '语法',
+  difficulty: 2
+})
+
+const subjectOptions = computed(() => Object.keys(importCatalog))
+const subjectLabels = computed(() => subjectOptions.value)
+const moduleOptions = computed(() => Object.keys(importCatalog[importDefaults.subject]?.modules || {}))
+const moduleLabels = computed(() => moduleOptions.value)
+const submoduleOptions = computed(() => importCatalog[importDefaults.subject]?.modules?.[importDefaults.module] || [])
+const submoduleLabels = computed(() => submoduleOptions.value)
+const difficultyLabels = ['1', '2', '3', '4', '5']
+const selectedSubjectIndex = computed(() => optionIndex(subjectOptions.value, importDefaults.subject))
+const selectedModuleIndex = computed(() => optionIndex(moduleOptions.value, importDefaults.module))
+const selectedSubmoduleIndex = computed(() => optionIndex(submoduleOptions.value, importDefaults.submodule))
+const selectedDifficultyIndex = computed(() => difficultyIndex(importDefaults.difficulty))
+const recognizingCount = computed(() => imageItems.value.filter((item) => item.recognizing).length)
+const recognizedQuestionCount = computed(() => imageItems.value.reduce((total, item) => (
+  total + (Array.isArray(item.recognizedQuestions) ? item.recognizedQuestions.length : 0)
+), 0))
+const draftPreviewEntries = computed(() => {
+  return drafts.value
+    .map((draft, index) => {
+      const errors = draftErrors(draft, index)
+      const status = draftStatusText(draft, index)
+      const tone = draftTone(draft, index)
+      return { draft, index, errors, status, tone }
+    })
+    .sort((left, right) => {
+      const leftError = left.errors.length ? 0 : 1
+      const rightError = right.errors.length ? 0 : 1
+      return leftError - rightError || left.index - right.index
+    })
+})
+const selectedDraftEntry = computed(() => (
+  draftPreviewEntries.value.find((entry) => entry.draft.id === selectedDraftId.value) ||
+  draftPreviewEntries.value[0] ||
+  null
+))
+const totalDraftCount = computed(() => drafts.value.length)
+const localIssueCount = computed(() => draftPreviewEntries.value.filter((entry) => entry.errors.length > 0).length)
+const reviewIssueCount = computed(() => (
+  localIssueCount.value + Number(dryRunResult.value?.duplicate_count || 0)
+))
+const importableDraftCount = computed(() => {
+  if (dryRunResult.value) return Number(dryRunResult.value.valid_count || 0)
+  return Math.max(0, totalDraftCount.value - localIssueCount.value)
+})
+const selectedImportBankName = computed(() => {
+  if (questionBankName.value) return questionBankName.value
+  return questionBanks.value.find((bank) => bank.id === questionBankId.value)?.name || ''
+})
+const canCommit = computed(() => (
+  Boolean(questionBankId.value) &&
+  Boolean(dryRunResult.value) &&
+  Number(dryRunResult.value.valid_count || 0) > 0 &&
+  Number(dryRunResult.value.invalid_count || 0) === 0 &&
+  Number(dryRunResult.value.duplicate_count || 0) === 0
+))
+
+watch(() => props.devPreview, (enabled) => {
+  if (!import.meta.env.DEV || !props.embedded || !enabled) return
+  allowed.value = true
+  loading.value = false
+}, { immediate: true })
+
+onLoad((options = {}) => {
+  void initializeWorkspace(options)
+})
+
+onMounted(() => {
+  if (!props.embedded) return
+  void initializeWorkspace({
+    portal: props.portalEntry ? '1' : '',
+    question_bank_id: props.questionBankId,
+    question_bank_name: props.questionBankName
+  })
+})
+
+async function initializeWorkspace(options = {}) {
+  portalEntry.value = props.embedded ? Boolean(props.portalEntry) : options.portal === '1'
+  questionBankId.value = String(props.embedded ? props.questionBankId : (options.question_bank_id || ''))
+  questionBankName.value = String(props.embedded ? props.questionBankName : (options.question_bank_name || ''))
+  if (import.meta.env.DEV && props.embedded && (props.devPreview || options.preview === '1')) {
+    allowed.value = true
+    loading.value = false
+    return
+  }
+  if (!isLoggedIn()) {
+    const loginTarget = portalEntry.value
+      ? `/pages/login/index?portal=1&redirect=${encodeURIComponent('/pages-sub-admin/admin/question-desktop?section=questions')}`
+      : `/pages/login/index?redirect=${encodeURIComponent('/pages-sub-admin/admin/question-image-import')}`
+    uni.redirectTo({ url: loginTarget })
+    return
+  }
+  try {
+    const me = await fetchQuestionAdminPortalMe()
+    allowed.value = Boolean(me?.allowed)
+    if (!allowed.value) {
+      uni.showToast({ title: '无后台权限', icon: 'none' })
+    }
+  } catch (error) {
+    allowed.value = false
+    uni.showToast({ title: '权限验证失败', icon: 'none' })
+  } finally {
+    loading.value = false
+  }
+}
+
+function optionIndex(options, value) {
+  const index = options.findIndex((item) => item === value)
+  return index >= 0 ? index : 0
+}
+
+function difficultyIndex(value) {
+  const index = difficultyLabels.findIndex((item) => Number(item) === Number(value))
+  return index >= 0 ? index : 1
+}
+
+function syncDefaults() {
+  const catalog = importCatalog[importDefaults.subject] || importCatalog['英语运用']
+  importDefaults.subject = importCatalog[importDefaults.subject] ? importDefaults.subject : '英语运用'
+  const modules = Object.keys(catalog.modules)
+  if (!modules.includes(importDefaults.module)) {
+    importDefaults.module = modules[0] || ''
+  }
+  const submodules = catalog.modules[importDefaults.module] || []
+  if (!submodules.includes(importDefaults.submodule)) {
+    importDefaults.submodule = submodules[0] || ''
+  }
+}
+
+function handleSubjectChange(event) {
+  importDefaults.subject = subjectOptions.value[Number(event?.detail?.value || 0)] || '英语运用'
+  importDefaults.module = ''
+  importDefaults.submodule = ''
+  syncDefaults()
+  markDryRunDirty()
+}
+
+function handleModuleChange(event) {
+  importDefaults.module = moduleOptions.value[Number(event?.detail?.value || 0)] || ''
+  importDefaults.submodule = ''
+  syncDefaults()
+  markDryRunDirty()
+}
+
+function handleSubmoduleChange(event) {
+  importDefaults.submodule = submoduleOptions.value[Number(event?.detail?.value || 0)] || ''
+  markDryRunDirty()
+}
+
+function handleDifficultyChange(event) {
+  importDefaults.difficulty = Number(difficultyLabels[Number(event?.detail?.value || 1)] || 2)
+  markDryRunDirty()
+}
+
+async function chooseImportFiles() {
+  try {
+    await requireWechatPrivacyAuthorization()
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '需要同意隐私保护指引后才能选择文件', icon: 'none' })
+    return
+  }
+
+  if (typeof uni.chooseFile === 'function') {
+    uni.chooseFile({
+      count: 1,
+      extension: ['xlsx'],
+      success: appendSelectedFiles
+    })
+    return
+  }
+  if (typeof uni.chooseMessageFile === 'function') {
+    uni.chooseMessageFile({
+      count: 1,
+      type: 'file',
+      extension: ['xlsx'],
+      success: appendSelectedFiles
+    })
+    return
+  }
+  uni.showToast({ title: '当前设备不支持 Excel 文件选择，请在网页端操作', icon: 'none' })
+}
+
+function appendSelectedFiles(response) {
+  const paths = response.tempFilePaths || []
+  const files = response.tempFiles || response.tempFilePaths?.map((path) => ({ path })) || []
+  appendImportFiles(files.map((file, index) => normalizeImportFile(file, index, paths)))
+}
+
+function handleDropFiles(event) {
+  const files = Array.from(event?.dataTransfer?.files || [])
+  if (!files.length) return
+  appendNativeFiles(files.slice(0, 1))
+}
+
+function appendNativeFiles(files) {
+  appendImportFiles(files.map((file, index) => normalizeImportFile(file, index)))
+}
+
+function normalizeImportFile(file = {}, index = 0, paths = []) {
+  const nativeCandidate = file?.file || file?.raw || file?.originFileObj || file?.tempFile || file
+  const nativeFile = isNativeBlob(nativeCandidate) ? nativeCandidate : null
+  const path = file?.path || paths[index] || ''
+  const name = file?.name || nativeFile?.name || imageNameFromPath(path, index + 1)
+  return {
+    ...file,
+    path,
+    file: nativeFile,
+    name,
+    size: file?.size || nativeFile?.size || 0,
+    type: file?.type || nativeFile?.type || ''
+  }
+}
+
+function isNativeBlob(value) {
+  return typeof Blob !== 'undefined' && value instanceof Blob
+}
+
+function appendImportFiles(files) {
+  const excelFiles = files.filter((file) => fileExtension(file.name || file.path || file.file?.name) === 'xlsx')
+  if (!excelFiles.length) {
+    uni.showToast({ title: '仅支持 .xlsx Excel 题库模板文件', icon: 'none' })
+    return
+  }
+  const nextItems = excelFiles.slice(0, 1).map((file, index) => {
+    const name = file.name || imageNameFromPath(file.path, index + 1)
+    const extension = fileExtension(name)
+    return {
+      id: `${Date.now()}-${index}-${Math.random().toString(16).slice(2)}`,
+      path: file.path || '',
+      file: file.file || null,
+      name,
+      extension,
+      size: file.size || 0,
+      recognizedQuestions: [],
+      recognizing: false,
+      recognitionError: '',
+      recognitionHint: '',
+      recognitionProvider: '',
+      status: '等待读取'
+    }
+  })
+  imageItems.value = nextItems
+  drafts.value = []
+  selectedDraftId.value = ''
+  // Read the items back through the Vue ref so async mutations happen on the
+  // reactive proxies. Mutating `nextItems` directly leaves the rendered status
+  // stuck at "识别中" even after Excel parsing has already finished.
+  imageItems.value.forEach(recognizeImportItem)
+  markDryRunDirty()
+}
+
+function fileExtension(name) {
+  return String(name || '').split('.').pop()?.toLowerCase() || ''
+}
+
+function fileTypeLabel(item) {
+  return String(item?.extension || fileExtension(item?.name) || 'XLSX').toUpperCase()
+}
+
+function fileTypeTone(item) {
+  return String(item?.extension || fileExtension(item?.name)).toLowerCase() === 'xlsx' ? 'sheet' : 'image'
+}
+
+function fileReadyText(item) {
+  if (item?.recognizing) return '识别中...'
+  if (item?.recognitionError) return `识别失败：${item.recognitionError}`
+  if (Array.isArray(item?.recognizedQuestions) && item.recognizedQuestions.length) {
+    return `已读取 ${item.recognizedQuestions.length} 题${item.recognitionHint ? ` · ${item.recognitionHint}` : ''}`
+  }
+  if (item?.recognitionHint) return `${item?.status || '等待读取'} · ${item.recognitionHint}`
+  return item?.status || '等待读取'
+}
+
+async function recognizeImportItem(item) {
+  if (!item?.file && !item?.path) {
+    item.status = '缺少文件'
+    item.recognitionError = '无法读取上传文件'
+    return
+  }
+
+  item.recognizing = true
+  item.recognitionError = ''
+  item.recognitionHint = ''
+  item.status = '识别中'
+  markDryRunDirty()
+
+  try {
+    const uploadFile = await resolveBrowserUploadFile(item)
+    const result = uploadFile
+      ? await withTimeout(
+          recognizeQuestionImportXlsxFile(uploadFile, item.name || 'upload.xlsx'),
+          LOCAL_RECOGNITION_TIMEOUT_MS,
+          '浏览器读取 Excel 超时，请重新选择文件'
+        )
+      : await withTimeout(
+          recognizeAdminQuestionImportFile({
+            filePath: item.path || '',
+            fileName: item.name || 'upload.xlsx'
+          }),
+          REMOTE_RECOGNITION_TIMEOUT_MS,
+          '上传读取超时，请重新选择文件'
+        )
+    if (!imageItems.value.some((current) => current.id === item.id)) return
+    item.recognizedQuestions = Array.isArray(result?.questions) ? result.questions : []
+    item.recognitionProvider = result?.provider || ''
+    item.status = item.recognizedQuestions.length ? `已读取 ${item.recognizedQuestions.length} 题` : '模板中未填写题目'
+    if (result?.warnings?.length) {
+      item.recognitionHint = result.warnings.join('；')
+    }
+  } catch (error) {
+    if (!imageItems.value.some((current) => current.id === item.id)) return
+    item.status = '识别失败'
+    item.recognitionError = errorDetail(error)
+  } finally {
+    item.recognizing = false
+    markDryRunDirty()
+  }
+}
+
+async function withTimeout(promise, timeoutMs, message) {
+  let timeoutId
+  try {
+    return await Promise.race([
+      promise,
+      new Promise((_, reject) => {
+        timeoutId = setTimeout(() => reject(new Error(message)), timeoutMs)
+      })
+    ])
+  } finally {
+    if (timeoutId) clearTimeout(timeoutId)
+  }
+}
+
+async function resolveBrowserUploadFile(item) {
+  if (isNativeBlob(item?.file)) return item.file
+  const path = String(item?.path || '')
+  if (!path || typeof fetch !== 'function') return null
+  if (!path.startsWith('blob:') && !path.startsWith('data:')) return null
+  const response = await fetch(path)
+  if (!response.ok) {
+    throw new Error('无法读取浏览器临时 Excel 文件，请重新选择文件')
+  }
+  const blob = await response.blob()
+  if (typeof File === 'function') {
+    return new File([blob], item?.name || 'upload.xlsx', {
+      type: blob.type || item?.type || 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    })
+  }
+  return blob
+}
+
+function errorDetail(error) {
+  const detail = error?.detail || error?.message || error
+  if (Array.isArray(detail)) {
+    return detail.map((item) => item?.msg || item).join('；')
+  }
+  if (detail && typeof detail === 'object') {
+    return detail.message || JSON.stringify(detail)
+  }
+  return String(detail || '识别失败')
+}
+
+function imageNameFromPath(path, index) {
+  const name = String(path || '').split(/[\\/]/).filter(Boolean).pop()
+  return name || `题目图片 ${index}`
+}
+
+function formatSize(size) {
+  const bytes = Number(size || 0)
+  if (!bytes) return '未知大小'
+  if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`
+  return `${(bytes / 1024 / 1024).toFixed(1)} MB`
+}
+
+function formatBankDate(value) {
+  if (!value) return '—'
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '—'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date)
+}
+
+function previewImage(item) {
+  uni.previewImage({
+    current: item.path,
+    urls: imageItems.value.map((image) => image.path)
+  })
+}
+
+function removeImage(id) {
+  imageItems.value = imageItems.value.filter((item) => item.id !== id)
+  drafts.value = drafts.value.filter((draft) => draft.image_id !== id)
+  markDryRunDirty()
+}
+
+function startRecognition() {
+  if (!imageItems.value.length) {
+    uni.showToast({ title: '请先选择文件', icon: 'none' })
+    return
+  }
+  const recognizingCount = imageItems.value.filter((item) => item.recognizing).length
+  if (recognizingCount) {
+    uni.showToast({ title: `还有 ${recognizingCount} 个文件正在识别`, icon: 'none' })
+    return
+  }
+  const readableItems = imageItems.value.filter((item) => Array.isArray(item.recognizedQuestions) && item.recognizedQuestions.length)
+  if (!readableItems.length) {
+    const failedCount = imageItems.value.filter((item) => item.recognitionError).length
+    uni.showToast({
+      title: failedCount ? `有 ${failedCount} 个文件识别失败，请查看文件提示` : '未读取到题目，请查看文件卡片中的识别提示',
+      icon: 'none'
+    })
+    return
+  }
+  const total = readableItems.reduce((sum, item) => sum + parseExcelItem(item), 0)
+  uni.showToast({ title: `已读取 ${total} 题，请逐行预览确认`, icon: 'success' })
+  editorVisible.value = true
+  ensureSelectedDraft()
+  if (!questionBankId.value) {
+    void loadQuestionBankOptions()
+  }
+  markDryRunDirty()
+  setTimeout(() => {
+    void runDryCheck(true)
+  }, 0)
+}
+
+function returnToFileSelection() {
+  editorVisible.value = false
+  selectedDraftId.value = ''
+}
+
+function selectDraft(id) {
+  selectedDraftId.value = id
+}
+
+function ensureSelectedDraft() {
+  if (selectedDraftId.value && drafts.value.some((draft) => draft.id === selectedDraftId.value)) return
+  selectedDraftId.value = draftPreviewEntries.value[0]?.draft?.id || drafts.value[0]?.id || ''
+}
+
+function compactStem(value) {
+  const text = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!text) return '未填写题干'
+  return text.length > 48 ? `${text.slice(0, 48)}…` : text
+}
+
+async function openQuestionBankPicker() {
+  questionBankPickerVisible.value = true
+  if (!questionBanks.value.length) {
+    await loadQuestionBankOptions()
+  }
+}
+
+function closeQuestionBankPicker() {
+  if (questionBanksLoading.value) return
+  questionBankPickerVisible.value = false
+}
+
+async function loadQuestionBankOptions() {
+  questionBanksLoading.value = true
+  questionBankPickerError.value = false
+  try {
+    const response = await fetchAdminQuestionBanks()
+    questionBanks.value = Array.isArray(response?.items) ? response.items : []
+    if (questionBankId.value && !questionBankName.value) {
+      questionBankName.value = questionBanks.value.find((bank) => bank.id === questionBankId.value)?.name || ''
+    }
+  } catch (error) {
+    questionBanks.value = []
+    questionBankPickerError.value = true
+  } finally {
+    questionBanksLoading.value = false
+  }
+}
+
+function selectImportQuestionBank(bank) {
+  if (!bank?.id) return
+  questionBankId.value = bank.id
+  questionBankName.value = bank.name || ''
+  questionBankPickerVisible.value = false
+  markDryRunDirty()
+  uni.showToast({ title: '已选择题库', icon: 'none' })
+}
+
+function showImportHistory() {
+  const history = uni.getStorageSync(IMPORT_HISTORY_KEY) || []
+  const content = Array.isArray(history) && history.length
+    ? history.slice(0, 8).map((item) => `${item.created_at} · ${item.count} 题`).join('\n')
+    : '暂无导入记录'
+  uni.showModal({
+    title: '导入记录',
+    content,
+    showCancel: false,
+    confirmText: '关闭'
+  })
+}
+
+function downloadImportTemplate() {
+  downloadStaticFile('/static/templates/question-import-template.xlsx', '港澳台考研题库导入模板.xlsx')
+}
+
+function downloadImportGuide() {
+  downloadStaticFile('/static/templates/question-import-instructions.txt', '港澳台考研题库导入填写说明.txt')
+}
+
+function downloadStaticFile(fileUrl, fileName) {
+  if (typeof document !== 'undefined') {
+    const link = document.createElement('a')
+    link.href = fileUrl
+    link.download = fileName
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    return
+  }
+  uni.showToast({ title: '请在网页端下载文件', icon: 'none' })
+}
+
+function parseExcelItem(item) {
+  const questions = Array.isArray(item?.recognizedQuestions) ? item.recognizedQuestions : []
+  const nextDrafts = questions.map((question, index) => (
+    createDraftFromQuestionObject(question, item, index, questions.length)
+  ))
+  drafts.value = [
+    ...drafts.value.filter((entry) => entry.image_id !== item.id),
+    ...nextDrafts
+  ]
+  item.status = `已读取 ${nextDrafts.length} 题`
+  return nextDrafts.length
+}
+
+function createDraftsFromText(rawText, image) {
+  const structuredQuestions = parseStructuredQuestions(rawText, image?.extension)
+  if (structuredQuestions.length) {
+    return structuredQuestions.map((question, index) => (
+      createDraftFromQuestionObject(question, image, index, structuredQuestions.length)
+    ))
+  }
+  const blocks = splitQuestionBlocks(rawText)
+  return blocks.map((block, index) => createDraftFromText(block, image, index, blocks.length))
+}
+
+function parseStructuredQuestions(rawText, extension) {
+  const text = String(rawText || '').trim()
+  if (!text) return []
+  if (extension === 'json' || text.startsWith('[') || text.startsWith('{')) {
+    try {
+      const parsed = JSON.parse(text)
+      const questions = Array.isArray(parsed) ? parsed : parsed?.questions
+      if (Array.isArray(questions)) return questions.filter((item) => item && typeof item === 'object')
+    } catch (error) {
+      return []
+    }
+  }
+  if (extension === 'csv') {
+    return parseCsvQuestions(text)
+  }
+  return []
+}
+
+function parseCsvQuestions(text) {
+  const rows = String(text || '').split(/\r?\n/).filter((row) => row.trim())
+  if (rows.length < 2) return []
+  const headers = splitCsvRow(rows[0]).map((header) => header.trim().toLowerCase())
+  const knownFields = ['stem', 'question', '题干', 'option_a', 'a', '选项a', 'answer', '答案']
+  if (!headers.some((header) => knownFields.includes(header))) return []
+  return rows.slice(1).map((row) => {
+    const values = splitCsvRow(row)
+    return headers.reduce((result, header, index) => {
+      result[header] = values[index] || ''
+      return result
+    }, {})
+  })
+}
+
+function splitCsvRow(row) {
+  const values = []
+  let current = ''
+  let quoted = false
+  for (let index = 0; index < row.length; index += 1) {
+    const char = row[index]
+    if (char === '"') {
+      if (quoted && row[index + 1] === '"') {
+        current += '"'
+        index += 1
+      } else {
+        quoted = !quoted
+      }
+    } else if (char === ',' && !quoted) {
+      values.push(current.trim())
+      current = ''
+    } else {
+      current += char
+    }
+  }
+  values.push(current.trim())
+  return values
+}
+
+function structuredValue(question, fields, fallback = '') {
+  for (const field of fields) {
+    if (question?.[field] !== undefined && question?.[field] !== null) {
+      return question[field]
+    }
+  }
+  return fallback
+}
+
+function createDraftFromQuestionObject(question, image, blockIndex = 0, blockCount = 1) {
+  syncDefaults()
+  const options = question?.options || {}
+  const imageIndex = image ? imageItems.value.findIndex((item) => item.id === image.id) : null
+  const imageName = image?.name
+    ? (blockCount > 1 ? `${image.name} #${blockIndex + 1}` : image.name)
+    : ''
+  const subject = String(structuredValue(question, ['subject', '科目'], importDefaults.subject))
+  const catalog = importCatalog[subject] || importCatalog[importDefaults.subject]
+  const module = String(structuredValue(question, ['module', '模块'], importDefaults.module))
+  const submodule = String(structuredValue(question, ['submodule', '子模块', '考点', '分类'], importDefaults.submodule))
+  const rawDifficulty = structuredValue(question, ['difficulty', '难度'], importDefaults.difficulty)
+  const rawSourceYear = structuredValue(question, ['source_year', '来源年份'], '')
+  return {
+    id: `${Date.now()}-${blockIndex}-${Math.random().toString(16).slice(2)}`,
+    image_id: image?.id || '',
+    image_name: imageName,
+    image_index: imageIndex,
+    exam_code: String(structuredValue(question, ['exam_code', '考试代码'], catalog?.exam_code || 'COMMON')),
+    subject,
+    module,
+    submodule,
+    difficulty: rawDifficulty === '' || rawDifficulty === null || rawDifficulty === undefined ? 2 : rawDifficulty,
+    stem: String(structuredValue(question, ['stem', 'question', '题干'], '')),
+    option_a: String(structuredValue(question, ['option_a', 'a', 'A', '选项a', '选项A'], options.A || options.a || '')),
+    option_b: String(structuredValue(question, ['option_b', 'b', 'B', '选项b', '选项B'], options.B || options.b || '')),
+    option_c: String(structuredValue(question, ['option_c', 'c', 'C', '选项c', '选项C'], options.C || options.c || '')),
+    option_d: String(structuredValue(question, ['option_d', 'd', 'D', '选项d', '选项D'], options.D || options.d || '')),
+    answer: String(structuredValue(question, ['answer', 'correct_answer', '答案'], 'A')).toUpperCase(),
+    explanation: String(structuredValue(question, ['explanation', 'analysis', '解析'], '')),
+    source_type: String(structuredValue(question, ['source_type', '来源类型'], 'manual')) || 'manual',
+    source_year: rawSourceYear === null || rawSourceYear === undefined ? '' : String(rawSourceYear),
+    excel_row: Number(question?.excel_row) || blockIndex + 2,
+    check: null
+  }
+}
+
+function createDraftFromText(rawText, image, blockIndex = 0, blockCount = 1) {
+  syncDefaults()
+  const parsed = parseQuestionText(rawText)
+  const imageIndex = image ? imageItems.value.findIndex((item) => item.id === image.id) : null
+  const imageName = image?.name
+    ? (blockCount > 1 ? `${image.name} #${blockIndex + 1}` : image.name)
+    : ''
+  return {
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    image_id: image?.id || '',
+    image_name: imageName,
+    image_index: imageIndex,
+    exam_code: importCatalog[importDefaults.subject]?.exam_code || 'COMMON',
+    subject: importDefaults.subject,
+    module: importDefaults.module,
+    submodule: importDefaults.submodule,
+    difficulty: importDefaults.difficulty,
+    stem: parsed.stem,
+    option_a: parsed.option_a,
+    option_b: parsed.option_b,
+    option_c: parsed.option_c,
+    option_d: parsed.option_d,
+    answer: parsed.answer,
+    explanation: parsed.explanation,
+    check: null
+  }
+}
+
+function splitQuestionBlocks(rawText) {
+  const text = String(rawText || '').replace(/\r\n/g, '\n').trim()
+  if (!text) return ['']
+
+  const separatorBlocks = text
+    .split(/\n\s*(?:-{3,}|={3,}|#{3,}|题目分隔)\s*\n/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+  if (separatorBlocks.length > 1 && separatorBlocks.filter(hasQuestionShape).length >= 2) {
+    return separatorBlocks
+  }
+
+  const markerRegex = /(?:^|\n)\s*(?:(?:第\s*)?\d+\s*[题、.．:：)]|题目\s*\d+|Q\s*\d+[\).、:：]?)/gi
+  const matches = Array.from(text.matchAll(markerRegex))
+  if (matches.length > 1) {
+    const blocks = matches
+      .map((match, index) => {
+        const start = match.index + (match[0].startsWith('\n') ? 1 : 0)
+        const end = matches[index + 1]?.index ?? text.length
+        return text.slice(start, end).trim()
+      })
+      .filter(Boolean)
+    if (blocks.filter(hasQuestionShape).length >= 2) {
+      return blocks
+    }
+  }
+
+  const stemBlocks = text
+    .split(/\n(?=\s*(?:题干|问题|题目)\s*[:：])/g)
+    .map((block) => block.trim())
+    .filter(Boolean)
+  if (stemBlocks.length > 1 && stemBlocks.filter(hasQuestionShape).length >= 2) {
+    return stemBlocks
+  }
+
+  return [text]
+}
+
+function hasQuestionShape(text) {
+  const optionCount = (String(text || '').match(/(?:^|\n)\s*[A-D][\.\、:：]/gi) || []).length
+  return optionCount >= 3
+}
+
+function parseQuestionText(rawText) {
+  const text = String(rawText || '').replace(/\r\n/g, '\n').trim()
+  if (!text) {
+    return emptyParsedQuestion()
+  }
+  const explanationMatch = text.match(/(?:答案解析|解析|解题思路)\s*[:：]\s*([\s\S]*)$/)
+  const explanation = explanationMatch ? explanationMatch[1].trim() : ''
+  const beforeExplanation = explanationMatch ? text.slice(0, explanationMatch.index).trim() : text
+  const answerMatch = beforeExplanation.match(/(?:正确答案|答案)\s*[:：]?\s*([ABCD])/i) || text.match(/(?:正确答案|答案)\s*[:：]?\s*([ABCD])/i)
+  const answer = answerOptions.includes(String(answerMatch?.[1] || '').toUpperCase())
+    ? String(answerMatch[1]).toUpperCase()
+    : 'A'
+  const body = beforeExplanation
+    .replace(/(?:正确答案|答案)\s*[:：]?\s*[ABCD].*$/im, '')
+    .trim()
+
+  const options = {}
+  const optionRegex = /(?:^|\n)\s*([A-D])[\.\、:：]\s*([\s\S]*?)(?=(?:\n\s*[A-D][\.\、:：])|\n\s*(?:正确答案|答案|答案解析|解析|解题思路)\s*[:：]?|$)/gi
+  let match
+  while ((match = optionRegex.exec(body))) {
+    options[match[1].toUpperCase()] = cleanOptionText(match[2])
+  }
+  const firstOptionIndex = body.search(/(?:^|\n)\s*A[\.\、:：]/i)
+  const stem = cleanStem(firstOptionIndex >= 0 ? body.slice(0, firstOptionIndex) : body)
+
+  return {
+    stem,
+    option_a: options.A || '',
+    option_b: options.B || '',
+    option_c: options.C || '',
+    option_d: options.D || '',
+    answer,
+    explanation
+  }
+}
+
+function emptyParsedQuestion() {
+  return {
+    stem: '',
+    option_a: '',
+    option_b: '',
+    option_c: '',
+    option_d: '',
+    answer: 'A',
+    explanation: ''
+  }
+}
+
+function cleanStem(value) {
+  return String(value || '')
+    .replace(/^(?:第\s*)?\d+\s*[题、.．:：)]\s*/, '')
+    .replace(/^题目\s*\d+\s*[:：]?\s*/, '')
+    .replace(/^Q\s*\d+[\).、:：]?\s*/i, '')
+    .replace(/^(题干|问题|题目)\s*[:：]/, '')
+    .replace(/\n{2,}/g, '\n')
+    .trim()
+}
+
+function cleanOptionText(value) {
+  return String(value || '').replace(/\s+/g, ' ').trim()
+}
+
+function getDraftCatalog(draft) {
+  return importCatalog[draft.subject] || importCatalog['英语运用']
+}
+
+function draftModuleOptions(draft) {
+  return Object.keys(getDraftCatalog(draft).modules || {})
+}
+
+function draftModuleLabels(draft) {
+  return draftModuleOptions(draft)
+}
+
+function draftSubmoduleOptions(draft) {
+  return getDraftCatalog(draft).modules?.[draft.module] || []
+}
+
+function draftSubmoduleLabels(draft) {
+  return draftSubmoduleOptions(draft)
+}
+
+function draftSubjectIndex(draft) {
+  return optionIndex(subjectOptions.value, draft.subject)
+}
+
+function draftModuleIndex(draft) {
+  return optionIndex(draftModuleOptions(draft), draft.module)
+}
+
+function draftSubmoduleIndex(draft) {
+  return optionIndex(draftSubmoduleOptions(draft), draft.submodule)
+}
+
+function handleDraftSubjectChange(draft, event) {
+  draft.subject = subjectOptions.value[Number(event?.detail?.value || 0)] || '英语运用'
+  const catalog = getDraftCatalog(draft)
+  draft.exam_code = catalog.exam_code
+  draft.module = Object.keys(catalog.modules)[0] || ''
+  draft.submodule = catalog.modules[draft.module]?.[0] || ''
+  markDryRunDirty()
+}
+
+function handleDraftModuleChange(draft, event) {
+  draft.module = draftModuleOptions(draft)[Number(event?.detail?.value || 0)] || ''
+  draft.submodule = draftSubmoduleOptions(draft)[0] || ''
+  markDryRunDirty()
+}
+
+function handleDraftSubmoduleChange(draft, event) {
+  draft.submodule = draftSubmoduleOptions(draft)[Number(event?.detail?.value || 0)] || ''
+  markDryRunDirty()
+}
+
+function handleDraftDifficultyChange(draft, event) {
+  draft.difficulty = Number(difficultyLabels[Number(event?.detail?.value || 1)] || 2)
+  markDryRunDirty()
+}
+
+function sourceTypeIndex(value) {
+  const index = sourceTypeOptions.findIndex((item) => item === value)
+  return index >= 0 ? index : 0
+}
+
+function handleDraftSourceTypeChange(draft, event) {
+  draft.source_type = sourceTypeOptions[Number(event?.detail?.value || 0)] || 'manual'
+  markDryRunDirty()
+}
+
+function setDraftAnswer(draft, answer) {
+  draft.answer = answer
+  markDryRunDirty()
+}
+
+function draftOptionValue(draft, option) {
+  return draft[`option_${String(option).toLowerCase()}`] || ''
+}
+
+function handleDraftOptionInput(draft, option, event) {
+  draft[`option_${String(option).toLowerCase()}`] = event?.detail?.value || ''
+  markDryRunDirty()
+}
+
+function applyDefaultsToDrafts() {
+  syncDefaults()
+  drafts.value = drafts.value.map((draft) => ({
+    ...draft,
+    exam_code: importCatalog[importDefaults.subject]?.exam_code || 'COMMON',
+    subject: importDefaults.subject,
+    module: importDefaults.module,
+    submodule: importDefaults.submodule,
+    difficulty: importDefaults.difficulty
+  }))
+  markDryRunDirty()
+  uni.showToast({ title: '已应用默认分类', icon: 'success' })
+}
+
+function duplicateDraft(draft) {
+  const duplicated = {
+    ...draft,
+    id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
+    image_name: `${draft.image_name || '手动新增'} 副本`,
+    check: null
+  }
+  drafts.value = [
+    ...drafts.value,
+    duplicated
+  ]
+  selectedDraftId.value = duplicated.id
+  markDryRunDirty()
+}
+
+function removeDraft(id) {
+  drafts.value = drafts.value.filter((draft) => draft.id !== id)
+  if (selectedDraftId.value === id) {
+    ensureSelectedDraft()
+  }
+  markDryRunDirty()
+}
+
+function draftErrors(draft, index) {
+  const errors = []
+  const rowLabel = excelRowLabel(draft, index)
+  const required = [
+    ['exam_code', '考试代码'],
+    ['subject', '科目'],
+    ['module', '模块'],
+    ['submodule', '考点'],
+    ['stem', '题干'],
+    ['option_a', 'A 选项'],
+    ['option_b', 'B 选项'],
+    ['option_c', 'C 选项'],
+    ['option_d', 'D 选项'],
+    ['explanation', '解析']
+  ]
+  required.forEach(([field, label]) => {
+    if (!String(draft[field] || '').trim()) {
+      errors.push(`${rowLabel}：${label}不能为空`)
+    }
+  })
+  if (!['COMMON', 'Z001', 'Z002'].includes(String(draft.exam_code || '').trim())) {
+    errors.push(`${rowLabel}：考试代码只能是 COMMON、Z001 或 Z002`)
+  }
+  if (!answerOptions.includes(String(draft.answer || '').trim().toUpperCase())) errors.push(`${rowLabel}：答案必须为 A-D`)
+  if (!Number.isInteger(Number(draft.difficulty)) || Number(draft.difficulty) < 1 || Number(draft.difficulty) > 5) {
+    errors.push(`${rowLabel}：难度必须为 1-5 的整数`)
+  }
+  if (!sourceTypeOptions.includes(String(draft.source_type || '').trim())) {
+    errors.push(`${rowLabel}：来源类型只能是手工录入、资料整理或真题`)
+  }
+  if (String(draft.source_year || '').trim() && !/^(19\d{2}|20\d{2}|2100)$/.test(String(draft.source_year).trim())) {
+    errors.push(`${rowLabel}：来源年份必须为 1900-2100 的四位年份`)
+  }
+  const serverErrors = dryRunResult.value?.items?.find((item) => item.index === index)?.errors || []
+  return [...errors, ...serverErrors]
+}
+
+function excelRowLabel(draft, index) {
+  return `Excel 第 ${Number(draft?.excel_row) || index + 2} 行`
+}
+
+function draftTone(draft, index) {
+  const errors = draftErrors(draft, index)
+  if (errors.length) return 'invalid'
+  const check = dryRunResult.value?.items?.find((item) => item.index === index)
+  return check?.valid ? 'valid' : ''
+}
+
+function draftStatusText(draft, index) {
+  const errors = draftErrors(draft, index)
+  if (errors.length) return '需检查'
+  const check = dryRunResult.value?.items?.find((item) => item.index === index)
+  return check?.valid ? '可入审' : '待入审'
+}
+
+function formatDraftIssue(error, entry) {
+  const rowLabel = excelRowLabel(entry?.draft, entry?.index || 0)
+  const text = String(error || '').trim()
+  const prefix = `${rowLabel}：`
+  if (text.startsWith(prefix)) return text.slice(prefix.length)
+  return text || '请检查该行字段'
+}
+
+function buildImportPayload() {
+  return {
+    question_bank_id: questionBankId.value || undefined,
+    questions: drafts.value.map((draft, index) => {
+      return {
+        exam_code: String(draft.exam_code || '').trim(),
+        subject: draft.subject,
+        module: draft.module,
+        submodule: draft.submodule,
+        question_type: 'single_choice',
+        stem: draft.stem,
+        option_a: draft.option_a,
+        option_b: draft.option_b,
+        option_c: draft.option_c,
+        option_d: draft.option_d,
+        answer: String(draft.answer || '').trim().toUpperCase(),
+        explanation: draft.explanation,
+        difficulty: draft.difficulty,
+        source_type: String(draft.source_type || 'manual').trim(),
+        source_year: String(draft.source_year || '').trim() || null,
+        image_name: draft.image_name || null,
+        image_index: draft.image_index ?? index,
+        excel_row: Number(draft.excel_row) || index + 2
+      }
+    })
+  }
+}
+
+function markDryRunDirty() {
+  dryRunResult.value = null
+}
+
+async function runDryCheck(silent = false) {
+  if (drafts.value.length === 0) {
+    if (!silent) uni.showToast({ title: '请先选择 Excel 文件', icon: 'none' })
+    return
+  }
+  const localInvalidCount = drafts.value.filter((draft, index) => draftErrors(draft, index).length > 0).length
+  if (localInvalidCount > 0 && !dryRunResult.value) {
+    if (!silent) uni.showToast({ title: '请检查 Excel 行字段', icon: 'none' })
+    return
+  }
+  dryRunLoading.value = true
+  try {
+    const response = await dryRunAdminQuestionImageImport(buildImportPayload())
+    dryRunResult.value = response
+    if (response.invalid_count || response.duplicate_count) {
+      if (!silent) uni.showToast({ title: '提交检查发现问题', icon: 'none' })
+      return
+    }
+    if (!silent) uni.showToast({ title: `可提交 ${response.valid_count} 题`, icon: 'success' })
+  } catch (error) {
+    if (!silent) uni.showToast({ title: '提交前检查失败', icon: 'none' })
+  } finally {
+    dryRunLoading.value = false
+  }
+}
+
+async function ensureCommitReady() {
+  if (canCommit.value) return true
+  await runDryCheck(true)
+  return canCommit.value
+}
+
+async function commitImport() {
+  if (!questionBankId.value) {
+    uni.showToast({ title: '请先选择导入题库', icon: 'none' })
+    await openQuestionBankPicker()
+    return
+  }
+  const ready = await ensureCommitReady()
+  if (!ready) {
+    uni.showToast({ title: '请检查 Excel 字段后再提交', icon: 'none' })
+    return
+  }
+  const confirmed = await new Promise((resolve) => {
+    uni.showModal({
+      title: '确认提交待审核？',
+      content: `将 ${dryRunResult.value.valid_count} 道题提交到「待审核」区域，审核老师确认后再发布。`,
+      confirmText: '提交',
+      confirmColor: '#1769ff',
+      success: (result) => resolve(Boolean(result.confirm)),
+      fail: () => resolve(false)
+    })
+  })
+  if (!confirmed) return
+
+  importSaving.value = true
+  try {
+    const response = await commitAdminQuestionImageImport(buildImportPayload())
+    const history = uni.getStorageSync(IMPORT_HISTORY_KEY) || []
+    uni.setStorageSync(IMPORT_HISTORY_KEY, [
+      {
+        created_at: new Date().toLocaleString(),
+        count: Number(response.inserted_count || 0)
+      },
+      ...(Array.isArray(history) ? history : [])
+    ].slice(0, 20))
+    uni.showToast({ title: `已提交 ${response.inserted_count || 0} 题`, icon: 'success' })
+    setTimeout(() => {
+      returnFromImport()
+    }, 500)
+  } catch (error) {
+    const dryRun = error?.detail?.dry_run
+    if (dryRun) {
+      dryRunResult.value = dryRun
+    }
+    uni.showToast({ title: '提交失败，请检查后重试', icon: 'none' })
+  } finally {
+    importSaving.value = false
+  }
+}
+
+function goBack() {
+  returnFromImport()
+}
+
+function returnFromImport() {
+  uni.navigateBack({
+    fail() {
+      const target = portalEntry.value
+        ? `/pages-sub-admin/admin/question-desktop?section=questions${questionBankId.value ? `&question_bank_id=${encodeURIComponent(questionBankId.value)}` : ''}`
+        : '/pages-sub-admin/admin/index?tab=questions'
+      uni.redirectTo({ url: target })
+    }
+  })
+}
+
+defineExpose({
+  downloadImportTemplate,
+  downloadImportGuide,
+  showImportHistory,
+  returnToFileSelection
+})
+</script>
+
+<style scoped>
+.image-import-page {
+  min-height: 100vh;
+  padding: 24rpx 24rpx calc(env(safe-area-inset-bottom) + 260rpx);
+  box-sizing: border-box;
+  background:
+    radial-gradient(circle at 12% 0%, rgba(186, 226, 255, 0.68) 0, rgba(186, 226, 255, 0) 300rpx),
+    radial-gradient(circle at 92% 4%, rgba(205, 249, 216, 0.74) 0, rgba(205, 249, 216, 0) 320rpx),
+    linear-gradient(180deg, #f7fbff 0%, #ffffff 46%, #f7fbff 100%);
+}
+
+.image-import-page:not(.embedded) :deep(.app-page-header) {
+  width: calc(100% + 48rpx);
+  margin: -24rpx -24rpx 24rpx;
+  flex: none;
+}
+
+.import-hero {
+  position: relative;
+  min-height: 128rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 210rpx 18rpx;
+  box-sizing: border-box;
+}
+
+.back-btn {
+  position: absolute;
+  left: 0;
+  top: 50%;
+  width: 72rpx;
+  height: 72rpx;
+  padding: 0;
+  transform: translateY(-50%);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 22rpx;
+  background: #ffffff;
+  box-shadow: 0 14rpx 34rpx rgba(15, 23, 42, 0.08);
+}
+
+.history-btn::after,
+.template-guide-btn::after,
+.file-delete-btn::after,
+.editor-back-btn::after,
+.recognize-btn::after,
+.preview-action-btn::after,
+.target-bank-btn::after,
+.bank-picker-close::after,
+.bank-picker-card::after,
+.mini-btn::after,
+.primary-mini-btn::after,
+.remove-btn::after,
+.line-btn::after,
+.outline-action::after,
+.filled-action::after,
+.answer-dot::after,
+.danger-line-btn::after,
+.bottom-btn::after {
+  border: 0;
+}
+
+.hero-copy {
+  text-align: center;
+}
+
+.hero-title {
+  font-size: 40rpx;
+  line-height: 1.15;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.hero-subtitle {
+  margin-top: 10rpx;
+  font-size: 23rpx;
+  color: #6b7280;
+}
+
+.target-bank-chip {
+  width: fit-content;
+  margin-top: 12rpx;
+  padding: 5rpx 12rpx;
+  border-radius: 999rpx;
+  color: #177b68;
+  background: #ddf5ee;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.history-btn {
+  width: 190rpx;
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10rpx;
+  border-radius: 22rpx;
+  border: 1rpx solid #93a7ca;
+  color: #0f326f;
+  background: rgba(255, 255, 255, 0.9);
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.hero-actions {
+  position: absolute;
+  right: 0;
+  top: 50%;
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+  transform: translateY(-50%);
+}
+
+.template-btn {
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #9edfd2;
+  border-radius: 22rpx;
+  color: #147567;
+  background: #ecfbf7;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.template-btn::after {
+  border: 0;
+}
+
+.template-guide-btn {
+  height: 68rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #b7cae7;
+  border-radius: 22rpx;
+  color: #315d9b;
+  background: #f7faff;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.history-icon {
+  font-size: 31rpx;
+  line-height: 1;
+}
+
+.screen-state {
+  margin-top: 160rpx;
+  text-align: center;
+  font-size: 28rpx;
+  color: #64748b;
+}
+
+.import-content {
+  display: flex;
+  flex-direction: column;
+  gap: 24rpx;
+}
+
+.landing-content {
+  display: flex;
+  flex-direction: column;
+  gap: 22rpx;
+}
+
+.file-drop-zone {
+  min-height: 420rpx;
+  padding: 48rpx 28rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx dashed #1769ff;
+  border-radius: 28rpx;
+  background:
+    radial-gradient(circle at 50% 45%, rgba(220, 235, 255, 0.9) 0, rgba(238, 246, 255, 0.72) 42%, rgba(248, 251, 255, 0.96) 100%);
+  box-sizing: border-box;
+}
+
+.file-upload-illustration {
+  position: relative;
+  width: 170rpx;
+  height: 170rpx;
+}
+
+.file-shape {
+  position: absolute;
+  left: 16rpx;
+  top: 4rpx;
+  width: 122rpx;
+  height: 150rpx;
+  border: 7rpx solid #1769ff;
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.35);
+  box-sizing: border-box;
+}
+
+.file-fold {
+  position: absolute;
+  right: -7rpx;
+  top: -7rpx;
+  width: 50rpx;
+  height: 50rpx;
+  border-left: 7rpx solid #1769ff;
+  border-bottom: 7rpx solid #1769ff;
+  border-radius: 0 12rpx 0 12rpx;
+  background: #e9f2ff;
+}
+
+.file-arrow {
+  position: absolute;
+  inset: 50rpx 0 auto;
+  color: #1769ff;
+  text-align: center;
+  font-size: 78rpx;
+  font-weight: 500;
+  line-height: 1;
+}
+
+.file-plus {
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  width: 72rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 7rpx solid #1769ff;
+  border-radius: 50%;
+  color: #1769ff;
+  background: #eef5ff;
+  font-size: 50rpx;
+  line-height: 1;
+  box-sizing: border-box;
+}
+
+.drop-title {
+  margin-top: 22rpx;
+  color: #0b2454;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.drop-action {
+  margin-top: 12rpx;
+  color: #1769ff;
+  font-size: 28rpx;
+  font-weight: 800;
+}
+
+.drop-formats,
+.drop-limit {
+  margin-top: 18rpx;
+  color: #657695;
+  font-size: 21rpx;
+  text-align: center;
+}
+
+.drop-limit {
+  margin-top: 8rpx;
+}
+
+.selected-file-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.selected-file-card {
+  min-height: 118rpx;
+  padding: 18rpx 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 22rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.05);
+  box-sizing: border-box;
+}
+
+.file-type-icon {
+  flex: 0 0 76rpx;
+  width: 76rpx;
+  height: 88rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #1769ff;
+  border-radius: 14rpx;
+  color: #1769ff;
+  background: #f3f7ff;
+  font-size: 19rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.file-type-icon.sheet,
+.file-thumb.sheet {
+  border-color: #16a34a;
+  color: #15803d;
+  background: #f0fdf4;
+}
+
+.file-type-icon.document,
+.file-thumb.document {
+  border-color: #7c3aed;
+  color: #6d28d9;
+  background: #f5f3ff;
+}
+
+.file-type-icon.data,
+.file-thumb.data {
+  border-color: #0891b2;
+  color: #0e7490;
+  background: #ecfeff;
+}
+
+.selected-file-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.selected-file-name {
+  overflow: hidden;
+  color: #0f172a;
+  font-size: 27rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selected-file-meta {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  color: #657695;
+  font-size: 22rpx;
+}
+
+.ready-status {
+  color: #16a34a;
+  font-weight: 800;
+}
+
+.file-delete-btn {
+  flex: 0 0 64rpx;
+  width: 64rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #d5deeb;
+  border-radius: 50%;
+  color: #253a62;
+  background: #ffffff;
+  font-size: 29rpx;
+  line-height: 1;
+}
+
+.recognition-card,
+.flow-card {
+  padding: 26rpx 28rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 22rpx;
+  background: #ffffff;
+  box-shadow: 0 10rpx 28rpx rgba(15, 23, 42, 0.04);
+}
+
+.landing-section-title {
+  color: #0b2454;
+  font-size: 28rpx;
+  font-weight: 900;
+}
+
+.recognition-tags {
+  margin-top: 18rpx;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 16rpx;
+}
+
+.recognition-tag {
+  padding: 10rpx 22rpx;
+  border-radius: 999rpx;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.recognition-tag.blue {
+  color: #1769ff;
+  background: #eaf2ff;
+}
+
+.recognition-tag.green {
+  color: #15803d;
+  background: #e5f9ed;
+}
+
+.recognition-tag.purple {
+  color: #6d28d9;
+  background: #f1eefe;
+}
+
+.flow-card {
+  padding: 24rpx 18rpx 18rpx;
+}
+
+.flow-row {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4rpx;
+  align-items: stretch;
+}
+
+.flow-step {
+  position: relative;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+}
+
+.flow-number {
+  position: absolute;
+  top: -8rpx;
+  left: -12rpx;
+  z-index: 2;
+  width: 30rpx;
+  height: 30rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #ffffff;
+  background: #1769ff;
+  font-size: 17rpx;
+  font-weight: 900;
+}
+
+.flow-icon {
+  position: relative;
+  width: 68rpx;
+  height: 68rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  color: #0f326f;
+  background: #f1f5fb;
+  font-size: 31rpx;
+  font-weight: 900;
+}
+
+.flow-icon-image {
+  width: 42rpx;
+  height: 42rpx;
+}
+
+.flow-title {
+  margin-top: 12rpx;
+  color: #263449;
+  font-size: 20rpx;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.flow-arrow {
+  position: absolute;
+  top: calc(50% - 16rpx);
+  right: -14rpx;
+  transform: translateY(-50%);
+  color: #8ca0bf;
+  font-size: 32rpx;
+}
+
+.flow-note {
+  margin: 20rpx -18rpx -18rpx;
+  padding: 14rpx 20rpx;
+  border-top: 1rpx solid #e4eaf2;
+  color: #61728e;
+  background: #fbfcfe;
+  font-size: 20rpx;
+  line-height: 1.45;
+}
+
+.editor-toolbar {
+  padding: 14rpx 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 18rpx;
+  background: #ffffff;
+}
+
+.editor-back-btn {
+  height: 58rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  border: 1rpx solid #1769ff;
+  border-radius: 16rpx;
+  color: #1769ff;
+  background: #ffffff;
+  font-size: 21rpx;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.editor-progress {
+  display: flex;
+  gap: 18rpx;
+  color: #657695;
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.preview-workbench {
+  gap: 18rpx;
+}
+
+.preview-status-panel {
+  padding: 26rpx;
+  display: grid;
+  grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr);
+  align-items: center;
+  gap: 22rpx;
+  border: 1rpx solid #dbe7e5;
+  border-radius: 24rpx;
+  background:
+    radial-gradient(circle at 90% 0%, rgba(80, 211, 184, 0.22), transparent 32%),
+    #ffffff;
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.06);
+  box-sizing: border-box;
+}
+
+.status-kicker {
+  color: #40b59b;
+  font-size: 20rpx;
+  font-weight: 900;
+  letter-spacing: 0.18em;
+}
+
+.status-title {
+  margin-top: 8rpx;
+  color: #102033;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1.2;
+}
+
+.status-subtitle {
+  margin-top: 8rpx;
+  color: #637289;
+  font-size: 22rpx;
+  line-height: 1.5;
+}
+
+.status-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.status-metric {
+  min-height: 92rpx;
+  padding: 14rpx 16rpx;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  border: 1rpx solid #dde8f1;
+  border-radius: 18rpx;
+  background: rgba(248, 251, 253, 0.92);
+  box-sizing: border-box;
+}
+
+.status-number {
+  color: #0f172a;
+  font-size: 34rpx;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.status-label {
+  margin-top: 10rpx;
+  color: #728096;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.status-metric.warning .status-number {
+  color: #e65f2b;
+}
+
+.status-metric.success .status-number {
+  color: #17987f;
+}
+
+.preview-top-actions {
+  display: flex;
+  align-items: center;
+  gap: 12rpx;
+}
+
+.preview-action-btn,
+.target-bank-btn {
+  height: 64rpx;
+  margin: 0;
+  padding: 0 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 18rpx;
+  color: #123c36;
+  background: linear-gradient(135deg, #73dec9, #4bcaae);
+  font-size: 22rpx;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.preview-action-btn.ghost {
+  border: 1rpx solid #d8e3ec;
+  color: #53647a;
+  background: #ffffff;
+}
+
+.target-bank-strip {
+  min-height: 82rpx;
+  padding: 16rpx 20rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  border: 1rpx solid #b9eee2;
+  border-radius: 20rpx;
+  background: #effcf9;
+  box-sizing: border-box;
+}
+
+.target-bank-strip.missing {
+  border-color: #ffd1a8;
+  background: #fff8ef;
+}
+
+.target-bank-copy {
+  min-width: 0;
+}
+
+.target-bank-label {
+  color: #5f748b;
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.target-bank-name {
+  margin-top: 5rpx;
+  overflow: hidden;
+  color: #102033;
+  font-size: 25rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.target-bank-strip.missing .target-bank-name {
+  color: #bd5d16;
+}
+
+.preview-layout {
+  display: grid;
+  grid-template-columns: minmax(480rpx, 1.05fr) minmax(0, 1.48fr);
+  gap: 18rpx;
+  align-items: stretch;
+}
+
+.draft-list-panel,
+.draft-detail-panel {
+  min-height: 640rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.05);
+  box-sizing: border-box;
+}
+
+.draft-list-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.list-panel-head {
+  padding: 22rpx 22rpx 18rpx;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+  border-bottom: 1rpx solid #edf1f5;
+}
+
+.sort-chip {
+  flex: 0 0 auto;
+  padding: 9rpx 14rpx;
+  border-radius: 999rpx;
+  color: #198b78;
+  background: #def8f1;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.preview-table {
+  flex: 1;
+  min-height: 0;
+  max-height: none;
+  overflow-y: auto;
+}
+
+.preview-row {
+  width: 100%;
+  min-height: 104rpx;
+  margin: 0;
+  padding: 16rpx 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14rpx;
+  border: 0;
+  border-bottom: 1rpx solid #edf1f5;
+  border-radius: 0;
+  background: #ffffff;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.preview-row.active {
+  background: #eefcf9;
+}
+
+.preview-row.invalid {
+  background: #fffaf5;
+}
+
+.preview-row.invalid.active {
+  background: #fff4e8;
+}
+
+.row-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.row-title {
+  display: flex;
+  align-items: baseline;
+  gap: 10rpx;
+  min-width: 0;
+}
+
+.row-index {
+  flex: 0 0 auto;
+  color: #6e8098;
+  font-size: 19rpx;
+  font-weight: 800;
+}
+
+.row-stem {
+  flex: 1;
+  overflow: hidden;
+  color: #102033;
+  font-size: 24rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-meta {
+  margin-top: 10rpx;
+  display: flex;
+  gap: 10rpx;
+  color: #7b8aa0;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.row-meta text {
+  max-width: 150rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row-status,
+.detail-status {
+  flex: 0 0 auto;
+  min-width: 82rpx;
+  height: 44rpx;
+  padding: 0 12rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 14rpx;
+  color: #64748b;
+  background: #f1f5f9;
+  font-size: 20rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.row-status.invalid,
+.detail-status.invalid,
+.preview-row.invalid .row-status {
+  color: #d9651f;
+  background: #fff0df;
+}
+
+.row-status.valid,
+.detail-status.valid,
+.preview-row.valid .row-status {
+  color: #12866e;
+  background: #dff8f1;
+}
+
+.draft-detail-panel {
+  padding: 24rpx;
+}
+
+.detail-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 20rpx;
+}
+
+.detail-kicker,
+.detail-source,
+.detail-field-label {
+  color: #6f8096;
+  font-size: 20rpx;
+  font-weight: 800;
+}
+
+.detail-title {
+  margin-top: 5rpx;
+  color: #102033;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.detail-source {
+  margin-top: 6rpx;
+  font-weight: 700;
+}
+
+.detail-issue-panel {
+  margin: -4rpx 0 20rpx;
+  padding: 18rpx 20rpx;
+  border: 1rpx solid #fed7aa;
+  border-radius: 20rpx;
+  background: linear-gradient(135deg, #fff7ed 0%, #fffaf3 100%);
+  box-shadow: inset 4rpx 0 0 #fb923c;
+  box-sizing: border-box;
+}
+
+.issue-panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.issue-kicker {
+  color: #ea580c;
+  font-size: 18rpx;
+  font-weight: 900;
+  letter-spacing: 0.14em;
+}
+
+.issue-title {
+  margin-top: 6rpx;
+  color: #9a3412;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.issue-count {
+  flex: 0 0 auto;
+  min-width: 58rpx;
+  height: 42rpx;
+  padding: 0 14rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999rpx;
+  color: #c2410c;
+  background: #ffedd5;
+  font-size: 20rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.issue-list {
+  margin-top: 14rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.issue-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 10rpx;
+  color: #9a3412;
+  font-size: 22rpx;
+  font-weight: 800;
+  line-height: 1.45;
+}
+
+.issue-dot {
+  flex: 0 0 10rpx;
+  width: 10rpx;
+  height: 10rpx;
+  margin-top: 11rpx;
+  border-radius: 999rpx;
+  background: #fb923c;
+}
+
+.detail-grid {
+  margin-bottom: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.detail-field-label {
+  margin: 16rpx 0 10rpx;
+  color: #253a53;
+}
+
+.empty-detail {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.bank-picker-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 40;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 40rpx;
+  background: rgba(16, 28, 41, 0.42);
+  box-sizing: border-box;
+}
+
+.bank-picker-dialog {
+  width: min(980rpx, 100%);
+  max-height: 78vh;
+  overflow: hidden;
+  padding: 34rpx;
+  border-radius: 30rpx;
+  background: #ffffff;
+  box-shadow: 0 40rpx 100rpx rgba(15, 23, 42, 0.22);
+  box-sizing: border-box;
+}
+
+.bank-picker-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 24rpx;
+}
+
+.bank-picker-title {
+  margin-top: 8rpx;
+  color: #102033;
+  font-size: 32rpx;
+  font-weight: 900;
+}
+
+.bank-picker-close {
+  flex: 0 0 62rpx;
+  width: 62rpx;
+  height: 62rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  border-radius: 18rpx;
+  color: #64748b;
+  background: #f2f6f8;
+  font-size: 36rpx;
+  line-height: 1;
+}
+
+.bank-picker-state {
+  padding: 60rpx 0;
+  color: #64748b;
+  text-align: center;
+  font-size: 24rpx;
+}
+
+.bank-picker-list {
+  max-height: 52vh;
+  overflow-y: auto;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 18rpx;
+}
+
+.bank-picker-card {
+  min-height: 130rpx;
+  margin: 0;
+  padding: 20rpx;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  border: 1rpx solid #dbe4ec;
+  border-radius: 22rpx;
+  background: #ffffff;
+  text-align: left;
+  box-sizing: border-box;
+}
+
+.bank-picker-card.selected {
+  border-color: #62d6c0;
+  background: #effcf9;
+}
+
+.bank-folder-icon {
+  flex: 0 0 76rpx;
+  width: 76rpx;
+  height: 72rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid #8be2d2;
+  border-radius: 17rpx;
+  color: #168c78;
+  background: #c8f4e9;
+  font-size: 26rpx;
+  font-weight: 900;
+  box-sizing: border-box;
+}
+
+.bank-picker-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.bank-picker-name {
+  overflow: hidden;
+  color: #102033;
+  font-size: 26rpx;
+  font-weight: 900;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.bank-picker-date {
+  margin-top: 10rpx;
+  color: #7b8aa0;
+  font-size: 20rpx;
+  font-weight: 700;
+}
+
+.bank-radio {
+  flex: 0 0 auto;
+  color: #47bea7;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.step-strip {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.step-item {
+  min-height: 118rpx;
+  padding: 16rpx 10rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 8rpx;
+  border: 1rpx solid rgba(148, 163, 184, 0.22);
+  border-radius: 18rpx;
+  background: rgba(255, 255, 255, 0.76);
+  box-sizing: border-box;
+}
+
+.step-item.active {
+  border-color: rgba(37, 99, 235, 0.48);
+  background: #ffffff;
+  box-shadow: 0 12rpx 28rpx rgba(37, 99, 235, 0.08);
+}
+
+.step-index {
+  flex: 0 0 38rpx;
+  width: 38rpx;
+  height: 38rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #eef4ff;
+  color: #2563eb;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.step-title {
+  font-size: 23rpx;
+  font-weight: 800;
+  color: #0f172a;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.step-desc {
+  margin-top: 4rpx;
+  font-size: 20rpx;
+  color: #8b95a7;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.import-panel {
+  padding: 28rpx;
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.88);
+  box-shadow: 0 18rpx 50rpx rgba(15, 23, 42, 0.07);
+  box-sizing: border-box;
+}
+
+.panel-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+  margin-bottom: 22rpx;
+}
+
+.panel-head > view:first-child {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.panel-title {
+  font-size: 30rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.panel-subtitle {
+  margin-top: 6rpx;
+  font-size: 22rpx;
+  line-height: 1.45;
+  color: #64748b;
+}
+
+.mini-btn,
+.primary-mini-btn,
+.remove-btn {
+  flex: 0 0 auto;
+  min-width: 144rpx;
+  height: 64rpx;
+  margin: 0;
+  padding: 0 22rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  font-size: 23rpx;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.primary-mini-btn {
+  min-width: 154rpx;
+}
+
+.mini-btn,
+.remove-btn {
+  border: 1rpx solid #dbe3ef;
+  color: #475569;
+  background: #ffffff;
+}
+
+.primary-mini-btn {
+  color: #ffffff;
+  border: 0;
+  background: linear-gradient(135deg, #1769ff, #0ea5a8);
+}
+
+.picker-grid,
+.draft-picker-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+}
+
+.picker-pill,
+.draft-admin-select {
+  min-height: 74rpx;
+}
+
+.draft-admin-select {
+  --admin-select-height: 66rpx;
+  --admin-select-radius: 16rpx;
+  --admin-select-font-size: 23rpx;
+  --admin-select-font-weight: 700;
+}
+
+.upload-empty {
+  min-height: 250rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx dashed #b8c6da;
+  border-radius: 22rpx;
+  background: #f8fbff;
+  text-align: center;
+  box-sizing: border-box;
+}
+
+.upload-icon {
+  width: 76rpx;
+  height: 76rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22rpx;
+  color: #1769ff;
+  background: #eaf2ff;
+  font-size: 46rpx;
+  font-weight: 700;
+}
+
+.upload-title {
+  margin-top: 18rpx;
+  font-size: 28rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.upload-desc {
+  width: 86%;
+  margin-top: 10rpx;
+  font-size: 22rpx;
+  line-height: 1.5;
+  color: #64748b;
+}
+
+.image-list,
+.draft-list {
+  display: flex;
+  flex-direction: column;
+  gap: 20rpx;
+}
+
+.image-row {
+  display: flex;
+  gap: 18rpx;
+  padding: 18rpx;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 22rpx;
+  background: #fbfdff;
+}
+
+.thumb {
+  flex: 0 0 150rpx;
+  width: 150rpx;
+  height: 180rpx;
+  border-radius: 16rpx;
+  background: #eef2f7;
+}
+
+.file-thumb {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 4rpx solid #1769ff;
+  color: #1769ff;
+  font-size: 24rpx;
+  font-weight: 900;
+}
+
+.image-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.image-title-row {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16rpx;
+}
+
+.image-name {
+  max-width: 320rpx;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 26rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.image-meta,
+.image-status,
+.draft-source {
+  margin-top: 4rpx;
+  font-size: 21rpx;
+  color: #8b95a7;
+}
+
+.ocr-textarea {
+  width: 100%;
+  min-height: 170rpx;
+  margin-top: 14rpx;
+  padding: 18rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 18rpx;
+  background: #ffffff;
+  font-size: 24rpx;
+  line-height: 1.45;
+  color: #0f172a;
+  box-sizing: border-box;
+}
+
+.image-actions,
+.draft-actions,
+.wide-actions {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin-top: 16rpx;
+}
+
+.wide-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.line-btn,
+.danger-line-btn,
+.outline-action,
+.filled-action {
+  height: 70rpx;
+  padding: 0 24rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  font-size: 25rpx;
+  font-weight: 800;
+  box-sizing: border-box;
+}
+
+.line-btn,
+.outline-action {
+  border: 1rpx solid #1769ff;
+  color: #1769ff;
+  background: #ffffff;
+}
+
+.danger-line-btn {
+  border: 1rpx solid #fecaca;
+  color: #dc2626;
+  background: #fff7f7;
+}
+
+.filled-action {
+  color: #ffffff;
+  border: 0;
+  background: linear-gradient(135deg, #1769ff, #0ea5a8);
+}
+
+.count-badge {
+  min-width: 88rpx;
+  height: 54rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  background: #eef4ff;
+  color: #1769ff;
+  font-size: 24rpx;
+  font-weight: 800;
+}
+
+.draft-empty {
+  padding: 70rpx 0;
+  text-align: center;
+  color: #8b95a7;
+  font-size: 25rpx;
+}
+
+.draft-card {
+  padding: 22rpx;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 22rpx;
+  background: #ffffff;
+}
+
+.draft-card.valid {
+  border-color: rgba(22, 163, 74, 0.42);
+}
+
+.draft-card.invalid {
+  border-color: rgba(249, 115, 22, 0.52);
+  background: #fffaf5;
+}
+
+.draft-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18rpx;
+  margin-bottom: 18rpx;
+}
+
+.draft-title {
+  font-size: 28rpx;
+  font-weight: 800;
+  color: #0f172a;
+}
+
+.draft-status {
+  min-width: 100rpx;
+  height: 52rpx;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 16rpx;
+  background: #f1f5f9;
+  color: #64748b;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.draft-card.valid .draft-status {
+  color: #16a34a;
+  background: #dcfce7;
+}
+
+.draft-card.invalid .draft-status {
+  color: #f97316;
+  background: #fff3e6;
+}
+
+.draft-picker-grid {
+  margin-bottom: 16rpx;
+}
+
+.draft-meta-grid {
+  margin-bottom: 16rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.draft-meta-input {
+  min-width: 0;
+  height: 66rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 16rpx;
+  color: #263449;
+  background: #ffffff;
+  font-size: 21rpx;
+  box-sizing: border-box;
+}
+
+.draft-admin-select {
+  min-height: 66rpx;
+}
+
+.draft-textarea {
+  width: 100%;
+  padding: 18rpx;
+  border: 1rpx solid #dbe3ef;
+  border-radius: 18rpx;
+  background: #fbfdff;
+  font-size: 25rpx;
+  line-height: 1.5;
+  color: #0f172a;
+  box-sizing: border-box;
+}
+
+.draft-textarea.stem {
+  min-height: 150rpx;
+  margin-bottom: 14rpx;
+}
+
+.draft-textarea.explanation {
+  min-height: 132rpx;
+  margin-top: 14rpx;
+}
+
+.import-math-preview {
+  margin-bottom: 20rpx;
+}
+
+.option-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 12rpx;
+}
+
+.option-row {
+  min-height: 70rpx;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+  padding: 0 16rpx;
+  border: 1rpx solid #e2e8f0;
+  border-radius: 18rpx;
+  background: #ffffff;
+  box-sizing: border-box;
+}
+
+.option-row.selected {
+  border-color: #1769ff;
+  background: #f5f9ff;
+}
+
+.answer-dot {
+  width: 48rpx;
+  height: 48rpx;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 0;
+  color: #1769ff;
+  background: transparent;
+  font-size: 25rpx;
+}
+
+.option-label {
+  width: 42rpx;
+  color: #0f172a;
+  font-size: 25rpx;
+  font-weight: 800;
+}
+
+.option-input {
+  flex: 1;
+  min-width: 0;
+  height: 68rpx;
+  font-size: 25rpx;
+  color: #0f172a;
+}
+
+.import-bottom-bar {
+  position: fixed;
+  left: 24rpx;
+  right: 24rpx;
+  bottom: calc(env(safe-area-inset-bottom) + 20rpx);
+  z-index: 20;
+  min-height: 112rpx;
+  padding: 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1rpx solid rgba(226, 232, 240, 0.92);
+  border-radius: 26rpx;
+  background: #ffffff;
+  box-shadow: 0 20rpx 60rpx rgba(15, 23, 42, 0.14);
+  box-sizing: border-box;
+}
+
+.recognize-bottom-bar {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 20;
+  padding: 28rpx 40rpx calc(env(safe-area-inset-bottom) + 26rpx);
+  border-radius: 34rpx 34rpx 0 0;
+  background: #ffffff;
+  box-shadow: 0 -18rpx 50rpx rgba(15, 23, 42, 0.08);
+  box-sizing: border-box;
+}
+
+.recognize-btn {
+  width: 100%;
+  height: 86rpx;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 18rpx;
+  border: 0;
+  border-radius: 22rpx;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1769ff 0%, #0062ff 100%);
+  font-size: 31rpx;
+  font-weight: 900;
+  line-height: 1;
+  box-shadow: 0 14rpx 28rpx rgba(23, 105, 255, 0.22);
+}
+
+.recognize-btn[disabled] {
+  opacity: 0.52;
+  box-shadow: none;
+}
+
+.recognize-hint {
+  margin-top: 18rpx;
+  color: #657695;
+  font-size: 22rpx;
+  text-align: center;
+}
+
+.bottom-summary {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  color: #475569;
+  font-size: 23rpx;
+  font-weight: 800;
+  line-height: 1.2;
+}
+
+.bottom-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16rpx;
+  width: 100%;
+}
+
+.bottom-btn {
+  height: 82rpx;
+  min-width: 0;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22rpx;
+  font-size: 26rpx;
+  font-weight: 900;
+  line-height: 1;
+  white-space: nowrap;
+  box-sizing: border-box;
+}
+
+.bottom-btn.outline {
+  border: 1rpx solid #1769ff;
+  color: #1769ff;
+  background: #ffffff;
+}
+
+.bottom-btn.ghost {
+  border: 1rpx solid #d5dee8;
+  color: #53647a;
+  background: #ffffff;
+}
+
+.bottom-btn.primary {
+  border: 0;
+  color: #ffffff;
+  background: linear-gradient(135deg, #1769ff, #0ea5a8);
+}
+
+.bottom-btn[disabled] {
+  opacity: 0.48;
+}
+
+@media (min-width: 900px) {
+  .image-import-page {
+    min-height: 100vh;
+    padding: 22px 32px 130px;
+    background:
+      radial-gradient(circle at 92% 0%, rgba(79, 209, 181, 0.14), transparent 28%),
+      linear-gradient(180deg, #eef3f7 0%, #f7fafb 100%);
+  }
+
+  .image-import-page.embedded {
+    position: relative;
+    min-height: calc(100vh - 86px);
+    padding: 10px 32px 112px;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed {
+    padding-left: 20px;
+    padding-right: 20px;
+  }
+
+  .image-import-page.embedded .recognize-bottom-bar {
+    position: absolute;
+    width: min(760px, calc(100% - 64px));
+    left: 50%;
+    right: auto;
+    bottom: 12px;
+    transform: translateX(-50%);
+  }
+
+  .import-hero,
+  .landing-content,
+  .import-content,
+  .screen-state {
+    width: min(1180px, 100%);
+    margin-left: auto;
+    margin-right: auto;
+    box-sizing: border-box;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed .landing-content,
+  .image-import-page.embedded.sidebar-collapsed .import-content,
+  .image-import-page.embedded.sidebar-collapsed .screen-state {
+    width: 100%;
+    max-width: none;
+  }
+
+  .import-hero {
+    min-height: 72px;
+    padding: 0 5px;
+  }
+
+  .hero-title {
+    color: #23364a;
+    font-size: 25px;
+  }
+
+  .hero-subtitle {
+    margin-top: 5px;
+    color: #7d8b9c;
+    font-size: 11px;
+  }
+
+  .target-bank-chip {
+    margin-top: 6px;
+    padding: 3px 8px;
+    font-size: 9px;
+  }
+
+  .history-btn,
+  .template-btn,
+  .template-guide-btn {
+    min-width: 38px;
+    height: 38px;
+    border-radius: 10px;
+  }
+
+  .history-btn {
+    width: auto;
+    padding: 0 13px;
+    color: #53657a;
+    background: #ffffff;
+    font-size: 10px;
+  }
+
+  .hero-actions {
+    gap: 8px;
+  }
+
+  .template-btn {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .template-guide-btn {
+    padding: 0 12px;
+    font-size: 12px;
+  }
+
+  .landing-content,
+  .import-content {
+    margin-top: 15px;
+  }
+
+  .image-import-page.embedded .landing-content,
+  .image-import-page.embedded .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.sidebar-collapsed .recognize-bottom-bar {
+    width: min(900px, calc(100% - 40px));
+  }
+
+  .file-drop-zone,
+  .recognition-card,
+  .flow-card,
+  .import-panel {
+    border-color: #dfe7eb;
+    border-radius: 14px;
+    background: #ffffff;
+    box-shadow: 0 9px 26px rgba(31, 50, 71, 0.03);
+  }
+
+  .file-drop-zone {
+    min-height: 280px;
+    padding: 38px;
+    border-style: dashed;
+  }
+
+  .drop-title {
+    font-size: 20px;
+  }
+
+  .drop-action,
+  .drop-formats,
+  .drop-limit,
+  .panel-subtitle,
+  .flow-note {
+    font-size: 10px;
+  }
+
+  .file-upload-illustration {
+    transform: scale(0.72);
+    margin: -12px auto;
+  }
+
+  .recognition-card,
+  .flow-card,
+  .import-panel {
+    margin-top: 14px;
+    padding: 20px;
+  }
+
+  .flow-row {
+    gap: 18px;
+  }
+
+  .flow-step {
+    min-height: 100px;
+  }
+
+  .editor-toolbar {
+    min-height: 52px;
+    padding: 0 4px;
+  }
+
+  .preview-workbench {
+    gap: 12px;
+  }
+
+  .preview-status-panel {
+    padding: 18px 20px;
+    grid-template-columns: minmax(0, 1.1fr) 360px;
+    gap: 18px;
+    border-radius: 14px;
+  }
+
+  .status-kicker {
+    font-size: 10px;
+  }
+
+  .status-title {
+    margin-top: 5px;
+    font-size: 23px;
+  }
+
+  .status-subtitle {
+    margin-top: 5px;
+    font-size: 12px;
+  }
+
+  .status-metrics {
+    gap: 10px;
+  }
+
+  .status-metric {
+    min-height: 72px;
+    padding: 12px;
+    border-radius: 11px;
+  }
+
+  .status-number {
+    font-size: 24px;
+  }
+
+  .status-label {
+    margin-top: 7px;
+    font-size: 11px;
+  }
+
+  .preview-top-actions {
+    gap: 8px;
+  }
+
+  .preview-action-btn,
+  .target-bank-btn {
+    height: 38px;
+    padding: 0 14px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .target-bank-strip {
+    min-height: 58px;
+    padding: 10px 14px;
+    border-radius: 12px;
+  }
+
+  .target-bank-label {
+    font-size: 10px;
+  }
+
+  .target-bank-name {
+    margin-top: 3px;
+    font-size: 15px;
+  }
+
+  .preview-layout {
+    grid-template-columns: minmax(520px, 0.92fr) minmax(0, 1.08fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+
+  .draft-list-panel,
+  .draft-detail-panel {
+    min-height: 610px;
+    border-radius: 14px;
+  }
+
+  .list-panel-head {
+    padding: 16px 18px 12px;
+  }
+
+  .sort-chip {
+    padding: 5px 9px;
+    font-size: 10px;
+  }
+
+  .preview-table {
+    flex: 1;
+    min-height: 0;
+    max-height: none;
+  }
+
+  .preview-row {
+    min-height: 72px;
+    padding: 11px 14px;
+    gap: 10px;
+  }
+
+  .row-title {
+    gap: 7px;
+  }
+
+  .row-index {
+    font-size: 10px;
+  }
+
+  .row-stem {
+    font-size: 13px;
+  }
+
+  .row-meta {
+    margin-top: 7px;
+    gap: 7px;
+    font-size: 10px;
+  }
+
+  .row-meta text {
+    max-width: 92px;
+  }
+
+  .row-status,
+  .detail-status {
+    min-width: 56px;
+    height: 28px;
+    padding: 0 8px;
+    border-radius: 8px;
+    font-size: 10px;
+  }
+
+  .draft-detail-panel {
+    padding: 18px;
+  }
+
+  .detail-head {
+    margin-bottom: 14px;
+  }
+
+  .detail-kicker,
+  .detail-source,
+  .detail-field-label {
+    font-size: 10px;
+  }
+
+  .detail-title {
+    margin-top: 3px;
+    font-size: 20px;
+  }
+
+  .detail-issue-panel {
+    margin: -2px 0 12px;
+    padding: 12px 14px;
+    border-radius: 12px;
+    box-shadow: inset 3px 0 0 #fb923c;
+  }
+
+  .issue-kicker {
+    font-size: 9px;
+  }
+
+  .issue-title {
+    margin-top: 4px;
+    font-size: 13px;
+  }
+
+  .issue-count {
+    min-width: 42px;
+    height: 26px;
+    padding: 0 9px;
+    font-size: 11px;
+  }
+
+  .issue-list {
+    margin-top: 9px;
+    gap: 7px;
+  }
+
+  .issue-item {
+    gap: 7px;
+    font-size: 12px;
+  }
+
+  .issue-dot {
+    flex-basis: 6px;
+    width: 6px;
+    height: 6px;
+    margin-top: 6px;
+  }
+
+  .detail-grid {
+    margin-bottom: 10px;
+    gap: 9px;
+  }
+
+  .detail-field-label {
+    margin: 11px 0 7px;
+  }
+
+  .picker-grid,
+  .draft-picker-grid {
+    gap: 9px;
+  }
+
+  .draft-meta-grid {
+    gap: 9px;
+  }
+
+  .draft-meta-input {
+    height: 34px;
+    padding: 0 10px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .picker-pill,
+  .draft-admin-select {
+    min-height: 38px;
+  }
+
+  .draft-admin-select {
+    --admin-select-height: 38px;
+    --admin-select-radius: 8px;
+    --admin-select-font-size: 12px;
+    --admin-select-menu-min-width: 100%;
+  }
+
+  .picker-pill {
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .draft-textarea {
+    padding: 12px;
+    border-radius: 10px;
+    font-size: 13px;
+    line-height: 1.48;
+  }
+
+  .draft-textarea.stem {
+    min-height: 110px;
+    margin-bottom: 10px;
+  }
+
+  .draft-textarea.explanation {
+    min-height: 112px;
+    margin-top: 0;
+  }
+
+  .option-editor {
+    gap: 8px;
+  }
+
+  .option-row {
+    min-height: 40px;
+    padding: 0 10px;
+    border-radius: 10px;
+    gap: 8px;
+  }
+
+  .answer-dot {
+    width: 28px;
+    height: 28px;
+    font-size: 13px;
+  }
+
+  .option-label {
+    width: 24px;
+    font-size: 13px;
+  }
+
+  .option-input {
+    height: 38px;
+    font-size: 13px;
+  }
+
+  .draft-actions {
+    margin-top: 12px;
+  }
+
+  .line-btn,
+  .danger-line-btn {
+    height: 38px;
+    border-radius: 10px;
+    font-size: 12px;
+  }
+
+  .recognize-bottom-bar,
+  .import-bottom-bar {
+    width: min(760px, calc(100vw - 80px));
+    left: 50%;
+    right: auto;
+    bottom: 22px;
+    transform: translateX(-50%);
+    padding: 12px 16px;
+    border: 1px solid #dce7e4;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.95);
+    box-shadow: 0 18px 42px rgba(24, 47, 65, 0.14);
+  }
+
+  .import-bottom-bar.preview-bottom-bar {
+    width: min(680px, calc(100vw - 96px));
+    min-height: 78px;
+    padding: 14px 16px;
+  }
+
+  .preview-bottom-bar .bottom-actions {
+    gap: 12px;
+  }
+
+  .recognize-btn,
+  .bottom-btn {
+    height: 48px;
+    border-radius: 12px;
+    font-size: 14px;
+    font-weight: 900;
+  }
+
+  .recognize-btn,
+  .bottom-btn.primary {
+    color: #16413b;
+    background: linear-gradient(135deg, #68dcc3, #49c9ac);
+    box-shadow: none;
+  }
+
+  .bottom-btn.outline {
+    border-color: #50bda6;
+    color: #238873;
+  }
+
+  .bottom-btn.ghost {
+    border-color: #d7e0e8;
+    color: #53647a;
+  }
+
+  .bottom-summary,
+  .recognize-hint {
+    font-size: 9px;
+  }
+
+  .image-import-page.embedded.preview-mode {
+    height: calc(100vh - 86px);
+    min-height: calc(100vh - 86px);
+    overflow: hidden;
+    padding: 12px 32px 96px;
+  }
+
+  .image-import-page.embedded.preview-mode .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-workbench {
+    height: calc(100vh - 194px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    overflow: hidden;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-status-panel,
+  .image-import-page.embedded.preview-mode .target-bank-strip {
+    flex: 0 0 auto;
+  }
+
+  .image-import-page.embedded.preview-mode .preview-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .draft-list-panel,
+  .image-import-page.embedded.preview-mode .draft-detail-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode .draft-detail-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed {
+    height: 100vh;
+    min-height: 100vh;
+    overflow: hidden;
+    padding: 12px 18px 96px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .import-content {
+    margin-top: 0;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-workbench {
+    height: calc(100vh - 108px);
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    overflow: hidden;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-status-panel {
+    flex: 0 0 auto;
+    padding: 13px 18px;
+    grid-template-columns: minmax(0, 1fr) 330px;
+    gap: 14px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-title {
+    margin-top: 3px;
+    font-size: 21px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-subtitle {
+    display: none;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-metric {
+    min-height: 58px;
+    padding: 8px 10px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-number {
+    font-size: 21px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .status-label {
+    margin-top: 5px;
+    font-size: 10px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .target-bank-strip {
+    flex: 0 0 auto;
+    min-height: 48px;
+    padding: 8px 12px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .preview-layout {
+    flex: 1 1 auto;
+    min-height: 0;
+    grid-template-columns: minmax(560px, 0.95fr) minmax(0, 1.05fr);
+    gap: 12px;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-list-panel,
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-detail-panel {
+    height: 100%;
+    min-height: 0;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .draft-detail-panel {
+    overflow-y: auto;
+    overscroll-behavior: contain;
+  }
+
+  .image-import-page.embedded.preview-mode.sidebar-collapsed .import-bottom-bar {
+    bottom: 12px;
+    width: min(680px, calc(100vw - 72px));
+  }
+
+  .bank-picker-dialog {
+    width: min(760px, calc(100vw - 120px));
+    padding: 26px;
+    border-radius: 20px;
+  }
+
+  .bank-picker-title {
+    margin-top: 5px;
+    font-size: 20px;
+  }
+
+  .bank-picker-close {
+    width: 38px;
+    height: 38px;
+    flex-basis: 38px;
+    border-radius: 10px;
+    font-size: 22px;
+  }
+
+  .bank-picker-list {
+    gap: 12px;
+  }
+
+  .bank-picker-card {
+    min-height: 92px;
+    padding: 14px;
+    gap: 12px;
+    border-radius: 13px;
+  }
+
+  .bank-folder-icon {
+    width: 52px;
+    height: 50px;
+    flex-basis: 52px;
+    border-radius: 11px;
+    font-size: 16px;
+  }
+
+  .bank-picker-name {
+    font-size: 15px;
+  }
+
+  .bank-picker-date {
+    margin-top: 6px;
+    font-size: 10px;
+  }
+
+  .bank-radio {
+    font-size: 20px;
+  }
+}
+</style>

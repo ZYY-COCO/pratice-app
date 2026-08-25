@@ -1,15 +1,6 @@
 <template>
   <view class="page favorites-page" :style="pageInlineStyle">
-    <view class="topbar favorites-topbar" :style="favoritesHeaderStyle">
-      <view class="back-btn" @tap="goBack">
-        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </view>
-      <view class="favorites-title-copy">
-        <view class="page-title">收藏夹</view>
-      </view>
-      <view class="top-placeholder"></view>
-    </view>
-    <view class="favorites-topbar-spacer"></view>
+    <AppPageHeader title="收藏夹" fixed @back="goBack" />
 
     <view class="search-card">
       <text class="search-icon">⌕</text>
@@ -36,39 +27,38 @@
       </view>
     </scroll-view>
 
-    <view class="summary-card">
-      <view class="summary-icon"><FavoriteIcon /></view>
-      <view>
-        <view class="summary-number">{{ favoriteCards.length }}</view>
-        <view class="summary-label">总收藏</view>
-      </view>
-    </view>
-
-    <view class="list-head">
-      <text class="list-title">我的收藏题目</text>
-      <text class="list-note">按收藏时间展示</text>
-    </view>
-
     <view v-if="loading" class="empty-card">正在同步你的收藏题目...</view>
     <view v-else-if="error" class="empty-card warning">{{ error }}</view>
-    <view v-else-if="filteredItems.length === 0" class="empty-card">
-      当前没有匹配的收藏题目。刷题时点亮五角星，这里会自动归档。
+    <view v-else-if="filteredItems.length === 0" class="favorites-empty-state" aria-label="暂无收藏题目">
+      <image
+        class="favorites-empty-image"
+        src="/static/ui-icons/empty-favorites.svg"
+        mode="aspectFit"
+        alt="暂无收藏题目"
+      />
     </view>
 
-    <view v-else class="favorite-list">
-      <view v-for="item in filteredItems" :key="item.favorite_id" class="favorite-card" @tap="openDetail(item)">
-        <view class="tag-row">
-          <text class="subject-tag">{{ item.subject }}</text>
-          <text class="module-tag">{{ item.module }}</text>
-          <text v-if="item.sourceLabel" class="source-origin-tag">{{ item.sourceLabel }}</text>
-        </view>
-        <MathText class="stem" :value="item.stem" />
-        <view class="card-footer">
-          <text class="saved-time">收藏于 {{ formatTime(item.saved_at) }}</text>
-          <text class="view-link">查看 ›</text>
+    <template v-else>
+      <view class="list-head">
+        <text class="list-title">我的收藏题目</text>
+        <text class="list-note">按收藏时间展示</text>
+      </view>
+
+      <view class="favorite-list">
+        <view v-for="item in filteredItems" :key="item.favorite_id" class="favorite-card" @tap="openDetail(item)">
+          <view class="tag-row">
+            <text class="subject-tag">{{ item.subject }}</text>
+            <text class="module-tag">{{ item.module }}</text>
+            <text v-if="item.sourceLabel" class="source-origin-tag">{{ item.sourceLabel }}</text>
+          </view>
+          <MathText class="stem" :value="item.stem" />
+          <view class="card-footer">
+            <text class="saved-time">收藏于 {{ formatTime(item.saved_at) }}</text>
+            <text class="view-link">查看 ›</text>
+          </view>
         </view>
       </view>
-    </view>
+    </template>
 
     <view v-if="selectedItem" class="detail-mask" @tap="closeDetail">
       <view class="detail-panel" @tap.stop>
@@ -118,8 +108,9 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onPageScroll, onShow } from '@dcloudio/uni-app'
+import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -139,15 +130,6 @@ const favoriteRows = ref([])
 const loading = ref(false)
 const error = ref('')
 const toggling = ref(false)
-const headerScrollTop = ref(0)
-
-const favoritesHeaderStyle = computed(() => {
-  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
-  return {
-    '--favorites-header-opacity': String(0.2 + progress * 0.78),
-    '--favorites-header-shadow-opacity': String(progress * 0.11)
-  }
-})
 
 const subjects = ['全部', '中华文化', '英语运用', '逻辑推理', '数学基础']
 
@@ -204,10 +186,6 @@ const selectedOptions = computed(() => {
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
   loadFavorites()
-})
-
-onPageScroll(({ scrollTop }) => {
-  headerScrollTop.value = Number(scrollTop) || 0
 })
 
 async function loadFavorites() {
@@ -272,52 +250,14 @@ function goBack() {
 .favorites-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 18rpx) 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
+  padding: 0 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
   background: var(--gyt-page-bg);
   box-sizing: border-box;
   overflow-x: hidden;
-}
-
-.topbar {
-  display: grid;
-  grid-template-columns: 64rpx 1fr 64rpx;
-  align-items: center;
-  gap: 12rpx;
-  margin-bottom: 24rpx;
-}
-
-.favorites-topbar {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 24;
-  min-height: 96rpx;
-  margin: 0;
-  padding: 18rpx 24rpx;
-  box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--favorites-header-opacity, 0.2));
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--favorites-header-shadow-opacity, 0));
-  backdrop-filter: blur(18rpx);
-  -webkit-backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
-}
-
-.favorites-topbar-spacer {
-  width: 100%;
-  height: 102rpx;
-  flex: 0 0 102rpx;
-}
-
-.favorites-title-copy {
-  min-height: 60rpx;
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
 }
 
-.back-btn,
-.top-placeholder,
 .close-btn,
 .star-btn {
   width: 60rpx;
@@ -326,46 +266,6 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: center;
-}
-
-.back-btn {
-  background: #ffffff;
-  box-shadow: 0 10rpx 26rpx rgba(25, 48, 89, 0.06);
-}
-
-/* #ifdef MP-WEIXIN */
-.favorites-page {
-  padding-top: var(--mp-page-content-top, 96px);
-}
-
-.topbar {
-  min-height: var(--mp-page-header-height, 40px);
-}
-
-.favorites-topbar {
-  top: var(--mp-page-content-top, 96px);
-}
-
-.favorites-topbar-spacer {
-  height: calc(var(--mp-page-header-height, 40px) + 24rpx);
-  flex-basis: calc(var(--mp-page-header-height, 40px) + 24rpx);
-}
-/* #endif */
-
-.back-icon {
-  width: 28rpx;
-  height: 28rpx;
-  display: block;
-}
-
-.page-title {
-  margin-top: 0;
-  width: 100%;
-  text-align: center;
-  color: #101828;
-  font-size: 44rpx;
-  line-height: 1.35;
-  font-weight: 900;
 }
 
 .search-card {
@@ -414,57 +314,28 @@ function goBack() {
   height: 60rpx;
   margin: 0;
   padding: 0 24rpx;
-  border: 0;
+  box-sizing: border-box;
+  border: 1px solid var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2));
   border-radius: 22rpx;
-  background: #eef3fb;
+  background: var(--gyt-panel-bg, #ffffff);
   color: #667085;
   font-size: 24rpx;
   font-weight: 800;
-  line-height: 60rpx;
+  line-height: 1.2;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+}
+
+.subject-chip::after {
+  border: 0;
 }
 
 .subject-chip.active {
+  border-color: var(--gyt-primary);
   background: var(--gyt-primary);
   color: #ffffff;
-}
-
-.summary-card {
-  padding: 26rpx 30rpx;
-  border-radius: 30rpx;
-  background: #ffffff;
-  border: 2rpx solid #edf2fb;
-  box-shadow: 0 16rpx 38rpx rgba(25, 48, 89, 0.07);
-  display: flex;
-  align-items: center;
-  gap: 20rpx;
-  margin-bottom: 28rpx;
-}
-
-.summary-icon {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 22rpx;
-  background: #fff8d9;
-  color: #f5b700;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 36rpx;
-  font-weight: 900;
-}
-
-.summary-number {
-  color: var(--gyt-primary);
-  font-size: 44rpx;
-  line-height: 1;
-  font-weight: 900;
-}
-
-.summary-label {
-  margin-top: 8rpx;
-  color: #8a95a8;
-  font-size: 24rpx;
-  font-weight: 700;
 }
 
 .list-head {
@@ -490,6 +361,24 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
+}
+
+.favorites-empty-state {
+  width: 100%;
+  min-height: 320rpx;
+  flex: 1 1 320rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.favorites-empty-image {
+  width: 240rpx;
+  height: 240rpx;
+  max-width: 150px;
+  max-height: 150px;
+  display: block;
+  opacity: 0.92;
 }
 
 .favorite-card,

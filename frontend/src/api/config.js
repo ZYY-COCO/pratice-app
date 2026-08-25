@@ -16,11 +16,10 @@ isH5Development = Boolean(import.meta.env.DEV)
 // #endif
 
 const isLoopbackApiUrl = /^https?:\/\/(?:127\.0\.0\.1|localhost)(?::\d+)?(?:\/|$)/i.test(configuredBaseUrl)
-const isLanBrowser = typeof window !== 'undefined'
-  && !['127.0.0.1', 'localhost', '::1'].includes(window.location.hostname)
 
-// A phone opening the H5 preview cannot reach the computer through its own loopback address.
-if (isH5Development && isLoopbackApiUrl && isLanBrowser) {
+// H5 development always goes through Vite's /api proxy.  This lets the LAN
+// preview and localhost use the same local consultation flow without URL flags.
+if (isH5Development && isLoopbackApiUrl) {
   configuredBaseUrl = '/api'
 }
 

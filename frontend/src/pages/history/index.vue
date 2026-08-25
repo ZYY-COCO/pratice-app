@@ -1,21 +1,18 @@
 <template>
   <view class="page history-page" :style="pageInlineStyle">
-    <view class="history-topbar" :style="historyHeaderStyle">
-      <view class="back-btn" @tap="goBack">
-        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </view>
-      <view class="top-title">练习历史</view>
-      <view class="top-actions">
-        <view class="top-action-btn" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">
-          <view class="search-glyph"></view>
+    <AppPageHeader title="练习历史" fixed @back="goBack">
+      <template #right>
+        <view class="top-actions">
+          <view class="top-action-btn" :class="{ active: searchVisible || searchKeyword }" @tap="toggleSearch">
+            <view class="search-glyph"></view>
+          </view>
+          <view class="top-action-btn filter-icon-wrap" :class="{ active: activeFilterCount > 0 }" @tap="openFilterPanel">
+            <view class="filter-glyph"></view>
+            <text v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</text>
+          </view>
         </view>
-        <view class="top-action-btn filter-icon-wrap" :class="{ active: activeFilterCount > 0 }" @tap="openFilterPanel">
-          <view class="filter-glyph"></view>
-          <text v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</text>
-        </view>
-      </view>
-    </view>
-    <view class="history-topbar-spacer"></view>
+      </template>
+    </AppPageHeader>
 
     <view v-if="searchVisible" class="search-card">
       <text class="search-symbol">⌕</text>
@@ -38,11 +35,6 @@
       >
         {{ item.label }}
       </button>
-    </view>
-
-    <view v-if="filterSummaryText" class="filter-summary">
-      <text>{{ filterSummaryText }}</text>
-      <text class="summary-clear" @tap="resetAllFilters">清除筛选</text>
     </view>
 
     <view v-if="loading" class="state-card">正在读取你的真实练习记录...</view>
@@ -194,8 +186,9 @@
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onPageScroll, onShow } from '@dcloudio/uni-app'
+import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
@@ -220,19 +213,10 @@ const selectedItem = ref(null)
 const searchVisible = ref(false)
 const searchKeyword = ref('')
 const filterPanelVisible = ref(false)
-const headerScrollTop = ref(0)
 const advancedFilters = ref({
   subject: 'all',
   module: 'all',
   timeRange: 'all'
-})
-
-const historyHeaderStyle = computed(() => {
-  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
-  return {
-    '--history-header-opacity': String(0.2 + progress * 0.78),
-    '--history-header-shadow-opacity': String(progress * 0.11)
-  }
 })
 
 const timeOptions = [
@@ -263,17 +247,6 @@ const activeFilterCount = computed(() => {
   if (normalizedKeyword.value) count += 1
   return count
 })
-const filterSummaryText = computed(() => {
-  const parts = []
-  const statusLabel = filters.find((item) => item.key === activeFilter.value)?.label
-  const timeLabel = timeOptions.find((item) => item.value === advancedFilters.value.timeRange)?.label
-  if (activeFilter.value !== 'all') parts.push(statusLabel)
-  if (advancedFilters.value.subject !== 'all') parts.push(advancedFilters.value.subject)
-  if (advancedFilters.value.module !== 'all') parts.push(advancedFilters.value.module)
-  if (advancedFilters.value.timeRange !== 'all') parts.push(timeLabel)
-  if (normalizedKeyword.value) parts.push(`搜索：${searchKeyword.value.trim()}`)
-  return parts.length ? `当前筛选：${parts.join(' / ')}` : ''
-})
 const filteredItems = computed(() => {
   return items.value.filter((item) => {
     const question = item.question || {}
@@ -296,10 +269,6 @@ const filteredItems = computed(() => {
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
   loadHistory()
-})
-
-onPageScroll(({ scrollTop }) => {
-  headerScrollTop.value = Number(scrollTop) || 0
 })
 
 function changeFilter(key) {
@@ -463,7 +432,7 @@ function goBack() {
 .history-page {
   min-height: 100vh;
   min-height: 100dvh;
-  padding: calc(env(safe-area-inset-top) + 20rpx) 22rpx calc(env(safe-area-inset-bottom) + 40rpx);
+  padding: 0 22rpx calc(env(safe-area-inset-bottom) + 40rpx);
   background: linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
   overflow-x: hidden;
 }
@@ -472,33 +441,6 @@ function goBack() {
   border: 0;
 }
 
-.history-topbar {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 24;
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  min-height: 104rpx;
-  margin: 0;
-  padding: 16rpx 22rpx;
-  box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--history-header-opacity, 0.2));
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--history-header-shadow-opacity, 0));
-  backdrop-filter: blur(18rpx);
-  -webkit-backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
-}
-
-.history-topbar-spacer {
-  width: 100%;
-  height: 94rpx;
-  flex: 0 0 94rpx;
-}
-
-.back-btn,
 .close-btn {
   width: 58rpx;
   height: 58rpx;
@@ -509,39 +451,6 @@ function goBack() {
   color: #101828;
   font-size: 40rpx;
   font-weight: 800;
-}
-
-.back-btn {
-  justify-self: start;
-}
-
-/* #ifdef MP-WEIXIN */
-.history-page {
-  padding-top: var(--mp-page-content-top, 96px);
-}
-
-.history-topbar {
-  min-height: var(--mp-page-header-height, 40px);
-  top: var(--mp-page-content-top, 96px);
-}
-
-.history-topbar-spacer {
-  height: calc(var(--mp-page-header-height, 40px) + 22rpx);
-  flex-basis: calc(var(--mp-page-header-height, 40px) + 22rpx);
-}
-/* #endif */
-
-.back-icon {
-  width: 28rpx;
-  height: 28rpx;
-  display: block;
-}
-
-.top-title {
-  justify-self: center;
-  color: #101828;
-  font-size: 32rpx;
-  font-weight: 900;
 }
 
 .top-actions {
@@ -706,26 +615,6 @@ function goBack() {
 .filter-tab.active {
   background: var(--gyt-primary);
   color: #ffffff;
-}
-
-.filter-summary {
-  margin: -6rpx 0 18rpx;
-  padding: 16rpx 18rpx;
-  border-radius: 20rpx;
-  background: var(--gyt-primary-soft);
-  color: var(--gyt-primary);
-  font-size: 22rpx;
-  line-height: 1.45;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 16rpx;
-}
-
-.summary-clear {
-  flex-shrink: 0;
-  color: var(--gyt-primary);
-  font-weight: 900;
 }
 
 .history-list {

@@ -3,6 +3,10 @@ import { enforceAuthOnCurrentPage } from './utils/routeGuard'
 import { installPageTransitions } from './utils/pageTransition'
 import { applyThemeByKey, getStoredThemeKey } from './utils/theme'
 import { closeNativeSplashscreen } from './platform/runtime'
+import {
+  startMentorConsultationNotifications,
+  stopMentorConsultationNotifications
+} from './services/mentorConsultationNotifications'
 
 export default {
   onLaunch() {
@@ -14,10 +18,15 @@ export default {
     }
     enforceAuthOnCurrentPage()
     closeNativeSplashscreen()
+    startMentorConsultationNotifications()
   },
   onShow() {
     enforceAuthOnCurrentPage()
     closeNativeSplashscreen()
+    startMentorConsultationNotifications()
+  },
+  onHide() {
+    stopMentorConsultationNotifications()
   }
 }
 </script>
@@ -31,10 +40,54 @@ export default {
   --gyt-primary-gradient: linear-gradient(135deg, #3478f6, #68a0ff);
   --gyt-primary-shadow: rgba(52, 120, 246, 0.2);
   --gyt-content-surface-shadow: none;
-  --gyt-page-bg: radial-gradient(circle at top right, rgba(52, 120, 246, 0.1), transparent 25%), linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
-  --gyt-panel-bg: radial-gradient(circle at 86% 10%, rgba(52, 120, 246, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #eef6ff 100%);
+  --gyt-unified-page-bg: #f5f3f7;
+  --gyt-page-bg: var(--gyt-unified-page-bg);
+  --gyt-panel-bg: rgba(255, 255, 255, 0.94);
+  --gyt-font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", "SF Pro Text", "PingFang SC", "PingFang TC", "PingFang HK", "HarmonyOS Sans", "HarmonyOS Sans SC", "Microsoft YaHei", "Noto Sans SC", "Noto Sans CJK SC", "Noto Sans CJK TC", "Source Han Sans SC", "Helvetica Neue", Arial, sans-serif;
+  --gyt-app-font: var(--gyt-font-sans);
+  --gyt-font-size-page-title: 34rpx;
+  --gyt-font-size-section-title: 30rpx;
+  --gyt-font-size-body: 28rpx;
+  --gyt-font-size-label: 26rpx;
+  --gyt-font-size-caption: 22rpx;
+  --gyt-font-weight-regular: 400;
+  --gyt-font-weight-medium: 500;
+  --gyt-font-weight-semibold: 600;
+  --gyt-font-weight-bold: 700;
   --gyt-route-duration: 380ms;
   --gyt-route-ease: cubic-bezier(0.25, 0.8, 0.25, 1);
+}
+
+html,
+body,
+page,
+uni-app,
+uni-page,
+uni-page-wrapper,
+uni-page-body,
+uni-view,
+uni-text,
+uni-button,
+uni-input,
+uni-textarea,
+uni-picker,
+uni-label,
+uni-navigator,
+uni-scroll-view,
+uni-swiper,
+uni-swiper-item,
+view,
+text,
+button,
+input,
+textarea,
+picker,
+label,
+navigator,
+scroll-view,
+swiper,
+swiper-item {
+  font-family: var(--gyt-app-font);
 }
 
 page {
@@ -43,9 +96,9 @@ page {
   min-height: 100vh;
   min-height: 100dvh;
   overflow-x: hidden;
-  background: var(--gyt-page-bg);
+  background: var(--gyt-unified-page-bg);
   color: #172033;
-  font-family: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  font-family: var(--gyt-app-font);
 }
 
 .page {
@@ -55,7 +108,31 @@ page {
   min-height: 100dvh;
   box-sizing: border-box;
   overflow-x: hidden;
+  background: var(--gyt-unified-page-bg) !important;
   padding: 28rpx 24rpx calc(env(safe-area-inset-bottom) + 36rpx);
+}
+
+/* 所有业务页面沿用“我的”主页面底色。这里只覆盖页面根背景，
+   卡片、按钮、弹层与底部导航仍使用各自的业务配色。 */
+html,
+body,
+uni-app,
+uni-page,
+uni-page-wrapper,
+uni-page-body,
+page,
+uni-page-body > *,
+page > view,
+page > scroll-view {
+  background: var(--gyt-unified-page-bg) !important;
+}
+
+.home-page.circle-glass-page::before,
+.major-catalog-page.is-glass-theme::before,
+.school-announcement-page.is-glass-theme::before {
+  background: var(--gyt-unified-page-bg) !important;
+  filter: none !important;
+  transform: none !important;
 }
 
 .app-card {
@@ -67,7 +144,7 @@ page {
 
 :root.gyt-circle-glass-theme page {
   color: #1c2423;
-  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  font-family: var(--gyt-app-font);
 }
 
 :root.gyt-circle-glass-theme .app-card,
@@ -76,6 +153,21 @@ page {
   background: rgba(250, 253, 252, 0.62);
   -webkit-backdrop-filter: blur(18px) saturate(118%);
   backdrop-filter: blur(18px) saturate(118%);
+}
+
+:root.gyt-circle-glass-theme .app-page-header {
+  border-bottom-color: rgba(255, 255, 255, 0.62);
+  background: rgba(248, 252, 255, 0.64);
+  -webkit-backdrop-filter: blur(18px) saturate(118%);
+  backdrop-filter: blur(18px) saturate(118%);
+}
+
+@supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
+  :root.gyt-circle-glass-theme .app-page-header,
+  :root.gyt-circle-glass-theme .app-card,
+  :root.gyt-circle-glass-theme .ghost-button {
+    background: rgba(248, 252, 255, 0.96);
+  }
 }
 
 /* Keep rounded content surfaces clean across every theme. Sheets and tab bars
@@ -151,7 +243,7 @@ page {
 .section-title {
   margin: 34rpx 0 20rpx;
   font-size: 36rpx;
-  font-weight: 900;
+  font-weight: var(--gyt-font-weight-bold, 700);
   color: #172033;
 }
 
@@ -165,7 +257,7 @@ page {
   background: var(--gyt-primary, #1677ff);
   color: #ffffff;
   font-size: 32rpx;
-  font-weight: 900;
+  font-weight: var(--gyt-font-weight-semibold, 600);
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow, rgba(37, 99, 235, 0.18));
 }
 
@@ -180,7 +272,30 @@ page {
   background: #ffffff;
   color: var(--gyt-primary, #1677ff);
   font-size: 30rpx;
-  font-weight: 800;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.gyt-numeric {
+  font-variant-numeric: tabular-nums;
+}
+
+/* Keep the main text hierarchy consistent even when legacy pages carry
+   heavier local declarations. Brand marks and data numerals stay untouched. */
+.app-page-header-title,
+.page-title,
+.hero-title,
+.section-title,
+.card-title,
+.panel-title,
+.status-title,
+.feature-title,
+.catalog-topbar-title {
+  font-weight: var(--gyt-font-weight-bold, 700) !important;
+}
+
+.primary-button,
+.ghost-button {
+  font-weight: var(--gyt-font-weight-semibold, 600) !important;
 }
 
 uni-page.gyt-route-enter-forward,

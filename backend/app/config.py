@@ -22,9 +22,14 @@ class Settings(BaseSettings):
     payment_webhook_secret: str | None = None
     mentor_consultation_service_rules_version: str = "2026-08-23"
     mentor_consultation_demo_payment_enabled: bool = False
+    mentor_consultation_real_payment_enabled: bool = False
     mentor_consultation_payment_provider: str = "unconfigured"
     mentor_consultation_payment_checkout_url: str | None = None
+    mentor_consultation_payment_hold_minutes: int = 15
     mentor_consultation_lifecycle_interval_seconds: int = 60
+    user_notification_outbox_interval_seconds: int = 10
+    wallet_withdrawal_enabled: bool = False
+    wallet_settlement_days: int = 3
     mentor_consultation_report_first_response_hours: int = 48
     mentor_consultation_urgent_report_first_response_hours: int = 12
     mentor_consultation_report_appeal_first_response_hours: int = 48

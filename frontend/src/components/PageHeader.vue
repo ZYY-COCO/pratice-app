@@ -31,7 +31,7 @@ defineProps({
 .eyebrow {
   color: var(--gyt-primary);
   font-size: 22rpx;
-  font-weight: 800;
+  font-weight: var(--gyt-font-weight-semibold, 600);
   letter-spacing: 1rpx;
 }
 
@@ -39,7 +39,7 @@ defineProps({
   margin-top: 12rpx;
   color: #172033;
   font-size: 46rpx;
-  font-weight: 900;
+  font-weight: var(--gyt-font-weight-bold, 700);
   line-height: 1.2;
 }
 

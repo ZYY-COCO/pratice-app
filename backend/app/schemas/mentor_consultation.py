@@ -9,7 +9,7 @@ MentorExamType = Literal["Z001", "Z002", "application"]
 MentorOnlineStatus = Literal["online", "offline", "busy"]
 MentorVerificationStatus = Literal["unverified", "pending", "verified", "rejected"]
 MentorProfileChangeRequestStatus = Literal["pending", "approved", "rejected"]
-MentorSlotStatus = Literal["available", "booked", "expired", "closed"]
+MentorSlotStatus = Literal["available", "held", "booked", "expired", "closed"]
 MentorConsultationType = Literal["instant", "booking"]
 MentorConsultationOrderStatus = Literal[
     "draft",
@@ -159,6 +159,8 @@ class AdminMentorProfileChangeDecisionRequest(BaseModel):
 class MentorOwnerAvailabilitySlotListResponse(BaseModel):
     items: list[MentorAvailabilitySlotItem] = Field(default_factory=list)
     count: int = 0
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class MentorOwnerAvailabilitySlotCreateRequest(BaseModel):
@@ -379,11 +381,24 @@ class MentorConsultationOrderCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     mentor_id: UUID
+    client_order_id: str = Field(min_length=1, max_length=80)
     consultation_type: MentorConsultationType
     slot_id: UUID | None = None
     questionnaire: MentorConsultationQuestionnaire
     service_rules_version: str = Field(min_length=1, max_length=32)
     service_rules_accepted: bool
+
+
+class MentorConsultationPaymentCapabilityResponse(BaseModel):
+    order_creation_enabled: bool = False
+    real_payment_enabled: bool = False
+    demo_payment_enabled: bool = False
+    payment_mode: Literal["demo", "real", "disabled"] = "disabled"
+    provider: str = "unconfigured"
+    checkout_configured: bool = False
+    withdrawal_enabled: bool = False
+    service_rules_version: str
+    message: str
 
 
 class MentorConsultationPaymentIntentResponse(BaseModel):
@@ -422,6 +437,7 @@ class MentorConsultationPaymentWebhookResponse(BaseModel):
 class MentorConsultationOrderItem(BaseModel):
     id: str
     order_no: str
+    client_order_id: str | None = None
     applicant_user_id: str
     mentor_id: str
     slot_id: str | None = None
@@ -432,6 +448,8 @@ class MentorConsultationOrderItem(BaseModel):
     price: float | int = Field(ge=0)
     consultation_window_minutes: int = Field(default=60, ge=15, le=180)
     payment_reference: str | None = None
+    payment_expires_at: str | None = None
+    payment_mode: Literal["demo", "real"] = "real"
     accepted_at: str | None = None
     expires_at: str | None = None
     started_at: str | None = None
@@ -448,6 +466,8 @@ class MentorConsultationOrderItem(BaseModel):
 class MentorConsultationOrderListResponse(BaseModel):
     items: list[MentorConsultationOrderItem] = Field(default_factory=list)
     count: int = 0
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class MentorConsultationDecisionRequest(BaseModel):

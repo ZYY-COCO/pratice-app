@@ -1,3 +1,5 @@
+import { getAuthUser } from '../utils/auth'
+
 export const WALLET_ROLES = ['user', 'mentor']
 export const WALLET_TRANSACTION_TYPES = [
   'consult_pay',
@@ -397,7 +399,7 @@ export function submitMockWithdrawal({ amount, channel, role = 'user' }) {
     iconTone: 'blue'
   }
   const records = getStoredWithdrawalRecords()
-  writeStorage(WALLET_WITHDRAWAL_STORAGE_KEY, [record, ...records])
+  writeStorage(getWithdrawalStorageKey(), [record, ...records])
   return clone(record)
 }
 
@@ -429,7 +431,7 @@ export function formatWalletAmount(amount, withSign = false) {
 }
 
 function getStoredWithdrawalRecords(role) {
-  const records = readStorage(WALLET_WITHDRAWAL_STORAGE_KEY, [])
+  const records = readStorage(getWithdrawalStorageKey(), [])
   if (!Array.isArray(records)) return []
   if (!role) return clone(records)
   const normalizedRole = WALLET_ROLES.includes(role) ? role : 'user'
@@ -450,6 +452,12 @@ function formatDateTime(date) {
 
 function clone(value) {
   return JSON.parse(JSON.stringify(value))
+}
+
+function getWithdrawalStorageKey() {
+  const user = getAuthUser() || {}
+  const userId = String(user.id || user.user_id || user.userId || '').trim()
+  return `${WALLET_WITHDRAWAL_STORAGE_KEY}:${userId || 'guest'}`
 }
 
 function readStorage(key, fallback) {

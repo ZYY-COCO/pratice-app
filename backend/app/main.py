@@ -6,8 +6,10 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import admin, ai, answers, auth, community, favorites, feedback, formulas, home_content, major_catalog, membership, mentor_admin, mentor_consultation, notifications, official_messages, questions, reports, school_announcements, wrong_questions
+from app.routes import admin, ai, answers, auth, circle_resources, community, favorites, feedback, formulas, home_content, major_catalog, membership, mentor_admin, mentor_consultation, notifications, official_messages, questions, reports, school_announcements, wallet, wrong_questions
 from app.services.mentor_consultation_lifecycle import settle_expired_mentor_consultation_orders
+from app.services.user_notifications import deliver_pending_user_notifications
+from app.services.wallet_ledger import reconcile_consultation_wallet_ledger
 
 
 logger = logging.getLogger(__name__)
@@ -20,8 +22,13 @@ async def _mentor_consultation_lifecycle_loop(interval_seconds: int) -> None:
     while True:
         try:
             settled = await asyncio.to_thread(settle_expired_mentor_consultation_orders)
-            if settled:
-                logger.info("Applied mentor consultation lifecycle updates (count=%s)", settled)
+            ledger_updates = await asyncio.to_thread(reconcile_consultation_wallet_ledger)
+            if settled or ledger_updates:
+                logger.info(
+                    "Applied mentor consultation background updates (lifecycle=%s ledger=%s)",
+                    settled,
+                    ledger_updates,
+                )
         except asyncio.CancelledError:
             raise
         except Exception as exc:
@@ -31,20 +38,42 @@ async def _mentor_consultation_lifecycle_loop(interval_seconds: int) -> None:
         await asyncio.sleep(delay)
 
 
+async def _user_notification_outbox_loop(interval_seconds: int) -> None:
+    """Deliver recipient notifications independently from the source request."""
+
+    delay = max(5, min(int(interval_seconds or 10), 300))
+    while True:
+        try:
+            delivered = await asyncio.to_thread(deliver_pending_user_notifications)
+            if delivered:
+                logger.info("Delivered user notification outbox rows (count=%s)", delivered)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("User notification outbox sweep failed (error_type=%s)", type(exc).__name__)
+        await asyncio.sleep(delay)
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    task = asyncio.create_task(
+    lifecycle_task = asyncio.create_task(
         _mentor_consultation_lifecycle_loop(get_settings().mentor_consultation_lifecycle_interval_seconds),
         name="mentor-consultation-lifecycle",
+    )
+    notification_task = asyncio.create_task(
+        _user_notification_outbox_loop(get_settings().user_notification_outbox_interval_seconds),
+        name="user-notification-outbox",
     )
     try:
         yield
     finally:
-        task.cancel()
-        try:
-            await task
-        except asyncio.CancelledError:
-            pass
+        for task in (lifecycle_task, notification_task):
+            task.cancel()
+        for task in (lifecycle_task, notification_task):
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
 
 
 def create_app() -> FastAPI:
@@ -65,6 +94,7 @@ def create_app() -> FastAPI:
     app.include_router(wrong_questions.router)
     app.include_router(favorites.router)
     app.include_router(community.router)
+    app.include_router(circle_resources.router)
     app.include_router(mentor_consultation.router)
     app.include_router(mentor_admin.router)
     app.include_router(reports.router)
@@ -76,8 +106,10 @@ def create_app() -> FastAPI:
     app.include_router(school_announcements.router)
     app.include_router(home_content.router)
     app.include_router(notifications.router)
+    app.include_router(wallet.router)
     app.include_router(official_messages.router)
     app.include_router(official_messages.admin_router)
+    app.include_router(circle_resources.admin_router)
     app.include_router(admin.router)
 
     @app.get("/health")

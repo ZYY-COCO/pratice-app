@@ -844,11 +844,13 @@ def leaderboard(
         current["total"] += safe_int(row.get("total_count"))
         current["correct"] += safe_int(row.get("correct_count"))
 
-    now = datetime.now(ZoneInfo("Asia/Shanghai"))
+    # Reuse the module-level fallback so Windows builds without tzdata do not
+    # turn the leaderboard into a 500 response.
+    now = datetime.now(APP_TIMEZONE)
     week_start = datetime.combine(
         (now - timedelta(days=now.weekday())).date(),
         datetime.min.time(),
-        tzinfo=ZoneInfo("Asia/Shanghai"),
+        tzinfo=APP_TIMEZONE,
     ).astimezone(timezone.utc)
     weekly_rows = fetch_weekly_answer_rows(supabase, week_start)
     weekly_by_user: dict[str, int] = {}

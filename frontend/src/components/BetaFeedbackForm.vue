@@ -46,6 +46,7 @@ const form = reactive({
   content: '',
   contact: ''
 })
+const emit = defineEmits(['submitted'])
 
 const typeIndex = computed(() => Math.max(0, typeOptions.indexOf(form.feedbackType)))
 
@@ -70,6 +71,7 @@ async function submit() {
       source_page: props.sourcePage
     })
     uni.showToast({ title: response.detail || '反馈已提交', icon: 'none' })
+    emit('submitted', response)
     form.content = ''
     form.contact = ''
   } catch (error) {

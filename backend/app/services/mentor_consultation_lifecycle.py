@@ -298,7 +298,7 @@ def release_terminal_mentor_booking_slot(
         slot_response = call_supabase(
             lambda: (
                 supabase.table("mentor_availability_slots")
-                .select("id,ends_at,status")
+                .select("id,ends_at,status,held_order_id")
                 .eq("id", slot_id)
                 .limit(1)
                 .execute()
@@ -306,19 +306,24 @@ def release_terminal_mentor_booking_slot(
             operation_name="consultation terminal booking slot lookup",
         )
         slot = (slot_response.data or [None])[0]
-        if not slot or str(slot.get("status") or "") != "booked":
+        slot_status = str((slot or {}).get("status") or "")
+        if not slot or slot_status not in {"held", "booked"}:
+            return False
+        if slot_status == "held" and str(slot.get("held_order_id") or "") != str(order.get("id") or ""):
             return False
 
         ends_at = _as_utc_datetime(slot.get("ends_at"))
         next_status = "expired" if ends_at is not None and ends_at <= current_time else "available"
+        query = (
+            supabase.table("mentor_availability_slots")
+            .update({"status": next_status, "held_order_id": None, "hold_expires_at": None})
+            .eq("id", slot_id)
+            .eq("status", slot_status)
+        )
+        if slot_status == "held":
+            query = query.eq("held_order_id", str(order.get("id") or ""))
         response = call_supabase(
-            lambda: (
-                supabase.table("mentor_availability_slots")
-                .update({"status": next_status})
-                .eq("id", slot_id)
-                .eq("status", "booked")
-                .execute()
-            ),
+            query.execute,
             operation_name="consultation terminal booking slot release",
         )
         return bool(response.data)
@@ -348,6 +353,37 @@ def refresh_expired_mentor_consultation_order(
     order_status = str(order.get("order_status") or "")
     if not order_id:
         return order
+
+    if order_status == "pending_payment":
+        payment_expires_at = _as_utc_datetime(order.get("payment_expires_at"))
+        if payment_expires_at is None or payment_expires_at > current_time:
+            return order
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "expire_mentor_consultation_payment_hold",
+                {"p_order_id": order_id, "p_now": current_time.isoformat()},
+            ).execute(),
+            operation_name="consultation payment hold expiry",
+        )
+        if not response.data:
+            return order
+        expired_order = response.data[0]
+        if str(expired_order.get("order_status") or "") != "pending_payment":
+            _insert_system_message(
+                supabase,
+                order_id,
+                "订单支付时限已结束，系统已关闭未支付订单并释放预约时段；本次未发生扣款。",
+            )
+            _insert_event(
+                supabase,
+                order_id,
+                "consultation_payment_hold_expired",
+                {
+                    "payment_expires_at": payment_expires_at.isoformat(),
+                    "slot_id": str(order.get("slot_id") or "") or None,
+                },
+            )
+        return expired_order
 
     if order_status == "pending_accept":
         expires_at = _as_utc_datetime(order.get("expires_at"))
@@ -561,6 +597,24 @@ def settle_expired_mentor_consultation_orders(*, limit: int = DEFAULT_SWEEP_LIMI
     now = _utc_now()
     supabase = get_supabase_admin()
     changed = 0
+
+    unpaid_response = call_supabase(
+        lambda: (
+            supabase.table("mentor_consultation_orders")
+            .select("*")
+            .eq("order_status", "pending_payment")
+            .in_("payment_status", ["unpaid", "failed"])
+            .lte("payment_expires_at", now.isoformat())
+            .order("payment_expires_at")
+            .limit(batch_size)
+            .execute()
+        ),
+        operation_name="consultation lifecycle payment hold candidate list",
+    )
+    for order in unpaid_response.data or []:
+        updated = refresh_expired_mentor_consultation_order(supabase, order, now=now)
+        if str(updated.get("order_status") or "") != str(order.get("order_status") or ""):
+            changed += 1
 
     pending_response = call_supabase(
         lambda: (

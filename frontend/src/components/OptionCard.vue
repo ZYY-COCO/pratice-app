@@ -156,7 +156,7 @@ const compactContentClass = computed(() => {
   align-items: center;
   justify-content: center;
   font-size: 30rpx;
-  font-weight: 900;
+  font-weight: var(--gyt-font-weight-bold, 700);
   flex-shrink: 0;
 }
 
@@ -168,7 +168,7 @@ const compactContentClass = computed(() => {
   color: #172033;
   font-size: 31rpx;
   line-height: 1.55;
-  font-weight: 800;
+  font-weight: var(--gyt-font-weight-medium, 500);
   overflow: hidden;
 }
 

@@ -113,7 +113,7 @@ defineProps({
   background: transparent;
   box-shadow: none;
   color: var(--circle-muted, #718096);
-  font-family: var(--circle-font, -apple-system, BlinkMacSystemFont, "PingFang SC", "Helvetica Neue", Arial, sans-serif);
+  font-family: var(--gyt-app-font);
 }
 
 .icp-footer.glass .icp-link {

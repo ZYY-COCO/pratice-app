@@ -22,15 +22,15 @@ ADMIN_PROFILE_FIELDS = (
 )
 
 CONSULTATION_ORDER_FIELDS = (
-    "id,order_no,applicant_user_id,mentor_id,slot_id,consultation_type,order_status,"
+    "id,order_no,client_order_id,request_fingerprint,applicant_user_id,mentor_id,slot_id,consultation_type,order_status,"
     "payment_status,questionnaire,price_cents,consultation_window_minutes,"
-    "payment_reference,accepted_at,expires_at,started_at,ended_at,"
+    "payment_reference,payment_expires_at,payment_mode,accepted_at,expires_at,started_at,ended_at,"
     "applicant_completion_confirmed_at,mentor_completion_confirmed_at,"
     "refund_amount_cents,refund_reference,created_at,updated_at"
 )
 
 CONSULTATION_MESSAGE_FIELDS = (
-    "id,order_id,sender_role,message_type,content,duration_seconds,client_message_id,created_at"
+    "id,order_id,sender_role,sender_user_id,message_type,content,duration_seconds,client_message_id,created_at"
 )
 
 
@@ -214,6 +214,7 @@ def serialize_mentor_order(row: dict) -> dict:
     return {
         "id": str(row.get("id") or ""),
         "order_no": str(row.get("order_no") or ""),
+        "client_order_id": str(row.get("client_order_id") or "") or None,
         "applicant_user_id": str(row.get("applicant_user_id") or ""),
         "mentor_id": str(row.get("mentor_id") or ""),
         "slot_id": str(row.get("slot_id")) if row.get("slot_id") else None,
@@ -231,6 +232,8 @@ def serialize_mentor_order(row: dict) -> dict:
         "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
         "consultation_window_minutes": int(row.get("consultation_window_minutes") or 60),
         "payment_reference": row.get("payment_reference") or None,
+        "payment_expires_at": row.get("payment_expires_at") or None,
+        "payment_mode": str(row.get("payment_mode") or "real"),
         "accepted_at": row.get("accepted_at") or None,
         "expires_at": row.get("expires_at") or None,
         "started_at": row.get("started_at") or None,

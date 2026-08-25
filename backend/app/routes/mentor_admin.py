@@ -2455,7 +2455,7 @@ def update_admin_mentor_consultation_report_status(
                 ),
                 related_type="mentor_consultation_report",
                 related_id=str(row.get("id") or report_id),
-                route_path="/pages/circle/mentor-support",
+                route_path="/pages-sub-consultation/consultation/mentor-support",
             )
         if terminal:
             resolution_copy = {
@@ -2909,7 +2909,7 @@ def update_admin_mentor_consultation_report_appeal_status(
                 ),
                 related_type="mentor_consultation_report_appeal",
                 related_id=str(updated.get("id") or appeal_id),
-                route_path="/pages/circle/mentor-support",
+                route_path="/pages-sub-consultation/consultation/mentor-support",
             )
         if payload.decision == "reopen":
             _insert_consultation_admin_system_message(

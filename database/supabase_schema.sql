@@ -109,9 +109,14 @@ create table if not exists public.user_answers (
   id uuid primary key default gen_random_uuid(),
   user_id uuid not null references public.users(id) on delete cascade,
   question_id uuid not null references public.questions(id) on delete cascade,
+  client_submission_id text
+    check (client_submission_id is null or char_length(btrim(client_submission_id)) between 1 and 120),
+  stats_exam_code text not null check (stats_exam_code in ('Z001', 'Z002')),
   selected_answer text not null check (selected_answer in ('A', 'B', 'C', 'D')),
   is_correct boolean not null,
   used_time integer not null default 0 check (used_time >= 0),
+  attempt_number integer not null default 1 check (attempt_number >= 1),
+  is_first_attempt boolean not null default false,
   created_at timestamptz not null default now()
 );
 
@@ -148,6 +153,19 @@ create table if not exists public.ability_stats (
   unique (user_id, exam_code, subject, module, submodule)
 );
 
+create table if not exists public.user_question_progress (
+  user_id uuid not null references public.users(id) on delete cascade,
+  question_id uuid not null references public.questions(id) on delete cascade,
+  first_attempt_is_correct boolean,
+  first_answered_at timestamptz,
+  attempt_count integer not null default 0 check (attempt_count >= 0),
+  correct_count integer not null default 0 check (correct_count >= 0),
+  last_is_correct boolean,
+  last_answered_at timestamptz,
+  updated_at timestamptz not null default now(),
+  primary key (user_id, question_id)
+);
+
 drop trigger if exists set_wrong_questions_updated_at on public.wrong_questions;
 create trigger set_wrong_questions_updated_at
 before update on public.wrong_questions
@@ -170,6 +188,13 @@ create index if not exists idx_user_answers_user_created
 create index if not exists idx_user_answers_created_user
   on public.user_answers (created_at desc, user_id);
 
+create unique index if not exists uq_user_answers_client_submission
+  on public.user_answers (user_id, client_submission_id)
+  where client_submission_id is not null;
+
+create index if not exists idx_user_answers_user_question_created
+  on public.user_answers (user_id, question_id, created_at asc, id asc);
+
 create index if not exists idx_wrong_questions_user_last
   on public.wrong_questions (user_id, last_wrong_at desc);
 
@@ -182,6 +207,9 @@ create index if not exists idx_favorite_questions_question
 create index if not exists idx_ability_stats_user_exam
   on public.ability_stats (user_id, exam_code, subject, module, submodule);
 
+create index if not exists idx_user_question_progress_user_updated
+  on public.user_question_progress (user_id, updated_at desc);
+
 -- 启用 RLS。后端使用 service role 可绕过 RLS；客户端直连时仍能保护个人数据。
 alter table public.users enable row level security;
 alter table public.passages enable row level security;
@@ -190,6 +218,7 @@ alter table public.user_answers enable row level security;
 alter table public.wrong_questions enable row level security;
 alter table public.favorite_questions enable row level security;
 alter table public.ability_stats enable row level security;
+alter table public.user_question_progress enable row level security;
 alter table public.membership_orders enable row level security;
 
 drop policy if exists "users can read own profile" on public.users;
@@ -231,9 +260,7 @@ create policy "users can read own answers"
   using (auth.uid() = user_id);
 
 drop policy if exists "users can insert own answers" on public.user_answers;
-create policy "users can insert own answers"
-  on public.user_answers for insert
-  with check (auth.uid() = user_id);
+revoke insert, update, delete on table public.user_answers from anon, authenticated;
 
 drop policy if exists "users can read own wrong questions" on public.wrong_questions;
 create policy "users can read own wrong questions"
@@ -241,10 +268,7 @@ create policy "users can read own wrong questions"
   using (auth.uid() = user_id);
 
 drop policy if exists "users can upsert own wrong questions" on public.wrong_questions;
-create policy "users can upsert own wrong questions"
-  on public.wrong_questions for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+revoke insert, update, delete on table public.wrong_questions from anon, authenticated;
 
 drop policy if exists "users can read own favorite questions" on public.favorite_questions;
 create policy "users can read own favorite questions"
@@ -263,10 +287,12 @@ create policy "users can read own ability stats"
   using (auth.uid() = user_id);
 
 drop policy if exists "users can upsert own ability stats" on public.ability_stats;
-create policy "users can upsert own ability stats"
-  on public.ability_stats for all
-  using (auth.uid() = user_id)
-  with check (auth.uid() = user_id);
+revoke insert, update, delete on table public.ability_stats from anon, authenticated;
+
+drop policy if exists "users can read own question progress" on public.user_question_progress;
+create policy "users can read own question progress"
+  on public.user_question_progress for select
+  using (auth.uid() = user_id);
 
 -- 示例题目，可用于本地联调。正式题库建议通过 CSV/后台导入。
 insert into public.questions (

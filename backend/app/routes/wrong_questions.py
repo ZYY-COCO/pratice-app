@@ -1,4 +1,4 @@
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
@@ -11,7 +11,14 @@ from app.schemas.wrong_questions import (
     WrongQuestionListResponse,
 )
 from app.services.answers import persist_answer_submission, submit_answer
-from app.services.question_sources import is_ai_generated_question
+from app.services.question_sources import exclude_ai_generated_questions, is_ai_generated_question
+from app.utils.cursor_pagination import (
+    build_keyset_filter,
+    cursor_datetime,
+    cursor_uuid,
+    decode_page_cursor,
+    encode_page_cursor,
+)
 
 router = APIRouter(prefix="/wrong-questions", tags=["错题本"])
 
@@ -21,26 +28,57 @@ def list_wrong_questions(
     user_id: str = Depends(get_current_user_id),
     subject: str | None = None,
     module: str | None = None,
-    limit: int = Query(default=50, ge=1, le=100),
+    submodule: str | None = None,
+    limit: int = Query(default=30, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=2048),
 ) -> WrongQuestionListResponse:
+    normalized_subject = str(subject or "").strip()
+    normalized_module = str(module or "").strip()
+    normalized_submodule = str(submodule or "").strip()
+    cursor_context = {
+        "subject": normalized_subject,
+        "module": normalized_module,
+        "submodule": normalized_submodule,
+    }
+    cursor_payload = decode_page_cursor(
+        cursor,
+        kind="wrong_questions",
+        context=cursor_context,
+    )
+
     supabase = get_supabase_admin()
-    response = (
+    query = (
         supabase.table("wrong_questions")
-        .select("id, question_id, wrong_count, last_wrong_at, questions(*)")
+        .select("id, question_id, wrong_count, last_wrong_at, questions!inner(*)")
         .eq("user_id", user_id)
+    )
+    if normalized_subject:
+        query = query.eq("questions.subject", normalized_subject)
+    if normalized_module:
+        query = query.eq("questions.module", normalized_module)
+    if normalized_submodule:
+        query = query.eq("questions.submodule", normalized_submodule)
+    query = exclude_ai_generated_questions(query, reference_table="questions")
+    if cursor_payload:
+        query = query.or_(build_keyset_filter([
+            ("last_wrong_at", "desc", cursor_datetime(cursor_payload, "last_wrong_at")),
+            ("id", "desc", cursor_uuid(cursor_payload, "id")),
+        ]))
+    response = (
+        query
         .order("last_wrong_at", desc=True)
-        .limit(limit)
+        .order("id", desc=True)
+        .limit(limit + 1)
         .execute()
     )
 
     items: list[WrongQuestionItem] = []
-    for row in response.data:
+    rows = list(response.data or [])
+    has_more = len(rows) > limit
+    page_rows = rows[:limit]
+    for row in page_rows:
         question = row.get("questions")
         if is_ai_generated_question(question):
-            continue
-        if subject and question and question.get("subject") != subject:
-            continue
-        if module and question and question.get("module") != module:
             continue
         if question:
             question = {**question, "answer": None, "explanation": None}
@@ -53,7 +91,20 @@ def list_wrong_questions(
                 question=Question(**question) if question else None,
             )
         )
-    return WrongQuestionListResponse(items=items, count=len(items))
+    next_cursor = None
+    if has_more and page_rows:
+        anchor = page_rows[-1]
+        next_cursor = encode_page_cursor("wrong_questions", {
+            **cursor_context,
+            "last_wrong_at": str(anchor.get("last_wrong_at") or ""),
+            "id": str(anchor.get("id") or ""),
+        })
+    return WrongQuestionListResponse(
+        items=items,
+        count=len(items),
+        next_cursor=next_cursor,
+        has_more=has_more,
+    )
 
 
 @router.get("/{question_id}", response_model=WrongQuestionDetailResponse)
@@ -100,7 +151,6 @@ def get_wrong_question_detail(
 @router.post("/review", response_model=SubmitAnswerResponse)
 def review_wrong_question(
     payload: ReviewWrongQuestionRequest,
-    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
 ) -> SubmitAnswerResponse:
     supabase = get_supabase_admin()
@@ -112,8 +162,7 @@ def review_wrong_question(
         used_time=payload.used_time,
         requested_exam_code=payload.exam_code,
     )
-    background_tasks.add_task(
-        persist_answer_submission,
+    persisted = persist_answer_submission(
         user_id=user_id,
         question={
             "id": result["question_id"],
@@ -126,5 +175,8 @@ def review_wrong_question(
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,
         is_correct=result["is_correct"],
+        client_submission_id=payload.client_submission_id,
     )
+    result.update(persisted)
+    result["ability_accuracy"] = persisted.get("ability_accuracy")
     return SubmitAnswerResponse(**result)

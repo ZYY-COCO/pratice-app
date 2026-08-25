@@ -1,5 +1,7 @@
 <template>
   <view class="page access-page" :style="themeInlineStyle">
+    <AppPageHeader title="学习功能说明" fixed @back="goBack" />
+
     <view class="access-hero">
       <view class="hero-tag">免费开放</view>
       <view class="hero-title">学习功能说明</view>
@@ -60,6 +62,7 @@
 <script setup>
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import { openExternalUrl } from '../../platform/runtime'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
@@ -67,6 +70,14 @@ const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const supportEmail = '2982326925@qq.com'
 const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
+
+function goBack() {
+  uni.navigateBack({
+    fail() {
+      uni.reLaunch({ url: '/pages/home/index?tab=profile' })
+    }
+  })
+}
 
 const freeFeatures = [
   {
@@ -147,7 +158,7 @@ function copyEmail() {
 
 <style scoped>
 .access-page {
-  padding-bottom: calc(env(safe-area-inset-bottom) + 48rpx);
+  padding: 0 24rpx calc(env(safe-area-inset-bottom) + 48rpx);
 }
 
 .access-hero {

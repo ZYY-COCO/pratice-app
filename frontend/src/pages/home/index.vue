@@ -6,6 +6,9 @@
       'circle-glass-page': activeTab === 'circle' || isCircleGlassTheme,
       'circle-themed-page': activeTab === 'circle' && !isCircleGlassTheme,
       'landing-glass-page': activeTab === 'landing' && isCircleGlassTheme,
+      'practice-home-page': activeTab === 'home',
+      'profile-reference-page': activeTab === 'profile',
+      'profile-function-page': activeTab === 'mistakes' || activeTab === 'report',
       'scoreline-browser-page': isScoreLineBrowser,
       'glass-theme-page': isCircleGlassTheme
     }"
@@ -15,12 +18,22 @@
         <view class="landing-dashboard">
         <view class="home-header">
           <view class="brand-line">
-            <text v-if="isAuthed" class="brand-badge">{{ examCode }}</text>
+            <view class="home-header-copy">
+              <view class="home-header-brand">
+                <image
+                  class="home-header-logo"
+                  src="/static/brand/hmtc-community-logo.png"
+                  mode="aspectFit"
+                  alt="HMTC 升学交流圈"
+                />
+                <text class="home-header-title">HMTC升学交流圈</text>
+              </view>
+            </view>
           </view>
           <view class="home-actions">
-            <button v-if="isAuthed" class="message-bell" :class="{ unread: officialUnreadCount > 0 }" @tap="openOfficialMessages">
+            <button class="message-bell" :class="{ unread: messageUnreadCount > 0 }" aria-label="打开消息中心" @tap="openMessageCenter">
               <view class="message-bell-icon" aria-hidden="true"></view>
-              <view v-if="officialUnreadCount > 0" class="message-dot"></view>
+              <view v-if="messageUnreadCount > 0" class="message-dot"></view>
             </button>
             <view class="profile-entry" aria-label="打开我的页面" @tap.stop="openProfileTab">
               <image
@@ -162,35 +175,86 @@
 
     <template v-else-if="activeTab === 'home'">
       <view class="home-dashboard practice-dashboard">
-        <view class="welcome-card" @tap="goLeaderboard">
-          <view class="welcome-main">
-            <view class="wave-icon">👋</view>
-            <view class="welcome-copy">
-              <text class="welcome-title">{{ dashboard.userName }}，今天刷一组题吧</text>
-              <text v-if="!isAuthed" class="welcome-subtitle">登录后可直接刷真题并同步错题本</text>
+        <view
+          class="welcome-card practice-data-card"
+          role="button"
+          aria-label="查看详细刷题数据"
+          @tap="goLeaderboard"
+        >
+          <view class="practice-data-header">
+            <text class="practice-data-title">我的刷题数据</text>
+            <view class="practice-data-period" aria-hidden="true">
+              <text>本周数据</text>
             </view>
-            <view class="hero-illustration">📋</view>
           </view>
 
-          <view class="stats-card">
-            <view class="stat-item">
-              <text class="stat-value">{{ homeStats.weeklyAnswers }}</text>
-              <text class="stat-label">本周刷题</text>
+          <view class="practice-data-overview">
+            <view class="practice-accuracy-ring" aria-label="总正确率">
+              <svg class="practice-accuracy-svg" viewBox="0 0 100 100" aria-hidden="true">
+                <circle class="practice-accuracy-track" cx="50" cy="50" r="43" pathLength="100" />
+                <circle
+                  class="practice-accuracy-progress"
+                  cx="50"
+                  cy="50"
+                  r="43"
+                  pathLength="100"
+                  stroke-dasharray="100"
+                  :stroke-dashoffset="homeStats.accuracyOffset"
+                />
+              </svg>
+              <view class="practice-accuracy-copy">
+                <text class="practice-accuracy-value">{{ homeStats.accuracy }}</text>
+                <text class="practice-accuracy-label">总正确率</text>
+              </view>
             </view>
-            <view class="stat-divider"></view>
-            <view class="stat-item">
-              <text class="stat-value">{{ homeStats.accuracy }}</text>
-              <text class="stat-label">总正确率</text>
+
+            <view class="practice-key-metrics">
+              <view class="practice-key-metric">
+                <view class="practice-key-icon" aria-hidden="true">
+                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                    <path class="practice-stat-icon-fill practice-stat-icon-outline" d="M6 22 24 10l18 12-18 12Z" />
+                    <path class="practice-stat-icon-fill-secondary practice-stat-icon-outline" d="M14 28v8c0 4 5 7 10 7s10-3 10-7v-8" />
+                  </svg>
+                </view>
+                <view class="practice-key-copy">
+                  <text class="practice-key-value">{{ homeStats.weeklyAnswers }}</text>
+                  <text class="practice-key-label">本周刷题</text>
+                </view>
+              </view>
+              <view class="practice-key-metric">
+                <view class="practice-key-icon" aria-hidden="true">
+                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                    <circle class="practice-stat-icon-fill practice-stat-icon-outline" cx="24" cy="24" r="16" />
+                    <path class="practice-stat-icon-line" d="m16.5 24 5 5 10-11" />
+                  </svg>
+                </view>
+                <view class="practice-key-copy">
+                  <text class="practice-key-value">{{ homeStats.accuracy }}</text>
+                  <text class="practice-key-label">总正确率</text>
+                </view>
+              </view>
+              <view class="practice-key-metric">
+                <view class="practice-key-icon" aria-hidden="true">
+                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+                    <path class="practice-stat-icon-fill practice-stat-icon-outline" d="M13 7h22a4 4 0 0 1 4 4v30l-15-7-15 7V11a4 4 0 0 1 4-4Z" />
+                    <path class="practice-stat-icon-line" d="M19 17h10M19 24h10" />
+                  </svg>
+                </view>
+                <view class="practice-key-copy">
+                  <text class="practice-key-value">{{ homeStats.wrongCount }}</text>
+                  <text class="practice-key-label">错题数</text>
+                </view>
+              </view>
             </view>
-            <view class="stat-divider"></view>
-            <view class="stat-item">
-              <text class="stat-value">{{ homeStats.wrongCount }}</text>
-              <text class="stat-label">错题数</text>
-            </view>
+          </view>
+
+          <view class="practice-data-link" aria-hidden="true">
+            <text>查看详细数据</text>
+            <text class="practice-data-link-arrow">›</text>
           </view>
         </view>
 
-        <view class="module-grid">
+        <view class="practice-entry-list">
           <ModuleCard
             v-for="(item, index) in moduleCards"
             :key="item.key"
@@ -198,22 +262,16 @@
             :index="index + 1"
             @select="goModule"
           />
-        </view>
-
-        <view class="mock-exam-card" @tap="openMockExamIntro">
-          <view class="mock-exam-main">
-            <view class="mock-exam-icon">卷</view>
-            <view class="mock-exam-copy">
-              <view class="mock-exam-title">模拟测试</view>
-              <view class="mock-exam-sub">55 题 / 105 分，按 {{ examCode }} 轻量组卷</view>
+          <view class="mock-exam-card" @tap="openMockExamIntro">
+            <view class="mock-exam-main">
+              <view class="mock-exam-icon">卷</view>
+              <view class="mock-exam-copy">
+                <view class="mock-exam-title">模拟测试</view>
+                <view class="mock-exam-sub">55 题 · 105 分 · {{ examCode }} 轻量组卷</view>
+              </view>
             </view>
+            <view class="mock-exam-arrow" aria-hidden="true">›</view>
           </view>
-          <view class="mock-exam-meta">
-            <text>中华文化常识</text>
-            <text>英语语言知识</text>
-            <text>{{ mockExamThirdSubject }}</text>
-          </view>
-          <view class="mock-exam-arrow">›</view>
         </view>
 
       </view>
@@ -252,7 +310,7 @@
             <swiper-item>
               <view class="circle-trend-card circle-glass-surface">
                 <view class="circle-trend-heading">
-                  <view class="circle-trend-title">近 7 天刷题人数</view>
+                  <view class="circle-trend-title">刷题人数</view>
                   <view class="circle-trend-peak">
                     <text>峰值 </text>
                     <text class="circle-trend-peak-value">{{ circleTrendPeakLabel }}</text>
@@ -301,7 +359,6 @@
                 <view class="circle-score-heading">
                   <view>
                     <view class="circle-score-title">{{ activeCircleScoreSchool?.school }}</view>
-                    <view class="circle-score-subtitle">历年分数线</view>
                   </view>
                   <view class="circle-score-total">总分 <text>150</text></view>
                 </view>
@@ -379,6 +436,9 @@
                 <view class="circle-entry-icon-mask" :style="getThemeIconStyle(item.iconSrc)"></view>
               </view>
               <text class="circle-entry-label">{{ item.label }}</text>
+              <text v-if="getCircleSectionUnreadCount(item.key)" class="circle-entry-unread-count">
+                {{ formatUnreadBadge(getCircleSectionUnreadCount(item.key)) }}
+              </text>
               <view class="circle-entry-arrow" aria-hidden="true">›</view>
             </button>
           </view>
@@ -412,11 +472,45 @@
                 :aria-selected="selectedCircleCommunityTab === item.key"
                 @tap="selectCircleCommunityTab(item.key)"
               >
-                {{ item.label }}
+                <text>{{ item.label }}</text>
+                <text v-if="getCircleCommunityTabUnreadCount(item.key)" class="circle-community-tab-unread">
+                  {{ formatUnreadBadge(getCircleCommunityTabUnreadCount(item.key)) }}
+                </text>
               </button>
             </view>
 
             <template v-if="selectedCircleCommunityTab === 'mentor'">
+              <view
+                v-if="applicantConsultationUnreadCount || mentorConsultationUnreadCount"
+                class="mentor-unread-entry-list"
+                aria-label="前辈咨询新动态"
+              >
+                <button
+                  v-if="applicantConsultationUnreadCount"
+                  class="mentor-unread-entry"
+                  @tap="openApplicantConsultationUpdates"
+                >
+                  <view class="mentor-unread-entry-dot"></view>
+                  <view class="mentor-unread-entry-copy">
+                    <strong>我的咨询</strong>
+                    <text>{{ applicantConsultationUnreadCount }} 条新动态，查看具体咨询</text>
+                  </view>
+                  <view class="mentor-unread-entry-arrow">›</view>
+                </button>
+                <button
+                  v-if="mentorConsultationUnreadCount"
+                  class="mentor-unread-entry"
+                  @tap="openMentorConsultationUpdates"
+                >
+                  <view class="mentor-unread-entry-dot"></view>
+                  <view class="mentor-unread-entry-copy">
+                    <strong>咨询主页</strong>
+                    <text>{{ mentorConsultationUnreadCount }} 条待查看动态</text>
+                  </view>
+                  <view class="mentor-unread-entry-arrow">›</view>
+                </button>
+              </view>
+
               <view class="experience-search circle-glass-group mentor-search">
                 <text class="experience-search-icon">⌕</text>
                 <input
@@ -458,7 +552,7 @@
                 </button>
               </view>
 
-              <view class="mentor-feed">
+              <view class="mentor-feed mentor-directory-grid">
                 <MentorConsultCard
                   v-for="mentor in filteredMentors"
                   :key="mentor.id"
@@ -469,7 +563,7 @@
                   @consult="beginMentorConsultation(mentor)"
                   @toggle-favorite="toggleMentorFavoriteState(mentor.id)"
                 />
-                <view v-if="mentorProfilesLoading && mentorProfiles.length === 0" class="mentor-loading-list" role="status" aria-label="正在加载已认证前辈资料">
+                <template v-if="mentorProfilesLoading && mentorProfiles.length === 0">
                   <view v-for="index in 2" :key="`mentor-loading-${index}`" class="mentor-loading-card" aria-hidden="true">
                     <view class="mentor-loading-person-row">
                       <view class="mentor-loading-avatar"></view>
@@ -486,17 +580,32 @@
                       <view class="mentor-loading-action"></view>
                     </view>
                   </view>
+                </template>
+                <view v-else-if="mentorProfilesError && mentorProfiles.length === 0" class="circle-empty-card mentor-empty-card">
+                  <view class="circle-empty-title">前辈资料暂时不可用</view>
+                  <view class="circle-empty-copy">平台不会展示未验证的示例前辈，请检查网络后重新加载。</view>
+                  <button class="mentor-empty-reset" @tap="retryMentorProfiles">重新加载</button>
                 </view>
                 <view v-else-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
-                  <view class="circle-empty-title">暂时没有匹配的前辈</view>
-                  <view class="circle-empty-copy">可以尝试调整搜索关键词或筛选条件。</view>
-                  <button class="mentor-empty-reset" @tap="resetMentorFilters">清除筛选</button>
+                  <view class="circle-empty-title">{{ mentorHasActiveSearch ? '暂时没有匹配的前辈' : '暂时没有可咨询的认证前辈' }}</view>
+                  <view class="circle-empty-copy">{{ mentorHasActiveSearch ? '可以尝试调整搜索关键词或筛选条件。' : '请稍后再来查看，或先申请成为认证前辈。' }}</view>
+                  <button v-if="mentorHasActiveSearch" class="mentor-empty-reset" @tap="resetMentorFilters">清除筛选</button>
                 </view>
               </view>
 
             </template>
 
             <template v-else-if="selectedCircleCommunityTab">
+              <button
+                v-if="getCircleCommunityTabUnreadCount(selectedCircleCommunityTab)"
+                class="community-unread-entry"
+                @tap="openMyPostUpdates(selectedCircleCommunityTab)"
+              >
+                <view class="mentor-unread-entry-dot"></view>
+                <text>{{ getCircleCommunityTabUnreadCount(selectedCircleCommunityTab) }} 条新互动来自你的帖子</text>
+                <strong>查看 ›</strong>
+              </button>
+
               <view class="experience-search circle-glass-group">
                 <text class="experience-search-icon">⌕</text>
                 <input
@@ -547,11 +656,12 @@
                 </view>
               </scroll-view>
 
-              <view class="community-feed">
+              <view class="community-feed community-stream">
                 <view
                   v-for="post in filteredActiveCommunityPosts"
                   :key="post.id"
-                  class="community-post-card"
+                  class="community-post-card community-stream-card"
+                  :class="{ 'has-unread-interaction': isCommunityPostUnread(post) }"
                   @tap="openCommunityPost(post)"
                 >
                   <view class="community-post-header">
@@ -560,18 +670,24 @@
                       <text v-else>{{ post.avatar }}</text>
                     </view>
                     <view class="community-author-main">
-                      <view class="community-author-name">{{ post.author }}</view>
+                      <view class="community-author-name">{{ post.author }}<text v-if="post.authorVerified" class="community-author-verified">已认证前辈</text></view>
                       <view class="community-author-meta">{{ post.publishTime }}</view>
                     </view>
-                    <view class="community-topic">{{ post.category }}</view>
+                    <view class="community-stream-header-actions">
+                      <view v-if="isCommunityPostUnread(post)" class="community-post-unread-badge">新互动</view>
+                      <view class="community-topic">{{ post.category }}</view>
+                      <button class="community-post-more" aria-label="帖子更多操作" @tap.stop="openCommunityPostActions(post)">
+                        <image src="/static/ui-icons/more.svg" mode="aspectFit" />
+                      </button>
+                    </view>
                   </view>
 
                   <view class="community-post-title">{{ post.title }}</view>
                   <view class="community-post-copy">{{ post.summary }}</view>
 
-                  <view v-if="post.media.length" class="community-media-grid" :class="`count-${post.media.length}`">
+                  <view v-if="post.media.length" class="community-media-grid" :class="`count-${Math.min(post.media.length, 3)}`">
                     <view
-                      v-for="media in post.media"
+                      v-for="(media, mediaIndex) in post.media.slice(0, 3)"
                       :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
                       class="community-media-tile"
                       :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]"
@@ -582,12 +698,13 @@
                         <view class="community-media-title">{{ media.title }}</view>
                         <view class="community-media-copy">{{ media.copy }}</view>
                       </view>
+                      <view v-if="post.media.length > 3 && mediaIndex === 2" class="community-media-more">+{{ post.media.length - 3 }}</view>
                     </view>
                   </view>
 
                   <view v-if="post.commentPreviews.length" class="community-comment-preview-list">
                     <view
-                      v-for="comment in post.commentPreviews"
+                      v-for="comment in post.commentPreviews.slice(0, 1)"
                       :key="comment.id"
                       class="community-comment-preview"
                       @tap.stop="openCommunityPostComments(post)"
@@ -632,8 +749,11 @@
                   <view class="circle-empty-copy">正在同步最新帖子。</view>
                 </view>
                 <view v-else-if="filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
-                  <view class="circle-empty-title">暂无匹配的{{ selectedCircleCommunityTab === 'experience' ? '经验贴' : '交流内容' }}</view>
-                  <view class="circle-empty-copy">换个关键词或分类试试。</view>
+                  <view class="circle-empty-title">{{ selectedCircleCommunityTab === 'experience' ? '当前暂无已认证前辈经验贴' : '暂无匹配的交流内容' }}</view>
+                  <view class="circle-empty-copy">{{ selectedCircleCommunityTab === 'experience' ? '经验贴仅展示已认证前辈的公开分享，可先浏览研友聊中的讨论。' : '换个关键词或分类试试。' }}</view>
+                </view>
+                <view v-if="filteredActiveCommunityPosts.length || activeCommunityHasMore" class="community-load-state" @tap="loadMoreCircleCommunityPosts">
+                  {{ communityPostsLoading ? '正在加载更多帖子…' : activeCommunityHasMore ? '继续下滑加载更多帖子' : '已加载全部帖子' }}
                 </view>
               </view>
 
@@ -927,66 +1047,12 @@
             </view>
           </view>
 
-          <view v-else-if="selectedCircleSection === 'materials'" class="circle-section">
-            <view class="circle-section-head">
-              <view>
-                <view class="circle-section-title">推荐资料</view>
-                <view class="circle-section-subtitle">按科目归档，资料卡片预留网盘链接、提取码和更新记录。</view>
-              </view>
-              <view class="circle-section-count">{{ filteredCircleMaterials.length }} 份</view>
-            </view>
-
-            <scroll-view scroll-x class="material-subject-scroll">
-              <view class="material-subject-row circle-glass-group">
-                <button
-                  v-for="subject in circleMaterialSubjects"
-                  :key="subject"
-                  class="material-subject-chip"
-                  :class="{ active: selectedMaterialSubject === subject }"
-                  @tap="selectCircleMaterialSubject(subject)"
-                >
-                  {{ subject }}
-                </button>
-              </view>
-            </scroll-view>
-
-            <view class="material-subject-card">
-              <view>
-                <view class="material-subject-title">{{ selectedMaterialSubject }}</view>
-                <view class="material-subject-copy">{{ circleMaterialSubjectSummary }}</view>
-              </view>
-              <view class="material-subject-mark">网盘</view>
-            </view>
-
-            <view
-              v-for="item in filteredCircleMaterials"
-              :key="item.id"
-              class="material-card"
-            >
-              <view class="material-main">
-                <view class="material-title-row">
-                  <view class="material-title">{{ item.title }}</view>
-                  <view class="material-badge">{{ item.level }}</view>
-                </view>
-                <view class="material-desc">{{ item.desc }}</view>
-                <view class="material-tags">
-                  <text v-for="tag in item.tags" :key="tag">{{ tag }}</text>
-                </view>
-                <view class="material-share-line">
-                  <text>网盘链接：{{ item.shareUrl }}</text>
-                  <text>提取码：{{ item.shareCode }}</text>
-                </view>
-              </view>
-              <button class="material-action" @tap="copyMaterialShare(item)">复制</button>
-            </view>
+          <view v-else-if="selectedCircleSection === 'materials'" class="circle-section circle-resource-empty-section">
+            <CircleResourceSection resource-type="material" />
           </view>
 
-          <view v-else class="circle-empty-card">
-            <view class="circle-empty-icon">
-              <view class="circle-entry-icon-mask" :style="getThemeIconStyle(circlePlannedSection.iconSrc)"></view>
-            </view>
-            <view class="circle-empty-title">敬请期待</view>
-            <view class="circle-empty-copy">{{ circlePlannedSection.label }}正在整理中，后续会在这里开放。</view>
+          <view v-else-if="selectedCircleSection === 'courses'" class="circle-section circle-resource-empty-section">
+            <CircleResourceSection resource-type="course" />
           </view>
         </view>
           </transition>
@@ -995,28 +1061,23 @@
     </template>
 
     <template v-else-if="activeTab === 'mistakes'">
-      <view
-        class="mistake-page-head"
-        :class="{ 'mistake-list-head': !retestMode }"
-        :style="!retestMode ? mistakeHeaderStyle : undefined"
+      <AppPageHeader
+        :title="retestMode ? '错题重测' : '错题本'"
+        :subtitle="retestMode ? retestScopeText : ''"
+        fixed
+        @back="handleMistakeBack"
       >
-        <button class="icon-back-btn" @tap="handleMistakeBack">
-          <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-        </button>
-        <view class="mistake-head-copy">
-          <view class="head-title">{{ retestMode ? '错题重测' : '错题本' }}</view>
-          <view v-if="retestMode" class="head-subtitle">{{ retestScopeText }}</view>
-        </view>
-        <button
-          v-if="!retestMode"
-          class="retest-entry-btn"
-          :disabled="!isAuthed || retestCandidateMistakes.length === 0"
-          @tap="startWrongRetest"
-        >
-          {{ retestButtonText }}
-        </button>
-      </view>
-      <view v-if="!retestMode" class="mistake-list-head-spacer"></view>
+        <template #right>
+          <button
+            v-if="!retestMode"
+            class="retest-entry-btn"
+            :disabled="!isAuthed || retestCandidateMistakes.length === 0"
+            @tap="startWrongRetest"
+          >
+            {{ retestButtonText }}
+          </button>
+        </template>
+      </AppPageHeader>
 
       <template v-if="retestMode">
         <SectionCard v-if="retestCompleted" title="重测完成" subtitle="本轮错题复盘结果">
@@ -1139,8 +1200,8 @@
           <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
           <view v-else-if="isAuthed && filteredMistakes.length === 0" class="state-box">当前筛选条件下还没有错题。</view>
           <MistakeList v-else :items="visibleMistakes" @select="openWrongDetail" />
-          <view v-if="fullMistakes.length" class="list-load-state" @tap="loadMoreMistakes">
-            {{ hasMoreMistakes ? '继续下滑加载更多错题' : '已加载全部错题' }}
+          <view v-if="isAuthed && (fullMistakes.length || wrongHasMore)" class="list-load-state" @tap="loadMoreMistakes">
+            {{ wrongLoadingMore ? '正在加载更多错题…' : hasMoreMistakes ? '继续下滑加载更多错题' : '已加载全部错题' }}
           </view>
         </SectionCard>
       </template>
@@ -1200,14 +1261,7 @@
 
     <template v-else-if="activeTab === 'report'">
       <view class="report-dashboard">
-        <view class="report-topbar" :style="reportHeaderStyle">
-          <button class="icon-back-btn" @tap="activeTab = 'profile'">
-            <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-          </button>
-          <view class="report-top-title">学习报告</view>
-          <view class="report-top-spacer"></view>
-        </view>
-        <view class="report-header-spacer"></view>
+        <AppPageHeader title="学习报告" fixed @back="activeTab = 'profile'" />
 
         <view v-if="reportLoading" class="state-box">正在生成真实学习报告...</view>
         <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
@@ -1385,72 +1439,31 @@
 
       <template v-else>
         <view class="profile-dashboard">
-        <view class="account-card" :class="{ guest: !isAuthed }" @tap="handleAccountEntry">
-          <image
-            v-if="avatarImageUrl"
-            class="account-avatar account-avatar-image"
-            :src="avatarImageUrl"
-            mode="aspectFill"
-            alt="用户头像"
-          />
-          <view v-else class="account-avatar">{{ profileAvatarText }}</view>
-          <view class="account-main">
-            <view class="account-name-row">
-              <text class="account-name">{{ profile.userName }}</text>
-              <text class="account-badge">{{ profile.badge }}</text>
-            </view>
-            <view class="account-desc">{{ isAuthed ? profile.subtitle : '登录后同步学习进度与数据' }}</view>
-            <button v-if="!isAuthed" class="account-login-btn" @tap.stop="goLogin">登录 / 注册</button>
-            <view v-else class="exam-switch">
-              <button
-                v-for="option in examOptions"
-                :key="option.code"
-                class="exam-pill"
-                :class="{ active: option.code === examCode }"
-                @tap.stop="changeExam(option.code)"
-              >
-                {{ option.code }}
-              </button>
-            </view>
-          </view>
-          <view class="account-arrow">›</view>
+        <view class="profile-identity">
+          <button class="profile-avatar-button" :aria-label="isAuthed ? '编辑头像和昵称' : '登录或注册'" @tap="openProfileEditModal">
+            <image
+              v-if="avatarImageUrl"
+              class="profile-reference-avatar profile-reference-avatar-image"
+              :src="avatarImageUrl"
+              mode="aspectFill"
+              alt="用户头像"
+            />
+            <view v-else class="profile-reference-avatar">{{ profileAvatarText }}</view>
+            <view class="profile-avatar-edit" aria-hidden="true">编辑</view>
+          </button>
+          <view class="profile-reference-name" @tap="openProfileEditModal">{{ profile.userName }}</view>
+          <button class="profile-exam-selector" aria-label="切换考试版本" @tap="openExamSwitchModal">
+            <view class="profile-exam-mark">版本</view>
+            <text class="profile-exam-code">{{ examCode }}</text>
+            <text class="profile-exam-arrow">⌄</text>
+          </button>
         </view>
 
-        <view class="member-card active">
-          <view class="member-copy">
-            <view class="member-kicker">免费学习功能 · 已开放</view>
-            <view class="member-title">学习工具免费使用</view>
-            <view class="member-subtitle">{{ memberCardSubtitle }}</view>
-          </view>
-          <view class="shield-art active">FREE</view>
-          <view class="benefit-row">
-            <view v-for="item in profileBenefits" :key="item.label" class="benefit-item">
-              <view class="benefit-icon" :class="item.iconClass">
-                <!-- #ifdef MP-WEIXIN -->
-                <image
-                  v-if="item.iconSrc"
-                  class="benefit-icon-img"
-                  :src="getMpThemeIconSrc(item.iconSrc)"
-                  mode="aspectFit"
-                />
-                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
-                <!-- #ifndef MP-WEIXIN -->
-                <view
-                  v-if="item.iconSrc"
-                  class="benefit-icon-img theme-icon-mask"
-                  :style="getThemeIconStyle(item.iconSrc)"
-                />
-                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
-              </view>
-              <view class="benefit-label">{{ item.label }}</view>
-            </view>
-          </view>
-        </view>
+        <view class="profile-reference-divider"></view>
 
-        <view class="profile-section-card">
-          <view class="profile-section-title">练习工具</view>
+        <view class="profile-group">
+          <view class="profile-group-title">学习设置</view>
+          <view class="profile-section-card profile-reference-card">
           <view class="menu-list">
             <view
               v-for="item in practiceTools"
@@ -1484,13 +1497,16 @@
                   <text v-if="item.locked" class="pro-lock-badge">登录</text>
                 </view>
               </view>
+              <view v-if="item.value" class="menu-row-value">{{ item.value }}</view>
               <view class="menu-arrow">›</view>
             </view>
           </view>
         </view>
+        </view>
 
-        <view class="profile-section-card">
-          <view class="profile-section-title">研圈互动</view>
+        <view class="profile-group">
+          <view class="profile-group-title">研圈互动</view>
+          <view class="profile-section-card profile-reference-card">
           <view class="menu-list">
             <view
               v-for="item in communityTools"
@@ -1499,18 +1515,38 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <text v-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #ifdef MP-WEIXIN -->
+                <image
+                  v-if="item.iconSrc"
+                  class="menu-icon-img"
+                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  mode="aspectFit"
+                />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
+                <!-- #ifndef MP-WEIXIN -->
+                <view
+                  v-if="item.iconSrc"
+                  class="menu-icon-img theme-icon-mask"
+                  :style="getThemeIconStyle(item.iconSrc)"
+                />
+                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
+                <!-- #endif -->
+                <view v-if="item.unread" class="menu-unread-dot" aria-label="有新消息"></view>
               </view>
               <view class="menu-copy">
                 <view class="menu-title">{{ item.label }}</view>
               </view>
+              <view v-if="item.value" class="menu-row-value">{{ item.value }}</view>
               <view class="menu-arrow">›</view>
             </view>
           </view>
         </view>
+        </view>
 
-        <view class="profile-section-card">
-          <view class="profile-section-title">其他服务</view>
+        <view class="profile-group">
+          <view class="profile-group-title">账户与服务</view>
+          <view class="profile-section-card profile-reference-card">
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
@@ -1531,18 +1567,54 @@
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
                 <!-- #endif -->
+                <view v-if="item.unread" class="menu-unread-dot" aria-label="有新消息"></view>
               </view>
               <view class="menu-copy">
                 <view class="menu-title">{{ item.label }}</view>
               </view>
+              <view v-if="item.value" class="menu-row-value">{{ item.value }}</view>
               <view class="menu-arrow">›</view>
             </view>
           </view>
         </view>
+        </view>
 
-        <view v-if="isAuthed" class="logout-card" @tap="logout">退出登录</view>
+        <view
+          class="logout-card"
+          hover-class="logout-card--pressed"
+          :aria-label="isAuthed ? '退出登录' : '退出游客模式'"
+          role="button"
+          @tap="logout"
+        >
+          {{ isAuthed ? '退出登录' : '退出游客模式' }}
+        </view>
       </view>
     </template>
+    <view
+      v-if="showSubscriptionSheet"
+      class="subscription-sheet-mask"
+      :class="{ 'is-visible': subscriptionSheetVisible }"
+      role="presentation"
+      @tap="closeSubscriptionSheet"
+    >
+      <view
+        class="subscription-sheet"
+        role="dialog"
+        aria-modal="true"
+        aria-label="开通港研通 Plus"
+        @tap.stop
+        @click.stop
+      >
+        <MembershipSubscriptionPreview
+          :config="subscriptionPageConfig"
+          :membership="subscriptionMembership"
+          @close="closeSubscriptionSheet"
+          @subscribe="handleSubscriptionSubscribe"
+          @restore="handleSubscriptionRestore"
+        />
+      </view>
+    </view>
+
     <!-- #ifndef MP-WEIXIN -->
     <view v-if="showTrainingSheet" class="training-sheet-mask" @tap="closeRecommendedTrainingSheet">
       <view class="training-sheet" @tap.stop>
@@ -1758,30 +1830,96 @@
       </view>
     </view>
 
-    <view v-if="showOfficialMessageModal" class="official-modal-mask" @tap="closeOfficialMessages">
-      <view class="official-modal-sheet" @tap.stop>
-        <view class="official-modal-handle"></view>
-        <button class="official-modal-close" aria-label="关闭" @tap="closeOfficialMessages"><CloseIcon /></button>
-        <view class="official-modal-head">
-          <view class="official-modal-title">官方消息</view>
-        </view>
-        <scroll-view scroll-y class="official-modal-scroll">
-          <view v-if="officialMessages.length === 0" class="official-empty">暂无官方消息</view>
-          <view
-            v-for="message in officialMessages"
-            :key="message.id"
-            class="official-message-card"
-            :class="{ unread: !message.read }"
+    <view v-if="showExamSwitchModal" class="profile-exam-modal-mask" @tap="closeExamSwitchModal">
+      <view class="profile-exam-modal" role="dialog" aria-label="切换考试版本" @tap.stop>
+        <view class="profile-exam-modal-title">切换考试版本</view>
+        <view class="profile-exam-option-list">
+          <button
+            v-for="option in examOptions"
+            :key="option.code"
+            class="profile-exam-option"
+            :class="{ active: option.code === examCode }"
+            @tap="selectProfileExam(option.code)"
           >
-            <view class="official-message-top">
-              <view class="official-message-title">{{ message.title }}</view>
-              <view v-if="!message.read" class="official-unread-badge">未读</view>
+            <view class="profile-exam-option-copy">
+              <text class="profile-exam-option-code">{{ option.code }}</text>
             </view>
-            <view class="official-message-date">{{ formatDateTime(message.published_at || message.created_at) }}</view>
-            <view class="official-message-content">{{ message.content }}</view>
-          </view>
-        </scroll-view>
-        <button class="official-done-btn" @tap="closeOfficialMessages">我知道了</button>
+            <view class="profile-exam-option-check">{{ option.code === examCode ? '✓' : '' }}</view>
+          </button>
+        </view>
+        <button class="profile-exam-modal-cancel" @tap="closeExamSwitchModal">取消</button>
+      </view>
+    </view>
+
+    <view v-if="showProfileEditModal" class="profile-edit-modal-mask" @tap="closeProfileEditModal">
+      <view class="profile-edit-modal" role="dialog" aria-label="编辑个人资料" @tap.stop>
+        <view class="profile-edit-modal-head">
+          <view class="profile-edit-modal-title">编辑个人资料</view>
+          <button class="profile-edit-modal-cancel" @tap="closeProfileEditModal">取消</button>
+        </view>
+        <button
+          class="profile-edit-avatar-trigger"
+          :class="{ uploading: profileEditUploading }"
+          :disabled="profileEditUploading"
+          aria-label="更换头像"
+          @tap="chooseProfileAvatar"
+        >
+          <image
+            v-if="profileEditAvatarPreview"
+            class="profile-edit-avatar-image"
+            :src="profileEditAvatarPreview"
+            mode="aspectFill"
+            alt="待保存的用户头像"
+          />
+          <view v-else class="profile-edit-avatar-fallback">{{ profileAvatarText }}</view>
+          <view class="profile-edit-avatar-badge">{{ profileEditUploading ? '上传中' : '更换' }}</view>
+        </button>
+        <view class="profile-edit-avatar-hint">点击头像选择照片</view>
+        <view class="profile-edit-field-label">昵称</view>
+        <input
+          v-model.trim="profileEditNickname"
+          class="profile-edit-input"
+          type="text"
+          maxlength="40"
+          placeholder="请输入昵称"
+        />
+        <view class="profile-edit-copy">头像和昵称会同步到“我的”页面。</view>
+        <button class="profile-edit-save" :disabled="profileEditSaving || profileEditUploading" @tap="saveProfileEdit">
+          {{ profileEditSaving ? '保存中...' : '保存' }}
+        </button>
+      </view>
+    </view>
+
+    <view v-if="showEmailBindingModal" class="profile-email-modal-mask" @tap="closeEmailBindingModal">
+      <view class="profile-email-modal" role="dialog" aria-label="绑定或更改邮箱" @tap.stop>
+        <view class="profile-edit-modal-head">
+          <view class="profile-edit-modal-title">绑定 / 更改邮箱</view>
+          <button class="profile-edit-modal-cancel" @tap="closeEmailBindingModal">取消</button>
+        </view>
+        <view class="profile-email-current">当前邮箱：{{ currentProfileEmail }}</view>
+        <view class="profile-edit-field-label">新 QQ 邮箱</view>
+        <input
+          v-model.trim="profileEmailForm.email"
+          class="profile-edit-input"
+          type="text"
+          placeholder="例如：123456@qq.com"
+        />
+        <view class="profile-edit-field-label">验证码</view>
+        <view class="profile-email-code-row">
+          <input
+            v-model.trim="profileEmailForm.code"
+            class="profile-edit-input profile-email-code-input"
+            type="text"
+            maxlength="8"
+            placeholder="请输入验证码"
+          />
+          <button class="profile-email-code-button" :disabled="profileEmailSending" @tap="sendProfileEmailCode">
+            {{ profileEmailSending ? '发送中...' : '发送验证码' }}
+          </button>
+        </view>
+        <button class="profile-edit-save" :disabled="profileEmailSaving" @tap="submitProfileEmailBinding">
+          {{ profileEmailSaving ? '处理中...' : '确认绑定' }}
+        </button>
       </view>
     </view>
 
@@ -1803,12 +1941,12 @@
               <text v-else>{{ selectedCommunityPost.avatar }}</text>
             </view>
             <view class="community-reader-author-copy">
-              <view class="community-reader-author-name">{{ selectedCommunityPost.author }}</view>
+              <view class="community-reader-author-name">{{ selectedCommunityPost.author }}<text v-if="selectedCommunityPost.authorVerified" class="community-author-verified">已认证前辈</text></view>
               <view class="community-reader-author-meta">{{ communityReaderPostTypeLabel }} · {{ selectedCommunityPost.publishTime }}</view>
             </view>
           </view>
           <view class="community-reader-category">{{ selectedCommunityPost.category }}</view>
-          <button class="community-reader-share" aria-label="分享帖子" @tap="shareCommunityPost">↗</button>
+          <button class="community-reader-share" aria-label="帖子更多操作" @tap="shareCommunityPost">•••</button>
         </view>
 
         <scroll-view
@@ -1911,6 +2049,7 @@
                       <view class="community-reader-comment-like-icon" aria-hidden="true"></view>
                       <text>{{ comment.likeCount }}</text>
                     </button>
+                    <button class="community-reader-comment-more" aria-label="评论更多操作" @tap.stop="openCommunityCommentActions(comment)">•••</button>
                   </view>
                 </view>
               </template>
@@ -2277,6 +2416,10 @@
         <text>{{ mentorEntryLabel }}</text>
       </view>
       <image v-else src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+      <text
+        v-if="mentorEntryStatus === 'verified' && mentorConsultationUnreadCount"
+        class="mentor-entry-unread-badge"
+      >{{ formatUnreadBadge(mentorConsultationUnreadCount) }}</text>
     </button>
     <button
       v-else-if="showCommunityPublishButton && selectedCircleCommunityTab === 'experience'"
@@ -2314,16 +2457,29 @@ import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
+import CircleResourceSection from '../../components/CircleResourceSection.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
+import MembershipSubscriptionPreview from '../../components/MembershipSubscriptionPreview.vue'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import MentorConsultCard from '../../components/MentorConsultCard.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
 import SectionCard from '../../components/SectionCard.vue'
 import MathText from '../../components/MathText.vue'
 import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../../api/ai'
-import { updateProfile } from '../../api/auth'
+import { fetchMembershipStatus, fetchSubscriptionPageConfig } from '../../api/membership'
+import { createSubscriptionPageConfig } from '../../data/membershipSubscription'
+import {
+  bindWechatEmail,
+  changeEmailWithCode,
+  sendBindEmailCode,
+  sendChangeEmailCode,
+  updateProfile,
+  uploadAvatar
+} from '../../api/auth'
 import {
   createCommunityComment,
+  deleteCommunityComment,
   fetchCommunityPost,
   fetchCommunityPostLikes,
   fetchCommunityPosts,
@@ -2331,7 +2487,12 @@ import {
   toggleCommunityCommentLike as toggleCommunityCommentLikeRequest,
   toggleCommunityPostLike
 } from '../../api/community'
-import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
+import { fetchOfficialMessages } from '../../api/officialMessages'
+import {
+  fetchUserNotificationUnreadSummary,
+  fetchUserNotifications,
+  markUserNotificationReadTarget
+} from '../../api/notifications'
 import { fetchHomeContent, fetchPublishedScorelines } from '../../api/homeContent'
 import {
   fetchMentorProfiles,
@@ -2358,7 +2519,6 @@ import {
   createDefaultMentorFilters,
   filterMentors,
   getCachedMentorDirectory,
-  getFallbackMentors,
   getMentorFavoriteIds,
   getMentorVerificationStatus,
   normalizeMentorListResponse,
@@ -2372,18 +2532,14 @@ import {
   getProfileMock,
   getReportMock
 } from '../../mock/appMock'
-import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
+import { clearAuthSession, getAuthUser, isLoggedIn, saveAuthSession, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { THEME_PRESETS, applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
-import { getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
+import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
-const themePresets = computed(() => {
-  const glassPreset = THEME_PRESETS.find((item) => item.circleGlass === true)
-  if (!glassPreset) return THEME_PRESETS
-  return [glassPreset, ...THEME_PRESETS.filter((item) => item.key !== glassPreset.key)]
-})
+const themePresets = THEME_PRESETS
 const ENABLE_CIRCLE = true
 const historicalScoreLineYears = reactive([...fallbackHistoricalScoreLineYears])
 const historicalScoreLineRecords = reactive(fallbackHistoricalScoreLineRecords.map((record) => ({
@@ -2406,6 +2562,9 @@ const authUser = ref(initialAuthUser)
 const authed = ref(isLoggedIn())
 const wrongItems = ref([])
 const wrongLoading = ref(false)
+const wrongNextCursor = ref('')
+const wrongHasMore = ref(false)
+const wrongLoadingMore = ref(false)
 const wrongError = ref('')
 const visibleMistakeCount = ref(15)
 const abilityReport = ref(null)
@@ -2436,16 +2595,44 @@ const retestResultText = ref('')
 const retestResults = ref([])
 const retestLoading = ref(false)
 const retestCompleted = ref(false)
-const mistakeHeaderScrollTop = ref(0)
+const reviewSubmissionId = ref('')
+const retestSubmissionIds = ref({})
 const circleCommunityHeaderScrollTop = ref(0)
 const showTrainingSheet = ref(false)
+const showSubscriptionSheet = ref(false)
+const subscriptionSheetVisible = ref(false)
+const subscriptionPageConfig = ref(createSubscriptionPageConfig())
+const subscriptionMembership = ref(createDefaultSubscriptionMembershipStatus())
+let subscriptionSheetOpenTimer = null
+let subscriptionSheetCloseTimer = null
+let subscriptionMembershipRequest = null
 const showStudyAdviceDetail = ref(false)
 const showThemeModal = ref(false)
-const showOfficialMessageModal = ref(false)
-const officialMessages = ref([])
+const showExamSwitchModal = ref(false)
+const showProfileEditModal = ref(false)
+const showEmailBindingModal = ref(false)
+const profileEditNickname = ref('')
+const profileEditAvatarPreview = ref('')
+const profileEditAvatarPath = ref('')
+const profileEditAvatarFile = ref(null)
+const profileEditAvatarName = ref('avatar.jpg')
+const profileEditSaving = ref(false)
+const profileEditUploading = ref(false)
+const profileEmailForm = reactive({ email: '', code: '' })
+const profileEmailSending = ref(false)
+const profileEmailSaving = ref(false)
 const officialUnreadCount = ref(0)
-const officialMessagesLoaded = ref(false)
-const officialAutoShown = ref(false)
+const notificationUnreadCount = ref(0)
+const communityUnreadCount = ref(0)
+const postInteractionUnreadCount = ref(0)
+const communityReportUnreadCount = ref(0)
+const consultationUnreadCount = ref(0)
+const communityChatUnreadCount = ref(0)
+const communityExperienceUnreadCount = ref(0)
+const applicantConsultationUnreadCount = ref(0)
+const mentorConsultationUnreadCount = ref(0)
+const communityPostUnreadTargets = ref({ chat: {}, experience: {} })
+const messageUnreadCount = computed(() => officialUnreadCount.value + notificationUnreadCount.value)
 const selectedThemeKey = ref(getStoredThemeKey())
 const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
@@ -2470,7 +2657,6 @@ const scoreLineSearchKeyword = ref('')
 const selectedScoreLineRegion = ref('全部')
 const selectedScoreLineYear = ref('全部')
 const visibleScoreLineRecordCount = ref(24)
-const selectedMaterialSubject = ref('中华文化')
 const selectedExperienceCategory = ref('全部')
 const experienceSearchKeyword = ref('')
 const selectedCircleCommunityTab = ref('chat')
@@ -2486,6 +2672,7 @@ const mentorProfilesLoaded = ref(false)
 const mentorProfilesError = ref('')
 const mentorEntryStatus = ref(isLoggedIn() ? getMentorVerificationStatus() : 'unverified')
 const mentorEntryStatusLoaded = ref(false)
+const openingMyConsultationEntry = ref(false)
 const currentMentorProfileId = ref('')
 let mentorEntryStatusRequest = null
 const mentorFilters = ref(createDefaultMentorFilters())
@@ -2506,6 +2693,8 @@ const communityLikes = ref([])
 const communityLikesLoading = ref(false)
 const communityCommentSort = ref('default')
 const communityPostsLoading = ref(false)
+const communityFeedNextCursors = reactive({})
+const communityFeedHasMore = reactive({})
 const communityLikePostId = ref('')
 const communityCommentLikeId = ref('')
 const communityCommentDraft = ref('')
@@ -2627,7 +2816,8 @@ const tabs = computed(() => {
     items.push({
       key: 'circle',
       label: '研圈',
-      iconSrc: '/static/ui-icons/tab-circle.svg'
+      iconSrc: '/static/ui-icons/tab-circle.svg',
+      unread: communityUnreadCount.value > 0
     })
   }
 
@@ -2794,111 +2984,23 @@ const communityPostSortOptions = [
   { value: 'hot', label: '热门' },
   { value: 'featured', label: '精选' }
 ]
-const circleCommunityCategories = ['全部', '中华文化', '数学基础', '英语运用', '逻辑推理']
+const circleCommunityCategories = ['全部', '备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理']
 const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
 const circleCommunityPosts = ref([])
 const circleFeaturedCommunityPosts = ref([])
+const circleHotCommunityPosts = ref([])
 const circleExperienceCategories = ['全部', 'Z001', 'Z002', '专业课', '复试']
 const circleExperiencePostCategories = circleExperienceCategories.slice(1)
 const circleExperienceCommunityPosts = ref([])
 const circleFeaturedExperiencePosts = ref([])
-const circleMaterialSubjects = ['中华文化', '英语运用', '数学基础', '逻辑推理']
-const circleMaterialSummaries = {
-  中华文化: '文学、历史、哲学、艺术和古代科技常识资料包。',
-  英语运用: '词汇、短语、语法和语用题型的基础资料包。',
-  数学基础: '极限、导数、积分和多元函数微分学资料包。',
-  逻辑推理: '判断、推理、论证和综合题型资料包。'
-}
-const circleMaterialResources = [
-  {
-    id: 'mat-culture-core',
-    subject: '中华文化',
-    title: '中华文化常识核心索引',
-    desc: '按人物、作品、朝代、学派和艺术门类整理，适合刷题前快速过一遍。',
-    tags: ['文学', '历史', '艺术'],
-    level: '基础',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-culture-mistake',
-    subject: '中华文化',
-    title: '中华文化易混点清单',
-    desc: '集中整理相近人物、相近作品和常见朝代误配，适合错题复盘。',
-    tags: ['易混点', '复盘'],
-    level: '提升',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-english-vocab',
-    subject: '英语运用',
-    title: '英语高频词汇与短语包',
-    desc: '覆盖语言知识常见词汇、短语和固定搭配，适合每日短时记忆。',
-    tags: ['词汇', '短语'],
-    level: '基础',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-english-grammar',
-    subject: '英语运用',
-    title: '英语语法错题归纳',
-    desc: '围绕时态、从句、非谓语和虚拟语气整理，适合配合错题本使用。',
-    tags: ['语法', '错题'],
-    level: '提升',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-math-calculus',
-    subject: '数学基础',
-    title: '微积分公式速查',
-    desc: '按一元函数微分学、积分学和多元函数微分学拆分常用公式。',
-    tags: ['公式', '微积分'],
-    level: '基础',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-math-errors',
-    subject: '数学基础',
-    title: '数学基础常见计算坑',
-    desc: '整理极限、导数、积分计算中容易忽略的条件和验算步骤。',
-    tags: ['验算', '易错'],
-    level: '提升',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-logic-judge',
-    subject: '逻辑推理',
-    title: '逻辑判断关系速记',
-    desc: '把充分、必要、逆否、削弱和加强等常见关系做成短表。',
-    tags: ['判断', '关系'],
-    level: '基础',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  },
-  {
-    id: 'mat-logic-argument',
-    subject: '逻辑推理',
-    title: '论证题型拆解模板',
-    desc: '按论点、论据、假设、削弱和加强步骤整理答题路径。',
-    tags: ['论证', '模板'],
-    level: '提升',
-    shareUrl: '待配置',
-    shareCode: '待配置'
-  }
-]
-const filteredCircleMaterials = computed(() =>
-  circleMaterialResources.filter((item) => item.subject === selectedMaterialSubject.value)
-)
+const circleHotExperienceCommunityPosts = ref([])
 const filteredCircleCommunityPosts = computed(() => {
   const keyword = communitySearchKeyword.value.trim().toLowerCase()
   const sourcePosts = selectedCommunityPostSort.value === 'featured'
     ? circleFeaturedCommunityPosts.value
-    : circleCommunityPosts.value
+    : selectedCommunityPostSort.value === 'hot'
+      ? circleHotCommunityPosts.value
+      : circleCommunityPosts.value
   return sourcePosts.filter((item) => {
     const matchesCategory = selectedCommunityCategory.value === '全部' || item.category === selectedCommunityCategory.value
     if (!matchesCategory || !keyword) return matchesCategory
@@ -2933,8 +3035,14 @@ const filteredCircleExperiencePosts = computed(() => {
   const keyword = experienceSearchKeyword.value.trim().toLowerCase()
   const sourcePosts = selectedCommunityPostSort.value === 'featured'
     ? circleFeaturedExperiencePosts.value
-    : circleExperienceCommunityPosts.value
+    : selectedCommunityPostSort.value === 'hot'
+      ? circleHotExperienceCommunityPosts.value
+      : circleExperienceCommunityPosts.value
   return sourcePosts.filter((item) => {
+    // Also guard cached/legacy feed data on the client.  The API enforces the
+    // same rule, while this keeps an old offline cache from impersonating an
+    // authenticated predecessor after the policy is rolled out.
+    if (!item.authorVerified || !circleExperiencePostCategories.includes(String(item.category || '').trim())) return false
     const itemCategory = getExperienceCategory(item)
     const matchesCategory = selectedExperienceCategory.value === '全部'
       || itemCategory === selectedExperienceCategory.value
@@ -3025,6 +3133,18 @@ const filteredActiveCommunityPosts = computed(() => {
     : filteredCircleCommunityPosts.value
   return sortCommunityPosts(posts, selectedCommunityPostSort.value)
 })
+const activeCommunityPageKey = computed(() => getCircleCommunityFeedPageKey(
+  selectedCircleCommunityTab.value,
+  {
+    featuredOnly: selectedCommunityPostSort.value === 'featured',
+    sortBy: selectedCommunityPostSort.value,
+    category: activeCommunityCategory.value === '全部' ? '' : activeCommunityCategory.value
+  }
+))
+const activeCommunityHasMore = computed(() => communityFeedHasMore[activeCommunityPageKey.value] === true)
+const mentorHasActiveSearch = computed(() => Boolean(
+  mentorSearchKeyword.value.trim() || mentorActiveFilterCount.value
+))
 const mentorEntryLabel = computed(() => {
   if (mentorEntryStatus.value === 'verified') return '咨询主页'
   if (mentorEntryStatus.value === 'pending') return '审核中'
@@ -3058,9 +3178,6 @@ const selectedCircleSectionLabel = computed(() =>
 const circleSectionTransitionName = computed(() => (
   circleSectionTransitionDirection.value === 'back' ? 'circle-section-back' : 'circle-section-forward'
 ))
-const circleMaterialSubjectSummary = computed(() =>
-  circleMaterialSummaries[selectedMaterialSubject.value] || '按科目整理资料包。'
-)
 const circlePlannedSection = computed(() =>
   circleSections.find((item) => item.key === selectedCircleSection.value) || circleSections[0]
 )
@@ -3100,30 +3217,9 @@ const subjectFallbackTargets = {
     basis: '优先巩固数学基础题型。'
   }
 }
-const profileBenefits = [
-  { label: '无限存储', icon: '∞' },
-  { label: '错题本', icon: '', iconSrc: '/static/ui-icons/wrong-book.svg' },
-  { label: '学习报告', icon: '', iconSrc: '/static/ui-icons/report.svg' },
-  // #ifdef MP-WEIXIN
-  { label: '练习历史', icon: '', iconSrc: '/static/ui-icons/history.svg' }
-  // #endif
-  // #ifndef MP-WEIXIN
-  { label: 'AI生题及解析', icon: 'AI' }
-  // #endif
-]
-
 const isAuthed = computed(() => authed.value)
-const memberCardSubtitle = computed(() => {
-  if (!isAuthed.value) {
-    // #ifdef MP-WEIXIN
-    return '登录后即可免费使用刷题记录、错题本、练习历史和学习报告。'
-    // #endif
-    // #ifndef MP-WEIXIN
-    return '登录后即可免费使用刷题记录、错题本、学习报告和 AI 生题功能。'
-    // #endif
-  }
-  return '当前版本所有学习功能均免费开放，不提供付费购买、订阅或外部支付入口。'
-})
+const currentProfileEmail = computed(() => getPublicEmail(authUser.value) || '未绑定')
+const profileUsesWechatBinding = computed(() => Boolean(authUser.value?.wechat_openid))
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const avatarImageUrl = computed(() => {
   const avatar = authUser.value?.avatar_url || ''
@@ -3173,19 +3269,30 @@ const homeStats = computed(() => {
     return {
       weeklyAnswers: '0',
       accuracy: '--',
-      wrongCount: '--'
+      accuracyOffset: 100,
+      wrongCount: '--',
+      totalAnswers: '0',
+      correctAnswers: '0',
+      studyStreak: '--'
     }
   }
 
   const weeklyAnswers = Number(learningSummary.value?.weekly_answers || 0)
   const totalAnswers = Number(learningSummary.value?.total_answers || 0)
+  const correctAnswers = Number(learningSummary.value?.correct_answers || 0)
   const accuracy = Number(learningSummary.value?.accuracy || 0)
   const wrongCount = Number(learningSummary.value?.wrong_question_count || wrongItems.value.length || 0)
+  const studyStreak = Number(learningSummary.value?.study_streak || 0)
+  const accuracyValue = totalAnswers ? Math.min(100, Math.max(0, Math.round(accuracy))) : 0
 
   return {
     weeklyAnswers: String(weeklyAnswers),
-    accuracy: totalAnswers ? `${Math.round(accuracy)}%` : '--',
-    wrongCount: String(wrongCount)
+    accuracy: totalAnswers ? `${accuracyValue}%` : '--',
+    accuracyOffset: 100 - accuracyValue,
+    wrongCount: String(wrongCount),
+    totalAnswers: String(totalAnswers),
+    correctAnswers: String(correctAnswers),
+    studyStreak: `${studyStreak}天`
   }
 })
 
@@ -3233,58 +3340,61 @@ const practiceTools = computed(() => {
       action: 'mistakes',
       locked: proLocked
     },
-    {
-      label: '学习报告',
-      desc: reportStatus.value === '已生成' ? '查看能力分析与提升建议' : '完成练习后生成报告',
-      icon: '',
-      iconSrc: '/static/ui-icons/report.svg',
-      tone: proLocked ? 'locked' : 'purple',
-      action: 'report',
-      locked: proLocked
-    }
   ]
   // #ifndef MP-WEIXIN
   items.push({
-    label: 'AI 专项出题',
+    label: '智能专项出题',
     desc: '按知识点生成专项练习',
-    icon: 'AI',
+    icon: '智',
     tone: proLocked ? 'locked' : 'green',
     action: 'ai-generator',
     locked: proLocked
   })
   // #endif
+  items.push({
+    label: '订阅',
+    desc: '查看 PLUS 权益与套餐',
+    icon: '★',
+    tone: 'dark',
+    action: 'subscription',
+    value: 'PLUS'
+  })
   return items
 })
-const communityTools = [
+const communityTools = computed(() => [
+  {
+    label: '我的咨询',
+    desc: '找回咨询记录与聊天内容',
+    icon: '',
+    iconSrc: '/static/ui-icons/menu-consultation.svg',
+    tone: 'blue',
+    action: 'my-consultations',
+    unread: consultationUnreadCount.value > 0
+  },
+  {
+    label: '我的帖子',
+    desc: '查看我在研圈发布的内容',
+    icon: '',
+    iconSrc: '/static/ui-icons/menu-my-posts.svg',
+    tone: 'blue',
+    action: 'my-posts',
+    unread: postInteractionUnreadCount.value > 0
+  },
   {
     label: '赞过的帖子',
     desc: '查看我在研圈点赞的内容',
-    icon: '赞',
+    icon: '',
+    iconSrc: '/static/ui-icons/menu-liked-posts.svg',
     tone: 'violet',
     action: 'liked-posts'
   }
-]
+])
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
 const currentThemeName = computed(() => currentTheme.value.name)
 const isCircleGlassTheme = computed(() => currentTheme.value.circleGlass === true)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const mpLayoutStyle = ref('')
 const pageInlineStyle = computed(() => [themeInlineStyle.value, mpLayoutStyle.value].filter(Boolean).join(';'))
-const mistakeHeaderStyle = computed(() => {
-  const progress = Math.min(1, Math.max(0, mistakeHeaderScrollTop.value / 220))
-  return {
-    '--mistake-header-opacity': String(0.96 + progress * 0.04),
-    '--mistake-header-shadow-opacity': String(progress * 0.11)
-  }
-})
-const reportHeaderStyle = computed(() => {
-  const progress = Math.min(1, Math.max(0, mistakeHeaderScrollTop.value / 220))
-  return {
-    '--report-header-opacity': String(0.2 + progress * 0.78),
-    '--report-header-shadow-opacity': String(progress * 0.11)
-  }
-})
-
 const isCircleCommunityDetail = computed(() => (
   activeTab.value === 'circle' && selectedCircleSection.value === 'community'
 ))
@@ -3323,10 +3433,28 @@ const isAdminUser = computed(() => {
 const serviceTools = computed(() => {
   const items = [
     {
+      label: '消息中心',
+      desc: '处理进度、复核结果与平台公告',
+      icon: '',
+      iconSrc: '/static/ui-icons/notification-bell.svg',
+      tone: 'dark',
+      action: 'messages',
+      value: messageUnreadCount.value > 0 ? `${Math.min(messageUnreadCount.value, 99)} 条未读` : '',
+      unread: messageUnreadCount.value > 0
+    },
+    {
+      label: '绑定邮箱',
+      desc: '绑定或更改 QQ 邮箱',
+      icon: '@',
+      tone: 'dark',
+      action: 'bind-email',
+      value: currentProfileEmail.value
+    },
+    {
       label: '我的钱包',
       desc: '余额、账单与咨询收入',
       icon: '',
-      iconClass: 'wallet-icon',
+      iconSrc: '/static/ui-icons/menu-wallet.svg',
       tone: 'blue',
       action: 'wallet'
     },
@@ -3336,7 +3464,8 @@ const serviceTools = computed(() => {
       icon: '',
       iconSrc: '/static/ui-icons/theme.svg',
       tone: 'blue',
-      action: 'theme'
+      action: 'theme',
+      value: currentThemeName.value
     },
     {
       label: '关于我们',
@@ -3345,6 +3474,15 @@ const serviceTools = computed(() => {
       iconSrc: '/static/ui-icons/about.svg',
       tone: 'blue',
       action: 'about'
+    },
+    {
+      label: '我的举报',
+      desc: '查看举报进度与处理结果',
+      icon: '',
+      iconSrc: '/static/ui-icons/menu-community-report.svg',
+      tone: 'orange',
+      action: 'community-reports',
+      unread: communityReportUnreadCount.value > 0
     }
   ]
   if (isAdminUser.value) {
@@ -3379,7 +3517,9 @@ const filteredMistakes = computed(() =>
 )
 const fullMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : getFullMistakes()))
 const visibleMistakes = computed(() => fullMistakes.value.slice(0, visibleMistakeCount.value))
-const hasMoreMistakes = computed(() => visibleMistakeCount.value < fullMistakes.value.length)
+const hasMoreMistakes = computed(() => (
+  visibleMistakeCount.value < fullMistakes.value.length || wrongHasMore.value
+))
 const retestCandidateMistakes = computed(() => (isAuthed.value ? filteredMistakes.value : []))
 const retestTotal = computed(() => retestItems.value.length)
 const retestCorrectCount = computed(() => retestResults.value.filter((item) => item.is_correct).length)
@@ -3770,6 +3910,11 @@ watch(examCode, (value) => {
 
 watch(activeTab, (value) => {
   resetCircleTabbar()
+  if (value !== 'profile') {
+    showExamSwitchModal.value = false
+    showProfileEditModal.value = false
+    showEmailBindingModal.value = false
+  }
   if (value === 'circle' && !ENABLE_CIRCLE) {
     activeTab.value = 'landing'
     return
@@ -3798,6 +3943,7 @@ watch(activeTab, (value) => {
 
 watch(wrongFilters, () => {
   resetMistakeVisibleCount()
+  if (isAuthed.value && activeTab.value === 'mistakes') void loadWrongQuestions({ reset: true })
 }, { deep: true })
 
 watch(wrongItems, () => {
@@ -3852,6 +3998,7 @@ onLoad((options) => {
 
   warmCircleCommunityFeeds()
   void loadCirclePracticeTrend()
+  void loadSubscriptionPageConfig()
 })
 
 const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 2 })
@@ -4037,7 +4184,9 @@ onShow(() => {
   mentorFavoriteIds.value = getMentorFavoriteIds()
   if (authed.value) void loadMentorFavoriteIds({ silent: true })
   refreshLearningData()
-  loadOfficialMessages(true)
+  void refreshMessageUnreadCounts()
+  void loadSubscriptionPageConfig()
+  void loadSubscriptionMembershipStatus()
   loadPublishedOperationContent()
   void loadCirclePracticeTrend()
   if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
@@ -4046,9 +4195,12 @@ onShow(() => {
       void loadMentorEntryStatus({ force: true })
       void loadMentorProfiles({ force: mentorProfilesLoaded.value })
     } else {
+      const sortBy = selectedCommunityPostSort.value
+      const featuredOnly = sortBy === 'featured'
       loadCircleCommunityPosts(postType, {
-        force: consumeCircleCommunityFeedRefresh(postType),
-        featuredOnly: selectedCommunityPostSort.value === 'featured'
+        force: consumeCircleCommunityFeedRefresh(postType) || featuredOnly || sortBy === 'hot',
+        featuredOnly,
+        sortBy
       })
     }
   }
@@ -4057,16 +4209,20 @@ onShow(() => {
 onHide(() => {
   clearCommunityViewTimer()
   clearCircleScoreTooltip()
+  showExamSwitchModal.value = false
+  showProfileEditModal.value = false
+  showEmailBindingModal.value = false
 })
 
 onBeforeUnmount(() => {
   clearCircleScoreTooltip()
   clearMentorFilterMotionTimers()
+  if (subscriptionSheetOpenTimer) clearTimeout(subscriptionSheetOpenTimer)
+  if (subscriptionSheetCloseTimer) clearTimeout(subscriptionSheetCloseTimer)
 })
 
 onPageScroll(({ scrollTop }) => {
   const nextScrollTop = Number(scrollTop) || 0
-  mistakeHeaderScrollTop.value = nextScrollTop
   circleCommunityHeaderScrollTop.value = nextScrollTop
   updateCircleTabbarOnScroll(nextScrollTop)
 })
@@ -4075,12 +4231,37 @@ onReachBottom(() => {
   if (activeTab.value === 'mistakes' && !retestMode.value) {
     loadMoreMistakes()
   }
+  if (activeTab.value === 'circle' && selectedCircleSection.value === 'community' && selectedCircleCommunityTab.value !== 'mentor') {
+    void loadMoreCircleCommunityPosts()
+  }
 })
 
+function openExamSwitchModal() {
+  showExamSwitchModal.value = true
+}
+
+function closeExamSwitchModal() {
+  showExamSwitchModal.value = false
+}
+
+async function selectProfileExam(code) {
+  if (code === examCode.value) {
+    closeExamSwitchModal()
+    return
+  }
+  const switched = await changeExam(code)
+  if (switched) closeExamSwitchModal()
+}
+
 async function changeExam(code) {
-  if (!EXAM_OPTIONS.some((item) => item.code === code)) return
+  if (!EXAM_OPTIONS.some((item) => item.code === code)) return false
   const previousCode = examCode.value
   examCode.value = code
+  if (!isAuthed.value) {
+    uni.setStorageSync('examCode', code)
+    uni.showToast({ title: `目标版本已切换为 ${code}`, icon: 'none' })
+    return true
+  }
   const nextUser = updateAuthUser({ exam_target: code })
   if (nextUser) {
     authUser.value = nextUser
@@ -4093,6 +4274,7 @@ async function changeExam(code) {
       authUser.value = syncedUser
     }
     uni.showToast({ title: `目标版本已切换为 ${code}`, icon: 'none' })
+    return true
   } catch (error) {
     examCode.value = previousCode
     const revertedUser = updateAuthUser({ exam_target: previousCode })
@@ -4100,6 +4282,7 @@ async function changeExam(code) {
       authUser.value = revertedUser
     }
     uni.showToast({ title: '目标版本同步失败，请稍后重试', icon: 'none' })
+    return false
   }
 }
 
@@ -4130,11 +4313,11 @@ function openHomeNews(item) {
 
 function openHomeContentTarget(item) {
   if (item?.routeKey === 'school-announcements') {
-    uni.navigateTo({ url: '/pages/school-announcements/index' })
+    uni.navigateTo({ url: '/pages-sub-data/school-announcements/index' })
     return
   }
   if (item?.routeKey === 'major-catalog') {
-    uni.navigateTo({ url: '/pages/major-catalog/index' })
+    uni.navigateTo({ url: '/pages-sub-data/major-catalog/index' })
     return
   }
   if (item?.routeKey === 'application-guide') {
@@ -4150,11 +4333,11 @@ function openNewsArchive() {
 
 function openHomeService(item) {
   if (item?.key === 'school-notices') {
-    uni.navigateTo({ url: '/pages/school-announcements/index' })
+    uni.navigateTo({ url: '/pages-sub-data/school-announcements/index' })
     return
   }
   if (item?.key === 'major-catalog') {
-    uni.navigateTo({ url: '/pages/major-catalog/index' })
+    uni.navigateTo({ url: '/pages-sub-data/major-catalog/index' })
     return
   }
   if (item?.key === 'application-guide') {
@@ -4308,6 +4491,99 @@ function openRecommendedTrainingSheet() {
 function closeRecommendedTrainingSheet() {
   if (generatingTraining.value) return
   showTrainingSheet.value = false
+}
+
+function openSubscriptionSheet() {
+  void loadSubscriptionPageConfig()
+  void loadSubscriptionMembershipStatus()
+  if (subscriptionSheetCloseTimer) {
+    clearTimeout(subscriptionSheetCloseTimer)
+    subscriptionSheetCloseTimer = null
+  }
+  if (subscriptionSheetOpenTimer) clearTimeout(subscriptionSheetOpenTimer)
+  showSubscriptionSheet.value = true
+  subscriptionSheetVisible.value = false
+  nextTick(() => {
+    subscriptionSheetOpenTimer = setTimeout(() => {
+      if (showSubscriptionSheet.value) subscriptionSheetVisible.value = true
+      subscriptionSheetOpenTimer = null
+    }, 16)
+  })
+}
+
+function closeSubscriptionSheet() {
+  if (!showSubscriptionSheet.value) return
+  if (subscriptionSheetOpenTimer) {
+    clearTimeout(subscriptionSheetOpenTimer)
+    subscriptionSheetOpenTimer = null
+  }
+  subscriptionSheetVisible.value = false
+  if (subscriptionSheetCloseTimer) clearTimeout(subscriptionSheetCloseTimer)
+  subscriptionSheetCloseTimer = setTimeout(() => {
+    showSubscriptionSheet.value = false
+    subscriptionSheetCloseTimer = null
+  }, 340)
+}
+
+async function loadSubscriptionPageConfig() {
+  try {
+    const response = await fetchSubscriptionPageConfig()
+    subscriptionPageConfig.value = createSubscriptionPageConfig(response)
+  } catch (error) {
+    // 配置接口在渐进部署期间不可用时保留内置默认值，避免阻塞“我的”页面。
+  }
+}
+
+function createDefaultSubscriptionMembershipStatus() {
+  return {
+    membership_status: 'inactive',
+    membership_plan: null,
+    membership_started_at: null,
+    membership_expires_at: null,
+    membership_updated_at: null,
+    membership_active: false
+  }
+}
+
+function normalizeSubscriptionMembershipStatus(source = {}) {
+  const rawStatus = String(source?.membership_status || 'inactive').toLowerCase()
+  const membershipStatus = ['active', 'expired', 'inactive'].includes(rawStatus) ? rawStatus : 'inactive'
+  return {
+    membership_status: membershipStatus,
+    membership_plan: source?.membership_plan || null,
+    membership_started_at: source?.membership_started_at || null,
+    membership_expires_at: source?.membership_expires_at || null,
+    membership_updated_at: source?.membership_updated_at || null,
+    membership_active: source?.membership_active === true || membershipStatus === 'active'
+  }
+}
+
+function loadSubscriptionMembershipStatus() {
+  if (!isLoggedIn()) {
+    subscriptionMembership.value = createDefaultSubscriptionMembershipStatus()
+    return Promise.resolve(subscriptionMembership.value)
+  }
+  if (subscriptionMembershipRequest) return subscriptionMembershipRequest
+
+  subscriptionMembershipRequest = fetchMembershipStatus()
+    .then((response) => {
+      subscriptionMembership.value = normalizeSubscriptionMembershipStatus(response)
+      return subscriptionMembership.value
+    })
+    .catch(() => subscriptionMembership.value)
+    .finally(() => {
+      subscriptionMembershipRequest = null
+    })
+  return subscriptionMembershipRequest
+}
+
+function handleSubscriptionSubscribe(plan) {
+  const label = plan === 'quarterly' ? '季卡' : '月卡'
+  uni.showToast({ title: `${label}订阅功能即将开放`, icon: 'none' })
+}
+
+function handleSubscriptionRestore() {
+  uni.showToast({ title: '购买恢复功能即将开放', icon: 'none' })
 }
 
 function handleSmartModeChange(event) {
@@ -4480,12 +4756,240 @@ function goLogin() {
   uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages/home/index')}` })
 }
 
-function handleAccountEntry() {
+function openProfileEditModal() {
   if (!isAuthed.value) {
     goLogin()
     return
   }
-  uni.navigateTo({ url: '/pages/profile/index' })
+  profileEditNickname.value = String(authUser.value?.nickname || profile.value.userName || '').trim()
+  profileEditAvatarPreview.value = avatarImageUrl.value || ''
+  profileEditAvatarPath.value = ''
+  profileEditAvatarFile.value = null
+  profileEditAvatarName.value = 'avatar.jpg'
+  showProfileEditModal.value = true
+}
+
+function closeProfileEditModal(force = false) {
+  if (!force && (profileEditSaving.value || profileEditUploading.value)) return
+  showProfileEditModal.value = false
+  profileEditAvatarPreview.value = ''
+  profileEditAvatarPath.value = ''
+  profileEditAvatarFile.value = null
+}
+
+function chooseProfileAvatar() {
+  if (profileEditUploading.value) return
+
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: ['album', 'camera'],
+    success(result) {
+      const tempFile = Array.isArray(result.tempFiles) ? result.tempFiles[0] : null
+      const fileCandidate = tempFile?.file || tempFile?.fileObject || tempFile
+      const file = typeof Blob !== 'undefined' && fileCandidate instanceof Blob ? fileCandidate : null
+      const filePath = (
+        (Array.isArray(result.tempFilePaths) ? result.tempFilePaths[0] : '') ||
+        tempFile?.path ||
+        tempFile?.tempFilePath ||
+        ''
+      )
+
+      if (!filePath && !file) {
+        uni.showToast({ title: '未读取到图片，请重新选择', icon: 'none' })
+        return
+      }
+
+      profileEditAvatarPath.value = filePath
+      profileEditAvatarFile.value = file
+      profileEditAvatarName.value = tempFile?.name || file?.name || 'avatar.jpg'
+      profileEditAvatarPreview.value = filePath || (file && typeof URL !== 'undefined' ? URL.createObjectURL(file) : '')
+    },
+    fail(error) {
+      const message = String(error?.errMsg || '').toLowerCase()
+      if (!message.includes('cancel')) {
+        uni.showToast({ title: '图片选择失败，请重试', icon: 'none' })
+      }
+    }
+  })
+}
+
+async function saveProfileEdit() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  const nickname = String(profileEditNickname.value || '').trim()
+  if (!nickname) {
+    uni.showToast({ title: '请填写昵称', icon: 'none' })
+    return
+  }
+  if (profileEditSaving.value || profileEditUploading.value) return
+
+  profileEditSaving.value = true
+  let uploadedUser = null
+  try {
+    if (profileEditAvatarPath.value || profileEditAvatarFile.value) {
+      profileEditUploading.value = true
+      uploadedUser = await uploadAvatar({
+        filePath: profileEditAvatarPath.value,
+        file: profileEditAvatarFile.value,
+        fileName: profileEditAvatarName.value
+      })
+      profileEditUploading.value = false
+      if (!uploadedUser?.avatar_url) {
+        throw { detail: '头像上传失败，请重试' }
+      }
+    }
+
+    const payload = { nickname }
+    if (uploadedUser?.avatar_url) payload.avatar_url = uploadedUser.avatar_url
+    const nextUser = await updateProfile(payload)
+    const savedUser = updateAuthUser(nextUser || uploadedUser || { nickname }) || nextUser || uploadedUser
+    if (savedUser) authUser.value = savedUser
+    closeProfileEditModal(true)
+    uni.showToast({ title: '个人资料已保存', icon: 'success' })
+  } catch (error) {
+    profileEditUploading.value = false
+    uni.showToast({ title: error?.detail || '保存失败，请稍后重试', icon: 'none' })
+  } finally {
+    profileEditSaving.value = false
+    profileEditUploading.value = false
+  }
+}
+
+function openEmailBindingModal() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  profileEmailForm.email = ''
+  profileEmailForm.code = ''
+  showEmailBindingModal.value = true
+}
+
+function closeEmailBindingModal(force = false) {
+  if (!force && (profileEmailSending.value || profileEmailSaving.value)) return
+  showEmailBindingModal.value = false
+  profileEmailForm.email = ''
+  profileEmailForm.code = ''
+}
+
+function isValidProfileEmail(value) {
+  return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(String(value || ''))
+}
+
+async function sendProfileEmailCode() {
+  const email = String(profileEmailForm.email || '').trim()
+  if (!isValidProfileEmail(email)) {
+    uni.showToast({ title: '请填写正确的新邮箱', icon: 'none' })
+    return
+  }
+  if (email === getPublicEmail(authUser.value)) {
+    uni.showToast({ title: '新邮箱不能与当前邮箱相同', icon: 'none' })
+    return
+  }
+
+  profileEmailSending.value = true
+  try {
+    if (profileUsesWechatBinding.value) {
+      await sendBindEmailCode({ email })
+    } else {
+      await sendChangeEmailCode({ email })
+    }
+    uni.showToast({ title: '验证码已发送', icon: 'none' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '验证码发送失败', icon: 'none' })
+  } finally {
+    profileEmailSending.value = false
+  }
+}
+
+async function submitProfileEmailBinding() {
+  const email = String(profileEmailForm.email || '').trim()
+  const code = String(profileEmailForm.code || '').trim()
+  if (!isValidProfileEmail(email) || !code) {
+    uni.showToast({ title: '请填写邮箱和验证码', icon: 'none' })
+    return
+  }
+
+  profileEmailSaving.value = true
+  try {
+    if (profileUsesWechatBinding.value) {
+      let result = await bindWechatEmail({ email, verification_code: code })
+      if (result?.status === 'merge_required') {
+        const profileSource = await chooseProfileMergeSource(result)
+        if (!profileSource) {
+          uni.showToast({ title: '已取消账号合并', icon: 'none' })
+          return
+        }
+        result = await bindWechatEmail({ email, verification_code: code, profile_source: profileSource })
+      }
+      applyProfileAuthResult(result?.auth)
+      uni.showToast({ title: result?.detail || '邮箱绑定成功', icon: 'success' })
+    } else {
+      const nextUser = await changeEmailWithCode({ email, verification_code: code })
+      const savedUser = updateAuthUser(nextUser) || nextUser
+      if (savedUser) authUser.value = savedUser
+      uni.showToast({ title: '绑定邮箱已更新', icon: 'success' })
+    }
+    closeEmailBindingModal(true)
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '绑定失败，请检查验证码', icon: 'none' })
+  } finally {
+    profileEmailSaving.value = false
+  }
+}
+
+function applyProfileAuthResult(auth) {
+  if (!auth?.access_token || !auth?.user) {
+    throw { detail: '账号会话更新失败，请重新登录' }
+  }
+  saveAuthSession({
+    accessToken: auth.access_token,
+    refreshToken: auth.refresh_token,
+    user: auth.user
+  })
+  authUser.value = auth.user
+  authed.value = true
+}
+
+function chooseProfileMergeSource(result) {
+  const emailNickname = result?.email_account?.nickname || '邮箱账号'
+  const wechatNickname = result?.wechat_account?.nickname || '微信账号'
+  const maskedEmail = result?.email_account?.email_masked || profileEmailForm.email
+
+  return new Promise((resolve) => {
+    uni.showModal({
+      title: '发现已注册邮箱账号',
+      content: `${maskedEmail} 已注册。合并后两边的作答、错题、收藏和统计都会保留，是否继续？`,
+      confirmText: '继续合并',
+      cancelText: '暂不合并',
+      success(modalResult) {
+        if (!modalResult.confirm) {
+          resolve(null)
+          return
+        }
+        uni.showActionSheet({
+          title: '选择合并后使用的账号资料',
+          itemList: [`保留微信资料（${wechatNickname}）`, `保留邮箱资料（${emailNickname}）`],
+          success(actionResult) {
+            resolve(actionResult.tapIndex === 0 ? 'wechat' : 'email')
+          },
+          fail() {
+            resolve(null)
+          }
+        })
+      },
+      fail() {
+        resolve(null)
+      }
+    })
+  })
+}
+
+function handleAccountEntry() {
+  openProfileEditModal()
 }
 
 function goLeaderboard() {
@@ -4496,45 +5000,152 @@ function goLeaderboard() {
   uni.navigateTo({ url: '/pages/leaderboard/index' })
 }
 
-async function loadOfficialMessages(autoPopup = false) {
-  if (!isAuthed.value) {
-    officialMessages.value = []
-    officialUnreadCount.value = 0
-    officialMessagesLoaded.value = false
-    return
-  }
-  try {
-    const response = await fetchOfficialMessages()
-    officialMessages.value = response.items || []
-    officialUnreadCount.value = Number(response.unread_count || 0)
-    officialMessagesLoaded.value = true
-    if (autoPopup && !officialAutoShown.value && officialUnreadCount.value > 0) {
-      officialAutoShown.value = true
-      showOfficialMessageModal.value = true
-    }
-  } catch (error) {
-    officialMessagesLoaded.value = false
-  }
+function formatUnreadBadge(count) {
+  const value = Math.max(0, Number(count) || 0)
+  return value > 99 ? '99+' : String(value)
 }
 
-async function openOfficialMessages() {
+function normalizeUnreadTargetMap(value) {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return {}
+  return Object.fromEntries(
+    Object.entries(value)
+      .map(([key, count]) => [String(key || '').trim(), Math.max(0, Number(count) || 0)])
+      .filter(([key, count]) => key && count > 0)
+  )
+}
+
+function getCircleSectionUnreadCount(sectionKey) {
+  return sectionKey === 'community' ? communityUnreadCount.value : 0
+}
+
+function getCircleCommunityTabUnreadCount(tab) {
+  if (tab === 'chat') return communityChatUnreadCount.value
+  if (tab === 'experience') return communityExperienceUnreadCount.value
+  if (tab === 'mentor') return applicantConsultationUnreadCount.value + mentorConsultationUnreadCount.value
+  return 0
+}
+
+function getCommunityPostUnreadCount(post = {}) {
+  const tab = normalizeCircleCommunityPostType(post.postType || post.post_type)
+  return Number(communityPostUnreadTargets.value?.[tab]?.[String(post.id || '')] || 0)
+}
+
+function isCommunityPostUnread(post) {
+  return getCommunityPostUnreadCount(post) > 0
+}
+
+function applyCommunityPostReadLocally(post = {}) {
+  const postId = String(post.id || '').trim()
+  const tab = normalizeCircleCommunityPostType(post.postType || post.post_type)
+  const unreadCount = Number(communityPostUnreadTargets.value?.[tab]?.[postId] || 0)
+  if (!postId || unreadCount <= 0) return 0
+  const nextTabTargets = { ...(communityPostUnreadTargets.value?.[tab] || {}) }
+  delete nextTabTargets[postId]
+  communityPostUnreadTargets.value = {
+    ...communityPostUnreadTargets.value,
+    [tab]: nextTabTargets
+  }
+  if (tab === 'experience') {
+    communityExperienceUnreadCount.value = Math.max(0, communityExperienceUnreadCount.value - unreadCount)
+  } else {
+    communityChatUnreadCount.value = Math.max(0, communityChatUnreadCount.value - unreadCount)
+  }
+  postInteractionUnreadCount.value = Math.max(0, postInteractionUnreadCount.value - unreadCount)
+  communityUnreadCount.value = Math.max(0, communityUnreadCount.value - unreadCount)
+  notificationUnreadCount.value = Math.max(0, notificationUnreadCount.value - unreadCount)
+  return unreadCount
+}
+
+function markCommunityPostNotificationsRead(post = {}) {
+  const postId = String(post.id || '').trim()
+  if (!postId || !isAuthed.value) return
+  applyCommunityPostReadLocally(post)
+  void markUserNotificationReadTarget('community_post', postId)
+    .then(() => refreshMessageUnreadCounts())
+    .catch(() => refreshMessageUnreadCounts())
+}
+
+async function refreshMessageUnreadCounts() {
+  if (!isAuthed.value) {
+    officialUnreadCount.value = 0
+    notificationUnreadCount.value = 0
+    communityUnreadCount.value = 0
+    postInteractionUnreadCount.value = 0
+    communityReportUnreadCount.value = 0
+    consultationUnreadCount.value = 0
+    communityChatUnreadCount.value = 0
+    communityExperienceUnreadCount.value = 0
+    applicantConsultationUnreadCount.value = 0
+    mentorConsultationUnreadCount.value = 0
+    communityPostUnreadTargets.value = { chat: {}, experience: {} }
+    return
+  }
+  const [officialResult, summaryResult] = await Promise.allSettled([
+    fetchOfficialMessages(),
+    fetchUserNotificationUnreadSummary()
+  ])
+  officialUnreadCount.value = officialResult.status === 'fulfilled'
+    ? Number(officialResult.value?.unread_count || 0)
+    : 0
+  if (summaryResult.status === 'fulfilled') {
+    const summary = summaryResult.value || {}
+    notificationUnreadCount.value = Number(summary.total || 0)
+    postInteractionUnreadCount.value = Number(summary.post_interactions || 0)
+    communityReportUnreadCount.value = Number(summary.community_reports || 0)
+    consultationUnreadCount.value = Number(summary.consultation_orders ?? summary.consultations ?? 0)
+    communityChatUnreadCount.value = Number(summary.community_chat || 0)
+    communityExperienceUnreadCount.value = Number(summary.community_experience || 0)
+    applicantConsultationUnreadCount.value = Number(summary.applicant_consultations || 0)
+    mentorConsultationUnreadCount.value = Number(summary.mentor_consultations || 0)
+    const postTargets = summary.community_post_targets || {}
+    communityPostUnreadTargets.value = {
+      chat: normalizeUnreadTargetMap(postTargets.chat),
+      experience: normalizeUnreadTargetMap(postTargets.experience)
+    }
+    const fallbackCircleUnread = postInteractionUnreadCount.value
+      + applicantConsultationUnreadCount.value
+      + mentorConsultationUnreadCount.value
+    communityUnreadCount.value = Number(summary.circle ?? fallbackCircleUnread) || 0
+    return
+  }
+
+  // 旧后端尚未重启到新接口时，仍让全局消息铃铛保持可用。
+  try {
+    const fallback = await fetchUserNotifications({ limit: 1 })
+    notificationUnreadCount.value = Number(fallback?.unread_count || 0)
+  } catch (error) {
+    notificationUnreadCount.value = 0
+  }
+  communityUnreadCount.value = 0
+  postInteractionUnreadCount.value = 0
+  communityReportUnreadCount.value = 0
+  consultationUnreadCount.value = 0
+  communityChatUnreadCount.value = 0
+  communityExperienceUnreadCount.value = 0
+  applicantConsultationUnreadCount.value = 0
+  mentorConsultationUnreadCount.value = 0
+  communityPostUnreadTargets.value = { chat: {}, experience: {} }
+}
+
+function openMessageCenter() {
   if (!isAuthed.value) {
     goLogin()
     return
   }
-  if (!officialMessagesLoaded.value) {
-    await loadOfficialMessages(false)
-  }
-  showOfficialMessageModal.value = true
+  uni.navigateTo({ url: '/pages/notifications/index' })
 }
 
-async function closeOfficialMessages() {
-  showOfficialMessageModal.value = false
-  const unreadItems = officialMessages.value.filter((item) => !item.read)
-  if (unreadItems.length === 0) return
-  officialMessages.value = officialMessages.value.map((item) => ({ ...item, read: true }))
-  officialUnreadCount.value = 0
-  await Promise.allSettled(unreadItems.map((item) => markOfficialMessageRead(item.id)))
+function openApplicantConsultationUpdates() {
+  uni.navigateTo({ url: '/pages-sub-consultation/consultation/my-consultations' })
+}
+
+function openMentorConsultationUpdates() {
+  uni.navigateTo({ url: '/pages-sub-consultation/consultation/mentor-apply?mode=center' })
+}
+
+function openMyPostUpdates(postType) {
+  const normalizedType = normalizeCircleCommunityPostType(postType)
+  uni.navigateTo({ url: `/pages/circle/my-posts?type=${normalizedType}` })
 }
 
 function openCircleSection(key) {
@@ -4557,8 +5168,14 @@ function openCircleSection(key) {
     // 浏览研友聊时并行预取前辈目录，不阻塞当前内容加载。
     void loadMentorProfiles()
     const shouldRefreshChat = consumeCircleCommunityFeedRefresh('chat')
-    hydrateCircleCommunityFeed('chat')
-    loadCircleCommunityPosts('chat', { force: shouldRefreshChat })
+    const sortBy = selectedCommunityPostSort.value
+    const featuredOnly = sortBy === 'featured'
+    if (!featuredOnly && sortBy !== 'hot') hydrateCircleCommunityFeed('chat')
+    loadCircleCommunityPosts('chat', {
+      force: shouldRefreshChat || featuredOnly || sortBy === 'hot',
+      featuredOnly,
+      sortBy
+    })
   }
 }
 
@@ -4921,8 +5538,15 @@ function closeCirclePost() {
 
 function selectExperienceCategory(category) {
   if (!circleExperienceCategories.includes(category)) return
+  if (selectedExperienceCategory.value === category) return
   selectedExperienceCategory.value = category
   selectedCirclePost.value = null
+  const sortBy = selectedCommunityPostSort.value
+  void loadCircleCommunityPosts('experience', {
+    force: true,
+    featuredOnly: sortBy === 'featured',
+    sortBy
+  })
 }
 
 function clearExperienceSearch() {
@@ -4946,8 +5570,12 @@ function selectCommunityPostSort(event) {
   const nextSort = communityPostSortOptions[selectedIndex]?.value
   if (!nextSort) return
   selectedCommunityPostSort.value = nextSort
-  if (nextSort === 'featured' && selectedCircleCommunityTab.value !== 'mentor') {
-    void loadCircleCommunityPosts(selectedCircleCommunityTab.value, { force: true, featuredOnly: true })
+  if (selectedCircleCommunityTab.value !== 'mentor' && ['featured', 'hot'].includes(nextSort)) {
+    void loadCircleCommunityPosts(selectedCircleCommunityTab.value, {
+      force: true,
+      featuredOnly: nextSort === 'featured',
+      sortBy: nextSort
+    })
   }
 }
 
@@ -4964,12 +5592,13 @@ async function loadMentorProfiles({ force = false } = {}) {
     cacheMentors(profiles, { replace: true })
   } catch (error) {
     mentorProfilesError.value = error?.detail || '前辈资料加载失败'
-    if (!mentorProfilesLoaded.value || mentorProfiles.value.length === 0) {
-      mentorProfiles.value = getFallbackMentors()
-    }
   } finally {
     mentorProfilesLoading.value = false
   }
+}
+
+function retryMentorProfiles() {
+  void loadMentorProfiles({ force: true })
 }
 
 function setMentorEntryStatus(status) {
@@ -5116,7 +5745,7 @@ function openMentorDetail(mentor) {
   const viewerMentorQuery = currentMentorId
     ? `&viewerMentorId=${encodeURIComponent(currentMentorId)}`
     : ''
-  uni.navigateTo({ url: `/pages/circle/mentor-detail?id=${encodeURIComponent(mentor.id)}${viewerMentorQuery}` })
+  uni.navigateTo({ url: `/pages-sub-consultation/consultation/mentor-detail?id=${encodeURIComponent(mentor.id)}${viewerMentorQuery}` })
 }
 
 function beginMentorConsultation(mentor) {
@@ -5127,14 +5756,28 @@ function beginMentorConsultation(mentor) {
   }
   const page = mentor.onlineStatus === 'online' ? 'mentor-consult-form' : 'mentor-booking'
   const suffix = page === 'mentor-consult-form' ? '&mode=instant' : ''
-  uni.navigateTo({ url: `/pages/circle/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
+  uni.navigateTo({ url: `/pages-sub-consultation/consultation/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
 }
 
 async function openMentorVerificationEntry() {
   await loadMentorEntryStatus()
   const verificationStatus = mentorEntryStatus.value
   const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
-  uni.navigateTo({ url: `/pages/circle/mentor-apply?mode=${mode}` })
+  uni.navigateTo({ url: `/pages-sub-consultation/consultation/mentor-apply?mode=${mode}` })
+}
+
+async function openMyConsultationEntry() {
+  if (openingMyConsultationEntry.value) return
+  openingMyConsultationEntry.value = true
+  try {
+    await loadMentorEntryStatus({ force: true })
+    const url = mentorEntryStatus.value === 'verified'
+      ? '/pages-sub-consultation/consultation/mentor-apply?mode=center&from=profile-consultations'
+      : '/pages-sub-consultation/consultation/my-consultations'
+    uni.navigateTo({ url })
+  } finally {
+    openingMyConsultationEntry.value = false
+  }
 }
 
 function getCommunityPostTimestamp(post = {}) {
@@ -5170,6 +5813,8 @@ function sortCommunityPosts(posts, sort) {
   if (sort === 'featured') {
     return shuffleCommunityPosts(posts.filter(isCommunityPostFeatured))
   }
+  // “热门”由服务端按完整公开内容池的互动数据排序，避免只在当前最新帖里重排。
+  if (sort === 'hot') return [...posts]
   return posts
     .map((post, index) => ({
       post,
@@ -5251,6 +5896,7 @@ function normalizeCommunityPost(post = {}) {
     commentPreview: commentPreviews[0] || null,
     isFeatured: isCommunityPostFeatured(post),
     liked: Boolean(post.liked || post.is_liked),
+    authorVerified: Boolean(post.authorVerified || post.author_verified),
     stats: {
       likes: Number(stats.likes ?? post.like_count ?? 0),
       comments: Number(stats.comments ?? post.comment_count ?? 0),
@@ -5289,10 +5935,16 @@ function patchCommunityPost(postId, patch) {
   circleFeaturedCommunityPosts.value = circleFeaturedCommunityPosts.value.map((post) => (
     post.id === postId ? applyPatch(post) : post
   ))
+  circleHotCommunityPosts.value = circleHotCommunityPosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
   circleExperienceCommunityPosts.value = circleExperienceCommunityPosts.value.map((post) => (
     post.id === postId ? applyPatch(post) : post
   ))
   circleFeaturedExperiencePosts.value = circleFeaturedExperiencePosts.value.map((post) => (
+    post.id === postId ? applyPatch(post) : post
+  ))
+  circleHotExperienceCommunityPosts.value = circleHotExperienceCommunityPosts.value.map((post) => (
     post.id === postId ? applyPatch(post) : post
   ))
   if (selectedCommunityPost.value?.id === postId) {
@@ -5323,6 +5975,19 @@ function getCircleCommunityFeedStorageKey(postType) {
   return `${COMMUNITY_FEED_CACHE_PREFIX}:${viewerId}:${normalizeCircleCommunityPostType(postType)}`
 }
 
+function getCircleCommunityFeedPageKey(postType, { featuredOnly = false, sortBy = 'latest', category = '' } = {}) {
+  const normalizedType = normalizeCircleCommunityPostType(postType)
+  const normalizedCategory = String(category || '').trim()
+  return `${normalizedType}:${featuredOnly ? 'featured' : (sortBy === 'hot' ? 'hot' : 'latest')}:${normalizedCategory || 'all'}`
+}
+
+function resetCircleCommunityFeedPagination(postType, { featuredOnly = false, sortBy = 'latest', category = '' } = {}) {
+  const key = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category })
+  communityFeedNextCursors[key] = ''
+  communityFeedHasMore[key] = true
+  return key
+}
+
 function getCircleCommunityFeedRefreshKey(postType) {
   return `circle-community-feed-refresh-${normalizeCircleCommunityPostType(postType)}`
 }
@@ -5339,28 +6004,42 @@ function consumeCircleCommunityFeedRefresh(postType) {
   }
 }
 
-function getCircleCommunityFeedPosts(postType, { featuredOnly = false } = {}) {
+function getCircleCommunityFeedPosts(postType, { featuredOnly = false, sortBy = 'latest' } = {}) {
   if (normalizeCircleCommunityPostType(postType) === 'experience') {
-    return featuredOnly ? circleFeaturedExperiencePosts.value : circleExperienceCommunityPosts.value
+    if (featuredOnly) return circleFeaturedExperiencePosts.value
+    return sortBy === 'hot' ? circleHotExperienceCommunityPosts.value : circleExperienceCommunityPosts.value
   }
-  return featuredOnly ? circleFeaturedCommunityPosts.value : circleCommunityPosts.value
+  if (featuredOnly) return circleFeaturedCommunityPosts.value
+  return sortBy === 'hot' ? circleHotCommunityPosts.value : circleCommunityPosts.value
 }
 
-function setCircleCommunityFeedPosts(postType, posts, { persist = true, featuredOnly = false } = {}) {
+function setCircleCommunityFeedPosts(postType, posts, { persist = true, featuredOnly = false, sortBy = 'latest', category = '', append = false } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
-  const nextPosts = Array.isArray(posts) ? posts : []
+  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy, category })
+  const incomingPosts = Array.isArray(posts) ? posts : []
+  const currentPosts = getCircleCommunityFeedPosts(normalizedPostType, { featuredOnly, sortBy })
+  const nextPosts = append
+    ? [...currentPosts, ...incomingPosts.filter((item) => !currentPosts.some((existing) => existing.id === item.id))]
+    : incomingPosts
+  if (!append && communityFeedNextCursors[pageKey] === undefined) {
+    communityFeedNextCursors[pageKey] = ''
+  }
   if (normalizedPostType === 'experience') {
     if (featuredOnly) {
       circleFeaturedExperiencePosts.value = nextPosts
+    } else if (sortBy === 'hot') {
+      circleHotExperienceCommunityPosts.value = nextPosts
     } else {
       circleExperienceCommunityPosts.value = nextPosts
     }
   } else if (featuredOnly) {
     circleFeaturedCommunityPosts.value = nextPosts
+  } else if (sortBy === 'hot') {
+    circleHotCommunityPosts.value = nextPosts
   } else {
     circleCommunityPosts.value = nextPosts
   }
-  if (persist && !featuredOnly) {
+  if (persist && !category && !featuredOnly && sortBy === 'latest') {
     persistCircleCommunityFeed(normalizedPostType)
   }
 }
@@ -5370,7 +6049,9 @@ function persistCircleCommunityFeed(postType) {
   try {
     uni.setStorageSync(storageKey, {
       cachedAt: Date.now(),
-      posts: getCircleCommunityFeedPosts(postType)
+      posts: getCircleCommunityFeedPosts(postType),
+      nextCursor: communityFeedNextCursors[getCircleCommunityFeedPageKey(postType)] || '',
+      hasMore: communityFeedHasMore[getCircleCommunityFeedPageKey(postType)] !== false
     })
     communityFeedCacheHydratedKeys.add(storageKey)
     communityFeedCacheFreshness.set(storageKey, Date.now())
@@ -5395,6 +6076,9 @@ function hydrateCircleCommunityFeed(postType) {
     }
     const posts = cached.posts.map((post) => normalizeCommunityPost(post))
     setCircleCommunityFeedPosts(normalizedPostType, posts, { persist: false })
+    const pageKey = getCircleCommunityFeedPageKey(normalizedPostType)
+    communityFeedNextCursors[pageKey] = String(cached.nextCursor || '')
+    communityFeedHasMore[pageKey] = cached.hasMore !== false
     const cachedAt = Number(cached.cachedAt || 0)
     communityFeedCacheFreshness.set(storageKey, cachedAt)
     return Date.now() - cachedAt <= COMMUNITY_FEED_CACHE_TTL
@@ -5423,11 +6107,16 @@ function warmCircleCommunityFeeds() {
   }
 }
 
-async function loadCircleCommunityPosts(postType = 'chat', { force = false, featuredOnly = false } = {}) {
+async function loadCircleCommunityPosts(postType = 'chat', { force = false, featuredOnly = false, sortBy = 'latest' } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
-  const cacheIsFresh = featuredOnly ? false : hydrateCircleCommunityFeed(normalizedPostType)
-  if (!featuredOnly && cacheIsFresh && !force) return
-  const requestKey = `${normalizedPostType}:${featuredOnly ? 'featured' : 'all'}`
+  const normalizedSort = sortBy === 'hot' ? 'hot' : 'latest'
+  const selectedCategory = normalizedPostType === 'experience' ? selectedExperienceCategory.value : selectedCommunityCategory.value
+  const normalizedCategory = selectedCategory && selectedCategory !== '全部' ? selectedCategory : ''
+  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: normalizedCategory })
+  const cacheIsFresh = featuredOnly || normalizedSort !== 'latest' || normalizedCategory ? false : hydrateCircleCommunityFeed(normalizedPostType)
+  if (!featuredOnly && normalizedSort === 'latest' && cacheIsFresh && !force) return
+  if (force) resetCircleCommunityFeedPagination(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: normalizedCategory })
+  const requestKey = pageKey
   if (communityPostsLoadingTypes.has(requestKey)) return
   communityPostsLoadingTypes.add(requestKey)
   communityPostsLoading.value = true
@@ -5435,14 +6124,23 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
     const response = await fetchCommunityPosts({
       limit: COMMUNITY_FEED_PAGE_SIZE,
       post_type: normalizedPostType,
-      featured_only: featuredOnly
+      featured_only: featuredOnly,
+      sort_by: normalizedSort,
+      category: normalizedCategory || undefined,
+      cursor: communityFeedNextCursors[pageKey] || undefined
     })
     if (Array.isArray(response?.items)) {
       const posts = response.items.map((post) => normalizeCommunityPost(post))
       setCircleCommunityFeedPosts(normalizedPostType, posts, {
-        persist: !featuredOnly,
-        featuredOnly
+        persist: !normalizedCategory && !featuredOnly && normalizedSort === 'latest',
+        featuredOnly,
+        sortBy: normalizedSort,
+        category: normalizedCategory,
+        append: Boolean(communityFeedNextCursors[pageKey])
       })
+      communityFeedNextCursors[pageKey] = String(response?.next_cursor || '')
+      communityFeedHasMore[pageKey] = response?.has_more === true
+      if (!normalizedCategory && !featuredOnly && normalizedSort === 'latest') persistCircleCommunityFeed(normalizedPostType)
     }
   } catch (error) {
     // 请求失败时保留已经读取到的真实缓存，不再回退到示例帖子。
@@ -5455,6 +6153,7 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
 async function openCommunityPost(post, options = {}) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
+  markCommunityPostNotificationsRead(initialPost)
   clearCommunityViewTimer()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
@@ -5502,10 +6201,43 @@ function handleCommunityReaderMediaChange(event) {
   communityReaderMediaIndex.value = Number(event?.detail?.current ?? 0)
 }
 
-function shareCommunityPost() {
-  const post = selectedCommunityPost.value
+function openCommunityPostActions(post) {
   if (!post?.title) return
+  const actions = ['分享帖子']
+  if (isAuthed.value) actions.push('举报帖子', '我的举报')
+  uni.showActionSheet({
+    itemList: actions,
+    success(result) {
+      const selected = actions[Number(result?.tapIndex || 0)]
+      if (selected === '举报帖子') {
+        openCommunityReport(post)
+        return
+      }
+      if (selected === '我的举报') {
+        openCommunityReportCenter()
+        return
+      }
+      copyCommunityPostShare(post)
+    }
+  })
+}
 
+function shareCommunityPost() {
+  openCommunityPostActions(selectedCommunityPost.value)
+}
+
+async function loadMoreCircleCommunityPosts() {
+  const postType = normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)
+  const sortBy = selectedCommunityPostSort.value
+  const featuredOnly = sortBy === 'featured'
+  const category = activeCommunityCategory.value === '全部' ? '' : activeCommunityCategory.value
+  const pageKey = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category })
+  if (communityPostsLoadingTypes.has(pageKey)) return
+  if (communityFeedHasMore[pageKey] === false || !communityFeedNextCursors[pageKey]) return
+  await loadCircleCommunityPosts(postType, { featuredOnly, sortBy })
+}
+
+function copyCommunityPostShare(post) {
   const url = typeof window !== 'undefined' ? window.location.href : ''
   if (typeof navigator !== 'undefined' && typeof navigator.share === 'function') {
     navigator.share({ title: post.title, text: post.title, url }).catch(() => {})
@@ -5516,6 +6248,78 @@ function shareCommunityPost() {
     data: url || post.title,
     success: () => uni.showToast({ title: '链接已复制', icon: 'none' })
   })
+}
+
+function openCommunityReport(post, comment = null) {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  if (!post?.id) return
+  const targetTitle = comment?.content || post.title || '研圈内容'
+  const query = [
+    `postId=${encodeURIComponent(post.id)}`,
+    comment?.id ? `commentId=${encodeURIComponent(comment.id)}` : '',
+    `title=${encodeURIComponent(targetTitle)}`
+  ].filter(Boolean).join('&')
+  uni.navigateTo({ url: `/pages/circle/community-report?${query}` })
+}
+
+function openCommunityReportCenter() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  uni.navigateTo({ url: '/pages/circle/community-reports' })
+}
+
+function openCommunityCommentActions(comment) {
+  const post = selectedCommunityCommentsPost.value
+  if (!post?.id || !comment?.id) return
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  const actions = comment.isMine ? ['删除评论'] : ['举报评论']
+  uni.showActionSheet({
+    itemList: actions,
+    itemColor: comment.isMine ? '#dc675d' : '#425d82',
+    success(result) {
+      if (actions[Number(result?.tapIndex || 0)] === '删除评论') {
+        confirmDeleteCommunityComment(post, comment)
+      } else {
+        openCommunityReport(post, comment)
+      }
+    }
+  })
+}
+
+function confirmDeleteCommunityComment(post, comment) {
+  uni.showModal({
+    title: '删除这条评论？',
+    content: '删除后不可恢复；若评论已进入平台处理记录，将保留作为处理凭证。',
+    confirmText: '删除',
+    confirmColor: '#dc675d',
+    success(result) {
+      if (result.confirm) void deleteOwnCommunityComment(post, comment)
+    }
+  })
+}
+
+async function deleteOwnCommunityComment(post, comment) {
+  try {
+    const response = await deleteCommunityComment(post.id, comment.id)
+    communityComments.value = communityComments.value.filter((item) => item.id !== comment.id)
+    const commentPreviews = post.commentPreviews.filter((item) => item.id !== comment.id)
+    patchCommunityPost(post.id, {
+      commentPreviews,
+      commentPreview: commentPreviews[0] || null,
+      stats: { comments: Number(response?.comment_count || 0) }
+    })
+    uni.showToast({ title: '评论已删除', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '评论删除失败，请稍后重试'), icon: 'none' })
+  }
 }
 
 function closeCommunityPost() {
@@ -5819,7 +6623,23 @@ function formatCommunityCommentTime(value) {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
-function openExperiencePublishPage() {
+async function openExperiencePublishPage() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  await loadMentorEntryStatus({ force: true })
+  if (mentorEntryStatus.value !== 'verified') {
+    uni.showModal({
+      title: '经验贴为认证前辈专属',
+      content: '通过前辈认证后，经验内容会带上已认证标识，方便同学放心参考。',
+      confirmText: '去认证',
+      success(result) {
+        if (result.confirm) void openMentorVerificationEntry()
+      }
+    })
+    return
+  }
   openCommunityPublishPage('experience')
 }
 
@@ -5868,15 +6688,27 @@ function selectCircleCommunityTab(tab) {
     return
   }
   const shouldRefreshTab = consumeCircleCommunityFeedRefresh(tab)
-  const featuredOnly = selectedCommunityPostSort.value === 'featured'
-  if (!featuredOnly) hydrateCircleCommunityFeed(tab)
-  loadCircleCommunityPosts(tab, { force: shouldRefreshTab || featuredOnly, featuredOnly })
+  const sortBy = selectedCommunityPostSort.value
+  const featuredOnly = sortBy === 'featured'
+  if (!featuredOnly && sortBy !== 'hot') hydrateCircleCommunityFeed(tab)
+  loadCircleCommunityPosts(tab, {
+    force: shouldRefreshTab || featuredOnly || sortBy === 'hot',
+    featuredOnly,
+    sortBy
+  })
   resetCircleTabbar()
 }
 
 function selectCircleCommunityCategory(category) {
   if (!circleCommunityCategories.includes(category)) return
+  if (selectedCommunityCategory.value === category) return
   selectedCommunityCategory.value = category
+  const sortBy = selectedCommunityPostSort.value
+  void loadCircleCommunityPosts('chat', {
+    force: true,
+    featuredOnly: sortBy === 'featured',
+    sortBy
+  })
 }
 
 function selectActiveCommunityCategory(category) {
@@ -5891,27 +6723,15 @@ function handleCirclePostLocalAction(action) {
   uni.showToast({ title: `${action}功能本地预览中`, icon: 'none' })
 }
 
-function selectCircleMaterialSubject(subject) {
-  if (!circleMaterialSubjects.includes(subject)) return
-  selectedMaterialSubject.value = subject
-}
-
-function copyMaterialShare(item) {
-  if (!item || !item.shareUrl || item.shareUrl === '待配置') {
-    uni.showToast({ title: '资料网盘链接待配置', icon: 'none' })
+function logout() {
+  if (!isAuthed.value) {
+    clearAuthSession()
+    authUser.value = null
+    authed.value = false
+    uni.reLaunch({ url: '/pages/login/index' })
     return
   }
 
-  const shareText = `${item.title}\n网盘链接：${item.shareUrl}\n提取码：${item.shareCode || '无'}`
-  uni.setClipboardData({
-    data: shareText,
-    success() {
-      uni.showToast({ title: '已复制网盘信息', icon: 'none' })
-    }
-  })
-}
-
-function logout() {
   uni.showModal({
     title: '确认退出登录？',
     content: '退出后需要重新登录才能同步学习进度和查看个人数据。',
@@ -5958,6 +6778,14 @@ function handleMenu(item) {
     uni.navigateTo({ url: '/pages/favorites/index' })
     return
   }
+  if (item.action === 'my-consultations') {
+    if (!isAuthed.value) {
+      goLogin()
+      return
+    }
+    void openMyConsultationEntry()
+    return
+  }
   if (item.action === 'liked-posts') {
     if (!isAuthed.value) {
       goLogin()
@@ -5966,12 +6794,41 @@ function handleMenu(item) {
     uni.navigateTo({ url: '/pages/circle/liked-posts' })
     return
   }
+  if (item.action === 'my-posts') {
+    if (!isAuthed.value) {
+      goLogin()
+      return
+    }
+    uni.navigateTo({ url: '/pages/circle/my-posts' })
+    return
+  }
+  if (item.action === 'community-reports') {
+    if (!isAuthed.value) {
+      goLogin()
+      return
+    }
+    uni.navigateTo({ url: '/pages/circle/community-reports' })
+    return
+  }
   if (item.action === 'ai-generator') {
     openRecommendedTrainingSheet()
     return
   }
+  if (item.action === 'subscription') {
+    openSubscriptionSheet()
+    return
+  }
+  if (item.action === 'messages') {
+    openMessageCenter()
+    return
+  }
+  if (item.action === 'bind-email') {
+    openEmailBindingModal()
+    return
+  }
   if (item.action === 'wallet') {
-    uni.navigateTo({ url: '/pages/wallet/index' })
+    const walletRole = mentorEntryStatus.value === 'verified' ? 'mentor' : 'user'
+    uni.navigateTo({ url: `/pages-sub-wallet/wallet/index?role=${walletRole}` })
     return
   }
   if (item.action === 'theme') {
@@ -5979,11 +6836,11 @@ function handleMenu(item) {
     return
   }
   if (item.action === 'admin') {
-    uni.navigateTo({ url: '/pages/admin/index' })
+    uni.navigateTo({ url: '/pages-sub-admin/admin/index' })
     return
   }
   if (item.action === 'question-admin') {
-    uni.navigateTo({ url: '/pages/admin/index?tab=questions' })
+    uni.navigateTo({ url: '/pages-sub-admin/admin/index?tab=questions' })
     return
   }
   if (item.action === 'about') {
@@ -6029,18 +6886,36 @@ async function refreshLearningData() {
   loadLearningSummary()
 }
 
-async function loadWrongQuestions() {
-  if (wrongLoading.value) return
-
-  wrongLoading.value = true
+async function loadWrongQuestions({ reset = true } = {}) {
+  if (wrongLoading.value || wrongLoadingMore.value) return
+  if (reset) {
+    wrongItems.value = []
+    wrongNextCursor.value = ''
+    wrongHasMore.value = false
+    wrongLoading.value = true
+  } else {
+    wrongLoadingMore.value = true
+  }
   wrongError.value = ''
   try {
-    const response = await fetchWrongQuestions({ limit: 100 })
-    wrongItems.value = response?.items || []
+    const response = await fetchWrongQuestions({
+      limit: 30,
+      subject: wrongFilters.value.subject || undefined,
+      module: wrongFilters.value.module || undefined,
+      submodule: wrongFilters.value.submodule || undefined,
+      cursor: reset ? undefined : (wrongNextCursor.value || undefined)
+    })
+    const nextItems = Array.isArray(response?.items) ? response.items : []
+    wrongItems.value = reset
+      ? nextItems
+      : [...wrongItems.value, ...nextItems.filter((item) => !wrongItems.value.some((existing) => existing.id === item.id))]
+    wrongNextCursor.value = String(response?.next_cursor || '')
+    wrongHasMore.value = response?.has_more === true
   } catch (error) {
     wrongError.value = getSafeError(error, '错题本同步失败，请稍后重试')
   } finally {
-    wrongLoading.value = false
+    if (reset) wrongLoading.value = false
+    else wrongLoadingMore.value = false
   }
 }
 
@@ -6257,8 +7132,11 @@ function resetMistakeVisibleCount() {
 }
 
 function loadMoreMistakes() {
-  if (!hasMoreMistakes.value) return
-  visibleMistakeCount.value += 15
+  if (visibleMistakeCount.value < fullMistakes.value.length) {
+    visibleMistakeCount.value += 15
+    return
+  }
+  if (wrongHasMore.value) void loadWrongQuestions({ reset: false })
 }
 
 function handleMistakeBack() {
@@ -6278,8 +7156,10 @@ async function openWrongDetail(item) {
   reviewAnswer.value = ''
   reviewResultText.value = ''
   reviewMastered.value = false
+  reviewSubmissionId.value = ''
   try {
     selectedWrongDetail.value = await fetchWrongQuestionDetail(item.id)
+    reviewSubmissionId.value = createAnswerSubmissionId(getDetailQuestionId(selectedWrongDetail.value), 'review')
   } catch (error) {
     uni.showToast({ title: getSafeError(error, '错题详情读取失败'), icon: 'none' })
   }
@@ -6290,6 +7170,7 @@ function closeWrongDetail() {
   reviewAnswer.value = ''
   reviewResultText.value = ''
   reviewMastered.value = false
+  reviewSubmissionId.value = ''
 }
 
 const wrongDetailOptions = computed(() => {
@@ -6324,6 +7205,26 @@ function getDetailQuestionId(detail) {
   return detail?.question_id || detail?.question?.id || ''
 }
 
+function createAnswerSubmissionId(questionId, kind = 'review') {
+  const normalizedId = String(questionId || '').trim()
+  if (!normalizedId) return null
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}:${kind}:${normalizedId}`.slice(0, 120)
+}
+
+function getRetestSubmissionId(questionId) {
+  const normalizedId = String(questionId || '').trim()
+  if (!normalizedId) return null
+  if (retestSubmissionIds.value[normalizedId]) {
+    return retestSubmissionIds.value[normalizedId]
+  }
+  const nextId = createAnswerSubmissionId(normalizedId, 'retest')
+  retestSubmissionIds.value = {
+    ...retestSubmissionIds.value,
+    [normalizedId]: nextId
+  }
+  return nextId
+}
+
 async function submitWrongReview() {
   if (!selectedWrongDetail.value || !reviewAnswer.value) {
     return
@@ -6333,6 +7234,7 @@ async function submitWrongReview() {
   try {
     const result = await reviewWrongQuestion({
       question_id: getDetailQuestionId(selectedWrongDetail.value),
+      client_submission_id: reviewSubmissionId.value,
       selected_answer: reviewAnswer.value,
       used_time: 0,
       exam_code: examCode.value
@@ -6376,6 +7278,7 @@ async function startWrongRetest() {
   retestItems.value = shuffleMistakes(retestCandidateMistakes.value)
   retestIndex.value = 0
   retestResults.value = []
+  retestSubmissionIds.value = {}
   retestCompleted.value = false
   retestMode.value = true
   await loadRetestQuestion()
@@ -6424,6 +7327,7 @@ async function submitRetestAnswer() {
   try {
     const result = await reviewWrongQuestion({
       question_id: getDetailQuestionId(retestDetail.value),
+      client_submission_id: getRetestSubmissionId(getDetailQuestionId(retestDetail.value)),
       selected_answer: retestAnswer.value,
       used_time: 0,
       exam_code: examCode.value
@@ -6475,6 +7379,7 @@ function exitWrongRetest() {
   retestAnswer.value = ''
   retestResultText.value = ''
   retestResults.value = []
+  retestSubmissionIds.value = {}
   retestLoading.value = false
   retestCompleted.value = false
   loadWrongQuestions()
@@ -6529,6 +7434,10 @@ function formatDateTime(value) {
   padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
 }
 
+.home-page.profile-function-page {
+  padding-top: 0;
+}
+
 .home-page.circle-glass-page {
   --circle-bg: #e6eceb;
   --circle-bg-muted: #dce6e7;
@@ -6563,7 +7472,7 @@ function formatDateTime(value) {
   --circle-route-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --circle-tab-bg: rgba(247, 250, 249, 0.38);
   --circle-tab-shadow: 0 14px 34px rgba(30, 55, 56, 0.16);
-  --circle-font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "PingFang SC", "Helvetica Neue", Arial, sans-serif;
+  --circle-font: var(--gyt-app-font);
   position: relative;
   isolation: isolate;
   overflow-x: clip;
@@ -6610,7 +7519,8 @@ function formatDateTime(value) {
   padding-left: 4rpx;
 }
 
-.landing-glass-page .brand-badge,
+.landing-glass-page .home-header-copy,
+.landing-glass-page .home-status-pill,
 .landing-glass-page .message-bell,
 .landing-glass-page .profile-entry {
   border: 1rpx solid var(--circle-glass-border, rgba(255, 255, 255, 0.58));
@@ -6620,7 +7530,26 @@ function formatDateTime(value) {
   backdrop-filter: blur(16px) saturate(118%);
 }
 
-.landing-glass-page .brand-badge {
+.landing-glass-page .home-header-copy {
+  padding: 14rpx 16rpx 16rpx;
+  border-radius: 28rpx;
+  background: rgba(248, 251, 250, 0.26);
+}
+
+.landing-glass-page .home-header-title {
+  color: #1d4f4b;
+}
+
+.landing-glass-page .home-status-label {
+  color: rgba(45, 61, 59, 0.72);
+}
+
+.landing-glass-page .home-status-pill {
+  border-color: rgba(255, 255, 255, 0.62);
+  background: rgba(248, 251, 250, 0.5);
+}
+
+.landing-glass-page .home-status-value {
   color: #16786f;
 }
 
@@ -6767,7 +7696,7 @@ function formatDateTime(value) {
 
 
 /* 方案一：将研圈玻璃质感延展到首页、刷题、报告和我的的主卡片。 */
-.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask):not(.mentor-filter-mask) {
+.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask):not(.mentor-filter-mask):not(.subscription-sheet-mask) {
   position: relative;
   z-index: 1;
 }
@@ -7323,18 +8252,18 @@ function formatDateTime(value) {
 }
 
 .landing-service-card.is-school {
-  border-color: #dce9ff;
-  background: linear-gradient(160deg, #f8fbff, #edf5ff);
+  border-color: rgba(229, 226, 224, .94);
+  background: rgba(255, 255, 255, .94);
 }
 
 .landing-service-card.is-major {
-  border-color: #e6dcff;
-  background: linear-gradient(160deg, #fbfaff, #f2eeff);
+  border-color: rgba(229, 226, 224, .94);
+  background: rgba(255, 255, 255, .94);
 }
 
 .landing-service-card.is-guide {
-  border-color: #d7f0e9;
-  background: linear-gradient(160deg, #f7fcfb, #eaf8f3);
+  border-color: rgba(229, 226, 224, .94);
+  background: rgba(255, 255, 255, .94);
 }
 
 .landing-service-icon {
@@ -7647,6 +8576,7 @@ function formatDateTime(value) {
 }
 
 .circle-trend-peak {
+  margin-left: auto;
   display: inline-flex;
   align-items: baseline;
   color: var(--circle-muted, #718096);
@@ -7913,7 +8843,7 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-family: var(--circle-font, Arial, sans-serif);
+  font-family: var(--gyt-app-font);
   font-size: 20px;
   line-height: 1;
   font-weight: 400;
@@ -9264,18 +10194,21 @@ function formatDateTime(value) {
 }
 
 .mentor-feed {
+  width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 16rpx;
+  align-items: stretch;
+  gap: 18rpx;
 }
 
-.mentor-loading-list {
-  display: flex;
-  flex-direction: column;
-  gap: 16rpx;
+.mentor-directory-grid .mentor-empty-card {
+  width: 100%;
 }
 
 .mentor-loading-card {
+  box-sizing: border-box;
+  min-height: 430rpx;
   padding: 28rpx;
   border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
   border-radius: 30rpx;
@@ -9415,7 +10348,7 @@ function formatDateTime(value) {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-family: Arial, Helvetica, sans-serif;
+  font-family: var(--gyt-app-font);
   font-size: 38rpx;
   font-weight: 400;
   line-height: 1;
@@ -9756,39 +10689,40 @@ function formatDateTime(value) {
 }
 
 .circle-community-section {
-  gap: 16rpx;
+  gap: 14rpx;
   padding-bottom: 24rpx;
 }
 
 .circle-community-tabs {
+  position: relative;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8rpx;
-  padding: 8rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.74);
-  border-radius: 24rpx;
-  background: rgba(245, 250, 249, 0.64);
-  box-shadow: 0 12rpx 28rpx rgba(30, 55, 56, 0.06);
-  -webkit-backdrop-filter: blur(16px) saturate(116%);
-  backdrop-filter: blur(16px) saturate(116%);
+  gap: 0;
+  padding: 0 10rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8rpx 22rpx rgba(25, 48, 89, 0.055);
+  overflow: hidden;
 }
 
 .circle-community-tab {
+  position: relative;
   min-width: 0;
-  min-height: 64rpx;
+  min-height: 72rpx;
   margin: 0;
-  padding: 0 8rpx;
+  padding: 0 6rpx;
   border: 0;
-  border-radius: 18rpx;
+  border-radius: 0;
   background: transparent;
-  color: #70807e;
+  color: #69758a;
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 22rpx;
+  font-size: 24rpx;
   line-height: 1.2;
-  font-weight: 800;
-  transition: color 180ms ease, background-color 180ms ease, transform 180ms ease;
+  font-weight: 760;
+  transition: color 180ms ease, transform 180ms ease;
 }
 
 .circle-community-tab::after,
@@ -9797,9 +10731,21 @@ function formatDateTime(value) {
 }
 
 .circle-community-tab.active {
-  background: rgba(255, 255, 255, 0.8);
-  color: #16786f;
-  box-shadow: 0 5rpx 16rpx rgba(35, 65, 63, 0.09);
+  background: transparent;
+  color: var(--gyt-primary, #3478f6);
+  box-shadow: none;
+  font-weight: 900;
+}
+
+.circle-community-tab.active::before {
+  content: '';
+  position: absolute;
+  right: 28%;
+  bottom: 7rpx;
+  left: 28%;
+  height: 5rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary, #3478f6);
 }
 
 .circle-community-tab:active,
@@ -9814,43 +10760,80 @@ function formatDateTime(value) {
   scrollbar-width: none;
 }
 
+.community-filter-scroll :deep(.uni-scroll-view) {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.community-filter-scroll :deep(.uni-scroll-view)::-webkit-scrollbar {
+  display: none;
+  width: 0;
+  height: 0;
+}
+
 .community-filter-row {
   display: flex;
-  gap: 12rpx;
+  gap: 10rpx;
   min-width: max-content;
-  padding: 0 2rpx 2rpx;
+  padding: 0 2rpx 4rpx;
 }
 
 .community-filter-chip {
-  min-width: 122rpx;
-  min-height: 58rpx;
+  min-width: 112rpx;
+  min-height: 54rpx;
   margin: 0;
-  padding: 0 18rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.72);
-  border-radius: 18rpx;
-  background: rgba(248, 251, 250, 0.62);
-  color: #60716f;
+  padding: 0 20rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.76);
+  color: #647086;
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  font-size: 22rpx;
+  font-size: 21rpx;
   line-height: 1.2;
-  font-weight: 800;
-  -webkit-backdrop-filter: blur(14px) saturate(112%);
-  backdrop-filter: blur(14px) saturate(112%);
+  font-weight: 760;
   transition: transform 180ms ease, color 180ms ease, background-color 180ms ease;
 }
 
 .community-filter-chip.active {
-  border-color: rgba(22, 120, 111, 0.16);
-  background: rgba(225, 242, 237, 0.82);
-  color: #16786f;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  font-weight: 900;
 }
 
 .community-feed {
+  box-sizing: border-box;
+  width: 100%;
+  min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 18rpx;
+  gap: 0;
+  border: 2rpx solid rgba(215, 229, 255, 0.9);
+  border-radius: 30rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 12rpx 34rpx rgba(25, 48, 89, 0.065);
+  overflow: hidden;
+}
+
+.community-feed .circle-empty-card {
+  box-sizing: border-box;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.community-load-state {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 24rpx 20rpx;
+  border-top: 2rpx solid rgba(94, 111, 138, 0.09);
+  color: #8190a4;
+  font-size: 19rpx;
+  line-height: 1.4;
+  font-weight: 750;
+  text-align: center;
 }
 
 .community-post-card {
@@ -10137,6 +11120,215 @@ function formatDateTime(value) {
   width: 34rpx;
   height: 34rpx;
   flex: 0 0 34rpx;
+}
+
+.home-page.circle-glass-page .community-stream .community-stream-card {
+  min-width: 0;
+  padding: 28rpx 26rpx 18rpx;
+  border: 0;
+  border-radius: 0;
+  background: #ffffff;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transform: none;
+  transition: background-color 160ms ease;
+}
+
+.home-page.circle-glass-page .community-stream .community-stream-card + .community-stream-card {
+  border-top: 12rpx solid var(--gyt-page-bg, #f4f8ff);
+}
+
+.home-page.circle-glass-page .community-stream .community-stream-card:active {
+  background: #fbfcff;
+  box-shadow: none;
+  transform: none;
+}
+
+.community-stream .community-post-header {
+  gap: 14rpx;
+}
+
+.community-stream .community-avatar {
+  width: 70rpx;
+  height: 70rpx;
+  font-size: 25rpx;
+  box-shadow: 0 5rpx 14rpx rgba(25, 48, 89, 0.08);
+}
+
+.community-stream .community-author-name {
+  overflow: hidden;
+  color: #172033;
+  font-size: 25rpx;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.community-stream .community-author-meta {
+  margin-top: 6rpx;
+  color: #8b96a8;
+  font-size: 20rpx;
+}
+
+.community-stream-header-actions {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 5rpx;
+  flex-shrink: 0;
+}
+
+.community-stream .community-topic {
+  max-width: 142rpx;
+  padding: 7rpx 12rpx;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: var(--gyt-primary, #3478f6);
+  font-size: 18rpx;
+}
+
+.community-post-more {
+  width: 52rpx;
+  height: 52rpx;
+  min-width: 52rpx;
+  min-height: 52rpx;
+  margin: 0 -6rpx 0 0;
+  padding: 12rpx;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.community-post-more::after {
+  border: 0;
+}
+
+.community-post-more image {
+  width: 100%;
+  height: 100%;
+  opacity: 0.62;
+}
+
+.community-post-more:active {
+  background: var(--gyt-primary-soft, #edf4ff);
+}
+
+.community-stream .community-post-title {
+  margin-top: 22rpx;
+  color: #151d2c;
+  font-size: 31rpx;
+  line-height: 1.36;
+  font-weight: 900;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.community-stream .community-post-copy {
+  margin-top: 10rpx;
+  color: #4f5e72;
+  font-size: 24rpx;
+  line-height: 1.62;
+  font-weight: 560;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 3;
+}
+
+.community-stream .community-media-grid {
+  width: 100%;
+  margin-top: 20rpx;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8rpx;
+}
+
+.community-stream .community-media-grid.count-1 {
+  grid-template-columns: minmax(0, 1fr);
+}
+
+.community-stream .community-media-grid.count-2 {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.community-stream .community-media-tile {
+  position: relative;
+  width: 100%;
+  height: 206rpx;
+  min-width: 0;
+  padding: 16rpx 14rpx;
+  border-radius: 18rpx;
+  background: #edf2f7;
+}
+
+.community-stream .community-media-grid.count-1 .community-media-tile {
+  height: 390rpx;
+  border-radius: 24rpx;
+}
+
+.community-stream .community-media-grid.count-2 .community-media-tile {
+  height: 284rpx;
+  border-radius: 20rpx;
+}
+
+.community-stream .community-media-kicker,
+.community-stream .community-media-copy {
+  font-size: 17rpx;
+}
+
+.community-stream .community-media-title {
+  margin-top: 6rpx;
+  font-size: 21rpx;
+}
+
+.community-media-more {
+  position: absolute;
+  right: 8rpx;
+  bottom: 8rpx;
+  min-width: 40rpx;
+  padding: 5rpx 8rpx;
+  border-radius: 999rpx;
+  background: rgba(19, 32, 49, 0.62);
+  color: #fff;
+  font-size: 17rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  text-align: center;
+}
+
+.community-stream .community-comment-preview-list {
+  margin-top: 18rpx;
+  padding: 14rpx 16rpx;
+  border: 0;
+  border-radius: 16rpx;
+  background: #f6f8fb;
+}
+
+.community-stream .community-comment-preview {
+  font-size: 21rpx;
+  line-height: 1.42;
+}
+
+.community-stream .community-post-footer {
+  margin-top: 15rpx;
+  padding-top: 12rpx;
+  border-top-color: rgba(94, 111, 138, 0.1);
+  gap: 6rpx;
+  font-size: 22rpx;
+}
+
+.community-stream .community-post-action {
+  min-height: 50rpx;
+  gap: 8rpx;
+}
+
+.community-stream .community-action-icon {
+  width: 30rpx;
+  height: 30rpx;
+  flex-basis: 30rpx;
 }
 
 .community-publish-button {
@@ -11414,8 +12606,8 @@ function formatDateTime(value) {
 .material-subject-card {
   padding: 26rpx 28rpx;
   border-radius: 28rpx;
-  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
-  background: linear-gradient(135deg, #ffffff 0%, var(--gyt-primary-tint, #f4f8ff) 100%);
+  border: 2rpx solid rgba(229, 226, 224, .94);
+  background: rgba(255, 255, 255, .94);
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -11545,6 +12737,39 @@ function formatDateTime(value) {
   font-size: 25rpx;
   line-height: 1.55;
   font-weight: 700;
+}
+
+.circle-resource-empty-section,
+.circle-resource-empty-state {
+  width: 100%;
+  min-height: 620rpx;
+}
+
+.circle-resource-empty-state {
+  padding: 40rpx 20rpx 72rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  text-align: center;
+}
+
+.circle-resource-empty-image {
+  width: 240rpx;
+  height: 240rpx;
+  max-width: 150px;
+  max-height: 150px;
+  display: block;
+  opacity: 0.92;
+}
+
+.circle-resource-empty-title {
+  margin-top: 10rpx;
+  color: #8d95a3;
+  font-size: 28rpx;
+  line-height: 1.35;
+  font-weight: 800;
 }
 
 .circle-post-mask {
@@ -11745,37 +12970,109 @@ function formatDateTime(value) {
 }
 
 .home-header {
+  --home-header-control-size: 72rpx;
   justify-content: space-between;
   gap: 18rpx;
   padding: 0 2rpx;
+  align-items: center;
 }
 
 .brand-line {
   min-width: 0;
   flex: 1;
+  align-items: center;
   gap: 0;
 }
 
-.brand-badge {
-  padding: 10rpx 20rpx;
+.home-header-copy {
+  min-width: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.home-header-brand {
+  min-width: 0;
+  max-width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.home-header-logo {
+  box-sizing: border-box;
+  display: block;
+  width: var(--home-header-control-size);
+  height: var(--home-header-control-size);
+  flex: 0 0 var(--home-header-control-size);
   border-radius: 18rpx;
-  background: var(--gyt-primary-soft, #edf4ff);
-  color: var(--gyt-primary, #1677ff);
-  font-size: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 8rpx 18rpx rgba(20, 31, 66, 0.08);
+}
+
+.home-header-title {
+  color: #101828;
+  min-width: 0;
+  max-width: 100%;
+  overflow: hidden;
+  font-size: 32rpx;
   line-height: 1.2;
-  font-weight: 800;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.home-header-status {
+  max-width: 100%;
+  margin-top: 14rpx;
+  display: flex;
+  align-items: center;
+  gap: 10rpx;
+  overflow: hidden;
+}
+
+.home-status-pill {
+  min-width: 0;
+  max-width: 100%;
+  padding: 10rpx 16rpx;
+  border: 1rpx solid rgba(52, 120, 246, 0.12);
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.74);
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+  white-space: nowrap;
+  box-shadow: 0 6rpx 16rpx rgba(20, 31, 66, 0.04);
+}
+
+.home-status-label {
+  overflow: hidden;
+  color: #667085;
+  font-size: 20rpx;
+  line-height: 1;
+  font-weight: 700;
+  text-overflow: ellipsis;
+}
+
+.home-status-value {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 21rpx;
+  line-height: 1;
+  font-weight: 900;
 }
 
 .profile-entry {
-  width: 78rpx;
-  height: 78rpx;
-  border-radius: 39rpx;
+  box-sizing: border-box;
+  width: var(--home-header-control-size);
+  height: var(--home-header-control-size);
+  flex: 0 0 var(--home-header-control-size);
+  border-radius: 50%;
   background: linear-gradient(180deg, var(--gyt-primary-tint, #f2f5fb), var(--gyt-primary-soft, #e3e9f4));
   color: var(--gyt-primary, #8b95a8);
   display: flex;
   align-items: center;
   justify-content: center;
-  flex-shrink: 0;
   font-size: 32rpx;
   font-weight: 900;
   box-shadow: inset 0 -4rpx 8rpx rgba(20, 31, 66, 0.04);
@@ -11798,8 +13095,10 @@ function formatDateTime(value) {
 
 .message-bell {
   position: relative;
-  width: 72rpx;
-  height: 72rpx;
+  box-sizing: border-box;
+  width: var(--home-header-control-size);
+  height: var(--home-header-control-size);
+  flex: 0 0 var(--home-header-control-size);
   margin: 0;
   padding: 0;
   border: 0;
@@ -11872,8 +13171,13 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 44rpx;
   flex-shrink: 0;
+}
+
+.wave-icon svg {
+  width: 46rpx;
+  height: 46rpx;
+  display: block;
 }
 
 .welcome-copy {
@@ -11903,9 +13207,14 @@ function formatDateTime(value) {
   right: -12rpx;
   top: -8rpx;
   color: var(--gyt-primary-soft, rgba(22, 119, 255, 0.12));
-  font-size: 118rpx;
   transform: rotate(-10deg);
   z-index: -1;
+}
+
+.hero-illustration svg {
+  width: 112rpx;
+  height: 126rpx;
+  display: block;
 }
 
 .stats-card {
@@ -11985,9 +13294,13 @@ function formatDateTime(value) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 26rpx;
-  font-weight: 900;
   box-shadow: 0 12rpx 26rpx var(--gyt-primary-shadow);
+}
+
+.mock-exam-icon svg {
+  width: 44rpx;
+  height: 44rpx;
+  display: block;
 }
 
 .mock-exam-copy {
@@ -12211,46 +13524,6 @@ function formatDateTime(value) {
   display: flex;
   flex-direction: column;
   gap: 22rpx;
-}
-
-.report-topbar {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 24;
-  min-height: 100rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 14rpx 22rpx;
-  box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--report-header-opacity, 0.2));
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--report-header-shadow-opacity, 0));
-  backdrop-filter: blur(18rpx);
-  -webkit-backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
-}
-
-.report-header-spacer {
-  width: 100%;
-  height: 78rpx;
-  flex: 0 0 78rpx;
-}
-
-.report-top-title {
-  flex: 1;
-  color: #101828;
-  text-align: center;
-  font-size: 31rpx;
-  line-height: 1.3;
-  font-weight: 950;
-}
-
-.report-top-spacer {
-  width: 74rpx;
-  height: 74rpx;
-  flex: 0 0 74rpx;
 }
 
 .report-empty-card,
@@ -13158,6 +14431,206 @@ function formatDateTime(value) {
   background: rgba(15, 23, 42, 0.38);
 }
 
+/* “我的”页订阅入口：沿用白卡体系的 Plus 底部抽屉。 */
+.subscription-sheet-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 400;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  overflow: hidden;
+  background: rgba(28, 29, 31, 0.38);
+  backdrop-filter: blur(8rpx);
+  -webkit-backdrop-filter: blur(8rpx);
+  opacity: 0;
+  transition: opacity 240ms ease;
+  will-change: opacity;
+}
+
+.subscription-sheet {
+  width: 100%;
+  max-height: calc(100dvh - env(safe-area-inset-top) - 20rpx);
+  padding: 42rpx 48rpx calc(env(safe-area-inset-bottom) + 38rpx);
+  border-radius: 56rpx 56rpx 0 0;
+  background: rgba(255, 255, 255, 0.985);
+  box-sizing: border-box;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  box-shadow: 0 -18rpx 56rpx rgba(20, 22, 26, 0.16);
+  -webkit-overflow-scrolling: touch;
+  transform: translateY(105%);
+  transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
+  will-change: transform;
+}
+
+.subscription-sheet-mask.is-visible {
+  opacity: 1;
+}
+
+.subscription-sheet-mask.is-visible .subscription-sheet {
+  transform: translateY(0);
+}
+
+.subscription-sheet-head {
+  display: flex;
+  align-items: center;
+  gap: 24rpx;
+}
+
+.subscription-sheet-close {
+  width: 76rpx;
+  min-width: 76rpx;
+  height: 76rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f4f4f3;
+  color: #111214;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
+
+.subscription-sheet-close::after {
+  border: 0;
+}
+
+.subscription-sheet-close :deep(svg) {
+  width: 38rpx;
+  height: 38rpx;
+}
+
+.subscription-sheet-title {
+  color: #111214;
+  font-size: 42rpx;
+  line-height: 1.2;
+  font-weight: 900;
+  letter-spacing: 0.02em;
+}
+
+.subscription-brand {
+  margin: 46rpx auto 44rpx;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.subscription-brand-logo {
+  width: 190rpx;
+  height: 190rpx;
+  display: block;
+  border-radius: 48rpx;
+  transform: scale(1.32);
+}
+
+.subscription-brand-name {
+  margin-top: 22rpx;
+  color: #111214;
+  font-size: 40rpx;
+  line-height: 1.25;
+  font-weight: 900;
+  letter-spacing: 0.01em;
+  text-align: center;
+}
+
+.subscription-benefit-card {
+  padding: 34rpx 34rpx;
+  border-radius: 38rpx;
+  background: #f7f7f6;
+  box-shadow: inset 0 1rpx 0 rgba(255, 255, 255, 0.8);
+}
+
+.subscription-benefit-row {
+  min-height: 70rpx;
+  display: flex;
+  align-items: center;
+  gap: 22rpx;
+  color: #202124;
+  font-size: 29rpx;
+  line-height: 1.5;
+  font-weight: 700;
+}
+
+.subscription-benefit-row + .subscription-benefit-row {
+  margin-top: 18rpx;
+}
+
+.subscription-benefit-check {
+  width: 34rpx;
+  flex: 0 0 34rpx;
+  color: #18a66a;
+  font-family: var(--gyt-app-font);
+  font-size: 46rpx;
+  line-height: 1;
+  font-weight: 400;
+  text-align: center;
+}
+
+.subscription-status {
+  margin: 30rpx 0 22rpx;
+  color: #777774;
+  font-size: 26rpx;
+  line-height: 1.45;
+  font-weight: 700;
+  text-align: center;
+}
+
+.subscription-primary-button,
+.subscription-secondary-button {
+  width: 100%;
+  min-height: 96rpx;
+  margin: 0;
+  padding: 0 28rpx;
+  border: 0;
+  box-sizing: border-box;
+  font-size: 31rpx;
+  font-weight: 900;
+  line-height: 96rpx;
+}
+
+.subscription-primary-button {
+  border-radius: 999rpx;
+  background: #111214;
+  color: #ffffff;
+  box-shadow: 0 14rpx 26rpx rgba(17, 18, 20, 0.16);
+}
+
+.subscription-primary-button::after,
+.subscription-secondary-button::after {
+  border: 0;
+}
+
+.subscription-secondary-button {
+  margin-top: 8rpx;
+  background: transparent;
+  color: #535350;
+  font-size: 27rpx;
+  font-weight: 700;
+}
+
+.subscription-copy {
+  margin: 4rpx auto 0;
+  max-width: 590rpx;
+  color: #91918d;
+  font-size: 22rpx;
+  line-height: 1.65;
+  font-weight: 600;
+  text-align: center;
+}
+
+.subscription-terms {
+  margin-top: 28rpx;
+  color: #3f403e;
+  font-size: 24rpx;
+  line-height: 1.45;
+  font-weight: 700;
+  text-align: center;
+}
+
 .training-sheet {
   width: 100%;
   max-height: 88vh;
@@ -13611,9 +15084,9 @@ function formatDateTime(value) {
 .advice-subject-card {
   margin-bottom: 18rpx;
   padding: 24rpx;
-  border: 2rpx solid #e7eefb;
+  border: 2rpx solid rgba(229, 226, 224, .94);
   border-radius: 26rpx;
-  background: linear-gradient(180deg, #ffffff 0%, var(--gyt-primary-tint) 100%);
+  background: rgba(255, 255, 255, .94);
 }
 
 .advice-subject-head {
@@ -14183,124 +15656,23 @@ function formatDateTime(value) {
   font-weight: 900;
 }
 
-.mistake-page-head {
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  margin: 2rpx auto 22rpx;
-  width: 100%;
-  max-width: 760rpx;
-}
-
-.mistake-list-head {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 80;
-  width: auto;
-  max-width: none;
-  min-height: 124rpx;
-  margin: 0;
-  padding: 16rpx 22rpx;
-  box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--mistake-header-opacity, 0.2));
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--mistake-header-shadow-opacity, 0));
-  isolation: isolate;
-  overflow: hidden;
-  transform: translateZ(0);
-  backdrop-filter: blur(18rpx);
-  -webkit-backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
-}
-
-.mistake-list-head-spacer {
-  width: 100%;
-  height: 130rpx;
-  flex: 0 0 130rpx;
-}
-
-.mistake-list-head .head-title {
-  position: absolute;
-  top: 20rpx;
-  left: 50%;
-  z-index: 1;
-  width: max-content;
-  max-width: calc(100% - 310rpx);
-  overflow: hidden;
-  text-align: center;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-  pointer-events: none;
-  transform: translateX(-50%);
-}
-
-.mistake-list-head .mistake-head-copy {
-  align-self: stretch;
-  display: flex;
-  align-items: flex-end;
-  padding-top: 62rpx;
-}
-
-.mistake-list-head .head-subtitle {
-  margin-top: 0;
-}
-
-.icon-back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 72rpx;
-  height: 72rpx;
-  flex: 0 0 72rpx;
-  padding: 0;
-  border: 0;
-  border-radius: 24rpx;
-  background: #ffffff;
-  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
-}
-
-.icon-back-btn::after {
-  border: 0;
-}
-
-.back-icon {
-  width: 30rpx;
-  height: 30rpx;
-  display: block;
-}
-
-.mistake-head-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.head-title {
-  color: #101828;
-  font-size: 46rpx;
-  line-height: 1.25;
-  font-weight: 950;
-}
-
-.head-subtitle {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 24rpx;
-  line-height: 1.45;
-}
-
 .retest-entry-btn {
   flex: 0 0 auto;
   min-width: 150rpx;
   min-height: 64rpx;
+  margin: 0;
   padding: 0 22rpx;
   border: 0;
   border-radius: 22rpx;
   background: var(--gyt-primary);
   color: #ffffff;
   font-size: 24rpx;
+  line-height: 1.2;
   font-weight: 900;
   box-shadow: 0 14rpx 28rpx var(--gyt-primary-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
 .retest-entry-btn.ghost,
@@ -14764,8 +16136,8 @@ function formatDateTime(value) {
   margin-top: 20rpx;
   padding: 28rpx;
   border-radius: 34rpx;
-  background: linear-gradient(135deg, var(--gyt-primary-shadow), rgba(128, 90, 213, 0.08));
-  border: 2rpx solid rgba(91, 140, 255, 0.28);
+  background: rgba(255, 255, 255, .94);
+  border: 2rpx solid rgba(229, 226, 224, .94);
 }
 
 .diagnosis-title {
@@ -15245,34 +16617,24 @@ function formatDateTime(value) {
   box-sizing: border-box;
 }
 
+.menu-unread-dot {
+  position: absolute;
+  top: -6rpx;
+  right: -6rpx;
+  z-index: 2;
+  width: 16rpx;
+  height: 16rpx;
+  border: 3rpx solid #ffffff;
+  border-radius: 50%;
+  background: #f05d5d;
+  box-shadow: 0 3rpx 8rpx rgba(240, 93, 93, 0.34);
+  box-sizing: border-box;
+}
+
 .menu-icon-img {
   width: 34rpx;
   height: 34rpx;
   display: block;
-}
-
-.menu-icon.wallet-icon {
-  font-size: 0;
-}
-
-.menu-icon.wallet-icon::before {
-  content: '';
-  position: absolute;
-  width: 33rpx;
-  height: 24rpx;
-  border: 3rpx solid currentColor;
-  border-radius: 8rpx;
-  box-sizing: border-box;
-}
-
-.menu-icon.wallet-icon::after {
-  content: '';
-  position: absolute;
-  right: 11rpx;
-  width: 9rpx;
-  height: 9rpx;
-  border-radius: 50%;
-  background: currentColor;
 }
 
 .menu-icon.green {
@@ -15340,6 +16702,817 @@ function formatDateTime(value) {
   justify-content: center;
   font-size: 27rpx;
   font-weight: 900;
+}
+
+.home-page.profile-reference-page {
+  padding-right: 34rpx;
+  padding-left: 34rpx;
+  background: #f5f3f7;
+  color: #202633;
+}
+
+.home-page.profile-reference-page::before {
+  background: #f5f3f7;
+  filter: none;
+  transform: none;
+}
+
+.profile-reference-page .profile-dashboard {
+  position: relative;
+  z-index: 1;
+  max-width: 680rpx;
+  gap: 0;
+  overflow: visible;
+}
+
+.profile-avatar-button::after,
+.profile-exam-selector::after,
+.profile-exam-option::after,
+.profile-exam-modal-cancel::after {
+  border: 0;
+}
+
+.profile-identity {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  text-align: center;
+}
+
+.profile-avatar-button {
+  position: relative;
+  width: 222rpx;
+  height: 222rpx;
+  margin: 4rpx 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999rpx;
+  background: transparent;
+  overflow: visible;
+}
+
+.profile-reference-avatar {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  border: 10rpx solid rgba(255, 255, 255, 0.94);
+  border-radius: 999rpx;
+  background: linear-gradient(145deg, #ded9d4, #cfc8bd);
+  color: #786f65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 64rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-bold, 700);
+  box-shadow: 0 18rpx 44rpx rgba(57, 50, 66, 0.08);
+}
+
+.profile-reference-avatar-image {
+  display: block;
+  object-fit: cover;
+}
+
+.profile-avatar-edit {
+  position: absolute;
+  right: 4rpx;
+  bottom: 12rpx;
+  min-width: 60rpx;
+  height: 42rpx;
+  padding: 0 12rpx;
+  border: 4rpx solid #f5f3f7;
+  border-radius: 999rpx;
+  background: #ffffff;
+  color: #6f6a74;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+  box-shadow: 0 8rpx 18rpx rgba(38, 33, 45, 0.1);
+}
+
+.profile-reference-name {
+  max-width: 90%;
+  margin-top: 22rpx;
+  overflow: hidden;
+  color: #2b292d;
+  font-family: var(--gyt-app-font);
+  font-size: 42rpx;
+  line-height: 1.25;
+  font-weight: var(--gyt-font-weight-bold, 700);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.profile-exam-selector {
+  min-width: 224rpx;
+  min-height: 70rpx;
+  margin: 24rpx 0 0;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: 999rpx;
+  background: rgba(255, 255, 255, 0.96);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 14rpx;
+  color: #73707a;
+  box-shadow: 0 12rpx 30rpx rgba(58, 51, 66, 0.05);
+}
+
+.profile-exam-mark {
+  width: 48rpx;
+  height: 36rpx;
+  border-radius: 12rpx;
+  background: linear-gradient(135deg, #5c6df2, #9b54e8);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-bold, 700);
+}
+
+.profile-exam-code {
+  font-size: 26rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+  letter-spacing: 0.5rpx;
+}
+
+.profile-exam-arrow {
+  margin-top: -5rpx;
+  color: #bbb7bf;
+  font-size: 28rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.profile-reference-divider {
+  height: 2rpx;
+  margin: 18rpx 82rpx;
+  background: rgba(69, 61, 77, 0.09);
+}
+
+.profile-group + .profile-group {
+  margin-top: 30rpx;
+}
+
+.profile-group-title {
+  margin: 0 20rpx 14rpx;
+  color: #9b98a0;
+  font-size: 27rpx;
+  line-height: 1.3;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.profile-reference-page .profile-reference-card {
+  padding: 6rpx 28rpx;
+  border: 0;
+  border-radius: 36rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.profile-reference-page .menu-row {
+  min-height: 92rpx;
+  padding: 15rpx 0;
+  gap: 16rpx;
+  border-bottom: 2rpx solid rgba(42, 38, 48, 0.055);
+}
+
+.profile-reference-page .menu-icon {
+  width: 48rpx;
+  height: 48rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #282329;
+  box-shadow: none;
+  font-size: 26rpx;
+}
+
+.profile-reference-page .menu-icon.green,
+.profile-reference-page .menu-icon.purple,
+.profile-reference-page .menu-icon.orange,
+.profile-reference-page .menu-icon.dark,
+.profile-reference-page .menu-icon.locked {
+  border: 0;
+  background: transparent;
+  color: #282329;
+}
+
+.profile-reference-page .menu-icon-img {
+  width: 31rpx;
+  height: 31rpx;
+}
+
+.profile-reference-page .menu-copy {
+  min-height: 48rpx;
+}
+
+.profile-reference-page .menu-title {
+  color: #243343;
+  font-size: 27rpx;
+  line-height: 1.35;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.menu-row-value {
+  max-width: 180rpx;
+  overflow: hidden;
+  color: #b5b1b8;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: var(--gyt-font-weight-medium, 500);
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.profile-reference-page .menu-arrow {
+  color: #d0cdd2;
+  font-size: 36rpx;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.profile-reference-page .logout-card {
+  min-height: 92rpx;
+  margin: 32rpx 0 14rpx;
+  border: 2rpx solid #dc2626;
+  border-radius: 30rpx;
+  background: linear-gradient(135deg, #f25555 0%, #e53935 100%);
+  color: #ffffff;
+  box-shadow: 0 14rpx 30rpx rgba(220, 38, 38, 0.22);
+  font-size: 28rpx;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+  letter-spacing: 2rpx;
+  transition: transform 140ms ease, opacity 140ms ease;
+}
+
+.profile-reference-page .logout-card--pressed {
+  opacity: 0.88;
+  transform: scale(0.985);
+}
+
+/* “我的”页与全 App 共用同一套系统无衬线字体。 */
+.profile-reference-page {
+  --profile-display-font: var(--gyt-app-font);
+  font-family: var(--profile-display-font);
+}
+
+.profile-reference-page,
+.profile-reference-page * {
+  font-family: var(--profile-display-font);
+}
+
+.profile-reference-page .profile-reference-name {
+  font-family: var(--profile-display-font);
+  font-size: 46rpx;
+  font-weight: var(--gyt-font-weight-bold, 700);
+}
+
+.profile-reference-page .profile-exam-selector {
+  min-height: 74rpx;
+  margin-top: 8rpx;
+  padding-right: 26rpx;
+  padding-left: 26rpx;
+}
+
+.profile-reference-page .profile-exam-mark {
+  width: 54rpx;
+  height: 40rpx;
+  font-size: 18rpx;
+}
+
+.profile-reference-page .profile-exam-code {
+  font-size: 30rpx;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.profile-reference-page .profile-group-title {
+  margin-bottom: 8rpx;
+  font-size: 31rpx;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.profile-reference-page .profile-reference-card {
+  padding-right: 30rpx;
+  padding-left: 30rpx;
+  border-radius: 38rpx;
+}
+
+.profile-reference-page .menu-row {
+  min-height: 120rpx;
+  padding-top: 18rpx;
+  padding-bottom: 18rpx;
+  gap: 18rpx;
+}
+
+.profile-reference-page .menu-icon {
+  width: 56rpx;
+  height: 56rpx;
+  flex: 0 0 56rpx;
+  font-size: 30rpx;
+}
+
+.profile-reference-page .menu-icon-img {
+  width: 38rpx;
+  height: 38rpx;
+}
+
+.profile-reference-page .menu-copy {
+  min-height: 56rpx;
+}
+
+.profile-reference-page .menu-title-row {
+  gap: 14rpx;
+}
+
+.profile-reference-page .menu-title {
+  font-family: var(--profile-display-font);
+  font-size: 31rpx;
+  line-height: 1.3;
+  font-weight: var(--gyt-font-weight-semibold, 600);
+}
+
+.profile-reference-page .menu-row-value {
+  max-width: 196rpx;
+  font-size: 26rpx;
+  font-weight: var(--gyt-font-weight-medium, 500);
+}
+
+.profile-reference-page .menu-arrow {
+  font-size: 40rpx;
+  font-weight: var(--gyt-font-weight-medium, 500);
+}
+
+.profile-reference-page .pro-lock-badge {
+  padding: 6rpx 13rpx;
+  font-size: 19rpx;
+}
+
+.profile-reference-page .logout-card {
+  font-size: 28rpx;
+}
+
+/* 导航栏同步全局字体，保留原有字号、图标尺寸与间距。 */
+.profile-reference-page :deep(.tabbar.glass),
+.profile-reference-page :deep(.tabbar.glass *) {
+  font-family: var(--gyt-app-font);
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-icon-image) {
+  width: 20px;
+  height: 20px;
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-icon) {
+  font-size: 34rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-label) {
+  font-size: 12px;
+  line-height: 1.2;
+  font-weight: 600;
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-item) {
+  gap: 1px;
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-compact .tab-icon-image) {
+  width: 20px;
+  height: 20px;
+}
+
+.profile-reference-page :deep(.tabbar.glass .tab-compact .tab-label) {
+  font-size: 14px;
+  font-weight: 650;
+}
+
+.profile-exam-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 360;
+  padding: calc(env(safe-area-inset-top) + 30rpx) 34rpx calc(env(safe-area-inset-bottom) + 30rpx);
+  background: rgba(31, 29, 34, 0.36);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-backdrop-filter: blur(6px);
+  backdrop-filter: blur(6px);
+  animation: profile-exam-backdrop-in 180ms ease-out both;
+}
+
+.profile-exam-modal {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 650rpx;
+  padding: 38rpx 32rpx 26rpx;
+  border-radius: 40rpx;
+  background: #ffffff;
+  box-shadow: 0 30rpx 80rpx rgba(28, 25, 31, 0.2);
+  transform-origin: 50% 55%;
+  will-change: transform, opacity;
+  animation: profile-exam-surface-in 260ms cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+.profile-exam-modal-title {
+  color: #29272b;
+  text-align: center;
+  font-size: 36rpx;
+  line-height: 1.25;
+  font-weight: 900;
+}
+
+@keyframes profile-exam-backdrop-in {
+  from {
+    opacity: 0;
+  }
+
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes profile-exam-surface-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 28rpx, 0) scale(0.94);
+  }
+
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
+}
+
+.profile-exam-option-list {
+  margin-top: 28rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 14rpx;
+}
+
+.profile-exam-option {
+  width: 100%;
+  min-height: 124rpx;
+  margin: 0;
+  padding: 20rpx 22rpx;
+  border: 2rpx solid #eeebf0;
+  border-radius: 26rpx;
+  background: #faf9fb;
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  text-align: left;
+}
+
+.profile-exam-option.active {
+  border-color: rgba(117, 91, 222, 0.36);
+  background: #f4f1ff;
+}
+
+.profile-exam-option-copy {
+  min-width: 0;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.profile-exam-option-code {
+  color: #302d35;
+  font-size: 28rpx;
+  line-height: 1.2;
+  font-weight: 900;
+}
+
+.profile-exam-option-check {
+  width: 42rpx;
+  height: 42rpx;
+  border: 2rpx solid #d8d4dc;
+  border-radius: 999rpx;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  font-size: 22rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.profile-exam-option.active .profile-exam-option-check {
+  border-color: #765be0;
+  background: #765be0;
+}
+
+.profile-exam-modal-cancel {
+  width: 100%;
+  min-height: 74rpx;
+  margin: 18rpx 0 0;
+  padding: 0;
+  border: 0;
+  border-radius: 22rpx;
+  background: transparent;
+  color: #76717a;
+  font-size: 25rpx;
+  line-height: 74rpx;
+  font-weight: 750;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .profile-exam-modal-mask,
+  .profile-exam-modal {
+    animation: none;
+  }
+}
+
+.profile-edit-modal-mask,
+.profile-email-modal-mask {
+  position: fixed;
+  inset: 0;
+  z-index: 370;
+  box-sizing: border-box;
+  padding: calc(env(safe-area-inset-top) + 24rpx) 28rpx calc(env(safe-area-inset-bottom) + 24rpx);
+  background: rgba(31, 29, 39, 0.38);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-backdrop-filter: blur(8px);
+  backdrop-filter: blur(8px);
+}
+
+.profile-edit-modal,
+.profile-email-modal {
+  position: relative;
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 650rpx;
+  max-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 48rpx);
+  overflow-y: auto;
+  padding: 34rpx 32rpx calc(28rpx + env(safe-area-inset-bottom));
+  border: 1rpx solid rgba(113, 92, 192, 0.08);
+  border-radius: 38rpx;
+  background: #ffffff;
+  box-shadow: 0 30rpx 90rpx rgba(36, 30, 60, 0.22);
+}
+
+.profile-email-modal {
+  padding-bottom: calc(34rpx + env(safe-area-inset-bottom));
+}
+
+.profile-edit-modal-head {
+  position: relative;
+  min-height: 54rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.profile-edit-modal-title {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: calc(100% - 150rpx);
+  overflow: hidden;
+  transform: translate(-50%, -50%);
+  color: #282532;
+  text-align: center;
+  font-size: 34rpx;
+  line-height: 1.3;
+  font-weight: 900;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.profile-edit-modal-cancel,
+.profile-edit-avatar-trigger,
+.profile-edit-save,
+.profile-email-code-button {
+  border: 0;
+}
+
+.profile-edit-modal-cancel::after,
+.profile-edit-avatar-trigger::after,
+.profile-edit-save::after,
+.profile-email-code-button::after {
+  border: 0;
+}
+
+.profile-edit-modal-cancel {
+  position: relative;
+  z-index: 1;
+  width: 78rpx;
+  height: 54rpx;
+  margin: 0;
+  padding: 0;
+  border-radius: 18rpx;
+  background: #f5f3f8;
+  color: #777183;
+  font-size: 23rpx;
+  line-height: 54rpx;
+  font-weight: 750;
+}
+
+.profile-edit-avatar-trigger {
+  position: relative;
+  width: 190rpx;
+  height: 190rpx;
+  margin: 30rpx auto 0;
+  padding: 0;
+  border-radius: 999rpx;
+  background: linear-gradient(145deg, #ded9d4, #cfc8bd);
+  color: #786f65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+  box-shadow: 0 16rpx 36rpx rgba(57, 50, 66, 0.12);
+}
+
+.profile-edit-avatar-trigger.uploading {
+  opacity: 0.68;
+}
+
+.profile-edit-avatar-image,
+.profile-edit-avatar-fallback {
+  display: block;
+  width: 100%;
+  height: 100%;
+  border: 8rpx solid #ffffff;
+  border-radius: 999rpx;
+  box-sizing: border-box;
+}
+
+.profile-edit-avatar-image {
+  object-fit: cover;
+}
+
+.profile-edit-avatar-fallback {
+  color: #786f65;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 58rpx;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.profile-edit-avatar-badge {
+  position: absolute;
+  right: -6rpx;
+  bottom: 4rpx;
+  min-width: 62rpx;
+  height: 42rpx;
+  padding: 0 12rpx;
+  border: 4rpx solid #ffffff;
+  border-radius: 999rpx;
+  background: #765be0;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 800;
+  box-shadow: 0 8rpx 18rpx rgba(81, 62, 168, 0.2);
+}
+
+.profile-edit-avatar-hint {
+  margin-top: 16rpx;
+  color: #9b96a4;
+  text-align: center;
+  font-size: 21rpx;
+  line-height: 1.4;
+  font-weight: 600;
+}
+
+.profile-edit-field-label {
+  margin: 28rpx 0 12rpx;
+  color: #393442;
+  font-size: 24rpx;
+  line-height: 1.3;
+  font-weight: 850;
+}
+
+.profile-edit-input {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 84rpx;
+  padding: 0 24rpx;
+  border: 2rpx solid #ebe8f0;
+  border-radius: 22rpx;
+  background: #faf9fc;
+  color: #292633;
+  font-size: 27rpx;
+  line-height: 84rpx;
+  font-weight: 650;
+}
+
+.profile-edit-input:focus {
+  border-color: rgba(118, 91, 224, 0.58);
+  background: #ffffff;
+}
+
+.profile-edit-input::placeholder {
+  color: #b5b0bd;
+  font-weight: 500;
+}
+
+.profile-edit-copy {
+  margin-top: 16rpx;
+  color: #a09ba8;
+  font-size: 20rpx;
+  line-height: 1.45;
+  font-weight: 550;
+}
+
+.profile-edit-save {
+  width: 100%;
+  min-height: 84rpx;
+  margin: 28rpx 0 0;
+  padding: 0 24rpx;
+  border-radius: 24rpx;
+  background: linear-gradient(135deg, #6b66e8, #7650c8);
+  color: #ffffff;
+  font-size: 27rpx;
+  line-height: 84rpx;
+  font-weight: 850;
+  box-shadow: 0 14rpx 28rpx rgba(102, 79, 205, 0.2);
+}
+
+.profile-edit-save[disabled],
+.profile-email-code-button[disabled] {
+  opacity: 0.55;
+}
+
+.profile-email-current {
+  margin-top: 28rpx;
+  padding: 18rpx 20rpx;
+  border-radius: 18rpx;
+  background: #f7f5fb;
+  color: #777181;
+  font-size: 22rpx;
+  line-height: 1.45;
+  font-weight: 650;
+}
+
+.profile-email-code-row {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.profile-email-code-input {
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-email-code-button {
+  flex: 0 0 190rpx;
+  height: 84rpx;
+  margin: 0;
+  padding: 0 12rpx;
+  border-radius: 22rpx;
+  background: #eeebff;
+  color: #6650c7;
+  font-size: 22rpx;
+  line-height: 84rpx;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+@media screen and (max-width: 360px) {
+  .profile-edit-modal-mask,
+  .profile-email-modal-mask {
+    padding-right: 18rpx;
+    padding-left: 18rpx;
+  }
+
+  .profile-edit-modal,
+  .profile-email-modal {
+    padding-right: 24rpx;
+    padding-left: 24rpx;
+    border-radius: 32rpx;
+  }
+
+  .profile-email-code-row {
+    gap: 10rpx;
+  }
+
+  .profile-email-code-button {
+    flex-basis: 164rpx;
+    font-size: 20rpx;
+  }
 }
 
 .advice-detail-close,
@@ -15640,7 +17813,7 @@ function formatDateTime(value) {
   --circle-glass-active: var(--gyt-primary-tint, #f4f8ff);
   --circle-tab-bg: rgba(255, 255, 255, 0.94);
   --circle-tab-shadow: 0 20rpx 52rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.12));
-  --circle-font: "PingFang SC", "Microsoft YaHei", "Segoe UI", sans-serif;
+  --circle-font: var(--gyt-app-font);
   background: var(--gyt-page-bg);
   color: #172033;
 }
@@ -15753,25 +17926,923 @@ function formatDateTime(value) {
   color: var(--gyt-primary, #3478f6);
 }
 
+/* 考研圈采用连续信息流：控制区轻量、内容区保持高阅读对比度。 */
+.home-page.circle-glass-page.circle-themed-page .circle-community-tabs {
+  border-color: var(--gyt-primary-border, #d7e5ff);
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 8rpx 22rpx rgba(25, 48, 89, 0.055);
+}
 
+.home-page.circle-glass-page.circle-themed-page .circle-community-tab.active {
+  border: 0;
+  background: transparent;
+  color: var(--gyt-primary, #3478f6);
+  box-shadow: none;
+}
+
+.home-page.circle-glass-page.circle-themed-page .experience-search {
+  min-height: 72rpx;
+  padding-right: 16rpx;
+  padding-left: 16rpx;
+  border-color: rgba(205, 219, 241, 0.92);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 7rpx 20rpx rgba(25, 48, 89, 0.045);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page.circle-themed-page .community-filter-chip {
+  border: 0;
+  background: rgba(255, 255, 255, 0.8);
+  color: #647086;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page.circle-themed-page .community-filter-chip.active {
+  border: 0;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+}
+/* 刷题与研圈首页共用同一套首屏坐标：顶部概览区 + 四个等高入口。 */
+.home-page.practice-home-page {
+  --practice-overview-height: 230px;
+  --practice-entry-gap: 10px;
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px);
+}
+
+.practice-dashboard {
+  width: 100%;
+  max-width: 860rpx;
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  min-height: 0;
+  gap: var(--practice-entry-gap);
+}
+
+.practice-dashboard .welcome-card {
+  height: var(--practice-overview-height);
+  min-height: 0;
+  flex: 0 0 var(--practice-overview-height);
+  padding: 24px 18px 20px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.practice-dashboard .practice-data-card {
+  justify-content: flex-start;
+  padding: 12px 14px 9px;
+}
+
+.practice-data-header {
+  min-height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.practice-data-title {
+  min-width: 0;
+  color: #172033;
+  font-size: 19px;
+  line-height: 1.2;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.practice-data-period {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: #7d8798;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.practice-data-overview {
+  flex: 1 1 0;
+  min-height: 0;
+  margin-top: 6px;
+  display: grid;
+  grid-template-columns: 132px minmax(0, 1fr);
+  align-items: center;
+  gap: 8px;
+}
+
+.practice-accuracy-ring {
+  position: relative;
+  width: 128px;
+  height: 128px;
+  justify-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.practice-accuracy-svg {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.practice-accuracy-track,
+.practice-accuracy-progress {
+  fill: none;
+  stroke-width: 8;
+}
+
+.practice-accuracy-track {
+  stroke: var(--gyt-primary-soft, #edf4ff);
+}
+
+.practice-accuracy-progress {
+  stroke: var(--gyt-primary, #3478f6);
+  stroke-linecap: round;
+  transition: stroke-dashoffset 320ms ease;
+}
+
+.practice-accuracy-copy {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+}
+
+.practice-accuracy-value {
+  color: #172033;
+  font-size: 30px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.5px;
+}
+
+.practice-accuracy-label {
+  margin-top: 5px;
+  color: #7d8798;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+}
+
+.practice-key-metrics {
+  min-width: 0;
+  height: 128px;
+  box-sizing: border-box;
+  padding-left: 12px;
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  align-items: stretch;
+}
+
+.practice-key-metric {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.practice-key-icon {
+  width: 32px;
+  height: 32px;
+  flex: 0 0 32px;
+  border-radius: 11px;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.practice-stat-icon {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+.practice-stat-icon-fill {
+  fill: var(--gyt-primary, #3478f6);
+  fill-opacity: 0.3;
+}
+
+.practice-stat-icon-fill-secondary {
+  fill: var(--gyt-primary, #3478f6);
+  fill-opacity: 0.16;
+}
+
+.practice-stat-icon-outline,
+.practice-stat-icon-line {
+  stroke: #263345;
+  stroke-width: 3;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+
+.practice-stat-icon-line {
+  fill: none;
+}
+
+.practice-key-copy {
+  min-width: 0;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.practice-key-value {
+  min-width: 50px;
+  color: #172033;
+  font-size: 22px;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.practice-key-label {
+  overflow: hidden;
+  color: #7d8798;
+  font-size: 13px;
+  line-height: 1.2;
+  font-weight: 600;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-data-link {
+  min-height: 18px;
+  margin-top: 2px;
+  color: #4d596b;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 700;
+}
+
+.practice-data-link-arrow {
+  color: var(--gyt-primary, #3478f6);
+  font-size: 19px;
+  line-height: 0.8;
+  font-weight: 700;
+}
+
+.practice-dashboard .welcome-main {
+  gap: 13px;
+}
+
+.practice-dashboard .wave-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 18px;
+}
+
+.practice-dashboard .welcome-title {
+  font-size: 21px;
+  line-height: 1.24;
+  font-weight: 600;
+}
+
+.practice-dashboard .stats-card {
+  margin-top: 20px;
+  padding: 12px 4px;
+  border-radius: 24px;
+  box-shadow: none;
+}
+
+.practice-dashboard .stat-value {
+  font-size: 24px;
+}
+
+.practice-dashboard .stat-label {
+  margin-top: 6px;
+  font-size: 14px;
+}
+
+.practice-dashboard .stat-divider {
+  width: 1px;
+  height: 38px;
+}
+
+.practice-entry-list {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1 1 0;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding: 6rpx 30rpx;
+  border: 0;
+  border-radius: 38rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.045);
+  overflow: hidden;
+}
+
+.practice-entry-list :deep(.module-card),
+.practice-dashboard .mock-exam-card {
+  width: 100%;
+  min-height: 108rpx;
+  height: 100%;
+  margin: 0;
+  padding: 18rpx 0;
+  border: 0;
+  border-bottom: 2rpx solid rgba(42, 55, 79, 0.065);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.practice-dashboard .mock-exam-card {
+  display: flex;
+  align-items: center;
+  gap: 18rpx;
+  overflow: hidden;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.practice-dashboard .mock-exam-card:active {
+  background: var(--gyt-primary-tint, #f4f8ff);
+  opacity: 0.88;
+}
+
+.practice-dashboard .mock-exam-main {
+  min-width: 0;
+  flex: 1;
+  gap: 18rpx;
+  padding: 0;
+}
+
+.practice-dashboard .mock-exam-icon {
+  width: 96rpx;
+  height: 96rpx;
+  flex: 0 0 96rpx;
+  border-radius: 28rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  box-shadow: none;
+  font-size: 70rpx;
+  font-weight: 800;
+}
+
+.practice-dashboard .mock-exam-title {
+  color: #243343;
+  font-size: 38rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.practice-dashboard .mock-exam-sub {
+  margin-top: 5rpx;
+  overflow: hidden;
+  font-size: 21rpx;
+  line-height: 1.35;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.practice-dashboard .mock-exam-arrow {
+  position: static;
+  width: 40rpx;
+  height: 56rpx;
+  flex: 0 0 40rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #c5cbd4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 40rpx;
+  line-height: 1;
+  font-weight: 650;
+}
+
+.practice-dashboard .mock-exam-card {
+  border-bottom: 0;
+}
+
+.glass-theme-page:not(.landing-glass-page) .practice-entry-list :deep(.module-card),
+.glass-theme-page:not(.landing-glass-page) .practice-dashboard .mock-exam-card {
+  box-shadow: none;
+}
+
+@media (max-height: 760px) {
+  .home-page.practice-home-page {
+    --practice-overview-height: 220px;
+  }
+
+  .practice-dashboard .welcome-card {
+    padding: 20px 16px 16px;
+  }
+
+  .practice-dashboard .practice-data-card {
+    padding: 9px 12px 7px;
+  }
+
+  .practice-data-title {
+    font-size: 18px;
+  }
+
+  .practice-data-overview {
+    grid-template-columns: 116px minmax(0, 1fr);
+    gap: 8px;
+  }
+
+  .practice-accuracy-ring,
+  .practice-key-metrics {
+    width: 112px;
+    height: 112px;
+  }
+
+  .practice-key-metrics {
+    width: auto;
+  }
+
+  .practice-accuracy-value {
+    font-size: 27px;
+  }
+
+  .practice-accuracy-label {
+    font-size: 11px;
+  }
+
+  .practice-key-icon {
+    width: 29px;
+    height: 29px;
+    flex-basis: 29px;
+  }
+
+  .practice-key-value {
+    min-width: 44px;
+    font-size: 20px;
+  }
+
+  .practice-key-label {
+    font-size: 12px;
+  }
+
+  .practice-data-link {
+    margin-top: 2px;
+  }
+
+  .practice-dashboard .wave-icon {
+    width: 46px;
+    height: 46px;
+    border-radius: 16px;
+  }
+
+  .practice-dashboard .welcome-title {
+    font-size: 19px;
+  }
+
+  .practice-dashboard .stats-card {
+    margin-top: 16px;
+    padding-top: 10px;
+    padding-bottom: 10px;
+  }
+
+  .practice-dashboard .stat-value {
+    font-size: 22px;
+  }
+
+  .practice-dashboard .stat-label {
+    font-size: 13px;
+  }
+
+  .practice-entry-list :deep(.module-card),
+  .practice-dashboard .mock-exam-card {
+    min-height: 96rpx;
+    padding: 14rpx 0;
+    gap: 16rpx;
+  }
+
+  .practice-entry-list {
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    padding-top: 4rpx;
+    padding-bottom: 4rpx;
+  }
+
+  .practice-dashboard .mock-exam-main {
+    gap: 16rpx;
+  }
+
+  .practice-dashboard .mock-exam-icon {
+    width: 84rpx;
+    height: 84rpx;
+    flex-basis: 84rpx;
+    border-radius: 24rpx;
+    font-size: 62rpx;
+  }
+
+  .practice-dashboard .mock-exam-title {
+    font-size: 36rpx;
+  }
+
+  .practice-dashboard .mock-exam-sub {
+    font-size: 20rpx;
+  }
+
+  .practice-dashboard .mock-exam-arrow {
+    width: 36rpx;
+    height: 52rpx;
+    flex-basis: 36rpx;
+    font-size: 36rpx;
+  }
+}
+
+@media (max-width: 350px) {
+  .practice-data-overview {
+    grid-template-columns: 108px minmax(0, 1fr);
+    gap: 7px;
+  }
+
+  .practice-accuracy-ring,
+  .practice-key-metrics {
+    width: 104px;
+    height: 104px;
+  }
+
+  .practice-key-metrics {
+    width: auto;
+    padding-left: 6px;
+  }
+
+  .practice-key-icon {
+    width: 28px;
+    height: 28px;
+    flex-basis: 28px;
+  }
+
+  .practice-key-copy {
+    gap: 5px;
+  }
+
+  .practice-key-value {
+    min-width: 38px;
+    font-size: 19px;
+  }
+
+  .practice-key-label {
+    font-size: 10px;
+  }
+
+  .practice-entry-list :deep(.module-card),
+  .practice-dashboard .mock-exam-card {
+    gap: 14rpx;
+  }
+
+  .practice-dashboard .mock-exam-main {
+    gap: 14rpx;
+  }
+}
+
+/* 刷题与研圈入口统一采用“我的”页面的分组列表语言。 */
+.home-page.circle-glass-page .circle-overview .circle-entry-list {
+  box-sizing: border-box;
+  min-height: 0;
+  flex: 1 1 0;
+  display: grid;
+  grid-template-rows: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding: 6rpx 30rpx;
+  border: 0;
+  border-radius: 38rpx;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.045);
+  overflow: hidden;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry {
+  box-sizing: border-box;
+  min-height: 108rpx;
+  height: 100%;
+  margin: 0;
+  padding: 18rpx 0;
+  border: 0;
+  border-bottom: 2rpx solid rgba(42, 55, 79, 0.065);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  gap: 18rpx;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: background-color 160ms ease, opacity 160ms ease;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry:last-child {
+  border-bottom: 0;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry:active {
+  background: var(--gyt-primary-tint, #f4f8ff);
+  opacity: 0.88;
+  transform: none;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry-icon {
+  box-sizing: border-box;
+  width: 96rpx;
+  height: 96rpx;
+  flex: 0 0 96rpx;
+  border: 0;
+  border-radius: 28rpx;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry-icon-mask {
+  width: 88rpx;
+  height: 88rpx;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry-label {
+  color: #243343;
+  font-size: 38rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.home-page.circle-glass-page .circle-overview .circle-entry-arrow {
+  width: 40rpx;
+  height: 56rpx;
+  flex: 0 0 40rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: #c5cbd4;
+  font-size: 40rpx;
+  line-height: 1;
+  font-weight: 650;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.circle-entry-unread-count,
+.circle-community-tab-unread,
+.mentor-entry-unread-badge {
+  box-sizing: border-box;
+  min-width: 30rpx;
+  height: 30rpx;
+  padding: 0 8rpx;
+  border: 3rpx solid rgba(255, 255, 255, 0.94);
+  border-radius: 999rpx;
+  background: #f25555;
+  color: #ffffff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 17rpx;
+  line-height: 1;
+  font-weight: var(--gyt-font-weight-bold, 700);
+  white-space: nowrap;
+  box-shadow: 0 4rpx 10rpx rgba(242, 85, 85, 0.2);
+}
+
+.circle-entry-unread-count {
+  flex: 0 0 auto;
+}
+
+.circle-community-tab-unread {
+  margin-left: 7rpx;
+  transform: translateY(-8rpx);
+}
+
+.mentor-unread-entry-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2rpx;
+  overflow: hidden;
+  border: 2rpx solid rgba(52, 120, 246, 0.12);
+  border-radius: 24rpx;
+  background: rgba(255, 255, 255, 0.9);
+}
+
+.mentor-unread-entry {
+  min-height: 80rpx;
+  margin: 0;
+  padding: 14rpx 18rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  gap: 13rpx;
+  text-align: left;
+}
+
+.mentor-unread-entry + .mentor-unread-entry {
+  border-top: 2rpx solid rgba(42, 55, 79, 0.065);
+}
+
+.mentor-unread-entry::after {
+  border: 0;
+}
+
+.mentor-unread-entry:active {
+  background: var(--gyt-primary-tint, #f4f8ff);
+}
+
+.mentor-unread-entry-dot {
+  width: 14rpx;
+  height: 14rpx;
+  flex: 0 0 14rpx;
+  border-radius: 50%;
+  background: #f25555;
+  box-shadow: 0 0 0 6rpx rgba(242, 85, 85, 0.1);
+}
+
+.mentor-unread-entry-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.mentor-unread-entry-copy strong,
+.mentor-unread-entry-copy text {
+  display: block;
+}
+
+.mentor-unread-entry-copy strong {
+  color: #26384f;
+  font-size: 23rpx;
+  line-height: 1.3;
+  font-weight: 900;
+}
+
+.mentor-unread-entry-copy text {
+  margin-top: 4rpx;
+  color: #8491a4;
+  font-size: 18rpx;
+  line-height: 1.35;
+  font-weight: 700;
+}
+
+.mentor-unread-entry-arrow {
+  flex: 0 0 auto;
+  color: #a8b3c2;
+  font-size: 34rpx;
+  line-height: 1;
+}
+
+.community-unread-entry {
+  min-height: 68rpx;
+  margin: 0;
+  padding: 12rpx 17rpx;
+  border: 2rpx solid rgba(242, 85, 85, 0.12);
+  border-radius: 20rpx;
+  background: rgba(255, 255, 255, 0.88);
+  color: #5d6d82;
+  display: flex;
+  align-items: center;
+  gap: 13rpx;
+  font-size: 20rpx;
+  line-height: 1.35;
+  font-weight: 750;
+  text-align: left;
+}
+
+.community-unread-entry::after {
+  border: 0;
+}
+
+.community-unread-entry text {
+  min-width: 0;
+  flex: 1;
+}
+
+.community-unread-entry strong {
+  flex: 0 0 auto;
+  color: var(--gyt-primary, #3478f6);
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.community-post-card.has-unread-interaction {
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.community-post-unread-badge {
+  min-width: max-content;
+  padding: 7rpx 11rpx;
+  border-radius: 999rpx;
+  background: rgba(242, 85, 85, 0.1);
+  color: #d94b4b;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.mentor-console-entry {
+  position: fixed;
+}
+
+.mentor-entry-unread-badge {
+  position: absolute;
+  top: -7rpx;
+  right: -7rpx;
+}
+
+@media (max-height: 760px) {
+  .home-page.circle-glass-page .circle-overview .circle-entry-list {
+    grid-template-rows: repeat(4, minmax(0, 1fr));
+    padding-top: 4rpx;
+    padding-bottom: 4rpx;
+  }
+
+  .home-page.circle-glass-page .circle-overview .circle-entry {
+    min-height: 96rpx;
+    padding-top: 14rpx;
+    padding-bottom: 14rpx;
+    gap: 16rpx;
+  }
+
+  .home-page.circle-glass-page .circle-overview .circle-entry-icon {
+    width: 84rpx;
+    height: 84rpx;
+    flex-basis: 84rpx;
+    border-radius: 24rpx;
+  }
+
+  .home-page.circle-glass-page .circle-overview .circle-entry-icon-mask {
+    width: 78rpx;
+    height: 78rpx;
+  }
+
+  .home-page.circle-glass-page .circle-overview .circle-entry-label {
+    font-size: 36rpx;
+  }
+
+  .home-page.circle-glass-page .circle-overview .circle-entry-arrow {
+    width: 36rpx;
+    height: 52rpx;
+    flex-basis: 36rpx;
+    font-size: 36rpx;
+  }
+}
 
 /* #ifdef MP-WEIXIN */
 .home-page {
   padding-top: var(--mp-page-content-top, 96px);
 }
 
+.home-page.practice-home-page {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
 .home-header {
-  min-height: var(--mp-page-header-height, 40px);
+  --home-header-control-size: 68rpx;
+  min-height: 0;
   padding: 2rpx 10rpx 0;
 }
 
 .brand-line {
   gap: 0;
+  align-items: center;
 }
 
-.brand-badge {
-  padding: 8rpx 14rpx;
-  font-size: 24rpx;
+.home-header-brand {
+  gap: 10rpx;
+}
+
+.home-header-logo {
+  border-radius: 16rpx;
+}
+
+.home-header-title {
+  font-size: 30rpx;
+}
+
+.home-header-status {
+  margin-top: 12rpx;
+  gap: 8rpx;
+}
+
+.home-status-pill {
+  padding: 9rpx 12rpx;
+  gap: 6rpx;
+}
+
+.home-status-label {
+  font-size: 18rpx;
+}
+
+.home-status-value {
+  font-size: 19rpx;
 }
 
 .home-actions {
@@ -15779,9 +18850,7 @@ function formatDateTime(value) {
 }
 
 .message-bell {
-  width: 66rpx;
-  height: 66rpx;
-  line-height: 66rpx;
+  line-height: 1;
 }
 
 .message-bell-icon {
@@ -15790,27 +18859,10 @@ function formatDateTime(value) {
 }
 
 .profile-entry {
-  width: 68rpx;
-  height: 68rpx;
-  border-radius: 34rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.9);
   box-shadow: 0 8rpx 20rpx rgba(20, 31, 66, 0.1);
 }
 
-.mistake-list-head,
-.report-topbar {
-  top: var(--mp-page-content-top, 96px);
-}
-
-.mistake-list-head-spacer {
-  height: calc(var(--mp-page-header-height, 40px) + 38rpx);
-  flex-basis: calc(var(--mp-page-header-height, 40px) + 38rpx);
-}
-
-.report-header-spacer {
-  height: calc(var(--mp-page-header-height, 40px) + 22rpx);
-  flex-basis: calc(var(--mp-page-header-height, 40px) + 22rpx);
-}
 /* #endif */
 
 @media (prefers-reduced-motion: reduce) {
@@ -15819,8 +18871,274 @@ function formatDateTime(value) {
   .circle-section-back-enter-active,
   .circle-section-back-leave-active,
   .circle-reader-enter-active,
-  .circle-reader-leave-active {
+  .circle-reader-leave-active,
+  .subscription-sheet-mask,
+  .subscription-sheet {
     transition-duration: 1ms !important;
   }
 }
+
+.community-author-verified {
+  display: inline-flex;
+  align-items: center;
+  margin-left: 8rpx;
+  padding: 3rpx 7rpx;
+  border-radius: 999rpx;
+  vertical-align: middle;
+  color: #287d6d;
+  background: #e5f7f1;
+  font-size: 16rpx;
+  font-weight: 800;
+  line-height: 1.25;
+}
+
+.community-reader-comment-more {
+  width: 54rpx;
+  min-width: 54rpx;
+  height: 54rpx;
+  min-height: 54rpx;
+  margin: 0 0 0 4rpx;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  color: #91a0b1;
+  background: transparent;
+  font-size: 20rpx;
+  line-height: 1;
+}
+
+.community-reader-comment-more::after {
+  border: 0;
+}
+
+.profile-message-entry {
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  margin: 20rpx 0;
+  padding: 21rpx 22rpx;
+  border: 2rpx solid rgba(229, 226, 224, .94);
+  border-radius: 25rpx;
+  background: rgba(255, 255, 255, .94);
+  box-shadow: 0 10rpx 24rpx rgba(48, 42, 38, .045);
+}
+
+.profile-message-icon {
+  width: 54rpx;
+  height: 54rpx;
+  flex: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18rpx;
+  color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary-soft, #edf4ff);
+}
+
+.profile-message-icon > view {
+  width: 28rpx;
+  height: 28rpx;
+  background: currentColor;
+  -webkit-mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
+  mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
+}
+
+.profile-message-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.profile-message-title {
+  color: #2b3d59;
+  font-size: 24rpx;
+  font-weight: 900;
+  line-height: 1.35;
+}
+
+.profile-message-desc {
+  margin-top: 5rpx;
+  overflow: hidden;
+  color: #8495aa;
+  font-size: 19rpx;
+  line-height: 1.4;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.profile-message-count {
+  min-width: 32rpx;
+  height: 32rpx;
+  padding: 0 8rpx;
+  box-sizing: border-box;
+  border-radius: 16rpx;
+  color: #fff;
+  background: #f05d5d;
+  font-size: 17rpx;
+  font-weight: 900;
+  line-height: 32rpx;
+  text-align: center;
+}
+
+/* 历年分数线沿用“我的”页的分组卡语言：暖灰底、白卡、深色信息，
+   仅保留绿色分数作为数据语义色。 */
+.home-page.circle-glass-page .circle-scoreline-section {
+  --scoreline-surface: rgba(255, 255, 255, 0.96);
+  --scoreline-soft: #f7f6f8;
+  --scoreline-ink: #243343;
+  --scoreline-muted: #85808a;
+  --scoreline-line: rgba(42, 38, 48, 0.065);
+  --scoreline-arrow: #c9c5cc;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-control,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-search {
+  border: 0;
+  background: var(--scoreline-surface);
+  box-shadow: 0 10rpx 26rpx rgba(56, 49, 64, 0.045);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-control {
+  min-height: 72rpx;
+  padding-right: 20rpx;
+  padding-left: 20rpx;
+  border-radius: 24rpx;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-search {
+  min-height: 84rpx;
+  border-radius: 28rpx;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-name,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-search-icon,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-search-placeholder {
+  color: var(--scoreline-muted);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-value {
+  color: #4b4750;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-arrow-icon {
+  background: #aaa5ad;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-search-clear {
+  background: #f0eef2;
+  color: #68636c;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-frame {
+  border: 0;
+  border-radius: 36rpx;
+  background: var(--scoreline-surface);
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-heading {
+  min-height: 86rpx;
+  padding: 18rpx 28rpx;
+  border-bottom-color: var(--scoreline-line);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-title,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-name {
+  color: var(--scoreline-ink);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-count,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-reset {
+  color: #8f8a93;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-results-content {
+  padding: 0 28rpx 24rpx;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-list {
+  gap: 0;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-card {
+  padding: 26rpx 0;
+  border: 0;
+  border-bottom: 2rpx solid var(--scoreline-line);
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-card:last-child {
+  border-bottom: 0;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-card:active {
+  background: rgba(247, 246, 248, 0.72);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-meta,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-year-label {
+  color: var(--scoreline-muted);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-school-arrow {
+  color: var(--scoreline-arrow);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-year-cell,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-note {
+  background: var(--scoreline-soft);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-load-more {
+  margin-top: 18rpx;
+  border: 0;
+  background: var(--scoreline-soft);
+  color: #68636c;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-empty-card {
+  border: 0;
+  background: transparent;
+  box-shadow: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-card {
+  border: 0;
+  background: var(--scoreline-surface);
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.04);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-region {
+  background: #f0eef2;
+  color: #68636c;
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-chart,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-history-list,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-history-item {
+  border-color: var(--scoreline-line);
+}
+
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-card .circle-score-line,
+.home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-card .circle-score-point {
+  stroke: #16786f;
+}
+
+/* 顶部轮播数据卡与“我的”页分组卡使用同一层白色底。 */
+.home-page.circle-glass-page .circle-overview .circle-insight-swiper .circle-glass-surface {
+  background: rgba(255, 255, 255, 0.94);
+}
+
 </style>

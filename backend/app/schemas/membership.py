@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class MembershipStatusResponse(BaseModel):
@@ -18,6 +18,23 @@ class MembershipPlan(BaseModel):
     price_label: str
     duration_days: int
     description: str
+
+
+class MembershipSubscriptionPageConfigPayload(BaseModel):
+    title: str = Field(min_length=1, max_length=30)
+    brand_name: str = Field(min_length=1, max_length=50)
+    benefits: list[str] = Field(min_length=1, max_length=8)
+    monthly_price_cents: int = Field(ge=1, le=1_000_000)
+    quarterly_price_cents: int = Field(ge=1, le=1_000_000)
+    plan_hint: str = Field(min_length=1, max_length=80)
+    primary_button_text: str = Field(min_length=1, max_length=30)
+    secondary_button_text: str = Field(min_length=1, max_length=30)
+    description_text: str = Field(min_length=1, max_length=180)
+    terms_text: str = Field(min_length=1, max_length=60)
+
+
+class MembershipSubscriptionPageConfig(MembershipSubscriptionPageConfigPayload):
+    updated_at: str | None = None
 
 
 class CreateMembershipOrderRequest(BaseModel):

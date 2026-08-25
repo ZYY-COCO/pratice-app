@@ -57,8 +57,8 @@ defineProps({
 .chart-shell {
   padding: 28rpx;
   border-radius: 34rpx;
-  background: linear-gradient(180deg, #fbfcff, var(--gyt-primary-tint));
-  border: 2rpx solid #e6ebf5;
+  background: rgba(255, 255, 255, 0.94);
+  border: 2rpx solid rgba(229, 226, 224, 0.94);
 }
 
 .title {

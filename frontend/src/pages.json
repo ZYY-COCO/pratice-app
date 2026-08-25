@@ -8,17 +8,11 @@
       }
     },
     {
-      "path": "pages/major-catalog/index",
+      "path": "pages/notifications/index",
       "style": {
-        "navigationBarTitleText": "专业目录",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/school-announcements/index",
-      "style": {
-        "navigationBarTitleText": "院校公告",
-        "navigationStyle": "custom"
+        "navigationBarTitleText": "消息中心",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
@@ -26,7 +20,7 @@
       "style": {
         "navigationBarTitleText": "发布话题",
         "navigationStyle": "custom",
-        "backgroundColor": "#edf4f4"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
@@ -34,79 +28,39 @@
       "style": {
         "navigationBarTitleText": "赞过的帖子",
         "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
-      "path": "pages/circle/mentor-detail",
+      "path": "pages/circle/my-posts",
       "style": {
-        "navigationBarTitleText": "前辈详情",
+        "navigationBarTitleText": "我的帖子",
         "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
-      "path": "pages/circle/mentor-booking",
+      "path": "pages/circle/community-report",
       "style": {
-        "navigationBarTitleText": "预约咨询",
+        "navigationBarTitleText": "内容举报",
         "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
-      "path": "pages/circle/mentor-schedule",
+      "path": "pages/circle/community-reports",
       "style": {
-        "navigationBarTitleText": "预约时段",
+        "navigationBarTitleText": "我的举报",
         "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
-      "path": "pages/circle/mentor-info",
+      "path": "pages/circle/community-appeal",
       "style": {
-        "navigationBarTitleText": "我的信息",
+        "navigationBarTitleText": "提交内容申诉",
         "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-consult-form",
-      "style": {
-        "navigationBarTitleText": "填写咨询信息",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-waiting",
-      "style": {
-        "navigationBarTitleText": "咨询状态",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-chat",
-      "style": {
-        "navigationBarTitleText": "咨询聊天",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-report",
-      "style": {
-        "navigationBarTitleText": "举报咨询",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/circle/mentor-apply",
-      "style": {
-        "navigationBarTitleText": "申请成为前辈",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
@@ -137,7 +91,8 @@
     {
       "path": "pages/pro/index",
       "style": {
-        "navigationBarTitleText": "学习功能说明"
+        "navigationBarTitleText": "学习功能说明",
+        "navigationStyle": "custom"
       }
     },
     {
@@ -148,41 +103,18 @@
       }
     },
     {
-      "path": "pages/wallet/index",
-      "style": {
-        "navigationBarTitleText": "我的钱包",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/transaction-detail",
-      "style": {
-        "navigationBarTitleText": "账单详情",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/withdraw",
-      "style": {
-        "navigationBarTitleText": "提现",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
-      "path": "pages/wallet/withdrawal-records",
-      "style": {
-        "navigationBarTitleText": "提现记录",
-        "navigationStyle": "custom",
-        "backgroundColor": "#f4f8ff"
-      }
-    },
-    {
       "path": "pages/about/index",
       "style": {
-        "navigationBarTitleText": "关于我们"
+        "navigationBarTitleText": "关于我们",
+        "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/feedback/index",
+      "style": {
+        "navigationBarTitleText": "我的反馈",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f5f3f7"
       }
     },
     {
@@ -192,37 +124,9 @@
       }
     },
     {
-      "path": "pages/admin/index",
-      "style": {
-        "navigationBarTitleText": "后台管理",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/admin/question-login",
-      "style": {
-        "navigationBarTitleText": "登录",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/admin/question-desktop",
-      "style": {
-        "navigationBarTitleText": "后台管理",
-        "navigationStyle": "custom"
-      }
-    },
-    {
-      "path": "pages/admin/question-image-import",
-      "style": {
-        "navigationBarTitleText": "批量导入",
-        "navigationStyle": "custom"
-      }
-    },
-    {
       "path": "pages/leaderboard/index",
       "style": {
-        "navigationBarTitleText": "排行榜",
+        "navigationBarTitleText": "学习统计",
         "navigationStyle": "custom"
       }
     },
@@ -245,6 +149,206 @@
     "navigationBarTextStyle": "black",
     "navigationBarTitleText": "港研通",
     "navigationBarBackgroundColor": "#f5f7fb",
-    "backgroundColor": "#f5f7fb"
-  }
+    "backgroundColor": "#f5f3f7"
+  },
+  "subPackages": [
+    {
+      "root": "pages-sub-consultation",
+      "pages": [
+        {
+          "path": "consultation/mentor-detail",
+          "style": {
+            "navigationBarTitleText": "前辈详情",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-booking",
+          "style": {
+            "navigationBarTitleText": "预约咨询",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-schedule",
+          "style": {
+            "navigationBarTitleText": "预约时段",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-info",
+          "style": {
+            "navigationBarTitleText": "我的信息",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-consult-form",
+          "style": {
+            "navigationBarTitleText": "填写咨询信息",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-waiting",
+          "style": {
+            "navigationBarTitleText": "咨询状态",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-chat",
+          "style": {
+            "navigationBarTitleText": "咨询聊天",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/my-consultations",
+          "style": {
+            "navigationBarTitleText": "我的咨询",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-report",
+          "style": {
+            "navigationBarTitleText": "举报咨询",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-support",
+          "style": {
+            "navigationBarTitleText": "平台处理进度",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-response",
+          "style": {
+            "navigationBarTitleText": "提交处理说明",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-appeal",
+          "style": {
+            "navigationBarTitleText": "申请复核",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "consultation/mentor-apply",
+          "style": {
+            "navigationBarTitleText": "申请成为前辈",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-sub-wallet",
+      "pages": [
+        {
+          "path": "wallet/index",
+          "style": {
+            "navigationBarTitleText": "我的钱包",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "wallet/transaction-detail",
+          "style": {
+            "navigationBarTitleText": "账单详情",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "wallet/withdraw",
+          "style": {
+            "navigationBarTitleText": "提现",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        },
+        {
+          "path": "wallet/withdrawal-records",
+          "style": {
+            "navigationBarTitleText": "提现记录",
+            "navigationStyle": "custom",
+            "backgroundColor": "#f5f3f7"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-sub-admin",
+      "pages": [
+        {
+          "path": "admin/index",
+          "style": {
+            "navigationBarTitleText": "后台管理",
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "admin/question-login",
+          "style": {
+            "navigationBarTitleText": "登录",
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "admin/question-desktop",
+          "style": {
+            "navigationBarTitleText": "后台管理",
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "admin/question-image-import",
+          "style": {
+            "navigationBarTitleText": "批量导入",
+            "navigationStyle": "custom"
+          }
+        }
+      ]
+    },
+    {
+      "root": "pages-sub-data",
+      "pages": [
+        {
+          "path": "major-catalog/index",
+          "style": {
+            "navigationBarTitleText": "专业目录",
+            "navigationStyle": "custom"
+          }
+        },
+        {
+          "path": "school-announcements/index",
+          "style": {
+            "navigationBarTitleText": "院校公告",
+            "navigationStyle": "custom"
+          }
+        }
+      ]
+    }
+  ]
 }

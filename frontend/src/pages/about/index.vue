@@ -1,13 +1,6 @@
 <template>
   <view class="page about-page" :style="themeInlineStyle">
-    <view class="about-topbar" :style="aboutHeaderStyle">
-      <button class="about-back-btn" @tap="goBack">
-        <image class="about-back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
-      <view class="about-top-title">关于我们</view>
-      <view class="about-top-placeholder"></view>
-    </view>
-    <view class="about-topbar-spacer"></view>
+    <AppPageHeader title="关于我们" fixed @back="goBack" />
 
     <view class="about-hero">
       <view class="app-mark">港</view>
@@ -58,8 +51,15 @@
         你可以在这里提交题目质量、刷题体验、账号登录或功能建议。反馈会进入后台处理列表，便于我们持续改进。
       </view>
       <view class="feedback-form-area">
-        <BetaFeedbackForm source-page="about" />
+        <BetaFeedbackForm source-page="about" @submitted="openMyFeedback" />
       </view>
+      <button class="my-feedback-entry" @tap="openMyFeedback">
+        <view>
+          <strong>我的反馈与处理结果</strong>
+          <text>查看平台处理状态和回复说明</text>
+        </view>
+        <text>›</text>
+      </button>
     </view>
 
     <view class="section-card">
@@ -120,30 +120,16 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onPageScroll } from '@dcloudio/uni-app'
+import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import BetaFeedbackForm from '../../components/BetaFeedbackForm.vue'
 import { openExternalUrl } from '../../platform/runtime'
-import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import { isLoggedIn } from '../../utils/auth'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const supportEmail = '2982326925@qq.com'
 const supportUrl = 'https://www.gangyantong.com/support.html'
 const privacyUrl = 'https://www.gangyantong.com/privacy.html'
-const headerScrollTop = ref(0)
-
-const aboutHeaderStyle = computed(() => {
-  const progress = Math.min(1, Math.max(0, headerScrollTop.value / 220))
-  return {
-    '--about-header-opacity': String(0.2 + progress * 0.78),
-    '--about-header-shadow-opacity': String(progress * 0.11)
-  }
-})
-
-onPageScroll(({ scrollTop }) => {
-  headerScrollTop.value = Number(scrollTop) || 0
-})
-
 const features = [
   {
     title: '专项刷题',
@@ -204,6 +190,16 @@ function copyEmail() {
   // #endif
 }
 
+function openMyFeedback() {
+  if (!isLoggedIn()) {
+    uni.navigateTo({
+      url: `/pages/login/index?redirect=${encodeURIComponent('/pages/feedback/index')}`
+    })
+    return
+  }
+  uni.navigateTo({ url: '/pages/feedback/index' })
+}
+
 function goBack() {
   uni.navigateBack({
     fail() {
@@ -216,72 +212,10 @@ function goBack() {
 <style scoped>
 .about-page {
   min-height: 100vh;
-  padding-bottom: calc(env(safe-area-inset-bottom) + 44rpx);
+  padding: 0 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
   background:
     radial-gradient(circle at 92% 0%, rgba(52, 120, 246, 0.12), transparent 30%),
     linear-gradient(180deg, #f7faff 0%, #f4f7fb 100%);
-}
-
-.about-topbar {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 24;
-  min-height: 100rpx;
-  display: grid;
-  grid-template-columns: 72rpx 1fr 72rpx;
-  align-items: center;
-  gap: 12rpx;
-  padding: 14rpx 24rpx;
-  box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--about-header-opacity, 0.2));
-  box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--about-header-shadow-opacity, 0));
-  backdrop-filter: blur(18rpx);
-  -webkit-backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
-}
-
-.about-topbar-spacer {
-  width: 100%;
-  height: 98rpx;
-  flex: 0 0 98rpx;
-}
-
-.about-back-btn,
-.about-top-placeholder {
-  width: 72rpx;
-  height: 72rpx;
-}
-
-.about-back-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 24rpx;
-  background: #ffffff;
-  box-shadow: 0 10rpx 26rpx rgba(20, 31, 66, 0.06);
-}
-
-.about-back-btn::after {
-  border: 0;
-}
-
-.about-back-icon {
-  width: 30rpx;
-  height: 30rpx;
-  display: block;
-}
-
-.about-top-title {
-  text-align: center;
-  color: #101828;
-  font-size: 34rpx;
-  line-height: 1.3;
-  font-weight: 950;
 }
 
 .about-hero {
@@ -349,8 +283,8 @@ function goBack() {
   align-items: flex-start;
   padding: 30rpx;
   border-radius: 30rpx;
-  border-color: #d7e5ff;
-  background: linear-gradient(135deg, #f4f8ff 0%, #ffffff 100%);
+  border-color: rgba(229, 226, 224, 0.94);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .status-main {
@@ -480,6 +414,29 @@ function goBack() {
 .feedback-form-area {
   margin-top: 22rpx;
 }
+
+.my-feedback-entry {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 88rpx;
+  margin: 22rpx 0 0;
+  padding: 16rpx 20rpx;
+  border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
+  border-radius: 22rpx;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16rpx;
+  text-align: left;
+}
+
+.my-feedback-entry::after { border: 0; }
+.my-feedback-entry strong,.my-feedback-entry text { display: block; }
+.my-feedback-entry strong { color: #34465f; font-size: 23rpx; line-height: 1.35; font-weight: 900; }
+.my-feedback-entry view > text { margin-top: 5rpx; color: #8190a4; font-size: 19rpx; line-height: 1.35; font-weight: 650; }
+.my-feedback-entry > text { font-size: 36rpx; line-height: 1; font-weight: 500; }
 
 .action-list {
   margin-top: 18rpx;

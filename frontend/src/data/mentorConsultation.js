@@ -1,3 +1,5 @@
+import { getAuthUser } from '../utils/auth'
+
 export const MENTOR_SORT_OPTIONS = [
   { value: 'recommended', label: '综合推荐' },
   { value: 'consult_count', label: '咨询最多' },
@@ -14,46 +16,14 @@ export const MENTOR_AVAILABILITY_OPTIONS = ['不限', '在线', '可预约']
 export const MENTOR_GRADE_OPTIONS = ['大一', '大二', '大三', '大四', '大五', '研究生', '已毕业', '其他']
 export const MENTOR_SKILL_OPTIONS = ['院校选择', '专业选择', 'Z001备考', 'Z002备考', '英语备考', '复试经验', '学习规划', '其他']
 
-export const CONSULT_ORDER_STATUSES = ['draft', 'pending_payment', 'pending_accept', 'accepted', 'in_progress', 'completed', 'rejected', 'timeout', 'refunded', 'booked']
+export const CONSULT_ORDER_STATUSES = ['draft', 'pending_payment', 'pending_accept', 'accepted', 'in_progress', 'completed', 'rejected', 'timeout', 'refunded', 'cancelled', 'booked']
 export const MENTOR_VERIFICATION_STATUSES = ['unverified', 'pending', 'verified', 'rejected']
-export const FALLBACK_MENTOR_ID = 'b33c7c94-8c87-4c2f-9253-c9d4a02b1001'
 
 const FAVORITE_STORAGE_KEY = 'circle-mentor-favorite-ids-v1'
 const CONSULT_DRAFT_STORAGE_KEY = 'circle-mentor-consult-draft-v1'
 const VERIFICATION_STORAGE_KEY = 'circle-mentor-verification-v1'
 const APPLICATION_STORAGE_KEY = 'circle-mentor-application-v1'
 const MENTOR_CACHE_STORAGE_KEY = 'circle-mentor-directory-v2'
-
-// 只在公开接口暂时不可用时使用，正常页面数据以 FastAPI / Supabase 为准。
-const fallbackMentorSeed = {
-  id: FALLBACK_MENTOR_ID,
-  name: '钟*宏',
-  maskedName: '钟*宏',
-  avatar: '钟',
-  avatarUrl: '',
-  avatarTone: 'blue',
-  verified: true,
-  school: '暨南大学',
-  major: '应用经济学',
-  admissionYear: '2025',
-  graduationYear: '2027',
-  examType: 'Z001',
-  score: 110,
-  rating: 0,
-  ratingCount: 0,
-  consultCount: 0,
-  price: 39,
-  consultationWindowMinutes: 60,
-  onlineStatus: 'online',
-  acceptsBooking: true,
-  featured: true,
-  recommendScore: 98,
-  bio: '2025 年港澳台研究生考试上岸，熟悉院校选择、Z001 备考以及复试准备，可以帮助分析备考规划和目标院校情况。',
-  story: '2025 年通过港澳台研究生招生考试录取至暨南大学应用经济学专业，初试 110 分，复试综合排名靠前。',
-  skills: ['院校选择', '初试备考', '复试经验'],
-  reviews: [],
-  availableSlots: []
-}
 
 let mentorCache = []
 
@@ -110,22 +80,11 @@ export function getCachedMentorDirectory() {
   return clone(getCachedMentors())
 }
 
-export function getFallbackMentors() {
-  return [withMentorDisplayFields(clone(fallbackMentorSeed))]
-}
-
-// 兼容既有调用；真实目录加载失败时只返回钟*宏这一条兜底数据。
-export function getMockMentors() {
-  return getFallbackMentors()
-}
-
 export function getMentorById(id) {
   const mentorId = String(id || '')
   if (!mentorId) return null
   const cachedMentor = getCachedMentors().find((item) => item.id === mentorId)
-  if (cachedMentor) return withMentorDisplayFields(clone(cachedMentor))
-  if (mentorId !== FALLBACK_MENTOR_ID) return null
-  return withMentorDisplayFields(clone(fallbackMentorSeed))
+  return cachedMentor ? withMentorDisplayFields(clone(cachedMentor)) : null
 }
 
 export function searchMentorSchools(keyword = '') {
@@ -141,7 +100,7 @@ export function searchMentorMajors(keyword = '') {
 }
 
 export function filterMentors({ mentors, keyword = '', filters = createDefaultMentorFilters(), sort = 'recommended' } = {}) {
-  const sourceMentors = Array.isArray(mentors) ? mentors : getFallbackMentors()
+  const sourceMentors = Array.isArray(mentors) ? mentors : []
   const activeFilters = { ...createDefaultMentorFilters(), ...(filters || {}) }
   const keywordTokens = splitMentorSearchTokens(keyword)
   const searchedMentors = sourceMentors
@@ -184,13 +143,13 @@ export function formatMentorPrice(price) {
 }
 
 export function getMentorFavoriteIds() {
-  const stored = readStorage(FAVORITE_STORAGE_KEY, [])
+  const stored = readUserStorage(FAVORITE_STORAGE_KEY, [])
   return Array.isArray(stored) ? stored.map(String) : []
 }
 
 export function setMentorFavoriteIds(ids = []) {
   const next = [...new Set((Array.isArray(ids) ? ids : []).map((id) => String(id || '')).filter(Boolean))]
-  writeStorage(FAVORITE_STORAGE_KEY, next)
+  writeUserStorage(FAVORITE_STORAGE_KEY, next)
   return next
 }
 
@@ -209,6 +168,7 @@ export function startConsultationDraft({ mentorId, consultationType = 'instant',
   if (!mentor) return null
   const draft = {
     mentorId: mentor.id,
+    clientOrderId: createClientOrderId(),
     consultationType: consultationType === 'booking' ? 'booking' : 'instant',
     bookingSlot: bookingSlot ? clone(bookingSlot) : null,
     questionnaire: createDefaultConsultationQuestionnaire(),
@@ -216,6 +176,9 @@ export function startConsultationDraft({ mentorId, consultationType = 'instant',
     orderNo: '',
     orderStatus: 'draft',
     paymentStatus: 'unpaid',
+    paymentProvider: '',
+    paymentCheckoutUrl: '',
+    paymentMessage: '',
     price: bookingSlot?.price || mentor.price || 0,
     consultationWindowMinutes: mentor.consultationWindowMinutes || 60,
     expiresAt: '',
@@ -225,22 +188,27 @@ export function startConsultationDraft({ mentorId, consultationType = 'instant',
     messages: [],
     createdAt: Date.now()
   }
-  writeStorage(CONSULT_DRAFT_STORAGE_KEY, draft)
+  writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, draft)
   return clone(draft)
 }
 
 export function getConsultationDraft() {
-  const draft = readStorage(CONSULT_DRAFT_STORAGE_KEY, null)
-  return draft && typeof draft === 'object'
-    ? {
+  const draft = readUserStorage(CONSULT_DRAFT_STORAGE_KEY, null)
+  if (!draft || typeof draft !== 'object') return null
+  const normalized = {
         ...draft,
+        clientOrderId: String(draft.clientOrderId || createClientOrderId()),
         orderId: String(draft.orderId || ''),
         orderNo: String(draft.orderNo || ''),
         orderStatus: String(draft.orderStatus || 'draft'),
         paymentStatus: String(draft.paymentStatus || 'unpaid'),
+        paymentProvider: String(draft.paymentProvider || ''),
+        paymentCheckoutUrl: String(draft.paymentCheckoutUrl || ''),
+        paymentMessage: String(draft.paymentMessage || ''),
         questionnaire: { ...createDefaultConsultationQuestionnaire(), ...(draft.questionnaire || {}) }
       }
-    : null
+  if (!draft.clientOrderId) writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, normalized)
+  return normalized
 }
 
 export function saveConsultationQuestionnaire(questionnaire = {}) {
@@ -251,7 +219,7 @@ export function saveConsultationQuestionnaire(questionnaire = {}) {
     questionnaire: { ...createDefaultConsultationQuestionnaire(), ...questionnaire },
     orderStatus: 'pending_payment'
   }
-  writeStorage(CONSULT_DRAFT_STORAGE_KEY, next)
+  writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, next)
   return clone(next)
 }
 
@@ -262,18 +230,31 @@ export function normalizeMentorConsultationOrder(rawOrder = {}) {
   return {
     id: String(rawOrder.id || ''),
     orderNo: String(rawOrder.orderNo || rawOrder.order_no || ''),
+    clientOrderId: String(rawOrder.clientOrderId || rawOrder.client_order_id || ''),
     mentorId: String(rawOrder.mentorId || rawOrder.mentor_id || ''),
     slotId: rawOrder.slotId || rawOrder.slot_id ? String(rawOrder.slotId || rawOrder.slot_id) : '',
     consultationType: String(rawOrder.consultationType || rawOrder.consultation_type || 'instant'),
     orderStatus: String(rawOrder.orderStatus || rawOrder.order_status || 'draft'),
     paymentStatus: String(rawOrder.paymentStatus || rawOrder.payment_status || 'unpaid'),
+    paymentProvider: String(rawOrder.paymentProvider || rawOrder.payment_provider || ''),
+    paymentCheckoutUrl: String(rawOrder.paymentCheckoutUrl || rawOrder.payment_checkout_url || rawOrder.checkout_url || ''),
+    paymentMessage: String(rawOrder.paymentMessage || rawOrder.payment_message || rawOrder.message || ''),
     price: toNumber(rawOrder.price ?? (rawOrder.price_cents == null ? 0 : rawOrder.price_cents / 100)),
     consultationWindowMinutes: toNumber(rawOrder.consultationWindowMinutes ?? rawOrder.consultation_window_minutes, 60),
     paymentReference: String(rawOrder.paymentReference || rawOrder.payment_reference || ''),
+    paymentExpiresAt: String(rawOrder.paymentExpiresAt || rawOrder.payment_expires_at || ''),
+    paymentMode: String(rawOrder.paymentMode || rawOrder.payment_mode || 'real'),
     acceptedAt: String(rawOrder.acceptedAt || rawOrder.accepted_at || ''),
     expiresAt: String(rawOrder.expiresAt || rawOrder.expires_at || ''),
     startedAt: String(rawOrder.startedAt || rawOrder.started_at || ''),
     endedAt: String(rawOrder.endedAt || rawOrder.ended_at || ''),
+    applicantCompletionConfirmedAt: String(rawOrder.applicantCompletionConfirmedAt || rawOrder.applicant_completion_confirmed_at || ''),
+    mentorCompletionConfirmedAt: String(rawOrder.mentorCompletionConfirmedAt || rawOrder.mentor_completion_confirmed_at || ''),
+    refundAmount: toNumber(rawOrder.refundAmount ?? rawOrder.refund_amount ?? (rawOrder.refund_amount_cents == null ? 0 : rawOrder.refund_amount_cents / 100)),
+    refundReference: String(rawOrder.refundReference || rawOrder.refund_reference || ''),
+    rejectionReason: String(rawOrder.rejectionReason || rawOrder.rejection_reason || ''),
+    createdAt: String(rawOrder.createdAt || rawOrder.created_at || ''),
+    updatedAt: String(rawOrder.updatedAt || rawOrder.updated_at || ''),
     questionnaire: {
       ...createDefaultConsultationQuestionnaire(),
       name: String(questionnaire.name || ''),
@@ -295,18 +276,30 @@ export function saveConsultationOrder(order = {}) {
     consultationType: normalizedOrder.consultationType || current?.consultationType || 'instant',
     orderId: normalizedOrder.id,
     orderNo: normalizedOrder.orderNo,
+    clientOrderId: normalizedOrder.clientOrderId || current?.clientOrderId || createClientOrderId(),
     orderStatus: normalizedOrder.orderStatus,
     paymentStatus: normalizedOrder.paymentStatus,
+    paymentReference: normalizedOrder.paymentReference || current?.paymentReference || '',
+    paymentExpiresAt: normalizedOrder.paymentExpiresAt,
+    paymentMode: normalizedOrder.paymentMode,
+    paymentProvider: normalizedOrder.paymentProvider || current?.paymentProvider || '',
+    paymentCheckoutUrl: normalizedOrder.paymentCheckoutUrl || current?.paymentCheckoutUrl || '',
+    paymentMessage: normalizedOrder.paymentMessage || current?.paymentMessage || '',
     price: normalizedOrder.price,
     consultationWindowMinutes: normalizedOrder.consultationWindowMinutes,
     expiresAt: normalizedOrder.expiresAt,
     acceptedAt: normalizedOrder.acceptedAt,
     startedAt: normalizedOrder.startedAt,
     endedAt: normalizedOrder.endedAt,
+    applicantCompletionConfirmedAt: normalizedOrder.applicantCompletionConfirmedAt,
+    mentorCompletionConfirmedAt: normalizedOrder.mentorCompletionConfirmedAt,
+    refundAmount: normalizedOrder.refundAmount,
+    refundReference: normalizedOrder.refundReference,
+    rejectionReason: normalizedOrder.rejectionReason,
     questionnaire: normalizedOrder.questionnaire,
     updatedAt: Date.now()
   }
-  writeStorage(CONSULT_DRAFT_STORAGE_KEY, next)
+  writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, next)
   return clone(next)
 }
 
@@ -315,8 +308,19 @@ export function setConsultationOrderStatus(status) {
   const nextStatus = CONSULT_ORDER_STATUSES.includes(status) ? status : 'draft'
   if (!draft) return null
   const next = { ...draft, orderStatus: nextStatus, updatedAt: Date.now() }
-  writeStorage(CONSULT_DRAFT_STORAGE_KEY, next)
+  writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, next)
   return clone(next)
+}
+
+function createClientOrderId() {
+  try {
+    if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+      return `mco_${crypto.randomUUID()}`
+    }
+  } catch (error) {
+    // 小程序或旧 WebView 不支持 randomUUID 时使用时间戳与随机片段。
+  }
+  return `mco_${Date.now()}_${Math.random().toString(36).slice(2, 12)}`
 }
 
 export function appendConsultationMessage(message) {
@@ -327,12 +331,12 @@ export function appendConsultationMessage(message) {
     ...draft,
     messages: [...messages, { id: `message-${Date.now()}-${messages.length}`, createdAt: Date.now(), ...message }]
   }
-  writeStorage(CONSULT_DRAFT_STORAGE_KEY, next)
+  writeUserStorage(CONSULT_DRAFT_STORAGE_KEY, next)
   return clone(next)
 }
 
 export function resetConsultationDraft() {
-  removeStorage(CONSULT_DRAFT_STORAGE_KEY)
+  removeUserStorage(CONSULT_DRAFT_STORAGE_KEY)
 }
 
 export function createDefaultConsultationQuestionnaire() {
@@ -347,24 +351,24 @@ export function createDefaultConsultationQuestionnaire() {
 }
 
 export function getMentorVerificationStatus() {
-  const status = String(readStorage(VERIFICATION_STORAGE_KEY, 'unverified') || 'unverified')
+  const status = String(readUserStorage(VERIFICATION_STORAGE_KEY, 'unverified') || 'unverified')
   return MENTOR_VERIFICATION_STATUSES.includes(status) ? status : 'unverified'
 }
 
 export function setMentorVerificationStatus(status) {
   const next = MENTOR_VERIFICATION_STATUSES.includes(status) ? status : 'unverified'
-  writeStorage(VERIFICATION_STORAGE_KEY, next)
+  writeUserStorage(VERIFICATION_STORAGE_KEY, next)
   return next
 }
 
 export function saveMentorApplication(application = {}) {
   const next = { ...application, submittedAt: Date.now() }
-  writeStorage(APPLICATION_STORAGE_KEY, next)
+  writeUserStorage(APPLICATION_STORAGE_KEY, next)
   return clone(next)
 }
 
 export function getMentorApplication() {
-  const application = readStorage(APPLICATION_STORAGE_KEY, null)
+  const application = readUserStorage(APPLICATION_STORAGE_KEY, null)
   return application && typeof application === 'object' ? clone(application) : null
 }
 
@@ -526,6 +530,24 @@ function readStorage(key, fallback) {
   } catch (error) {
     return fallback
   }
+}
+
+function getUserScopedStorageKey(key) {
+  const user = getAuthUser() || {}
+  const userId = String(user.id || user.user_id || user.userId || '').trim()
+  return `${key}:${userId || 'guest'}`
+}
+
+function readUserStorage(key, fallback) {
+  return readStorage(getUserScopedStorageKey(key), fallback)
+}
+
+function writeUserStorage(key, value) {
+  writeStorage(getUserScopedStorageKey(key), value)
+}
+
+function removeUserStorage(key) {
+  removeStorage(getUserScopedStorageKey(key))
 }
 
 function writeStorage(key, value) {

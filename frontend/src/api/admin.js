@@ -226,6 +226,14 @@ export function updateQuestionAdminCommunityPostVisibility(postId, payload) {
   })
 }
 
+export function updateQuestionAdminCommunityCommentVisibility(postId, commentId, payload) {
+  return request({
+    url: `/admin/question-portal/community/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/visibility`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function bulkUpdateQuestionAdminCommunityPostVisibility(payload) {
   return request({
     url: '/admin/question-portal/community/posts/bulk-visibility',
@@ -459,6 +467,38 @@ export function updateAdminMessage(messageId, payload) {
   })
 }
 
+export function fetchQuestionAdminCommunityReports(params = {}) {
+  return request({
+    url: '/admin/question-portal/community/reports',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function updateQuestionAdminCommunityReport(reportId, payload) {
+  return request({
+    url: `/admin/question-portal/community/reports/${encodeURIComponent(reportId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchQuestionAdminCommunityAppeals(params = {}) {
+  return request({
+    url: '/admin/question-portal/community/appeals',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function updateQuestionAdminCommunityAppeal(appealId, payload) {
+  return request({
+    url: `/admin/question-portal/community/appeals/${encodeURIComponent(appealId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function fetchAdminMentorProfiles(params = {}) {
   return request({
     url: '/admin/mentor-consultation/mentors',
@@ -556,6 +596,52 @@ export function updateAdminMentorConsultationReportStatus(reportId, payload) {
   return request({
     url: `/admin/mentor-consultation/reports/${encodeURIComponent(reportId)}/status`,
     method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorConsultationReportAppeals(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/report-appeals',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorConsultationReportAppeal(appealId) {
+  return request({
+    url: `/admin/mentor-consultation/report-appeals/${encodeURIComponent(appealId)}`,
+    method: 'GET'
+  })
+}
+
+export function updateAdminMentorConsultationReportAppealStatus(appealId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/report-appeals/${encodeURIComponent(appealId)}/status`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
+export function fetchAdminMentorConsultationOrders(params = {}) {
+  return request({
+    url: '/admin/mentor-consultation/orders',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMentorConsultationOrder(orderId) {
+  return request({
+    url: `/admin/mentor-consultation/orders/${encodeURIComponent(orderId)}`,
+    method: 'GET'
+  })
+}
+
+export function interveneAdminMentorConsultationOrder(orderId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/orders/${encodeURIComponent(orderId)}/intervention`,
+    method: 'POST',
     data: payload
   })
 }

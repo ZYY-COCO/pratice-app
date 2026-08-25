@@ -19,6 +19,7 @@
       <text v-else class="tab-icon">{{ activeItem.icon }}</text>
       <!-- #endif -->
       <text class="tab-label">{{ activeItem.label }}</text>
+      <view v-if="activeItem.unread" class="tab-unread-dot tab-unread-dot--compact" aria-label="有新消息"></view>
     </view>
 
     <view v-else class="tabbar-items">
@@ -50,6 +51,7 @@
         <text v-else class="tab-icon">{{ item.icon }}</text>
         <!-- #endif -->
         <text class="tab-label">{{ item.label }}</text>
+        <view v-if="item.unread" class="tab-unread-dot" aria-label="有新消息"></view>
       </view>
     </view>
   </view>
@@ -210,6 +212,27 @@ const getIconMaskStyle = (iconSrc) => ({
   background: transparent;
 }
 
+.tab-unread-dot {
+  position: absolute;
+  z-index: 3;
+  top: 10rpx;
+  left: calc(50% + 14rpx);
+  width: 16rpx;
+  height: 16rpx;
+  border: 3rpx solid #ffffff;
+  border-radius: 50%;
+  background: #f05d5d;
+  box-shadow: 0 3rpx 8rpx rgba(240, 93, 93, 0.32);
+  box-sizing: border-box;
+  pointer-events: none;
+}
+
+.tab-unread-dot--compact {
+  top: 8rpx;
+  right: 18rpx;
+  left: auto;
+}
+
 .tabbar.glass .tab-item {
   box-sizing: border-box;
   min-height: 0;
@@ -225,11 +248,26 @@ const getIconMaskStyle = (iconSrc) => ({
   box-shadow: none;
 }
 
+.tabbar.glass .tab-unread-dot {
+  top: 6px;
+  left: calc(50% + 8px);
+  width: 9px;
+  height: 9px;
+  border-width: 1.5px;
+}
+
+.tabbar.glass .tab-unread-dot--compact {
+  top: 6px;
+  right: 13px;
+  left: auto;
+}
+
 .tabbar.glass .tab-item:active {
   transform: scale(0.98);
 }
 
 .tab-compact {
+  position: relative;
   box-sizing: border-box;
   width: 100%;
   height: 100%;
@@ -258,7 +296,7 @@ const getIconMaskStyle = (iconSrc) => ({
 
 .tabbar.glass .tab-compact .tab-label {
   font-size: 14px;
-  font-weight: 650;
+  font-weight: var(--gyt-font-weight-semibold, 600);
 }
 
 .tab-compact:active {
@@ -313,7 +351,7 @@ const getIconMaskStyle = (iconSrc) => ({
   color: #8a94a6;
   font-size: 25rpx;
   line-height: 1.2;
-  font-weight: 800;
+  font-weight: var(--gyt-font-weight-semibold, 600);
   transition: color 160ms ease;
 }
 
@@ -330,7 +368,7 @@ const getIconMaskStyle = (iconSrc) => ({
 
 .tabbar.glass .tab-label {
   font-size: 12px;
-  font-weight: 600;
+  font-weight: var(--gyt-font-weight-semibold, 600);
 }
 
 .tab-item.active .tab-icon {

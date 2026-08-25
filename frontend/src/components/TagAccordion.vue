@@ -154,7 +154,7 @@ function isSectionPartial(section) {
 .accordion-body {
   padding: 10rpx 24rpx 22rpx;
   border-top: 2rpx solid #edf1f7;
-  background: linear-gradient(180deg, #fcfdff 0%, var(--gyt-primary-tint) 100%);
+  background: rgba(255, 255, 255, 0.94);
 }
 
 .check-row {

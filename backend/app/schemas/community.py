@@ -53,6 +53,8 @@ class CommunityPostItem(BaseModel):
 class CommunityPostListResponse(BaseModel):
     items: list[CommunityPostItem]
     count: int = 0
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class CommunityDeletePostsRequest(BaseModel):
@@ -78,6 +80,8 @@ class CommunityLikedPostItem(CommunityPostItem):
 class CommunityLikedPostListResponse(BaseModel):
     items: list[CommunityLikedPostItem] = Field(default_factory=list)
     count: int = 0
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class CommunityCommentItem(BaseModel):

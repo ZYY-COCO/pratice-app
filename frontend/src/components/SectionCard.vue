@@ -45,8 +45,8 @@ defineProps({
 }
 
 .title {
-  font-size: 30rpx;
-  font-weight: 900;
+  font-size: var(--gyt-font-size-section-title, 30rpx);
+  font-weight: var(--gyt-font-weight-bold, 700);
   color: #172033;
 }
 

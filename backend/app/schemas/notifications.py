@@ -31,10 +31,23 @@ class UserNotificationUnreadSummary(BaseModel):
     post_interactions: int = 0
     community_reports: int = 0
     consultations: int = 0
+    circle: int = 0
+    community_chat: int = 0
+    community_experience: int = 0
+    consultation_orders: int = 0
+    applicant_consultations: int = 0
+    mentor_consultations: int = 0
+    community_post_targets: dict[str, dict[str, int]] = Field(default_factory=dict)
+    consultation_order_targets: dict[str, dict[str, int]] = Field(default_factory=dict)
 
 
 class UserNotificationReadScopeRequest(BaseModel):
     scope: Literal["post_interactions", "community_reports", "consultations", "community"]
+
+
+class UserNotificationReadTargetRequest(BaseModel):
+    target_type: Literal["community_post", "consultation_order"]
+    target_id: str = Field(min_length=1, max_length=160)
 
 
 class UserNotificationReadResponse(BaseModel):

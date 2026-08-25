@@ -416,7 +416,7 @@
 <script setup>
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
-import { onBackPress, onLoad, onPageScroll, onShow, onUnload } from '@dcloudio/uni-app'
+import { onBackPress, onHide, onLoad, onPageScroll, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchAnswerHistory, fetchQuestionAbilityAccuracy, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
@@ -489,6 +489,10 @@ const cultureProgress = ref({ ...DEFAULT_CULTURE_PROGRESS })
 const cultureProgressLoading = ref(false)
 const cultureReviewLoading = ref(false)
 const timerSeconds = ref(0)
+const questionElapsedByKey = ref({})
+const submissionIdsByQuestion = ref({})
+const submissionUsedTimeByQuestion = ref({})
+const submissionSessionId = ref('')
 const accessToken = ref(readAccessToken())
 const questionPool = ref([buildMockQuestion(subject.value, examCode.value)])
 const currentQuestionIndex = ref(0)
@@ -519,6 +523,7 @@ const scopeHeaderScrollTop = ref(0)
 
 const questionCache = new Map()
 let timerId = null
+let activeTimerQuestionKey = ''
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -792,6 +797,20 @@ onLoad((options) => {
 onShow(() => {
   syncAccessToken()
   loadCultureProgress()
+  if (
+    mode.value === 'quiz'
+    && !reviewMode.value
+    && !summaryMode.value
+    && !aiSummaryMode.value
+    && !submitted.value
+    && !timerId
+  ) {
+    startTimer(questionMeta.value.questionId || currentQuestionKey.value)
+  }
+})
+
+onHide(() => {
+  clearTimer()
 })
 
 onPageScroll(({ scrollTop }) => {
@@ -1576,8 +1595,12 @@ async function fetchMockExamSectionPool(section, usedKeys) {
 }
 
 function applyQuestionAt(index) {
+  clearTimer()
   currentQuestionIndex.value = index
   const nextQuestion = questionPool.value[index]
+  if (!nextQuestion) {
+    return
+  }
   const nextQuestionKey = nextQuestion.questionId || nextQuestion.id
   const savedInstantResult = practiceMode.value === 'comprehensive' ? null : instantQuestionResults.value[nextQuestionKey]
   questionMeta.value = {
@@ -1603,10 +1626,7 @@ function applyQuestionAt(index) {
     selectedOption.value = practiceMode.value === 'comprehensive' ? comprehensiveAnswers.value[nextQuestionKey] || '' : ''
     submitted.value = false
     abilityAccuracy.value = null
-    if (!mockExamMode.value) {
-      timerSeconds.value = 0
-    }
-    startTimer()
+    startTimer(nextQuestionKey)
   }
 
   loadCurrentFavoriteStatus()
@@ -1949,11 +1969,14 @@ async function markCurrentUnfamiliarAndNext() {
   markingUnfamiliar.value = true
   const question = currentQuestion.value
   const questionKey = currentQuestionKey.value
+  clearTimer()
+  const usedTime = getSubmissionUsedTime(questionKey, 'unfamiliar')
 
   try {
     const result = await markQuestionUnfamiliar({
       question_id: questionMeta.value.questionId,
-      used_time: timerSeconds.value,
+      client_submission_id: getClientSubmissionId(questionKey, 'unfamiliar'),
+      used_time: usedTime,
       exam_code: examCode.value
     })
 
@@ -2126,6 +2149,7 @@ function saveInstantQuestionResult(answerResult) {
 }
 
 async function submitComprehensiveBatch(entries) {
+  clearTimer()
   try {
     const response = await request({
       url: '/answers/submit-batch',
@@ -2136,7 +2160,8 @@ async function submitComprehensiveBatch(entries) {
         answers: entries.map(({ question, selected }) => ({
           question_id: question.questionId,
           selected_answer: selected,
-          used_time: timerSeconds.value
+          client_submission_id: getClientSubmissionId(question.questionId),
+          used_time: getSubmissionUsedTime(question.questionId)
         }))
       }
     })
@@ -2164,7 +2189,8 @@ async function submitComprehensiveSingle({ question, selected }, batchError) {
       data: {
         question_id: question.questionId,
         selected_answer: selected,
-        used_time: timerSeconds.value,
+        client_submission_id: getClientSubmissionId(question.questionId),
+        used_time: getSubmissionUsedTime(question.questionId),
         exam_code: examCode.value
       }
     })
@@ -2182,6 +2208,9 @@ async function submitAnswer() {
 
   submitting.value = true
   explanationExpanded.value = false
+  const submittedQuestionKey = currentQuestionKey.value
+  clearTimer()
+  const usedTime = getSubmissionUsedTime(submittedQuestionKey)
   try {
     let answerResult = null
     if (hasAccessToken.value && isRealQuestion()) {
@@ -2193,7 +2222,8 @@ async function submitAnswer() {
         data: {
           question_id: questionMeta.value.questionId,
           selected_answer: selectedOption.value,
-          used_time: timerSeconds.value,
+          client_submission_id: getClientSubmissionId(submittedQuestionKey),
+          used_time: usedTime,
           exam_code: examCode.value
         }
       })
@@ -2502,19 +2532,23 @@ function buildSpecialPracticeReviewResults() {
 }
 
 function resetQuizState() {
+  clearTimer()
   selectedOption.value = ''
   submitted.value = false
   submitting.value = false
   explanationExpanded.value = false
   markingUnfamiliar.value = false
   timerSeconds.value = 0
+  questionElapsedByKey.value = {}
+  submissionIdsByQuestion.value = {}
+  submissionUsedTimeByQuestion.value = {}
+  submissionSessionId.value = createClientNonce()
   abilityAccuracy.value = null
   correctAnswer.value = ''
   answerExplanation.value = ''
   resultTag.value = ''
   instantQuestionResults.value = {}
   unfamiliarQuestionMap.value = {}
-  clearTimer()
 }
 
 function resetToTags() {
@@ -2540,18 +2574,93 @@ function resetToTags() {
   loadCultureProgress()
 }
 
-function startTimer() {
+function createClientNonce() {
+  return `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`
+}
+
+function ensureSubmissionSession() {
+  if (!submissionSessionId.value) {
+    submissionSessionId.value = createClientNonce()
+  }
+  return submissionSessionId.value
+}
+
+function getClientSubmissionId(questionKey, kind = 'answer') {
+  const normalizedKey = String(questionKey || '').trim()
+  if (!normalizedKey) {
+    return null
+  }
+  const mapKey = `${kind}:${normalizedKey}`
+  const existing = submissionIdsByQuestion.value[mapKey]
+  if (existing) {
+    return existing
+  }
+  const value = `${ensureSubmissionSession()}:${kind}:${normalizedKey}`.slice(0, 120)
+  submissionIdsByQuestion.value = {
+    ...submissionIdsByQuestion.value,
+    [mapKey]: value
+  }
+  return value
+}
+
+function getQuestionElapsed(questionKey) {
+  const normalizedKey = String(questionKey || '').trim()
+  return Math.max(0, Number(questionElapsedByKey.value[normalizedKey] || 0))
+}
+
+function getSubmissionUsedTime(questionKey, kind = 'answer') {
+  const normalizedKey = String(questionKey || '').trim()
+  if (!normalizedKey) {
+    return 0
+  }
+  const mapKey = `${kind}:${normalizedKey}`
+  if (submissionUsedTimeByQuestion.value[mapKey] !== undefined) {
+    return Math.max(0, Number(submissionUsedTimeByQuestion.value[mapKey] || 0))
+  }
+  const usedTime = getQuestionElapsed(normalizedKey)
+  submissionUsedTimeByQuestion.value = {
+    ...submissionUsedTimeByQuestion.value,
+    [mapKey]: usedTime
+  }
+  return usedTime
+}
+
+function saveCurrentQuestionTime() {
+  const normalizedKey = String(activeTimerQuestionKey || '').trim()
+  if (!normalizedKey) {
+    return
+  }
+  const elapsed = Math.max(0, Number(timerSeconds.value || 0))
+  questionElapsedByKey.value = {
+    ...questionElapsedByKey.value,
+    [normalizedKey]: elapsed
+  }
+}
+
+function startTimer(questionKey) {
   clearTimer()
+  const normalizedKey = String(questionKey || '').trim()
+  if (!normalizedKey) {
+    return
+  }
+  activeTimerQuestionKey = normalizedKey
+  timerSeconds.value = getQuestionElapsed(normalizedKey)
   timerId = setInterval(() => {
     timerSeconds.value += 1
+    questionElapsedByKey.value = {
+      ...questionElapsedByKey.value,
+      [normalizedKey]: timerSeconds.value
+    }
   }, 1000)
 }
 
 function clearTimer() {
+  saveCurrentQuestionTime()
   if (timerId) {
     clearInterval(timerId)
     timerId = null
   }
+  activeTimerQuestionKey = ''
 }
 
 function scrollToQuestionTop() {

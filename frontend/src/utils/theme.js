@@ -1,6 +1,8 @@
 import { applyRootCssVariables } from '../platform/runtime'
 
 export const THEME_STORAGE_KEY = 'gangyantong_theme_key'
+export const UNIFIED_PAGE_BACKGROUND = '#f5f3f7'
+export const UNIFIED_PANEL_BACKGROUND = 'rgba(255,255,255,.94)'
 
 export const THEME_PRESETS = [
   {
@@ -13,10 +15,8 @@ export const THEME_PRESETS = [
     primaryBorder: '#d7e5ff',
     primaryGradient: 'linear-gradient(135deg, #3478f6, #68a0ff)',
     primaryShadow: 'rgba(52, 120, 246, 0.2)',
-    pageBg:
-      'radial-gradient(circle at top right, rgba(52, 120, 246, 0.1), transparent 25%), linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%)',
-    panelBg:
-      'radial-gradient(circle at 86% 10%, rgba(52, 120, 246, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #eef6ff 100%)'
+    pageBg: UNIFIED_PAGE_BACKGROUND,
+    panelBg: UNIFIED_PANEL_BACKGROUND
   },
   {
     key: 'sakura',
@@ -28,10 +28,8 @@ export const THEME_PRESETS = [
     primaryBorder: '#ffd6e8',
     primaryGradient: 'linear-gradient(135deg, #e65f9a, #ff9ac2)',
     primaryShadow: 'rgba(217, 95, 147, 0.18)',
-    pageBg:
-      'radial-gradient(circle at top right, rgba(217, 95, 147, 0.1), transparent 25%), linear-gradient(180deg, #fffafa 0%, #fff0f5 100%)',
-    panelBg:
-      'radial-gradient(circle at 86% 10%, rgba(217, 95, 147, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #fff1f7 100%)'
+    pageBg: UNIFIED_PAGE_BACKGROUND,
+    panelBg: UNIFIED_PANEL_BACKGROUND
   },
   {
     key: 'mint',
@@ -43,10 +41,8 @@ export const THEME_PRESETS = [
     primaryBorder: '#ccefdc',
     primaryGradient: 'linear-gradient(135deg, #2fa36b, #72d69c)',
     primaryShadow: 'rgba(47, 163, 107, 0.18)',
-    pageBg:
-      'radial-gradient(circle at top right, rgba(47, 163, 107, 0.1), transparent 25%), linear-gradient(180deg, #fbfffd 0%, #effaf4 100%)',
-    panelBg:
-      'radial-gradient(circle at 86% 10%, rgba(47, 163, 107, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #effaf4 100%)'
+    pageBg: UNIFIED_PAGE_BACKGROUND,
+    panelBg: UNIFIED_PANEL_BACKGROUND
   },
   {
     key: 'lavender',
@@ -58,10 +54,8 @@ export const THEME_PRESETS = [
     primaryBorder: '#ddd8ff',
     primaryGradient: 'linear-gradient(135deg, #7668df, #9f96ff)',
     primaryShadow: 'rgba(118, 104, 223, 0.18)',
-    pageBg:
-      'radial-gradient(circle at top right, rgba(118, 104, 223, 0.1), transparent 25%), linear-gradient(180deg, #fbfbff 0%, #f3f1ff 100%)',
-    panelBg:
-      'radial-gradient(circle at 86% 10%, rgba(118, 104, 223, 0.14), transparent 30%), linear-gradient(135deg, #ffffff 0%, #f2f0ff 100%)'
+    pageBg: UNIFIED_PAGE_BACKGROUND,
+    panelBg: UNIFIED_PANEL_BACKGROUND
   },
   {
     key: 'circle-glass',
@@ -73,10 +67,8 @@ export const THEME_PRESETS = [
     primaryBorder: 'rgba(255, 255, 255, 0.68)',
     primaryGradient: 'linear-gradient(135deg, #16786f, #57a99b)',
     primaryShadow: 'rgba(30, 55, 56, 0.16)',
-    pageBg:
-      'linear-gradient(180deg, rgba(10, 41, 42, 0.22) 0%, rgba(18, 49, 49, 0.12) 48%, rgba(18, 43, 43, 0.32) 100%), url("/static/circle-study-sky.jpg") center center / cover fixed',
-    panelBg:
-      'linear-gradient(135deg, rgba(250, 253, 252, 0.78), rgba(230, 242, 238, 0.58))',
+    pageBg: UNIFIED_PAGE_BACKGROUND,
+    panelBg: UNIFIED_PANEL_BACKGROUND,
     circleGlass: true,
     iconThemeKey: 'blue'
   }

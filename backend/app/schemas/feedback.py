@@ -1,3 +1,5 @@
+from typing import Literal
+
 from pydantic import BaseModel, Field
 
 
@@ -13,3 +15,19 @@ class BetaFeedbackRequest(BaseModel):
 class BetaFeedbackResponse(BaseModel):
     id: str
     detail: str
+
+
+class BetaFeedbackItem(BaseModel):
+    id: str
+    feedback_type: str
+    content: str
+    status: Literal["open", "reviewed", "resolved", "ignored"] = "open"
+    admin_note: str | None = None
+    source_page: str | None = None
+    created_at: str | None = None
+    handled_at: str | None = None
+
+
+class BetaFeedbackListResponse(BaseModel):
+    items: list[BetaFeedbackItem] = Field(default_factory=list)
+    count: int = 0

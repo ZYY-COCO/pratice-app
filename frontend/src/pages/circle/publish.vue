@@ -5,16 +5,21 @@
     @touchstart="beginPublishEdgeSwipe"
     @touchend="finishPublishEdgeSwipe"
   >
-    <view class="publish-header">
-      <button class="publish-back" aria-label="返回" @tap="goBack">
-        <image src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
-      <view class="publish-header-title">{{ postType === 'experience' ? '发布经验贴' : '发布话题' }}</view>
-      <view class="publish-header-placeholder"></view>
+    <AppPageHeader :title="postType === 'experience' ? '发布经验贴' : '发布话题'" variant="glass" @back="goBack" />
+
+    <view v-if="accessChecking" class="publish-access-state">正在校验发布权限…</view>
+
+    <view v-else-if="accessError" class="publish-access-state publish-access-error">
+      <view>{{ accessError }}</view>
+      <button @tap="verifyPublishAccess">重新验证</button>
     </view>
 
-    <scroll-view class="publish-scroll" scroll-y>
+    <scroll-view v-else class="publish-scroll" scroll-y>
       <view class="publish-content">
+        <view v-if="postType === 'experience'" class="publish-verified-note">
+          <text>✓</text>
+          <view><strong>认证前辈经验贴</strong><small>发布后会在考研圈展示“已认证前辈”标识，帮助同学辨别经验来源。</small></view>
+        </view>
         <view class="publish-card">
           <view class="publish-field-label">话题分类</view>
           <view class="publish-topic-grid">
@@ -63,7 +68,7 @@
               <view v-for="(image, index) in selectedImages" :key="image.id" class="publish-image-item">
                 <image class="publish-image-preview" :src="image.path" mode="aspectFill" />
                 <view v-if="image.uploading" class="publish-image-uploading">上传中</view>
-                <button class="publish-image-remove" :aria-label="`删除第 ${index + 1} 张图片`" :disabled="submitting" @tap.stop="removeImage(index)">×</button>
+                <button class="publish-image-remove" :aria-label="`删除第 ${index + 1} 张图片`" :disabled="submitting" @tap.stop="removeImage(index)"><CloseIcon /></button>
               </view>
               <button
                 v-if="selectedImages.length < MAX_IMAGE_COUNT"
@@ -90,9 +95,12 @@
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import { createCommunityPost, uploadCommunityImage } from '../../api/community'
+import { fetchMyMentorProfile } from '../../api/mentorConsultation'
 import { isLoggedIn } from '../../utils/auth'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import CloseIcon from '../../components/CloseIcon.vue'
 
-const communityChatTopics = ['中华文化', '数学基础', '英语运用', '逻辑推理']
+const communityChatTopics = ['备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理']
 const communityExperienceTopics = ['Z001', 'Z002', '专业课', '复试']
 const topicSets = {
   chat: communityChatTopics,
@@ -108,14 +116,53 @@ const selectedImages = ref([])
 const submitting = ref(false)
 const isLeaving = ref(false)
 const publishEdgeSwipeStart = ref(null)
+const accessChecking = ref(true)
+const accessError = ref('')
 
-const canPublish = computed(() => Boolean(selectedTopic.value && title.value.trim() && content.value.trim()))
+const canPublish = computed(() => Boolean(!accessError.value && selectedTopic.value && title.value.trim() && content.value.trim()))
 
 onLoad((options) => {
   postType.value = options?.type === 'experience' ? 'experience' : 'chat'
   selectedTopic.value = ''
   isLeaving.value = false
+  void verifyPublishAccess()
 })
+
+async function verifyPublishAccess() {
+  accessChecking.value = true
+  accessError.value = ''
+  if (!isLoggedIn()) {
+    goLogin()
+    return
+  }
+
+  if (postType.value === 'experience') {
+    try {
+      const profile = await fetchMyMentorProfile()
+      if (!profile?.mentor?.verified) {
+        uni.showToast({ title: '经验贴仅支持认证前辈发布', icon: 'none' })
+        uni.redirectTo({ url: '/pages-sub-consultation/consultation/mentor-apply?mode=apply' })
+        return
+      }
+    } catch (error) {
+      const statusCode = Number(error?.statusCode || error?.status || 0)
+      if (statusCode === 404) {
+        uni.showToast({ title: '经验贴仅支持认证前辈发布', icon: 'none' })
+        uni.redirectTo({ url: '/pages-sub-consultation/consultation/mentor-apply?mode=apply' })
+        return
+      }
+      if (statusCode === 401) {
+        goLogin()
+        return
+      }
+      accessError.value = '认证状态暂时无法验证，请检查网络后重试。'
+      accessChecking.value = false
+      return
+    }
+  }
+
+  accessChecking.value = false
+}
 
 function goBack() {
   if (isLeaving.value) return
@@ -157,7 +204,7 @@ function finishPublishEdgeSwipe(event) {
 }
 
 function goLogin() {
-  uni.navigateTo({
+  uni.redirectTo({
     url: `/pages/login/index?redirect=${encodeURIComponent(`/pages/circle/publish?type=${postType.value}`)}`
   })
 }
@@ -269,8 +316,12 @@ function getSafeError(error, fallback) {
 <style scoped>
 .publish-page {
   min-height: 100vh;
+  height: 100vh;
+  height: 100dvh;
+  display: flex;
+  flex-direction: column;
   box-sizing: border-box;
-  background: #edf4f4;
+  background: var(--gyt-page-bg, #f4f8ff);
   color: #1d2928;
   isolation: isolate;
   contain: paint;
@@ -279,39 +330,42 @@ function getSafeError(error, fallback) {
   backface-visibility: hidden;
 }
 
-.publish-page.is-leaving {
-  pointer-events: none;
+.publish-verified-note {
+  margin: 0 24rpx 18rpx;
+  padding: 20rpx;
+  display: flex;
+  align-items: flex-start;
+  gap: 14rpx;
+  border: 2rpx solid #cceadf;
+  border-radius: 22rpx;
+  background: #effbf7;
+  color: #287d6d;
 }
 
-.publish-header {
-  position: relative;
-  z-index: 1;
-  min-height: calc(env(safe-area-inset-top) + 112rpx);
-  padding: env(safe-area-inset-top) 32rpx 0;
-  box-sizing: border-box;
-  border-bottom: 2rpx solid rgba(215, 229, 226, 0.86);
-  background: rgba(248, 252, 251, 0.9);
-  display: grid;
-  grid-template-columns: 66rpx minmax(0, 1fr) 66rpx;
-  align-items: center;
-  -webkit-backdrop-filter: blur(18px) saturate(116%);
-  backdrop-filter: blur(18px) saturate(116%);
-}
-
-.publish-back {
-  width: 66rpx;
-  height: 66rpx;
-  min-width: 66rpx;
-  min-height: 66rpx;
-  margin: 0;
-  padding: 16rpx;
-  border: 0;
-  border-radius: 50%;
-  background: rgba(255, 255, 255, 0.72);
-  color: #2d8580;
+.publish-verified-note > text {
+  width: 34rpx;
+  height: 34rpx;
+  flex: 0 0 34rpx;
   display: flex;
   align-items: center;
   justify-content: center;
+  border-radius: 50%;
+  color: #fff;
+  background: #36ab8f;
+  font-size: 20rpx;
+  font-weight: 900;
+}
+
+.publish-verified-note strong,
+.publish-verified-note small {
+  display: block;
+}
+
+.publish-verified-note strong { font-size: 22rpx; }
+.publish-verified-note small { margin-top: 5rpx; color: #578f83; font-size: 18rpx; line-height: 1.45; }
+
+.publish-page.is-leaving {
+  pointer-events: none;
 }
 
 .publish-back::after,
@@ -322,21 +376,9 @@ function getSafeError(error, fallback) {
   border: 0;
 }
 
-.publish-back image {
-  width: 100%;
-  height: 100%;
-}
-
-.publish-header-title {
-  color: #1b2725;
-  font-size: 30rpx;
-  line-height: 1.2;
-  font-weight: 800;
-  text-align: center;
-}
-
 .publish-scroll {
-  height: calc(100vh - env(safe-area-inset-top) - 112rpx);
+  min-height: 0;
+  flex: 1;
 }
 
 .publish-content {
@@ -489,7 +531,7 @@ function getSafeError(error, fallback) {
   min-width: 42rpx;
   min-height: 42rpx;
   margin: 0;
-  padding: 0 0 4rpx;
+  padding: 0;
   border: 0;
   border-radius: 50%;
   background: rgba(24, 40, 39, 0.62);
@@ -497,9 +539,8 @@ function getSafeError(error, fallback) {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 30rpx;
-  line-height: 1;
 }
+.publish-image-remove :deep(.close-icon-image) { width: 26rpx; height: 26rpx; filter: brightness(0) invert(1); }
 
 .publish-image-add {
   width: 100%;
@@ -548,6 +589,37 @@ function getSafeError(error, fallback) {
 
 .publish-submit[disabled] {
   opacity: 0.46;
+}
+
+.publish-access-state {
+  min-height: 42vh;
+  padding: 48rpx;
+  color: #6d7f98;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 22rpx;
+  font-size: 24rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+.publish-access-error button {
+  min-width: 184rpx;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 22rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: #3478f6;
+  color: #ffffff;
+  font-size: 22rpx;
+  font-weight: 800;
+}
+
+.publish-access-error button::after {
+  border: 0;
 }
 
 .publish-back:active,

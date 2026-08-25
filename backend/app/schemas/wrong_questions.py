@@ -14,6 +14,8 @@ class WrongQuestionItem(BaseModel):
 class WrongQuestionListResponse(BaseModel):
     items: list[WrongQuestionItem]
     count: int
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class WrongQuestionDetailResponse(BaseModel):
@@ -27,6 +29,7 @@ class WrongQuestionDetailResponse(BaseModel):
 
 class ReviewWrongQuestionRequest(BaseModel):
     question_id: str
+    client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
     selected_answer: str = Field(pattern="^[ABCD]$")
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")

@@ -43,6 +43,14 @@ from app.schemas.community import (
 )
 from app.services.supabase_resilience import call_supabase
 from app.services.user_notifications import create_user_notification
+from app.utils.cursor_pagination import (
+    build_keyset_filter,
+    cursor_datetime,
+    cursor_integer,
+    cursor_uuid,
+    decode_page_cursor,
+    encode_page_cursor,
+)
 
 
 logger = logging.getLogger(__name__)
@@ -757,6 +765,7 @@ def _notify_community_post_interaction(
             "surface": "community_post",
             "interaction": interaction,
             "post_id": post_id,
+            "post_type": _community_post_type(post),
             "actor_user_id": str(actor_user_id or ""),
         },
     )
@@ -1107,18 +1116,57 @@ def list_community_posts(
     featured_only: bool = Query(default=False),
     sort_by: Literal["latest", "hot"] = Query(default="latest"),
     limit: int = Query(default=12, ge=1, le=30),
+    cursor: str | None = Query(default=None, max_length=2048),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostListResponse:
     global _community_post_type_column_available
 
+    normalized_category = str(category or "").strip()
+    if normalized_category == "全部":
+        normalized_category = ""
+    cursor_context = {
+        "post_type": post_type,
+        "category": normalized_category,
+        "featured_only": featured_only,
+        "sort_by": sort_by,
+    }
+    initial_cursor = decode_page_cursor(
+        cursor,
+        kind="community_posts",
+        context=cursor_context,
+    )
+
     supabase = get_supabase_admin()
     try:
-        # Experience posts need enough candidates for the verified-author filter
-        # below; otherwise a handful of legacy unverified rows can make a valid
-        # feed look empty even when verified shares exist later in the result.
-        query_limit = 30 if post_type == "experience" else min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 30)
+        def cursor_fields(payload: dict) -> list[tuple[str, Literal["asc", "desc"], str | int]]:
+            fields: list[tuple[str, Literal["asc", "desc"], str | int]] = []
+            if sort_by == "hot":
+                fields.extend([
+                    ("like_count", "desc", cursor_integer(payload, "like_count")),
+                    ("comment_count", "desc", cursor_integer(payload, "comment_count")),
+                    ("view_count", "desc", cursor_integer(payload, "view_count")),
+                ])
+            fields.extend([
+                ("created_at", "desc", cursor_datetime(payload, "created_at")),
+                ("id", "desc", cursor_uuid(payload, "id")),
+            ])
+            return fields
 
-        def build_post_list_query(include_post_type: bool):
+        def row_cursor_payload(row: dict) -> dict:
+            payload = {
+                **cursor_context,
+                "created_at": str(row.get("created_at") or ""),
+                "id": str(row.get("id") or ""),
+            }
+            if sort_by == "hot":
+                payload.update({
+                    "like_count": int(row.get("like_count") or 0),
+                    "comment_count": int(row.get("comment_count") or 0),
+                    "view_count": int(row.get("view_count") or 0),
+                })
+            return payload
+
+        def build_post_list_query(include_post_type: bool, page_cursor: dict | None, query_limit: int):
             query = (
                 supabase.table("circle_community_posts")
                 .select("*")
@@ -1128,47 +1176,75 @@ def list_community_posts(
                 query = query.eq("post_type", post_type)
             if featured_only:
                 query = query.eq("is_featured", True)
-            if category and category != "全部":
-                query = query.eq("category", category)
+            if normalized_category:
+                query = query.eq("category", normalized_category)
+            if page_cursor:
+                query = query.or_(build_keyset_filter(cursor_fields(page_cursor)))
             if sort_by == "hot":
                 return (
                     query.order("like_count", desc=True)
                     .order("comment_count", desc=True)
                     .order("view_count", desc=True)
                     .order("created_at", desc=True)
+                    .order("id", desc=True)
                     .limit(query_limit)
                 )
-            return query.order("created_at", desc=True).limit(query_limit)
+            return (
+                query.order("created_at", desc=True)
+                .order("id", desc=True)
+                .limit(query_limit)
+            )
 
-        if _community_post_type_column_available is not False:
+        # Some legacy rows are intentionally hidden, and experience posts also
+        # require a verified author. Scan stable database pages until one visible
+        # API page (plus one look-ahead item) has been assembled.
+        query_limit = max(32, limit + 1 + len(COMMUNITY_RETIRED_SEED_POST_IDS))
+        scan_cursor = initial_cursor
+        visible_rows: list[dict] = []
+        exhausted = False
+        while len(visible_rows) <= limit and not exhausted:
+            include_post_type = _community_post_type_column_available is not False
             try:
                 response = call_supabase(
-                    lambda: build_post_list_query(True).execute(),
+                    lambda: build_post_list_query(include_post_type, scan_cursor, query_limit).execute(),
                     operation_name="circle community post list",
                 )
-                _community_post_type_column_available = True
-                rows = response.data or []
+                if include_post_type:
+                    _community_post_type_column_available = True
             except Exception as exc:
-                if not _is_missing_post_type_column_error(exc):
+                if not include_post_type or not _is_missing_post_type_column_error(exc):
                     raise
                 _community_post_type_column_available = False
                 response = call_supabase(
-                    lambda: build_post_list_query(False).execute(),
+                    lambda: build_post_list_query(False, scan_cursor, query_limit).execute(),
                     operation_name="circle community post list legacy",
                 )
-                rows = [row for row in (response.data or []) if _community_post_type(row) == post_type]
-        else:
-            response = call_supabase(
-                lambda: build_post_list_query(False).execute(),
-                operation_name="circle community post list legacy",
-            )
-            rows = [row for row in (response.data or []) if _community_post_type(row) == post_type]
 
-        rows = [
-            row
-            for row in rows
-            if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
-        ]
+            raw_rows = list(response.data or [])
+            if not raw_rows:
+                exhausted = True
+                break
+            exhausted = len(raw_rows) < query_limit
+            scan_cursor = row_cursor_payload(raw_rows[-1])
+            candidate_rows = [
+                row
+                for row in raw_rows
+                if (_community_post_type_column_available is not False or _community_post_type(row) == post_type)
+                and str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
+            ]
+            if post_type == "experience" and candidate_rows:
+                verified_ids = _fetch_verified_mentor_owner_ids(
+                    supabase,
+                    [str(row.get("author_id") or "") for row in candidate_rows],
+                )
+                candidate_rows = [
+                    row for row in candidate_rows
+                    if _is_public_verified_experience_post(row, verified_ids)
+                ]
+            visible_rows.extend(candidate_rows)
+
+        has_more = len(visible_rows) > limit
+        rows = visible_rows[:limit]
         post_ids = [str(row.get("id")) for row in rows if row.get("id")]
         with ThreadPoolExecutor(max_workers=4) as executor:
             profiles_future = executor.submit(
@@ -1187,19 +1263,17 @@ def list_community_posts(
             verified_author_ids = verified_authors_future.result()
             liked_post_ids = liked_post_ids_future.result()
             previews = previews_future.result()
-        if post_type == "experience":
-            rows = [
-                row
-                for row in rows
-                if _is_public_verified_experience_post(row, verified_author_ids)
-            ]
-        rows = rows[:limit]
+        next_cursor = None
+        if has_more and rows:
+            next_cursor = encode_page_cursor("community_posts", row_cursor_payload(rows[-1]))
         return CommunityPostListResponse(
             items=[
                 _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
                 for row in rows
             ],
             count=len(rows),
+            next_cursor=next_cursor,
+            has_more=has_more,
         )
     except HTTPException:
         raise
@@ -1209,33 +1283,46 @@ def list_community_posts(
 
 @router.get("/liked-posts", response_model=CommunityLikedPostListResponse)
 def list_liked_community_posts(
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: int = Query(default=30, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=2048),
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityLikedPostListResponse:
     """Return the current user's visible likes, newest like first."""
 
     supabase = get_supabase_admin()
     try:
+        cursor_payload = decode_page_cursor(cursor, kind="community_liked_posts")
+        likes_query = (
+            supabase.table("circle_community_likes")
+            .select("post_id,created_at")
+            .eq("user_id", user_id)
+        )
+        if cursor_payload:
+            likes_query = likes_query.or_(build_keyset_filter([
+                ("created_at", "desc", cursor_datetime(cursor_payload, "created_at")),
+                ("post_id", "desc", cursor_uuid(cursor_payload, "post_id")),
+            ]))
         likes_response = call_supabase(
             lambda: (
-                supabase.table("circle_community_likes")
-                .select("post_id,created_at")
-                .eq("user_id", user_id)
+                likes_query
                 .order("created_at", desc=True)
-                .limit(limit)
+                .order("post_id", desc=True)
+                .limit(limit + 1)
                 .execute()
             ),
             operation_name="circle community liked post list",
         )
-        like_rows = likes_response.data or []
+        like_rows = list(likes_response.data or [])
+        has_more = len(like_rows) > limit
+        page_like_rows = like_rows[:limit]
         liked_at_by_post_id = {
             str(row.get("post_id")): row.get("created_at")
-            for row in like_rows
+            for row in page_like_rows
             if row.get("post_id")
         }
         ordered_post_ids = list(liked_at_by_post_id)
         if not ordered_post_ids:
-            return CommunityLikedPostListResponse()
+            return CommunityLikedPostListResponse(has_more=has_more)
 
         posts_response = call_supabase(
             lambda: (
@@ -1282,6 +1369,13 @@ def list_liked_community_posts(
             or _is_public_verified_experience_post(row, verified_author_ids)
         ]
 
+        next_cursor = None
+        if has_more and page_like_rows:
+            anchor = page_like_rows[-1]
+            next_cursor = encode_page_cursor("community_liked_posts", {
+                "created_at": str(anchor.get("created_at") or ""),
+                "post_id": str(anchor.get("post_id") or ""),
+            })
         return CommunityLikedPostListResponse(
             items=[
                 CommunityLikedPostItem(
@@ -1297,6 +1391,8 @@ def list_liked_community_posts(
                 for row in rows
             ],
             count=len(rows),
+            next_cursor=next_cursor,
+            has_more=has_more,
         )
     except HTTPException:
         raise
@@ -1308,7 +1404,8 @@ def list_liked_community_posts(
 def list_my_community_posts(
     post_type: Literal["all", "chat", "experience"] = Query(default="all"),
     sort_by: Literal["latest", "hot"] = Query(default="latest"),
-    limit: int = Query(default=100, ge=1, le=200),
+    limit: int = Query(default=30, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=2048),
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityPostListResponse:
     """Return the current user's published posts, newest first."""
@@ -1317,7 +1414,9 @@ def list_my_community_posts(
 
     supabase = get_supabase_admin()
     try:
-        query_limit = min(limit + len(COMMUNITY_RETIRED_SEED_POST_IDS), 200)
+        cursor_context = {"post_type": post_type, "sort_by": sort_by}
+        cursor_payload = decode_page_cursor(cursor, kind="community_my_posts", context=cursor_context)
+        query_limit = max(limit + 1 + len(COMMUNITY_RETIRED_SEED_POST_IDS), 32)
 
         def build_my_post_query(include_post_type: bool):
             query = (
@@ -1325,20 +1424,32 @@ def list_my_community_posts(
                 .select("*")
                 .eq("author_id", user_id)
                 .eq("is_published", True)
-                .order("created_at", desc=True)
-                .limit(query_limit)
             )
             if include_post_type and post_type != "all":
                 query = query.eq("post_type", post_type)
+            if cursor_payload:
+                keyset_fields = []
+                if sort_by == "hot":
+                    keyset_fields.extend([
+                        ("like_count", "desc", cursor_integer(cursor_payload, "like_count")),
+                        ("comment_count", "desc", cursor_integer(cursor_payload, "comment_count")),
+                        ("view_count", "desc", cursor_integer(cursor_payload, "view_count")),
+                    ])
+                keyset_fields.extend([
+                    ("created_at", "desc", cursor_datetime(cursor_payload, "created_at")),
+                    ("id", "desc", cursor_uuid(cursor_payload, "id")),
+                ])
+                query = query.or_(build_keyset_filter(keyset_fields))
             if sort_by == "hot":
                 return (
                     query.order("like_count", desc=True)
                     .order("comment_count", desc=True)
                     .order("view_count", desc=True)
                     .order("created_at", desc=True)
+                    .order("id", desc=True)
                     .limit(query_limit)
                 )
-            return query.order("created_at", desc=True).limit(query_limit)
+            return query.order("created_at", desc=True).order("id", desc=True).limit(query_limit)
 
         if _community_post_type_column_available is not False:
             try:
@@ -1364,12 +1475,14 @@ def list_my_community_posts(
             )
             rows = response.data or []
 
-        rows = [
+        candidate_rows = [
             row
             for row in rows
             if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
             and (post_type == "all" or _community_post_type(row) == post_type)
-        ][:limit]
+        ]
+        has_more = len(candidate_rows) > limit
+        rows = candidate_rows[:limit]
         post_ids = [str(row.get("id")) for row in rows if row.get("id")]
 
         with ThreadPoolExecutor(max_workers=3) as executor:
@@ -1382,12 +1495,29 @@ def list_my_community_posts(
             liked_post_ids = liked_post_ids_future.result()
             previews = previews_future.result()
 
+        next_cursor = None
+        if has_more and rows:
+            anchor = rows[-1]
+            cursor_data = {
+                **cursor_context,
+                "created_at": str(anchor.get("created_at") or ""),
+                "id": str(anchor.get("id") or ""),
+            }
+            if sort_by == "hot":
+                cursor_data.update({
+                    "like_count": int(anchor.get("like_count") or 0),
+                    "comment_count": int(anchor.get("comment_count") or 0),
+                    "view_count": int(anchor.get("view_count") or 0),
+                })
+            next_cursor = encode_page_cursor("community_my_posts", cursor_data)
         return CommunityPostListResponse(
             items=[
                 _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
                 for row in rows
             ],
             count=len(rows),
+            next_cursor=next_cursor,
+            has_more=has_more,
         )
     except HTTPException:
         raise

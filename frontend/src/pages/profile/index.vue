@@ -1,22 +1,28 @@
 <template>
   <view class="page profile-edit-page" :style="themeInlineStyle">
-    <view class="profile-topbar">
-      <button class="profile-back-button" hover-class="none" aria-label="返回" @tap="goBack">
-        <image src="/static/ui-icons/back.svg" mode="aspectFit" />
-      </button>
-      <text class="profile-topbar-title">个人资料</text>
-      <view class="profile-topbar-spacer"></view>
-    </view>
+    <AppPageHeader title="个人资料" fixed @back="goBack" />
 
     <view class="profile-card">
-      <image
-        v-if="isImageAvatar(form.avatar_url)"
-        class="avatar-preview avatar-preview-image"
-        :src="form.avatar_url"
-        mode="aspectFill"
-        alt="用户头像"
-      />
-      <view v-else class="avatar-preview">{{ avatarText }}</view>
+      <button
+        class="avatar-change-button"
+        :class="{ uploading: uploadingAvatar }"
+        :disabled="uploadingAvatar"
+        hover-class="avatar-change-button--pressed"
+        :aria-label="uploadingAvatar ? '头像上传中' : '更换头像'"
+        @tap="chooseAvatar"
+      >
+        <image
+          v-if="avatarImageUrl"
+          class="avatar-preview avatar-preview-image"
+          :src="avatarImageUrl"
+          mode="aspectFill"
+          alt="用户头像"
+        />
+        <view v-else class="avatar-preview">{{ avatarText }}</view>
+        <view class="avatar-change-badge" aria-hidden="true">
+          <text>{{ uploadingAvatar ? '上传中' : '更换' }}</text>
+        </view>
+      </button>
       <view class="profile-card-copy">
         <view class="profile-name">{{ profileName }}</view>
         <view class="profile-email">{{ profileContact }}</view>
@@ -101,6 +107,7 @@ import { computed, reactive, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import SectionCard from '../../components/SectionCard.vue'
+import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import {
   bindWechatEmail,
   changeEmailWithCode,
@@ -109,6 +116,7 @@ import {
   sendChangeEmailCode,
   sendUnbindWechatCode,
   unbindWechat,
+  uploadAvatar,
   updateProfile
 } from '../../api/auth'
 import { clearAuthSession, getAuthUser, saveAuthSession, updateAuthUser } from '../../utils/auth'
@@ -123,6 +131,7 @@ let IS_MP_WEIXIN = false
 IS_MP_WEIXIN = true
 // #endif
 const savingProfile = ref(false)
+const uploadingAvatar = ref(false)
 const sendingCode = ref(false)
 const bindingEmail = ref(false)
 const sendingUnbindCode = ref(false)
@@ -152,7 +161,9 @@ const emailSectionSubtitle = computed(() => (
     ? '微信用户验证邮箱后可直接绑定，或安全合并已有邮箱账号。'
     : '手机号账号也可以额外绑定邮箱，验证码验证后生效。'
 ))
-const avatarText = computed(() => (form.avatar_url || profileName.value || '用').slice(0, 1))
+const avatarPreviewUrl = ref('')
+const avatarImageUrl = computed(() => avatarPreviewUrl.value || (isImageAvatar(form.avatar_url) ? form.avatar_url : ''))
+const avatarText = computed(() => (profileName.value || '用').slice(0, 1))
 const initialProfile = ref({
   nickname: '',
   avatar_url: '',
@@ -167,6 +178,7 @@ const canSaveProfile = computed(() => Boolean(form.nickname && hasProfileChanges
 
 onShow(() => {
   user.value = getAuthUser() || {}
+  avatarPreviewUrl.value = ''
   form.nickname = user.value.nickname || ''
   form.avatar_url = user.value.avatar_url || ''
   form.gender = user.value.gender || ''
@@ -188,6 +200,79 @@ function goBack() {
 function isImageAvatar(value) {
   const avatar = String(value || '')
   return avatar.startsWith('http://') || avatar.startsWith('https://') || avatar.startsWith('data:image')
+}
+
+function chooseAvatar() {
+  if (uploadingAvatar.value) return
+
+  uni.chooseImage({
+    count: 1,
+    sizeType: ['compressed'],
+    sourceType: ['album', 'camera'],
+    success(result) {
+      const tempFile = Array.isArray(result.tempFiles) ? result.tempFiles[0] : null
+      const fileCandidate = tempFile?.file || tempFile?.fileObject || tempFile
+      const file = typeof Blob !== 'undefined' && fileCandidate instanceof Blob ? fileCandidate : null
+      const filePath = (
+        (Array.isArray(result.tempFilePaths) ? result.tempFilePaths[0] : '') ||
+        tempFile?.path ||
+        tempFile?.tempFilePath ||
+        ''
+      )
+
+      if (!filePath && !file) {
+        uni.showToast({ title: '未读取到图片，请重新选择', icon: 'none' })
+        return
+      }
+
+      avatarPreviewUrl.value = filePath
+      void uploadSelectedAvatar({
+        filePath,
+        file,
+        fileName: tempFile?.name || file?.name || 'avatar.jpg'
+      })
+    },
+    fail(error) {
+      const message = String(error?.errMsg || '').toLowerCase()
+      if (!message.includes('cancel')) {
+        uni.showToast({ title: '图片选择失败，请重试', icon: 'none' })
+      }
+    }
+  })
+}
+
+async function uploadSelectedAvatar({ filePath, file, fileName }) {
+  uploadingAvatar.value = true
+  try {
+    const nextUser = await uploadAvatar({ filePath, file, fileName })
+    if (!nextUser?.avatar_url) {
+      throw { detail: '头像上传失败，请重试' }
+    }
+
+    const savedUser = updateAuthUser(nextUser) || nextUser
+    user.value = savedUser
+    form.avatar_url = nextUser.avatar_url
+    initialProfile.value = {
+      nickname: savedUser.nickname || '',
+      avatar_url: nextUser.avatar_url,
+      gender: savedUser.gender || ''
+    }
+    avatarPreviewUrl.value = ''
+    uni.showToast({ title: '头像已更换', icon: 'success' })
+  } catch (error) {
+    avatarPreviewUrl.value = ''
+    uni.showToast({ title: getAvatarUploadError(error), icon: 'none' })
+  } finally {
+    uploadingAvatar.value = false
+  }
+}
+
+function getAvatarUploadError(error) {
+  const detail = String(error?.detail || '')
+  const statusCode = Number(error?.statusCode || 0)
+  if (statusCode === 413 || detail.includes('5 MB')) return '图片不能超过 5MB'
+  if (statusCode === 415 || /PNG|JPEG|WebP/i.test(detail)) return '请选择 JPG、PNG 或 WebP 图片'
+  return detail || '头像上传失败，请稍后重试'
 }
 
 function isValidEmail(email) {
@@ -472,53 +557,9 @@ async function deleteCurrentAccount() {
 
 <style scoped>
 .profile-edit-page {
-  padding: calc(env(safe-area-inset-top) + 16rpx) 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
+  padding: 0 24rpx calc(env(safe-area-inset-bottom) + 44rpx);
   background:
     linear-gradient(180deg, rgba(232, 240, 255, 0.86), rgba(246, 248, 252, 0.98) 34%, #f6f8fc 100%);
-}
-
-.profile-topbar {
-  min-height: 76rpx;
-  margin-bottom: 22rpx;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-}
-
-.profile-back-button,
-.profile-topbar-spacer {
-  width: 76rpx;
-  height: 76rpx;
-  flex-shrink: 0;
-}
-
-.profile-back-button {
-  margin: 0;
-  padding: 0;
-  border: 0;
-  border-radius: 26rpx;
-  background: #ffffff;
-  color: #172033;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.08);
-}
-
-.profile-back-button::after {
-  border: 0;
-}
-
-.profile-back-button image {
-  width: 30rpx;
-  height: 30rpx;
-}
-
-.profile-topbar-title {
-  color: #172033;
-  font-size: 32rpx;
-  line-height: 1.2;
-  font-weight: 900;
 }
 
 .profile-card {
@@ -534,10 +575,38 @@ async function deleteCurrentAccount() {
   box-shadow: 0 16rpx 42rpx rgba(25, 48, 89, 0.08);
 }
 
-.avatar-preview {
+.avatar-change-button {
+  position: relative;
   width: 112rpx;
   height: 112rpx;
-  flex: 0 0 112rpx;
+  min-width: 112rpx;
+  min-height: 112rpx;
+  margin: 0;
+  padding: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  line-height: 1;
+  transition: transform 180ms ease, opacity 180ms ease;
+}
+
+.avatar-change-button::after {
+  border: 0;
+}
+
+.avatar-change-button--pressed {
+  transform: scale(0.96);
+}
+
+.avatar-change-button.uploading {
+  opacity: 0.82;
+}
+
+.avatar-preview {
+  display: flex;
+  width: 112rpx;
+  height: 112rpx;
   border-radius: 50%;
   background: linear-gradient(135deg, var(--gyt-primary), var(--gyt-primary));
   color: #ffffff;
@@ -553,6 +622,32 @@ async function deleteCurrentAccount() {
   display: block;
   object-fit: cover;
   background: #ffffff;
+}
+
+.avatar-change-badge {
+  position: absolute;
+  right: -10rpx;
+  bottom: -6rpx;
+  z-index: 1;
+  min-width: 54rpx;
+  height: 34rpx;
+  padding: 0 10rpx;
+  box-sizing: border-box;
+  border: 3rpx solid #ffffff;
+  border-radius: 999rpx;
+  background: var(--gyt-primary, #3478f6);
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 6rpx 14rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2));
+}
+
+.avatar-change-badge text {
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 800;
+  white-space: nowrap;
 }
 
 .profile-card-copy {
