@@ -1,9 +1,9 @@
 <template>
-  <view class="page stats-page" :style="themeInlineStyle">
+  <view class="page stats-page" :class="{ 'is-modal-open': goalModalOpen }" :style="themeInlineStyle">
     <view class="stats-shell">
       <view class="stats-header">
         <button class="stats-back-button" hover-class="none" aria-label="返回" @tap="goBack">
-          <image class="stats-back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+          <image class="stats-back-icon" src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
         </button>
         <view class="stats-header-copy">
           <text class="stats-title">学习统计</text>
@@ -15,7 +15,7 @@
           aria-label="刷新学习统计"
           @tap="loadStats"
         >
-          <text class="refresh-glyph" aria-hidden="true">↻</text>
+          <view class="refresh-icon-wrap" aria-hidden="true"><AppRefreshIcon /></view>
         </button>
       </view>
 
@@ -24,26 +24,58 @@
         <button class="sync-retry" :disabled="loading" @tap="loadStats">重试</button>
       </view>
 
-      <view class="score-card" @tap="goPractice">
-        <view class="score-illustration" aria-hidden="true">
-          <view class="score-mascot-stage">
-            <image class="score-mascot-image" src="/static/brand/study-stat-mascot.png" mode="aspectFit" />
-            <svg class="score-mascot-blink-eye score-mascot-blink-eye--left" viewBox="0 0 32 22" xmlns="http://www.w3.org/2000/svg">
-              <ellipse cx="16" cy="11" rx="16" ry="11" fill="#b4d9f8" />
-              <path d="M6 12c4-6 16-6 20 0" fill="none" stroke="#111820" stroke-width="3.2" stroke-linecap="round" />
-            </svg>
-            <svg class="score-mascot-blink-eye score-mascot-blink-eye--right" viewBox="0 0 32 22" xmlns="http://www.w3.org/2000/svg">
-              <ellipse cx="16" cy="11" rx="16" ry="11" fill="#afd5f6" />
-              <path d="M6 12c4-6 16-6 20 0" fill="none" stroke="#111820" stroke-width="3.2" stroke-linecap="round" />
-            </svg>
+      <view class="study-goal-card-wrap">
+        <view class="study-goal-card-depth" aria-hidden="true"></view>
+        <view
+          class="score-card"
+          :class="{ 'is-pressed': goalCardPressed }"
+          role="button"
+          aria-label="双击设置学习任务"
+          @tap="handleGoalCardTap"
+          @touchstart="handleGoalCardTouchStart"
+          @touchmove="handleGoalCardTouchMove"
+          @touchend="handleGoalCardTouchEnd"
+          @touchcancel="handleGoalCardTouchEnd"
+        >
+          <view class="score-illustration" aria-hidden="true">
+            <view class="score-mascot-stage">
+              <image class="score-mascot-image" src="/static/brand/study-stat-mascot.png" mode="aspectFit" />
+              <!-- #ifndef APP-PLUS -->
+              <svg class="score-mascot-blink-eye score-mascot-blink-eye--left" viewBox="0 0 32 22" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="11" rx="16" ry="11" fill="#b4d9f8" />
+                <path d="M6 12c4-6 16-6 20 0" fill="none" stroke="#111820" stroke-width="3.2" stroke-linecap="round" />
+              </svg>
+              <svg class="score-mascot-blink-eye score-mascot-blink-eye--right" viewBox="0 0 32 22" xmlns="http://www.w3.org/2000/svg">
+                <ellipse cx="16" cy="11" rx="16" ry="11" fill="#afd5f6" />
+                <path d="M6 12c4-6 16-6 20 0" fill="none" stroke="#111820" stroke-width="3.2" stroke-linecap="round" />
+              </svg>
+              <!-- #endif -->
+            </view>
           </view>
+          <view class="score-copy">
+            <view
+              class="score-toggle-area"
+              role="button"
+              :aria-label="goalMetricAriaLabel"
+              @tap.stop="handleGoalMetricTap"
+            >
+              <view :key="goalMetricMode" class="score-toggle-content">
+                <view
+                  class="score-main"
+                  :class="{
+                    'is-empty': !studyGoal.configured,
+                    'is-duration': studyGoal.configured && isDailyGoalMode
+                  }"
+                >
+                  {{ goalMetricValue }}
+                </view>
+                <view class="score-label">{{ goalMetricLabel }}</view>
+              </view>
+            </view>
+            <view class="score-meta">{{ goalMetricMeta }}</view>
+          </view>
+          <view class="score-action-hint">双击设置</view>
         </view>
-        <view class="score-copy">
-          <view class="score-main">{{ scoreFraction }}</view>
-          <view class="score-label">学习总览 <text class="score-date">（{{ scoreDateLabel }}）</text></view>
-          <view class="score-meta">正确率 {{ accuracyLabel }} · {{ examOption.title }}</view>
-        </view>
-        <text class="score-arrow" aria-hidden="true">›</text>
       </view>
 
       <view class="streak-card">
@@ -77,21 +109,7 @@
           <view class="metric-topline">
             <text class="metric-value">{{ item.value }}</text>
             <view class="metric-icon" :class="`metric-icon-${item.key}`" aria-hidden="true">
-              <svg v-if="item.key === 'total'" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <rect x="10" y="7" width="28" height="34" rx="4" fill="#a9d6d7" stroke="#1d2929" stroke-width="2" />
-                <path d="M16 16h16M16 23h16M16 30h10" stroke="#1d2929" stroke-width="2" stroke-linecap="round" />
-              </svg>
-              <svg v-else-if="item.key === 'favorite'" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path d="M24 39S8 29 8 18c0-6 4-10 10-10 3 0 5 1 6 4 1-3 4-4 6-4 6 0 10 4 10 10 0 11-16 21-16 21Z" fill="#a9d6d7" stroke="#1d2929" stroke-width="2" stroke-linejoin="round" />
-              </svg>
-              <svg v-else-if="item.key === 'wrong'" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path d="M13 7h22a4 4 0 0 1 4 4v30l-15-7-15 7V11a4 4 0 0 1 4-4Z" fill="#a9d6d7" stroke="#1d2929" stroke-width="2" stroke-linejoin="round" />
-                <path d="M19 17h10M19 24h10" stroke="#1d2929" stroke-width="2" stroke-linecap="round" />
-              </svg>
-              <svg v-else viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                <path d="M6 22 24 10l18 12-18 12Z" fill="#a9d6d7" stroke="#1d2929" stroke-width="2" stroke-linejoin="round" />
-                <path d="M14 28v8c0 4 5 7 10 7s10-3 10-7v-8" fill="#d4e9e9" stroke="#1d2929" stroke-width="2" />
-              </svg>
+              <image class="metric-icon-image" :src="item.iconSrc" mode="aspectFit" />
             </view>
           </view>
           <text class="metric-label">{{ item.label }}</text>
@@ -109,6 +127,25 @@
         </view>
 
         <view v-if="trendReady" class="trend-chart-wrap">
+          <!-- #ifdef APP-PLUS -->
+          <CanvasLineChart
+            class="trend-chart"
+            canvas-id="stats-trend-canvas"
+            :view-width="320"
+            :view-height="166"
+            :points="chartPoints"
+            :grid-y="chartGridY"
+            line-color="#75b6b8"
+            point-stroke="#75b6b8"
+            fill-color="rgba(169, 214, 215, 0.3)"
+            :area-baseline="128"
+            :line-width="4"
+            :point-radius="5"
+            grid-color="#eeeeed"
+            :grid-line-width="1.5"
+          />
+          <!-- #endif -->
+          <!-- #ifndef APP-PLUS -->
           <svg class="trend-chart" viewBox="0 0 320 166" preserveAspectRatio="none" aria-label="近七天正确率曲线">
             <defs>
               <linearGradient id="stats-area-gradient" x1="0" y1="0" x2="0" y2="1">
@@ -130,14 +167,18 @@
               class="chart-point"
             />
           </svg>
+          <!-- #endif -->
           <view class="trend-axis-labels">
             <text v-for="point in chartPoints" :key="`${point.key}-label`">{{ point.label }}</text>
           </view>
         </view>
-        <view v-else class="trend-empty">
-          <view class="trend-empty-line"></view>
-          <text>完成至少两天练习后，这里会生成你的学习曲线</text>
-        </view>
+        <AppEmptyState
+          v-else
+          compact
+          label="暂无学习曲线"
+          title="暂无学习曲线"
+          description="完成至少两天练习后，这里会生成你的学习曲线。"
+        />
 
         <button class="practice-button" @tap="goPractice">
           <text>开始今日训练</text>
@@ -149,17 +190,93 @@
       <IcpFooter />
       <!-- #endif -->
     </view>
+
+    <view v-if="goalModalOpen" class="study-goal-modal" @tap="closeStudyGoalModal">
+      <view class="study-goal-panel-wrap" @tap.stop>
+        <view class="study-goal-panel-depth" aria-hidden="true"></view>
+        <view class="study-goal-panel" role="dialog" aria-label="设置学习任务">
+          <view class="study-goal-panel-header">
+            <view>
+              <text class="study-goal-panel-eyebrow">学习任务</text>
+              <text class="study-goal-panel-title">安排你的学习节奏</text>
+            </view>
+            <button class="study-goal-close" hover-class="none" aria-label="关闭" @tap="closeStudyGoalModal">×</button>
+          </view>
+
+          <view class="study-goal-setting">
+            <view class="study-goal-setting-heading">
+              <view>
+                <text class="study-goal-setting-title">每日学习时长</text>
+                <text class="study-goal-setting-note">每天留出一段稳定的专注时间</text>
+              </view>
+              <text class="study-goal-setting-value">{{ formatStudyDuration(goalDraft.dailyMinutes) }}</text>
+            </view>
+            <slider
+              class="study-goal-slider"
+              :value="goalDraft.dailyMinutes"
+              :min="20"
+              :max="180"
+              :step="10"
+              activeColor="#75b6b8"
+              backgroundColor="#e7e5e3"
+              block-color="#171817"
+              :block-size="22"
+              @changing="handleDailyMinutesChange"
+              @change="handleDailyMinutesChange"
+            />
+            <view class="study-goal-range"><text>20min</text><text>3h</text></view>
+          </view>
+
+          <view class="study-goal-setting">
+            <view class="study-goal-setting-heading">
+              <view>
+                <text class="study-goal-setting-title">每周刷题目标</text>
+                <text class="study-goal-setting-note">以周为周期，进度更容易坚持</text>
+              </view>
+              <text class="study-goal-setting-value">{{ goalDraft.weeklyQuestionTarget }} 题</text>
+            </view>
+            <slider
+              class="study-goal-slider"
+              :value="goalDraft.weeklyQuestionTarget"
+              :min="50"
+              :max="2000"
+              :step="50"
+              activeColor="#75b6b8"
+              backgroundColor="#e7e5e3"
+              block-color="#171817"
+              :block-size="22"
+              @changing="handleWeeklyQuestionTargetChange"
+              @change="handleWeeklyQuestionTargetChange"
+            />
+            <view class="study-goal-range"><text>50题</text><text>2000题</text></view>
+          </view>
+
+          <view class="study-goal-actions">
+            <button
+              class="study-goal-action study-goal-action-confirm"
+              :disabled="goalSaving"
+              hover-class="none"
+              @tap="confirmStudyGoal"
+            >
+              {{ goalSaving ? '正在保存...' : '确定' }}
+            </button>
+          </view>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
 <script setup>
 import { computed, ref } from 'vue'
-import { onShow } from '@dcloudio/uni-app'
+import { onShow, onUnload } from '@dcloudio/uni-app'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppRefreshIcon from '../../components/ui/AppRefreshIcon.vue'
+import CanvasLineChart from '../../components/CanvasLineChart.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import { fetchFavorites } from '../../api/favorites'
-import { fetchLearningSummary } from '../../api/reports'
+import { fetchLearningSummary, fetchStudyGoal, saveStudyGoal } from '../../api/reports'
 import { getAuthUser, isLoggedIn } from '../../utils/auth'
-import { getExamOption } from '../../utils/exam'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
@@ -170,18 +287,24 @@ const error = ref('')
 const favoriteCount = ref(0)
 const favoriteLoaded = ref(false)
 const summary = ref(createEmptySummary())
+const studyGoal = ref(createDefaultStudyGoal())
+const goalDraft = ref(createGoalDraft(studyGoal.value))
+const goalModalOpen = ref(false)
+const goalCardPressed = ref(false)
+const goalMetricMode = ref('weekly')
+const goalSaving = ref(false)
 
-const examOption = computed(() => getExamOption(examCode.value))
+const GOAL_DOUBLE_TAP_WINDOW = 280
+let lastGoalCardTapAt = 0
+let lastGoalMetricTapAt = 0
+let goalMetricTapTimer = null
+let goalCardTouchStart = null
+let goalCardPointerMoved = false
+
 const totalAnswers = computed(() => Number(summary.value.total_answers || 0))
 const correctAnswers = computed(() => Number(summary.value.correct_answers || 0))
 const accuracy = computed(() => Number(summary.value.accuracy || 0))
-const accuracyLabel = computed(() => `${Math.round(accuracy.value)}%`)
 const studyStreak = computed(() => Number(summary.value.study_streak || 0))
-const scoreFraction = computed(() => `${correctAnswers.value}/${totalAnswers.value}`)
-const scoreDateLabel = computed(() => {
-  const latest = streakDays.value.slice().reverse().find((item) => item.active)
-  return latest?.dateLabel || '开始练习后同步'
-})
 const streakSubtitle = computed(() => {
   if (studyStreak.value > 0) return `已坚持 ${studyStreak.value} 天，保持这个节奏`
   return '完成今天第一组题，点亮连续学习'
@@ -189,31 +312,60 @@ const streakSubtitle = computed(() => {
 const weeklyAnswers = computed(() => Number(summary.value.weekly_answers || 0))
 const wrongCount = computed(() => Number(summary.value.wrong_question_count || 0))
 const favoriteValue = computed(() => (favoriteLoaded.value ? favoriteCount.value : '--'))
+const studyDurationLabel = computed(() => formatStudyDuration(studyGoal.value.daily_minutes))
+const todayStudySeconds = computed(() => Math.max(0, Number(summary.value.today_study_seconds || 0)))
+const isDailyGoalMode = computed(() => goalMetricMode.value === 'daily')
+const goalMetricValue = computed(() => {
+  if (!studyGoal.value.configured) return '尚未设定'
+  if (isDailyGoalMode.value) {
+    return `${formatElapsedStudyDuration(todayStudySeconds.value)}/${formatCompactStudyMinutes(studyGoal.value.daily_minutes)}`
+  }
+  return `${weeklyAnswers.value}/${studyGoal.value.weekly_question_target}`
+})
+const goalMetricLabel = computed(() => {
+  if (!studyGoal.value.configured) return '学习任务'
+  return isDailyGoalMode.value ? '本日学习时长' : '本周学习任务'
+})
+const goalMetricMeta = computed(() => {
+  if (!studyGoal.value.configured) return '双击设置每日时长与每周题量'
+  return isDailyGoalMode.value
+    ? `目标每日 ${studyDurationLabel.value} · 单击查看周任务`
+    : `每日 ${studyDurationLabel.value} · 单击查看本日时长`
+})
+const goalMetricAriaLabel = computed(() => {
+  if (!studyGoal.value.configured) return '学习任务尚未设定，双击打开设置'
+  const nextLabel = isDailyGoalMode.value ? '本周学习任务' : '本日学习时长'
+  return `当前${goalMetricLabel.value}${goalMetricValue.value}，单击切换为${nextLabel}，双击打开设置`
+})
 
 const metricCards = computed(() => [
   {
     key: 'total',
     value: totalAnswers.value,
     label: '累计作答',
-    note: totalAnswers.value ? `正确 ${correctAnswers.value} 题` : '完成练习后自动累计'
+    note: totalAnswers.value ? `正确 ${correctAnswers.value} 题` : '完成练习后自动累计',
+    iconSrc: '/static/ui-icons/png/circle-materials/report.png'
   },
   {
     key: 'favorite',
     value: favoriteValue.value,
     label: '收藏题目',
-    note: favoriteLoaded.value ? '随时回看重点题' : '正在同步收藏'
+    note: favoriteLoaded.value ? '随时回看重点题' : '正在同步收藏',
+    iconSrc: '/static/ui-icons/png/circle-materials/favorite.png'
   },
   {
     key: 'wrong',
     value: wrongCount.value,
     label: '错题待复盘',
-    note: wrongCount.value ? '建议优先处理' : '暂无待复盘错题'
+    note: wrongCount.value ? '建议优先处理' : '暂无待复盘错题',
+    iconSrc: '/static/ui-icons/png/circle-materials/wrong-book.png'
   },
   {
     key: 'practice',
     value: weeklyAnswers.value,
     label: '本周刷题',
-    note: summary.value.weekly_accuracy ? `本周正确率 ${Math.round(summary.value.weekly_accuracy)}%` : '本周还未开始'
+    note: summary.value.weekly_accuracy ? `本周正确率 ${Math.round(summary.value.weekly_accuracy)}%` : '本周还未开始',
+    iconSrc: '/static/ui-icons/png/circle-materials/tab-practice.png'
   }
 ])
 
@@ -231,7 +383,6 @@ const streakDays = computed(() => {
     return {
       key: item?.date || `empty-${index}`,
       label: item?.label || fallbackLabels[index],
-      dateLabel: formatShortDate(item?.date),
       date: item?.date || '',
       active: total > 0,
       total,
@@ -242,6 +393,7 @@ const streakDays = computed(() => {
 })
 
 const trendReady = computed(() => streakDays.value.filter((item) => item.accuracy !== null && item.total > 0).length >= 2)
+const chartGridY = [28, 78, 128]
 const chartPoints = computed(() => {
   if (!trendReady.value) return []
   const known = streakDays.value.filter((item) => item.accuracy !== null && item.total > 0)
@@ -290,23 +442,33 @@ const trendSubtitle = computed(() => {
 
 onShow(() => {
   authUser.value = getAuthUser()
-  examCode.value = uni.getStorageSync('examCode') || authUser.value?.exam_target || 'Z001'
+  const nextExamCode = uni.getStorageSync('examCode') || authUser.value?.exam_target || 'Z001'
+  if (examCode.value !== nextExamCode) {
+    goalMetricMode.value = 'weekly'
+  }
+  examCode.value = nextExamCode
   if (!isLoggedIn()) {
     uni.navigateTo({
       url: `/pages/login/index?redirect=${encodeURIComponent('/pages/leaderboard/index')}`
     })
     return
   }
+  loadCachedStudyGoal()
   loadStats()
+})
+
+onUnload(() => {
+  cancelGoalMetricToggle()
 })
 
 async function loadStats() {
   if (loading.value) return
   loading.value = true
   error.value = ''
-  const [summaryResult, favoriteResult] = await Promise.allSettled([
+  const [summaryResult, favoriteResult, studyGoalResult] = await Promise.allSettled([
     fetchLearningSummary({ exam_code: examCode.value }),
-    fetchFavorites({ limit: 200 })
+    fetchFavorites({ limit: 200 }),
+    fetchStudyGoal({ exam_code: examCode.value })
   ])
 
   if (summaryResult.status === 'fulfilled') {
@@ -322,7 +484,235 @@ async function loadStats() {
   } else if (!error.value) {
     error.value = '收藏数据暂时未同步，学习统计仍可正常查看'
   }
+
+  if (studyGoalResult.status === 'fulfilled') {
+    const remoteGoal = studyGoalResult.value || {}
+    if (remoteGoal.sync_available === false) {
+      studyGoal.value = {
+        ...studyGoal.value,
+        exam_code: examCode.value,
+        sync_available: false
+      }
+    } else {
+      applyStudyGoal(remoteGoal)
+    }
+  } else {
+    studyGoal.value = { ...studyGoal.value, sync_available: false }
+    if (!error.value) {
+      error.value = '学习任务暂时使用本机记录，其余统计已同步'
+    }
+  }
   loading.value = false
+}
+
+function handleGoalCardTouchStart(event) {
+  const touch = event?.touches?.[0]
+  goalCardTouchStart = touch
+    ? { x: Number(touch.clientX ?? touch.pageX ?? 0), y: Number(touch.clientY ?? touch.pageY ?? 0) }
+    : null
+  goalCardPointerMoved = false
+  goalCardPressed.value = true
+}
+
+function handleGoalCardTouchMove(event) {
+  if (!goalCardTouchStart) return
+  const touch = event?.touches?.[0]
+  if (!touch) return
+  const x = Number(touch.clientX ?? touch.pageX ?? 0)
+  const y = Number(touch.clientY ?? touch.pageY ?? 0)
+  if (Math.abs(x - goalCardTouchStart.x) > 10 || Math.abs(y - goalCardTouchStart.y) > 10) {
+    goalCardPointerMoved = true
+    goalCardPressed.value = false
+  }
+}
+
+function handleGoalCardTouchEnd() {
+  goalCardPressed.value = false
+  goalCardTouchStart = null
+}
+
+function handleGoalCardTap() {
+  goalCardPressed.value = false
+  if (goalCardPointerMoved) {
+    goalCardPointerMoved = false
+    lastGoalCardTapAt = 0
+    return
+  }
+
+  const now = Date.now()
+  if (lastGoalCardTapAt && now - lastGoalCardTapAt <= GOAL_DOUBLE_TAP_WINDOW) {
+    lastGoalCardTapAt = 0
+    openStudyGoalModal()
+    return
+  }
+  lastGoalCardTapAt = now
+}
+
+function handleGoalMetricTap() {
+  goalCardPressed.value = false
+  if (goalCardPointerMoved) {
+    goalCardPointerMoved = false
+    cancelGoalMetricToggle()
+    return
+  }
+
+  const now = Date.now()
+  if (lastGoalMetricTapAt && now - lastGoalMetricTapAt <= GOAL_DOUBLE_TAP_WINDOW) {
+    cancelGoalMetricToggle()
+    openStudyGoalModal()
+    return
+  }
+
+  lastGoalMetricTapAt = now
+  if (goalMetricTapTimer) clearTimeout(goalMetricTapTimer)
+  goalMetricTapTimer = setTimeout(() => {
+    goalMetricTapTimer = null
+    lastGoalMetricTapAt = 0
+    if (!studyGoal.value.configured) return
+    goalMetricMode.value = isDailyGoalMode.value ? 'weekly' : 'daily'
+  }, GOAL_DOUBLE_TAP_WINDOW)
+}
+
+function cancelGoalMetricToggle() {
+  if (goalMetricTapTimer) {
+    clearTimeout(goalMetricTapTimer)
+    goalMetricTapTimer = null
+  }
+  lastGoalMetricTapAt = 0
+}
+
+function openStudyGoalModal() {
+  cancelGoalMetricToggle()
+  lastGoalCardTapAt = 0
+  goalDraft.value = createGoalDraft(studyGoal.value)
+  goalModalOpen.value = true
+}
+
+function closeStudyGoalModal() {
+  if (goalSaving.value) return
+  goalModalOpen.value = false
+}
+
+function handleDailyMinutesChange(event) {
+  goalDraft.value.dailyMinutes = normalizeStepValue(event?.detail?.value, 20, 180, 10)
+}
+
+function handleWeeklyQuestionTargetChange(event) {
+  goalDraft.value.weeklyQuestionTarget = normalizeStepValue(event?.detail?.value, 50, 2000, 50)
+}
+
+async function confirmStudyGoal() {
+  if (goalSaving.value) return
+  const draft = goalDraft.value
+  const payload = {
+    exam_code: examCode.value,
+    daily_minutes: normalizeStepValue(draft.dailyMinutes, 20, 180, 10),
+    weekly_question_target: normalizeStepValue(draft.weeklyQuestionTarget, 50, 2000, 50)
+  }
+
+  goalSaving.value = true
+  try {
+    const saved = await saveStudyGoal(payload)
+    applyStudyGoal(saved)
+    goalModalOpen.value = false
+    uni.showToast({ title: '学习任务已保存', icon: 'none' })
+  } catch (err) {
+    uni.showModal({
+      title: '保存未完成',
+      content: getStudyGoalErrorMessage(err, '学习任务保存失败，请检查网络后重试'),
+      showCancel: false
+    })
+  } finally {
+    goalSaving.value = false
+  }
+}
+
+function loadCachedStudyGoal() {
+  const cached = uni.getStorageSync(getStudyGoalCacheKey())
+  if (cached && typeof cached === 'object') {
+    applyStudyGoal({ ...cached, exam_code: examCode.value }, { cache: false })
+    return
+  }
+  studyGoal.value = createDefaultStudyGoal()
+}
+
+function applyStudyGoal(value, options = {}) {
+  const normalized = normalizeStudyGoal(value)
+  studyGoal.value = normalized
+  if (options.cache !== false) {
+    uni.setStorageSync(getStudyGoalCacheKey(), normalized)
+  }
+}
+
+function normalizeStudyGoal(value = {}) {
+  return {
+    exam_code: value.exam_code === 'Z002' ? 'Z002' : examCode.value,
+    configured: Boolean(value.configured),
+    sync_available: value.sync_available !== false,
+    daily_minutes: normalizeStepValue(value.daily_minutes, 20, 180, 10, 60),
+    weekly_question_target: normalizeStepValue(value.weekly_question_target, 50, 2000, 50, 300),
+    updated_at: value.updated_at || null
+  }
+}
+
+function createDefaultStudyGoal() {
+  return {
+    exam_code: examCode.value,
+    configured: false,
+    sync_available: true,
+    daily_minutes: 60,
+    weekly_question_target: 300,
+    updated_at: null
+  }
+}
+
+function createGoalDraft(value = {}) {
+  return {
+    dailyMinutes: normalizeStepValue(value.daily_minutes, 20, 180, 10, 60),
+    weeklyQuestionTarget: normalizeStepValue(value.weekly_question_target, 50, 2000, 50, 300)
+  }
+}
+
+function getStudyGoalCacheKey() {
+  const userId = authUser.value?.id || authUser.value?.user_id || 'signed-in-user'
+  return `studyGoal:${userId}:${examCode.value}`
+}
+
+function formatStudyDuration(value) {
+  const minutes = normalizeStepValue(value, 20, 180, 10, 60)
+  const hours = Math.floor(minutes / 60)
+  const remaining = minutes % 60
+  if (hours && remaining) return `${hours}h ${remaining}min`
+  if (hours) return `${hours}h`
+  return `${remaining}min`
+}
+
+function formatCompactStudyMinutes(value) {
+  const minutes = Math.max(0, Math.floor(Number(value || 0)))
+  const hours = Math.floor(minutes / 60)
+  const remaining = minutes % 60
+  if (hours && remaining) return `${hours}h${remaining}min`
+  if (hours) return `${hours}h`
+  return `${remaining}min`
+}
+
+function formatElapsedStudyDuration(value) {
+  const seconds = Math.max(0, Math.floor(Number(value || 0)))
+  if (seconds > 0 && seconds < 60) return '<1min'
+  return formatCompactStudyMinutes(Math.floor(seconds / 60))
+}
+
+function normalizeStepValue(value, min, max, step, fallback = min) {
+  const numeric = Number(value)
+  const safeValue = Number.isFinite(numeric) ? numeric : fallback
+  const stepped = Math.round(safeValue / step) * step
+  return Math.min(max, Math.max(min, stepped))
+}
+
+function getStudyGoalErrorMessage(err, fallback) {
+  if (typeof err?.detail === 'string' && err.detail.trim()) return err.detail
+  if (Array.isArray(err?.detail)) return err.detail[0]?.msg || fallback
+  return fallback
 }
 
 function getStatsErrorMessage(err) {
@@ -367,12 +757,6 @@ function handleMetric(key) {
   goPractice()
 }
 
-function formatShortDate(value) {
-  if (!value) return ''
-  const match = String(value).match(/^(\d{4})-(\d{1,2})-(\d{1,2})/)
-  return match ? `${Number(match[2])}/${Number(match[3])}` : String(value).slice(5, 10)
-}
-
 function clamp(value, min, max) {
   return Math.min(max, Math.max(min, Number.isFinite(value) ? value : min))
 }
@@ -384,6 +768,7 @@ function createEmptySummary() {
     correct_answers: 0,
     accuracy: 0,
     wrong_question_count: 0,
+    today_study_seconds: 0,
     weekly_answers: 0,
     weekly_correct_answers: 0,
     weekly_accuracy: 0,
@@ -417,6 +802,12 @@ function createEmptySummary() {
   width: 100%;
   max-width: 720rpx;
   margin: 0 auto;
+}
+
+.stats-page.is-modal-open {
+  height: 100vh;
+  height: 100dvh;
+  overflow: hidden;
 }
 
 .stats-header {
@@ -479,14 +870,13 @@ function createEmptySummary() {
   box-shadow: none;
 }
 
-.refresh-glyph {
-  color: #9b9795;
-  font-size: 43rpx;
-  line-height: 1;
-  font-weight: 500;
+.refresh-icon-wrap {
+  display: flex;
+  align-items: center;
+  justify-content: center;
 }
 
-.header-refresh.spinning .refresh-glyph {
+.header-refresh.spinning .refresh-icon-wrap {
   display: block;
   animation: stats-spin 900ms linear infinite;
 }
@@ -542,23 +932,49 @@ function createEmptySummary() {
   background: var(--stats-card);
 }
 
+.study-goal-card-wrap {
+  position: relative;
+  margin-bottom: 36rpx;
+  padding-bottom: 13rpx;
+  isolation: isolate;
+}
+
+.study-goal-card-depth {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  bottom: 13rpx;
+  left: 0;
+  border-radius: 46rpx;
+  background: var(--stats-ink);
+  transform: translate3d(0, 13rpx, 0);
+  pointer-events: none;
+}
+
 .score-card {
   position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 22rpx;
   min-height: 188rpx;
-  margin-bottom: 36rpx;
+  box-sizing: border-box;
   padding: 28rpx 26rpx;
   border: 3rpx solid var(--stats-ink);
   border-radius: 46rpx;
-  box-shadow: 0 13rpx 0 var(--stats-ink);
-  transition: transform 160ms ease, box-shadow 160ms ease;
+  background: var(--stats-card);
+  transform: translate3d(0, 0, 0);
+  transition: transform 110ms cubic-bezier(0.2, 0.8, 0.25, 1);
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+  will-change: transform;
+  backface-visibility: hidden;
 }
 
-.score-card:active {
-  transform: translateY(5rpx);
-  box-shadow: 0 8rpx 0 var(--stats-ink);
+.score-card.is-pressed {
+  transform: translate3d(0, 7rpx, 0);
 }
 
 .score-illustration {
@@ -638,6 +1054,15 @@ function createEmptySummary() {
   flex: 1;
 }
 
+.score-toggle-area {
+  min-width: 0;
+  touch-action: manipulation;
+}
+
+.score-toggle-content {
+  animation: score-toggle-in 150ms cubic-bezier(0.2, 0.8, 0.25, 1) both;
+}
+
 .score-main {
   color: var(--stats-ink);
   font-size: 46rpx;
@@ -646,17 +1071,22 @@ function createEmptySummary() {
   letter-spacing: -1rpx;
 }
 
+.score-main.is-empty {
+  font-size: 36rpx;
+  letter-spacing: 0;
+}
+
+.score-main.is-duration {
+  font-size: 40rpx;
+  letter-spacing: -1.5rpx;
+  white-space: nowrap;
+}
+
 .score-label {
   margin-top: 9rpx;
   color: var(--stats-ink);
   font-size: 30rpx;
   line-height: 1.2;
-  font-weight: 600;
-}
-
-.score-date {
-  color: #aaa6a5;
-  font-size: 24rpx;
   font-weight: 600;
 }
 
@@ -671,12 +1101,249 @@ function createEmptySummary() {
   white-space: nowrap;
 }
 
-.score-arrow {
+@keyframes score-toggle-in {
+  from {
+    opacity: 0.42;
+    transform: translate3d(0, 5rpx, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}
+
+.score-action-hint {
   flex: 0 0 auto;
-  color: #737272;
-  font-size: 58rpx;
+  padding: 9rpx 13rpx;
+  border: 2rpx solid rgba(23, 24, 23, 0.16);
+  border-radius: 999rpx;
+  background: #f2f0ef;
+  color: #777371;
+  font-size: 18rpx;
+  line-height: 1.1;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.study-goal-modal {
+  position: fixed;
+  z-index: 1200;
+  inset: 0;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 32rpx) 28rpx calc(env(safe-area-inset-bottom) + 32rpx);
+  background: rgba(19, 20, 19, 0.42);
+  animation: study-goal-backdrop-in 160ms ease-out both;
+}
+
+.study-goal-panel-wrap {
+  position: relative;
+  width: 100%;
+  max-width: 680rpx;
+  max-height: calc(100vh - 96rpx);
+  max-height: calc(100dvh - 96rpx);
+  padding-bottom: 12rpx;
+  isolation: isolate;
+  animation: study-goal-panel-in 190ms cubic-bezier(0.2, 0.82, 0.3, 1) both;
+}
+
+.study-goal-panel-depth {
+  position: absolute;
+  z-index: 0;
+  top: 0;
+  right: 0;
+  bottom: 12rpx;
+  left: 0;
+  border-radius: 44rpx;
+  background: var(--stats-ink);
+  transform: translate3d(0, 12rpx, 0);
+}
+
+.study-goal-panel {
+  position: relative;
+  z-index: 1;
+  max-height: calc(100vh - 108rpx);
+  max-height: calc(100dvh - 108rpx);
+  box-sizing: border-box;
+  padding: 32rpx 30rpx 28rpx;
+  overflow-y: auto;
+  border: 3rpx solid var(--stats-line);
+  border-radius: 44rpx;
+  background: #ffffff;
+  -webkit-overflow-scrolling: touch;
+}
+
+.study-goal-panel-header,
+.study-goal-setting-heading,
+.study-goal-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.study-goal-panel-header {
+  gap: 20rpx;
+  margin-bottom: 24rpx;
+}
+
+.study-goal-panel-eyebrow,
+.study-goal-panel-title,
+.study-goal-setting-title,
+.study-goal-setting-note {
+  display: block;
+}
+
+.study-goal-panel-eyebrow {
+  color: var(--stats-mint-deep);
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  letter-spacing: 2rpx;
+}
+
+.study-goal-panel-title {
+  margin-top: 5rpx;
+  color: var(--stats-ink);
+  font-size: 36rpx;
+  line-height: 1.18;
+  font-weight: 800;
+}
+
+.study-goal-close {
+  flex: 0 0 auto;
+  width: 62rpx;
+  height: 62rpx;
+  margin: 0;
+  padding: 0 0 4rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 2rpx solid #dedbd9;
+  border-radius: 50%;
+  background: #f5f3f2;
+  color: #595654;
+  font-size: 38rpx;
   line-height: 1;
-  font-weight: 300;
+  font-weight: 400;
+}
+
+.study-goal-close::after,
+.study-goal-action::after {
+  border: 0;
+}
+
+.study-goal-setting {
+  box-sizing: border-box;
+  border: 2rpx solid #e4e1df;
+  border-radius: 30rpx;
+  background: #faf9f8;
+}
+
+.study-goal-setting {
+  margin-top: 18rpx;
+  padding: 24rpx 22rpx 19rpx;
+}
+
+.study-goal-setting-heading {
+  align-items: flex-start;
+  gap: 18rpx;
+}
+
+.study-goal-setting-heading > view {
+  min-width: 0;
+  flex: 1;
+}
+
+.study-goal-setting-title {
+  color: var(--stats-ink);
+  font-size: 27rpx;
+  line-height: 1.25;
+  font-weight: 700;
+}
+
+.study-goal-setting-note {
+  margin-top: 6rpx;
+  color: var(--stats-muted);
+  font-size: 19rpx;
+  line-height: 1.35;
+  font-weight: 400;
+}
+
+.study-goal-setting-value {
+  flex: 0 0 auto;
+  color: var(--stats-ink);
+  font-size: 27rpx;
+  line-height: 1.2;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+
+.study-goal-slider {
+  margin: 23rpx 0 0;
+}
+
+.study-goal-range {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: -2rpx;
+  color: #9b9795;
+  font-size: 18rpx;
+  line-height: 1.2;
+  font-weight: 500;
+}
+
+.study-goal-actions {
+  margin-top: 26rpx;
+}
+
+.study-goal-action {
+  min-width: 0;
+  min-height: 82rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 3rpx solid var(--stats-ink);
+  border-radius: 28rpx;
+  font-size: 25rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  transition: transform 100ms ease, background-color 120ms ease;
+}
+
+.study-goal-action:active {
+  transform: translate3d(0, 3rpx, 0);
+}
+
+.study-goal-action[disabled] {
+  opacity: 0.58;
+}
+
+.study-goal-action-confirm {
+  flex: 1;
+  width: 100%;
+  background: var(--stats-ink);
+  color: #ffffff;
+}
+
+@keyframes study-goal-backdrop-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes study-goal-panel-in {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 22rpx, 0) scale(0.98);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0) scale(1);
+  }
 }
 
 .streak-card {
@@ -851,10 +1518,11 @@ function createEmptySummary() {
   flex: 0 0 52rpx;
 }
 
-.metric-icon svg {
+.metric-icon-image {
+  display: block;
   width: 100%;
   height: 100%;
-  display: block;
+  opacity: 0.82;
 }
 
 .metric-label {
@@ -1095,12 +1763,35 @@ function createEmptySummary() {
     font-size: 41rpx;
   }
 
+  .score-main.is-empty {
+    font-size: 32rpx;
+  }
+
+  .score-main.is-duration {
+    font-size: 35rpx;
+  }
+
   .score-label {
     font-size: 27rpx;
   }
 
   .score-meta {
     font-size: 19rpx;
+  }
+
+  .score-action-hint {
+    padding-right: 10rpx;
+    padding-left: 10rpx;
+    font-size: 16rpx;
+  }
+
+  .study-goal-panel {
+    padding-right: 24rpx;
+    padding-left: 24rpx;
+  }
+
+  .study-goal-panel-title {
+    font-size: 32rpx;
   }
 
   .streak-heading {
@@ -1139,15 +1830,25 @@ function createEmptySummary() {
 }
 
 @media (prefers-reduced-motion: reduce) {
-  .header-refresh.spinning .refresh-glyph,
+  .header-refresh.spinning .refresh-icon-wrap,
   .flame-mascot-image.is-animating {
     animation: none;
   }
 
   .score-card,
   .metric-card,
-  .practice-button {
+  .practice-button,
+  .study-goal-action {
     transition: none;
+  }
+
+  .score-toggle-content {
+    animation: none;
+  }
+
+  .study-goal-modal,
+  .study-goal-panel-wrap {
+    animation: none;
   }
 }
 </style>

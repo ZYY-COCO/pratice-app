@@ -41,6 +41,7 @@ class LearningSummaryResponse(BaseModel):
     correct_answers: int
     accuracy: float
     wrong_question_count: int
+    today_study_seconds: int = 0
     weekly_answers: int = 0
     weekly_correct_answers: int = 0
     weekly_accuracy: float = 0
@@ -51,6 +52,21 @@ class LearningSummaryResponse(BaseModel):
     study_streak: int = 0
     trend: list[LearningTrendPoint] = Field(default_factory=list)
     subject_weekly_changes: list[SubjectWeeklyChange] = Field(default_factory=list)
+
+
+class StudyGoalUpdateRequest(BaseModel):
+    exam_code: str = Field(pattern=r"^(Z001|Z002)$")
+    daily_minutes: int = Field(ge=20, le=180, multiple_of=10)
+    weekly_question_target: int = Field(ge=50, le=2000, multiple_of=50)
+
+
+class StudyGoalResponse(BaseModel):
+    exam_code: str
+    configured: bool = False
+    sync_available: bool = True
+    daily_minutes: int = 60
+    weekly_question_target: int = 300
+    updated_at: str | None = None
 
 
 class PlatformPracticeTrendPoint(BaseModel):
@@ -77,6 +93,28 @@ class LeaderboardItem(BaseModel):
 class LeaderboardResponse(BaseModel):
     items: list[LeaderboardItem]
     total_users: int
+
+
+class DailyStudyLeaderboardItem(BaseModel):
+    rank: int
+    user_id: str
+    nickname: str
+    avatar_url: str | None = None
+    study_seconds: int = 0
+    answer_count: int = 0
+    correct_count: int = 0
+    accuracy: float = 0
+    is_current_user: bool = False
+
+
+class DailyStudyLeaderboardResponse(BaseModel):
+    date: str
+    timezone: str = "Asia/Shanghai"
+    updated_at: str
+    items: list[DailyStudyLeaderboardItem] = Field(default_factory=list)
+    total_users: int = 0
+    has_more: bool = False
+    current_user: DailyStudyLeaderboardItem | None = None
 
 
 class StudySubjectAdvice(BaseModel):

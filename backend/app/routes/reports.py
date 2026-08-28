@@ -11,19 +11,23 @@ from app.dependencies import get_current_user_id
 from app.schemas.reports import (
     AbilityReportResponse,
     AbilityStatItem,
+    DailyStudyLeaderboardItem,
+    DailyStudyLeaderboardResponse,
     LeaderboardItem,
     LeaderboardResponse,
     LearningSummaryResponse,
     LearningTrendPoint,
     PlatformPracticeTrendPoint,
     PlatformPracticeTrendResponse,
+    StudyGoalResponse,
+    StudyGoalUpdateRequest,
     StudyAdviceResponse,
     StudySubjectAdvice,
     SubjectWeeklyChange,
 )
 from app.services.question_sources import is_ai_generated_question
 from app.services.reports import build_ability_item
-from app.services.supabase_resilience import call_supabase
+from app.services.supabase_resilience import call_supabase, is_missing_supabase_relation_error
 
 router = APIRouter(prefix="/report", tags=["能力报告"])
 
@@ -36,6 +40,9 @@ EXAM_SUBJECTS = {
 PAGE_SIZE = 1000
 LEARNING_ACTIVITY_LIMIT = 5000
 PLATFORM_PRACTICE_TREND_DAYS = 7
+DAILY_STUDY_MAX_SECONDS_PER_ANSWER = 15 * 60
+DEFAULT_STUDY_GOAL_DAILY_MINUTES = 60
+DEFAULT_STUDY_GOAL_WEEKLY_QUESTIONS = 300
 
 
 def get_app_timezone():
@@ -80,6 +87,40 @@ def normalize_exam_code(exam_code: str | None) -> str:
     return exam_code if exam_code in EXAM_SUBJECTS else "Z001"
 
 
+def build_study_goal_response(
+    row: dict | None,
+    exam_code: str,
+    *,
+    sync_available: bool = True,
+) -> StudyGoalResponse:
+    record = row or {}
+    return StudyGoalResponse(
+        exam_code=exam_code,
+        configured=bool(row),
+        sync_available=sync_available,
+        daily_minutes=int(record.get("daily_minutes") or DEFAULT_STUDY_GOAL_DAILY_MINUTES),
+        weekly_question_target=int(
+            record.get("weekly_question_target") or DEFAULT_STUDY_GOAL_WEEKLY_QUESTIONS
+        ),
+        updated_at=(str(record.get("updated_at")) if record.get("updated_at") else None),
+    )
+
+
+def fetch_study_goal_record(supabase, user_id: str, exam_code: str) -> dict | None:
+    response = call_supabase(
+        lambda: (
+            supabase.table("user_study_goals")
+            .select("id, exam_code, daily_minutes, weekly_question_target, updated_at")
+            .eq("user_id", user_id)
+            .eq("exam_code", exam_code)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="study goal lookup",
+    )
+    return (response.data or [None])[0]
+
+
 def to_local_datetime(value: object) -> datetime | None:
     if not value:
         return None
@@ -107,13 +148,17 @@ def filter_learning_activity_rows(rows: list[dict], exam_code: str | None) -> li
     ]
 
 
+def calculate_study_seconds(rows: list[dict]) -> int:
+    return sum(max(0, safe_int(row.get("used_time"))) for row in rows)
+
+
 def fetch_learning_activity_rows(supabase, user_id: str, start_at: datetime) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while len(rows) < LEARNING_ACTIVITY_LIMIT:
         chunk = (
             supabase.table("user_answers")
-            .select("is_correct, created_at, questions(exam_code, subject)")
+            .select("is_correct, used_time, created_at, questions(exam_code, subject)")
             .eq("user_id", user_id)
             .gte("created_at", start_at.isoformat())
             .order("created_at", desc=True)
@@ -184,7 +229,7 @@ def fetch_user_profiles(supabase) -> list[dict]:
     while True:
         chunk = (
             supabase.table("users")
-            .select("id, email, phone, nickname, avatar_url")
+            .select("id, email, phone, nickname, avatar_url, role, disabled_at")
             .order("created_at")
             .range(offset, offset + PAGE_SIZE - 1)
             .execute()
@@ -228,6 +273,128 @@ def fetch_weekly_answer_rows(supabase, week_start: datetime) -> list[dict]:
         if len(chunk) < PAGE_SIZE:
             return rows
         offset += PAGE_SIZE
+
+
+def build_daily_study_window(now: datetime | None = None) -> tuple[datetime, datetime, datetime]:
+    local_now = (now or datetime.now(APP_TIMEZONE)).astimezone(APP_TIMEZONE)
+    local_start = datetime.combine(local_now.date(), datetime.min.time(), tzinfo=APP_TIMEZONE)
+    local_end = local_start + timedelta(days=1)
+    return local_now, local_start.astimezone(timezone.utc), local_end.astimezone(timezone.utc)
+
+
+def fetch_daily_study_rows(supabase, start_at: datetime, end_at: datetime) -> list[dict]:
+    rows: list[dict] = []
+    offset = 0
+    while True:
+        response = call_supabase(
+            lambda: (
+                supabase.table("user_answers")
+                .select("user_id, used_time, is_correct, created_at")
+                .gte("created_at", start_at.isoformat())
+                .lt("created_at", end_at.isoformat())
+                .order("created_at")
+                .range(offset, offset + PAGE_SIZE - 1)
+                .execute()
+            ),
+            operation_name="daily study leaderboard activity lookup",
+        )
+        chunk = response.data or []
+        rows.extend(chunk)
+        if len(chunk) < PAGE_SIZE:
+            return rows
+        offset += PAGE_SIZE
+
+
+def build_daily_study_leaderboard(
+    rows: list[dict],
+    profiles: list[dict],
+    current_user_id: str,
+    *,
+    limit: int,
+    offset: int = 0,
+    now: datetime | None = None,
+) -> DailyStudyLeaderboardResponse:
+    local_now, _, _ = build_daily_study_window(now)
+    stats_by_user: dict[str, dict] = {}
+    for row in rows:
+        row_user_id = str(row.get("user_id") or "").strip()
+        if not row_user_id:
+            continue
+        used_time = max(0, safe_int(row.get("used_time")))
+        effective_seconds = min(used_time, DAILY_STUDY_MAX_SECONDS_PER_ANSWER)
+        current = stats_by_user.setdefault(
+            row_user_id,
+            {
+                "study_seconds": 0,
+                "answer_count": 0,
+                "correct_count": 0,
+                "last_answered_at": datetime.min.replace(tzinfo=APP_TIMEZONE),
+            },
+        )
+        current["study_seconds"] += effective_seconds
+        current["answer_count"] += 1
+        current["correct_count"] += 1 if row.get("is_correct") else 0
+        answered_at = to_local_datetime(row.get("created_at"))
+        if answered_at and answered_at > current["last_answered_at"]:
+            current["last_answered_at"] = answered_at
+
+    profiles_by_id = {
+        str(profile.get("id") or ""): profile
+        for profile in profiles
+        if profile.get("id")
+        and str(profile.get("role") or "user") != "admin"
+        and not profile.get("disabled_at")
+    }
+    ranking_rows: list[dict] = []
+    for row_user_id, stats in stats_by_user.items():
+        profile = profiles_by_id.get(row_user_id)
+        if not profile or stats["study_seconds"] <= 0:
+            continue
+        answer_count = stats["answer_count"]
+        correct_count = stats["correct_count"]
+        ranking_rows.append(
+            {
+                "user_id": row_user_id,
+                "nickname": get_display_name(profile),
+                "avatar_url": profile.get("avatar_url"),
+                "study_seconds": stats["study_seconds"],
+                "answer_count": answer_count,
+                "correct_count": correct_count,
+                "accuracy": round(correct_count / answer_count * 100, 2) if answer_count else 0,
+                "last_answered_at": stats["last_answered_at"],
+            }
+        )
+
+    ranking_rows.sort(
+        key=lambda row: (
+            -row["study_seconds"],
+            -row["answer_count"],
+            row["last_answered_at"],
+            row["nickname"].casefold(),
+            row["user_id"],
+        )
+    )
+    ranked_items = [
+        DailyStudyLeaderboardItem(
+            rank=index + 1,
+            is_current_user=row["user_id"] == current_user_id,
+            **{key: value for key, value in row.items() if key != "last_answered_at"},
+        )
+        for index, row in enumerate(ranking_rows)
+    ]
+    page_items = ranked_items[offset:offset + limit]
+    current_user = next(
+        (item for item in ranked_items if item.user_id == current_user_id),
+        None,
+    )
+    return DailyStudyLeaderboardResponse(
+        date=local_now.date().isoformat(),
+        updated_at=local_now.isoformat(),
+        items=page_items,
+        total_users=len(ranked_items),
+        has_more=offset + len(page_items) < len(ranked_items),
+        current_user=current_user,
+    )
 
 
 def build_platform_practice_trend_dates(days: int = PLATFORM_PRACTICE_TREND_DAYS, now: datetime | None = None) -> list:
@@ -708,6 +875,7 @@ def learning_summary(
             if subject:
                 subject_rows.setdefault(subject, {"current": [], "previous": []})["previous"].append(row)
 
+    today_study_seconds = calculate_study_seconds(daily_rows.get(now.date(), []))
     weekly_answers = len(weekly_rows)
     weekly_correct_answers = sum(1 for row in weekly_rows if row.get("is_correct"))
     weekly_accuracy = round(weekly_correct_answers / weekly_answers * 100, 2) if weekly_answers else 0
@@ -780,6 +948,7 @@ def learning_summary(
         correct_answers=correct_answers,
         accuracy=accuracy,
         wrong_question_count=len(wrong_rows),
+        today_study_seconds=today_study_seconds,
         weekly_answers=weekly_answers,
         weekly_correct_answers=weekly_correct_answers,
         weekly_accuracy=weekly_accuracy,
@@ -791,6 +960,66 @@ def learning_summary(
         trend=trend,
         subject_weekly_changes=subject_weekly_changes,
     )
+
+
+@router.get("/study-goal", response_model=StudyGoalResponse)
+def study_goal(
+    user_id: str = Depends(get_current_user_id),
+    exam_code: str = Query(default="Z001", pattern=r"^(Z001|Z002)$"),
+) -> StudyGoalResponse:
+    resolved_exam_code = normalize_exam_code(exam_code)
+    try:
+        row = fetch_study_goal_record(get_supabase_admin(), user_id, resolved_exam_code)
+        return build_study_goal_response(row, resolved_exam_code)
+    except Exception as exc:
+        if is_missing_supabase_relation_error(exc):
+            return build_study_goal_response(
+                None,
+                resolved_exam_code,
+                sync_available=False,
+            )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="学习任务暂时未同步，请稍后重试",
+        ) from exc
+
+
+@router.put("/study-goal", response_model=StudyGoalResponse)
+def update_study_goal(
+    payload: StudyGoalUpdateRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> StudyGoalResponse:
+    supabase = get_supabase_admin()
+    record = {
+        "user_id": user_id,
+        "exam_code": payload.exam_code,
+        "daily_minutes": payload.daily_minutes,
+        "weekly_question_target": payload.weekly_question_target,
+    }
+    try:
+        response = call_supabase(
+            lambda: (
+                supabase.table("user_study_goals")
+                .upsert(record, on_conflict="user_id,exam_code")
+                .execute()
+            ),
+            operation_name="study goal upsert",
+        )
+        saved = (response.data or [None])[0]
+        if not saved:
+            saved = fetch_study_goal_record(supabase, user_id, payload.exam_code)
+        return build_study_goal_response(saved, payload.exam_code)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if is_missing_supabase_relation_error(exc):
+            detail = "学习任务数据表尚未初始化"
+        else:
+            detail = "学习任务保存失败，请稍后重试"
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=detail,
+        ) from exc
 
 
 @router.get("/platform-practice-trend", response_model=PlatformPracticeTrendResponse)
@@ -899,3 +1128,31 @@ def leaderboard(
         for index, row in enumerate(ranking_rows[:limit])
     ]
     return LeaderboardResponse(items=items, total_users=len(ranking_rows))
+
+
+@router.get("/daily-study-leaderboard", response_model=DailyStudyLeaderboardResponse)
+def daily_study_leaderboard(
+    user_id: str = Depends(get_current_user_id),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+) -> DailyStudyLeaderboardResponse:
+    """Return today's privacy-safe ranking by effective answer time in Asia/Shanghai."""
+
+    local_now, start_at, end_at = build_daily_study_window()
+    try:
+        supabase = get_supabase_admin()
+        rows = fetch_daily_study_rows(supabase, start_at, end_at)
+        profiles = fetch_user_profiles(supabase)
+        return build_daily_study_leaderboard(
+            rows,
+            profiles,
+            user_id,
+            limit=limit,
+            offset=offset,
+            now=local_now,
+        )
+    except Exception as exc:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="今日学习榜暂时不可用，请稍后重试",
+        ) from exc

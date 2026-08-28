@@ -83,6 +83,8 @@ https://你的后端公网域名/docs
 - `POST /auth/phone-login`：手机号验证码登录，返回 Supabase access token。
 - `GET /auth/wechat-auth-url`：生成微信网页授权地址。
 - `POST /auth/wechat-login`：微信登录；`platform=h5` 走网页授权，`platform=miniprogram` 走小程序 `code2Session`，按 openid 创建或登录用户。
+- `GET /report/study-goal`：读取当前账号、当前考试版本的学习任务。
+- `PUT /report/study-goal`：保存每日学习时长与每周刷题目标；启用前需执行 `database/user_study_goals.sql`。
 - `POST /auth/refresh`：使用 refresh token 续期 access token。
 - `GET /questions/by-module`：按 `exam_code + subject + module + submodule` 获取专项题目。
 - `POST /answers/submit`：提交答案，同步写入作答记录、错题本和能力统计。
