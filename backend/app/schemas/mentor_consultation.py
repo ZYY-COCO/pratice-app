@@ -354,6 +354,7 @@ class AdminMentorAvailabilitySlotUpdateRequest(BaseModel):
 class MentorFavoriteItem(BaseModel):
     mentor_id: str
     created_at: str | None = None
+    mentor: MentorPublicItem | None = None
 
 
 class MentorFavoriteListResponse(BaseModel):

@@ -8,7 +8,7 @@ export const EXAM_OPTIONS = [
     heroTag: '本周数据已同步',
     heroSubtitle: '聚焦中华文化、英语运用和逻辑推理的刷题路径。',
     thirdSubject: '逻辑推理',
-    thirdIcon: '🧠',
+    thirdIconSrc: '/static/ui-icons/png/original/subject-logic-logo.png',
     subjects: ['中华文化', '英语运用', '逻辑推理']
   },
   {
@@ -20,7 +20,7 @@ export const EXAM_OPTIONS = [
     heroTag: '本周数据已同步',
     heroSubtitle: '聚焦中华文化、英语运用和数学基础的刷题路径。',
     thirdSubject: '数学基础',
-    thirdIcon: '📐',
+    thirdIconSrc: '/static/ui-icons/png/original/subject-math-logo.png',
     subjects: ['中华文化', '英语运用', '数学基础']
   }
 ]

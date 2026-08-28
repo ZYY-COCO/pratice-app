@@ -255,6 +255,14 @@ export function fetchMyMentorConsultationReports(params = {}) {
   })
 }
 
+export function fetchMyMentorConsultationReportAppeals(params = {}) {
+  return request({
+    url: '/mentor-consultation/me/report-appeals',
+    method: 'GET',
+    data: params
+  })
+}
+
 export function respondToMentorConsultationReport(reportId, payload) {
   return request({
     url: `/mentor-consultation/reports/${encodeURIComponent(reportId)}/response`,

@@ -39,6 +39,15 @@ class PhoneLoginRequest(BaseModel):
     verification_code: str = Field(min_length=4, max_length=8)
 
 
+class BindPhoneRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+    verification_code: str = Field(min_length=4, max_length=8)
+
+
+class SendBindPhoneCodeRequest(BaseModel):
+    phone: str = Field(min_length=8, max_length=20)
+
+
 class PhoneCodeResponse(BaseModel):
     detail: str
     debug_code: str | None = None

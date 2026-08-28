@@ -15,7 +15,7 @@
     </AppPageHeader>
 
     <view v-if="searchVisible" class="search-card">
-      <text class="search-symbol">⌕</text>
+      <image class="search-symbol" src="/static/ui-icons/png/neutral/search.png" mode="aspectFit" aria-hidden="true" />
       <input
         v-model="searchKeyword"
         class="search-input"
@@ -37,14 +37,20 @@
       </button>
     </view>
 
-    <view v-if="loading" class="state-card">正在读取你的真实练习记录...</view>
+    <AppPageLoadingState v-if="entryLoading || loading" message="正在整理练习历史..." />
     <view v-else-if="error" class="state-card warning">{{ error }}</view>
-    <view v-else-if="items.length === 0" class="state-card">
-      暂无练习历史。完成一组刷题后，这里会自动记录你的答题情况。
-    </view>
-    <view v-else-if="filteredItems.length === 0" class="state-card">
-      没有找到符合条件的练习记录。可以换个关键词，或清除筛选后再试。
-    </view>
+    <AppEmptyState
+      v-else-if="items.length === 0"
+      label="暂无练习历史"
+      title="暂无练习历史"
+      description="完成一组刷题后，这里会自动记录你的答题情况。"
+    />
+    <AppEmptyState
+      v-else-if="filteredItems.length === 0"
+      label="没有找到符合条件的练习记录"
+      title="没有找到符合条件的练习记录"
+      description="可以换个关键词，或清除筛选后再试。"
+    />
 
     <view v-else class="history-list">
       <view v-for="item in filteredItems" :key="item.id" class="history-card" @tap="openDetail(item)">
@@ -189,6 +195,8 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchAnswerHistory } from '../../api/answers'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MathText from '../../components/MathText.vue'
@@ -207,6 +215,7 @@ const filters = [
 
 const activeFilter = ref('all')
 const loading = ref(false)
+const entryLoading = ref(true)
 const error = ref('')
 const items = ref([])
 const selectedItem = ref(null)
@@ -290,6 +299,7 @@ async function loadHistory() {
     error.value = getHistoryErrorMessage(err)
   } finally {
     loading.value = false
+    entryLoading.value = false
   }
 }
 
@@ -565,9 +575,10 @@ function goBack() {
 }
 
 .search-symbol {
-  color: #98a2b3;
-  font-size: 28rpx;
-  font-weight: 900;
+  display: block;
+  width: 28rpx;
+  height: 28rpx;
+  flex-shrink: 0;
 }
 
 .search-input {
@@ -866,9 +877,9 @@ function goBack() {
 }
 
 .ghost-action {
-  border: 2rpx solid #d8e2f2;
-  background: #ffffff;
-  color: #475467;
+  border: 0;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
 }
 
 .primary-action {

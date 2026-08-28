@@ -1,21 +1,12 @@
 <template>
   <view class="module-card" @tap="$emit('select', item.key)">
-    <view
-      class="icon"
-      :class="{
-        'icon--culture': item.iconVariant === 'culture',
-        'icon--math': item.key === '数学基础',
-        'icon--emphasis': ['英语运用', '逻辑推理'].includes(item.key)
-      }"
-    >
+    <view class="icon">
       <image
-        v-if="item.iconVariant === 'culture'"
-        class="culture-icon-image"
-        src="/static/ui-icons/subject-culture-scroll.webp"
+        class="module-icon-image"
+        :src="resolveModuleIcon(item)"
         mode="aspectFit"
+        aria-hidden="true"
       />
-      <view v-else-if="item.key === '数学基础'" class="math-icon" aria-hidden="true" />
-      <text v-else>{{ item.icon }}</text>
     </view>
     <view class="content">
       <view class="title">{{ item.title }}</view>
@@ -25,9 +16,11 @@
 </template>
 
 <script setup>
+import { getSubjectIconSrc } from '../utils/iconAssets'
+
 defineEmits(['select'])
 
-defineProps({
+const props = defineProps({
   item: {
     type: Object,
     required: true
@@ -35,8 +28,16 @@ defineProps({
   index: {
     type: Number,
     default: 1
+  },
+  themeKey: {
+    type: String,
+    default: 'blue'
   }
 })
+
+function resolveModuleIcon(item) {
+  return getSubjectIconSrc(item?.key, props.themeKey)
+}
 </script>
 
 <style scoped>
@@ -81,38 +82,11 @@ defineProps({
   box-shadow: none;
 }
 
-.icon--culture {
-  overflow: hidden;
-  box-sizing: border-box;
-  background: var(--gyt-primary-soft, #edf4ff);
-  border: none;
-  border-radius: 28rpx;
-}
-
-.icon--emphasis {
-  font-size: 74rpx;
-}
-
-.icon--math {
-  box-shadow: none;
-}
-
-.math-icon {
+.module-icon-image {
   width: 78rpx;
   height: 78rpx;
   flex: 0 0 78rpx;
-  background: var(--gyt-primary, #1677ff);
-  -webkit-mask: url('/static/ui-icons/subject-math.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/subject-math.svg') center / contain no-repeat;
-}
-
-.culture-icon-image {
-  width: 108rpx;
-  height: 108rpx;
-  max-width: none;
-  flex: 0 0 108rpx;
-  transform: none;
-  filter: none;
+  display: block;
 }
 
 .content {
@@ -162,13 +136,7 @@ defineProps({
     font-size: 62rpx;
   }
 
-  .culture-icon-image {
-    width: 94rpx;
-    height: 94rpx;
-    flex-basis: 94rpx;
-  }
-
-  .math-icon {
+  .module-icon-image {
     width: 68rpx;
     height: 68rpx;
     flex-basis: 68rpx;

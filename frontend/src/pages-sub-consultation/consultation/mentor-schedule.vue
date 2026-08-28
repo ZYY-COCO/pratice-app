@@ -69,10 +69,18 @@
             <button class="mentor-schedule-refresh" :loading="scheduleLoading" @tap="loadSchedule">刷新</button>
           </view>
 
-          <view v-if="scheduleLoading && !displayedAvailabilitySlots.length" class="mentor-schedule-empty">正在加载预约时段…</view>
-          <view v-else-if="!displayedAvailabilitySlots.length" class="mentor-schedule-empty">
-            还没有开放预约时间。添加一个时段后，考生即可在你的详情页预约。
-          </view>
+          <AppPageLoadingState
+            v-if="scheduleLoading && !displayedAvailabilitySlots.length"
+            compact
+            message="正在整理预约时段..."
+          />
+          <AppEmptyState
+            v-else-if="!displayedAvailabilitySlots.length"
+            compact
+            label="还没有开放预约时间"
+            title="还没有开放预约时间"
+            description="添加一个时段后，考生即可在你的详情页预约。"
+          />
           <view v-else class="mentor-schedule-slot-list">
             <view v-for="slot in displayedAvailabilitySlots" :key="slot.id" class="mentor-schedule-slot-item">
               <view class="mentor-schedule-slot-main">
@@ -111,6 +119,8 @@
 import { computed, ref, watch } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   createMyMentorAvailabilitySlot,
   fetchMyMentorAvailabilitySlots,

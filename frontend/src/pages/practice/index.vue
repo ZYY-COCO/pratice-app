@@ -1,7 +1,10 @@
 <template>
   <view
     class="page practice-page"
-    :class="{ 'quiz-page': mode === 'quiz' && !reviewMode && !summaryMode && !aiSummaryMode }"
+    :class="{
+      'quiz-page': mode === 'quiz' && !reviewMode && !summaryMode && !aiSummaryMode,
+      'result-summary-page': summaryMode && !aiSummaryMode
+    }"
     :style="themeInlineStyle"
   >
     <view
@@ -10,11 +13,13 @@
       :style="usesScopeHeader ? scopeHeaderStyle : undefined"
     >
       <button class="back-btn" @tap="goBack">
-        <image class="back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+        <image class="back-icon" src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
       </button>
       <view class="top-copy" :class="{ 'scope-top-copy': usesScopeHeader }">
-        <view class="top-title">{{ pageTitle }}</view>
-        <view v-if="topSubtitle" class="top-sub">{{ topSubtitle }}</view>
+        <view class="top-title-row">
+          <view class="top-title">{{ pageTitle }}</view>
+          <view v-if="topSubtitle" class="top-sub">{{ topSubtitle }}</view>
+        </view>
       </view>
     </view>
     <view v-if="usesScopeHeader" class="scope-top-nav-spacer"></view>
@@ -25,7 +30,7 @@
           <view>
             <view class="culture-progress-title">学习范围</view>
             <view class="culture-progress-sub">
-              {{ cultureProgressLoading ? '正在同步你的刷题记录...' : `已学习 ${cultureLearnedText} / 共 ${cultureTotalText}` }}
+              {{ cultureProgressLoading ? '正在整理你的刷题记录...' : `已学习 ${cultureLearnedText} / 共 ${cultureTotalText}` }}
             </view>
           </view>
           <view class="culture-percent">{{ cultureProgressPercent }}%</view>
@@ -85,13 +90,6 @@
         </view>
       </view>
 
-      <view v-if="practiceMode === 'comprehensive'" class="comprehensive-card">
-        <view class="comprehensive-title">综合刷题规则</view>
-        <view class="comprehensive-line">随机覆盖当前科目的全部知识点。</view>
-        <view class="comprehensive-line">答题过程中不展示所属模块。</view>
-        <view class="comprehensive-line">完成本轮并统一提交后，才公布答案和解析。</view>
-      </view>
-
       <view v-if="loadError" class="state-box warning">{{ loadError }}</view>
       <view v-if="shortageTip" class="state-box">{{ shortageTip }}</view>
 
@@ -107,9 +105,14 @@
       />
 
       <view class="sticky-bar">
-        <view class="sticky-copy">
+        <view
+          class="sticky-copy"
+          :class="{
+            'sticky-copy--single': practiceMode === 'special' || practiceMode === 'comprehensive',
+            'sticky-copy--comprehensive': practiceMode === 'comprehensive'
+          }"
+        >
           <view class="sticky-title">{{ stickyTitle }}</view>
-          <view class="sticky-tip">本轮将加载 {{ plannedQuestionLimit }} 道题</view>
         </view>
         <view class="sticky-actions" :class="{ dual: showCultureProgress }">
           <button
@@ -180,9 +183,42 @@
       <!-- #ifdef MP-WEIXIN -->
       <template v-if="summaryMode">
       <!-- #endif -->
-        <view class="summary-card" :class="{ 'mock-summary-card': mockExamMode }">
-          <view class="summary-kicker">{{ summaryKicker }}</view>
-          <view class="summary-score">{{ mockExamMode ? `${mockExamScore} / ${mockExamTotalScore}` : `${correctCount} / ${reviewResults.length}` }}</view>
+        <view class="summary-card summary-card--with-stats result-overview-card" :class="{ 'mock-summary-card': mockExamMode }">
+          <view class="result-overview-main">
+            <view class="summary-card-copy">
+              <view class="summary-kicker">{{ summaryKicker }}</view>
+              <view class="summary-score" :aria-label="mockExamMode ? `${mockExamScore} 分，共 ${mockExamTotalScore} 分` : `答对 ${correctCount} 题，共 ${reviewResults.length} 题`">
+                <text class="summary-score-main">{{ mockExamMode ? mockExamScore : correctCount }}</text>
+                <text class="summary-score-total">/ {{ mockExamMode ? mockExamTotalScore : reviewResults.length }}</text>
+              </view>
+            </view>
+            <view class="summary-stat-stack" aria-label="本轮练习统计">
+              <view class="summary-stat-row">
+                <view class="summary-stat-icon" aria-hidden="true">
+                  <image
+                    :src="getThemeIconSrc('/static/ui-icons/png/original/report.png', getStoredThemeKey())"
+                    mode="aspectFit"
+                  />
+                </view>
+                <view class="summary-stat-copy">
+                  <view class="summary-stat-value">{{ summaryAccuracy }}%</view>
+                  <view class="summary-stat-label">正确率</view>
+                </view>
+              </view>
+              <view class="summary-stat-row">
+                <view class="summary-stat-icon" aria-hidden="true">
+                  <image
+                    :src="getThemeIconSrc('/static/ui-icons/png/original/timer.png', getStoredThemeKey())"
+                    mode="aspectFit"
+                  />
+                </view>
+                <view class="summary-stat-copy">
+                  <view class="summary-stat-value">{{ summaryElapsedTime }}</view>
+                  <view class="summary-stat-label">本次用时</view>
+                </view>
+              </view>
+            </view>
+          </view>
         </view>
 
         <view v-if="mockExamMode" class="mock-section-card">
@@ -200,21 +236,44 @@
           </view>
         </view>
 
-        <view class="summary-grid">
-          <button
-            v-for="(item, index) in reviewResults"
-            :key="item.question.questionId || item.question.id"
-            class="summary-dot"
-            :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
-            @tap="openReviewQuestion(index)"
-          >
-            {{ index + 1 }}
-          </button>
+        <view class="summary-grid result-answer-card">
+          <view class="result-answer-head">
+            <view class="result-answer-title">答题情况</view>
+          </view>
+          <view class="result-question-grid">
+            <button
+              v-for="(item, index) in reviewResults"
+              :key="item.question.questionId || item.question.id"
+              class="summary-dot"
+              :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
+              @tap="openReviewQuestion(index)"
+            >
+              {{ index + 1 }}
+            </button>
+          </view>
         </view>
 
-        <view class="summary-actions">
-          <button class="next-btn" @tap="openReviewQuestion(0)">从第 1 题开始看解析</button>
-          <button class="ghost-button back-tags" @tap="handleSummaryBack">{{ mockExamMode ? '返回首页' : '返回刷题范围' }}</button>
+        <view class="result-advice">
+          <image
+            class="result-advice-icon"
+            :src="getThemeIconSrc('/static/ui-icons/png/original/lightbulb.png', getStoredThemeKey())"
+            mode="aspectFit"
+            aria-hidden="true"
+          />
+          <text>建议先查看错题解析，弄清错误原因后再练一组。</text>
+        </view>
+
+        <view class="summary-actions result-summary-actions">
+          <button class="summary-action-primary" @tap="openFirstReviewQuestion">
+            <text>查看错题解析</text>
+            <text class="summary-action-arrow" aria-hidden="true">→</text>
+          </button>
+          <button class="summary-action-secondary" @tap="retryPractice">
+            <text>再练一组</text>
+          </button>
+          <button class="summary-action-secondary" @tap="handleSummaryBack">
+            <text>{{ mockExamMode ? '返回模拟卷' : '返回刷题范围' }}</text>
+          </button>
         </view>
       </template>
 
@@ -225,7 +284,10 @@
             <view class="badge">{{ quizProgressText }}</view>
           </view>
           <view class="quiz-top-actions">
-            <view class="timer">⏱ {{ formattedTimer }}</view>
+            <view class="timer">
+              <image class="timer-icon" src="/static/ui-icons/png/gold/timer.png" mode="aspectFit" aria-hidden="true" />
+              <text>{{ formattedTimer }}</text>
+            </view>
             <button
               v-if="showQuestionSheetEntry"
               class="question-map-btn"
@@ -240,11 +302,20 @@
           <button
             class="favorite-btn"
             :class="{ active: currentFavorited }"
-            :disabled="favoriteLoading || !canFavoriteCurrent"
+            :disabled="!canFavoriteCurrent"
+            :aria-busy="favoriteLoading ? 'true' : 'false'"
             :aria-label="currentFavorited ? '取消收藏' : '收藏题目'"
+            hover-class="none"
             @tap.stop="toggleCurrentFavorite"
           >
-            <view class="practice-favorite-icon" aria-hidden="true"></view>
+            <image
+              class="practice-favorite-icon"
+              :src="currentFavorited
+                ? '/static/ui-icons/png/gold/star.png'
+                : '/static/ui-icons/png/neutral/star.png'"
+              mode="aspectFit"
+              aria-hidden="true"
+            />
           </button>
           <QuestionStem class="question-title" :question="normalizedCurrentQuestion" />
         </view>
@@ -277,12 +348,12 @@
         <button class="prev-btn" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
         <button
           class="submit-btn"
-          :disabled="!selectedOption || markingUnfamiliar || currentQuestionHasBlockingIssue"
+          :disabled="!selectedOption || submitting || markingUnfamiliar || currentQuestionHasBlockingIssue"
           hover-class="submit-btn--pressed"
           :hover-stay-time="80"
           @tap="handlePrimaryAction"
         >
-          {{ primaryButtonText }}
+          {{ submitting ? '正在提交...' : primaryButtonText }}
         </button>
       </view>
       <button
@@ -407,6 +478,23 @@
       </view>
     </view>
 
+    <view
+      v-if="showGradingFeedback"
+      class="grading-feedback-mask"
+      role="status"
+      aria-live="polite"
+      @tap.stop
+      @touchmove.stop.prevent
+    >
+      <view class="grading-feedback-card">
+        <text class="grading-feedback-title">正在批改整卷...</text>
+        <view class="grading-feedback-progress" aria-hidden="true">
+          <view class="grading-feedback-progress-bar"></view>
+        </view>
+        <text class="grading-feedback-copy">正在生成成绩与解析，请稍候</text>
+      </view>
+    </view>
+
     <!-- #ifdef H5 -->
     <IcpFooter v-if="mode !== 'quiz' || summaryMode || aiSummaryMode" />
     <!-- #endif -->
@@ -422,6 +510,7 @@ import { fetchAnswerHistory, fetchQuestionAbilityAccuracy, markQuestionUnfamilia
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
+import { fetchMockExamPaperDetail } from '../../api/mockExams'
 import { readLegacyH5Storage } from '../../platform/runtime'
 // #ifndef MP-WEIXIN
 import AiQuestionAssistant from '../../components/AiQuestionAssistant.vue'
@@ -433,6 +522,7 @@ import QuestionStem from '../../components/QuestionStem.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { confirmFavoriteRemoval } from '../../utils/favorites'
+import { getThemeIconSrc } from '../../utils/iconAssets'
 import { getSubjectTree } from '../../utils/knowledgeTree'
 import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality'
 
@@ -503,6 +593,7 @@ const abilityAccuracy = ref(null)
 const currentFavorited = ref(false)
 const favoriteLoading = ref(false)
 const favoriteQuestionId = ref('')
+const showGradingFeedback = ref(false)
 const questionMeta = ref({
   questionId: '',
   module: '',
@@ -518,12 +609,17 @@ const aiSummaryMode = ref(false)
 const aiSummary = ref(null)
 const aiReviewResults = ref([])
 const mockExamMode = ref(false)
+const mockExamPaperId = ref('')
+const mockExamPaperTitle = ref('')
 const showAnswerSheet = ref(false)
 const scopeHeaderScrollTop = ref(0)
 
 const questionCache = new Map()
+const favoriteStatusCache = new Map()
 let timerId = null
 let activeTimerQuestionKey = ''
+let exitConfirmVisible = false
+let exitNavigationPending = false
 
 function sleep(milliseconds) {
   return new Promise((resolve) => setTimeout(resolve, milliseconds))
@@ -579,8 +675,24 @@ const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.v
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
 const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
+const summaryAccuracy = computed(() => {
+  const total = reviewResults.value.length
+  return total ? Math.round((correctCount.value / total) * 100) : 0
+})
+const summaryElapsedSeconds = computed(() => {
+  const recordedSeconds = Object.values(questionElapsedByKey.value || {}).reduce(
+    (total, value) => total + Math.max(0, Number(value || 0)),
+    0
+  )
+  return recordedSeconds || Math.max(0, Number(timerSeconds.value || 0))
+})
+const summaryElapsedTime = computed(() => formatDuration(summaryElapsedSeconds.value))
+const firstReviewIndex = computed(() => {
+  const index = reviewResults.value.findIndex((item) => item.syncFailed || item.isCorrect === false)
+  return index >= 0 ? index : 0
+})
 const summaryKicker = computed(() => {
-  if (mockExamMode.value) return '模拟测试成绩'
+  if (mockExamMode.value) return mockExamPaperTitle.value ? `${mockExamPaperTitle.value}成绩` : '模拟测试成绩'
   return practiceMode.value === 'comprehensive' ? '综合刷题结果' : '专项刷题结果'
 })
 const aiSummaryTotal = computed(() => aiSummary.value?.total_count ?? (aiReviewResults.value.length || questionPool.value.length || 0))
@@ -616,11 +728,11 @@ const explanationToggleText = computed(() => {
 const usesScopeHeader = computed(() => mode.value === 'tags' || mode.value === 'quiz')
 
 const pageTitle = computed(() => {
+  if (mockExamMode.value) {
+    return mockExamPaperTitle.value || '模拟测试'
+  }
   if (mode.value === 'tags' || mode.value === 'quiz') {
     return subject.value || '专题练习'
-  }
-  if (mockExamMode.value) {
-    return '模拟测试'
   }
   if (isAiTrainingMode.value) {
     return 'AI 专项出题'
@@ -628,13 +740,13 @@ const pageTitle = computed(() => {
   return practiceMode.value === 'comprehensive' ? '综合刷题' : '专项刷题'
 })
 const topSubtitle = computed(() => {
+  if (mockExamMode.value) return `${examCode.value} / 55题 · 105分`
   if (mode.value === 'tags' || mode.value === 'quiz') return ''
-  return mockExamMode.value ? `${examCode.value} / 105分轻量模拟` : `${examCode.value} / ${subject.value}`
+  return `${examCode.value} / ${subject.value}`
 })
 const scopeHeaderStyle = computed(() => {
   const progress = Math.min(1, Math.max(0, scopeHeaderScrollTop.value / 240))
   return {
-    '--scope-header-opacity': String(0.18 + progress * 0.8),
     '--scope-header-shadow-opacity': String(progress * 0.12)
   }
 })
@@ -725,9 +837,7 @@ const answerSheetSections = computed(() => {
 })
 
 const formattedTimer = computed(() => {
-  const min = String(Math.floor(timerSeconds.value / 60)).padStart(2, '0')
-  const sec = String(timerSeconds.value % 60).padStart(2, '0')
-  return `${min}:${sec}`
+  return formatDuration(timerSeconds.value)
 })
 
 watch(subject, () => {
@@ -743,6 +853,21 @@ watch(subject, () => {
 
 onLoad((options) => {
   syncAccessToken()
+  if (options?.mock_paper_id) {
+    const nextExamCode = decodeRouteValue(options.exam_code, examCode.value || 'Z001')
+    const paperId = decodeRouteValue(options.mock_paper_id)
+    examCode.value = nextExamCode
+    subject.value = getMockExamThirdSubject(nextExamCode)
+    uni.setStorageSync('examCode', nextExamCode)
+    uni.setStorageSync('subject', subject.value)
+    mockExamMode.value = true
+    mockExamPaperId.value = paperId
+    practiceMode.value = 'comprehensive'
+    selectedQuestionSize.value = MOCK_EXAM_TOTAL_COUNT
+    openMap.value = buildOpenMap(getSubjectTree(subject.value))
+    startFixedMockExam(paperId)
+    return
+  }
   if (options?.mock_exam === '1') {
     const nextExamCode = decodeRouteValue(options.exam_code, examCode.value || 'Z001')
     examCode.value = nextExamCode
@@ -819,9 +944,16 @@ onPageScroll(({ scrollTop }) => {
 
 onUnload(() => {
   clearTimer()
+  showGradingFeedback.value = false
 })
 
 onBackPress(() => {
+  if (exitConfirmVisible || exitNavigationPending) {
+    return true
+  }
+  if (showGradingFeedback.value) {
+    return true
+  }
   if (isAiTrainingMode.value) {
     returnToProfilePage()
     return true
@@ -872,6 +1004,9 @@ function readAccessToken() {
 
 function syncAccessToken() {
   const token = readAccessToken()
+  if (token !== accessToken.value) {
+    favoriteStatusCache.clear()
+  }
   accessToken.value = token
   if (token) {
     uni.setStorageSync('accessToken', token)
@@ -893,8 +1028,8 @@ function buildEmptyAiQuestion() {
   return {
     id: 'ai-loading',
     year: 'AI 训练',
-    badge: '正在加载',
-    stem: '正在加载 AI 训练题目...',
+    badge: '正在整理',
+    stem: '正在整理 AI 训练题目...',
     helper: '如果长时间停留在这里，请返回重新生成训练。',
     options: [],
     answer: '',
@@ -1305,25 +1440,28 @@ function returnToProfilePage() {
 }
 
 function confirmExitPractice() {
+  if (exitConfirmVisible || exitNavigationPending) return
+
+  exitConfirmVisible = true
+  let shouldExit = false
   uni.showModal({
     title: mockExamMode.value ? '退出模拟测试？' : '退出本次练习？',
     content: mockExamMode.value ? '退出后本次模拟测试进度不会继续保留。' : '退出后本轮未完成的题目不会继续保留，已提交的答案仍会保存。',
     confirmText: '退出',
     cancelText: '继续做题',
     success(result) {
-      if (result.confirm) {
-        if (mockExamMode.value) {
-          clearTimer()
-          uni.reLaunch({
-            url: '/pages/home/index',
-            fail() {
-              uni.redirectTo({ url: '/pages/home/index' })
-            }
-          })
-          return
-        }
-        resetToTags()
+      shouldExit = Boolean(result.confirm)
+    },
+    complete() {
+      exitConfirmVisible = false
+      if (!shouldExit) return
+
+      if (mockExamMode.value) {
+        clearTimer()
+        setTimeout(returnToMockExamList, 30)
+        return
       }
+      resetToTags()
     }
   })
 }
@@ -1442,7 +1580,7 @@ async function startCultureReview() {
   cultureReviewLoading.value = true
   loadError.value = ''
   shortageTip.value = ''
-  uni.showLoading({ title: '正在加载复习题...' })
+  uni.showLoading({ title: '正在整理复习题...' })
 
   try {
     const data = await fetchReviewDueQuestions({
@@ -1652,7 +1790,7 @@ async function loadAiTrainingSession(sessionId) {
   comprehensiveAnswers.value = {}
   questionPool.value = []
   mode.value = 'quiz'
-  uni.showLoading({ title: '正在加载 AI 训练...' })
+  uni.showLoading({ title: '正在整理 AI 训练...' })
 
   try {
     const data = await fetchAiTrainingSession(sessionId)
@@ -1792,6 +1930,89 @@ async function startMockExam() {
   }
 }
 
+async function startFixedMockExam(paperId) {
+  syncAccessToken()
+  loadError.value = ''
+  shortageTip.value = ''
+  showAnswerSheet.value = false
+
+  if (!hasAccessToken.value) {
+    uni.showModal({
+      title: '请先登录',
+      content: '登录后才能作答固定模拟卷，并保存分数与复盘记录。',
+      confirmText: '去登录',
+      cancelText: '先不登录',
+      success(result) {
+        if (result.confirm) {
+          const redirect = `/pages/practice/index?mock_paper_id=${encodeURIComponent(paperId)}&exam_code=${encodeURIComponent(examCode.value)}`
+          uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent(redirect)}` })
+        } else {
+          returnToMockExamList()
+        }
+      }
+    })
+    return
+  }
+
+  loading.value = true
+  resetQuizState()
+  reviewMode.value = false
+  reviewResults.value = []
+  summaryMode.value = false
+  aiSummaryMode.value = false
+  comprehensiveAnswers.value = {}
+  questionPool.value = []
+  mode.value = 'quiz'
+  uni.showLoading({ title: '正在打开试卷...' })
+
+  try {
+    const response = await fetchMockExamPaperDetail(paperId)
+    const paper = response?.paper || {}
+    const nextExamCode = paper.exam_code || examCode.value
+    const items = (response?.questions || [])
+      .slice()
+      .sort((left, right) => Number(left.position || 0) - Number(right.position || 0))
+      .map((item) => buildApiQuestion(item, {
+        module: item.module,
+        submodule: item.submodule,
+        mockSection: item.mock_section,
+        mockSectionKey: item.mock_section_key,
+        pointValue: item.point_value
+      }))
+
+    if (items.length !== MOCK_EXAM_TOTAL_COUNT) {
+      throw new Error(`该模拟卷题目数量异常，当前 ${items.length}/${MOCK_EXAM_TOTAL_COUNT} 题`)
+    }
+
+    examCode.value = nextExamCode
+    subject.value = getMockExamThirdSubject(nextExamCode)
+    mockExamPaperId.value = String(paper.id || paperId)
+    mockExamPaperTitle.value = String(paper.title || '模拟测试')
+    selectedQuestionSize.value = items.length
+    questionPool.value = items
+    timerSeconds.value = 0
+    uni.setStorageSync('examCode', nextExamCode)
+    uni.setStorageSync('subject', subject.value)
+    applyQuestionAt(0)
+  } catch (error) {
+    const detail = error?.detail || error?.message || '固定模拟卷加载失败'
+    loadError.value = typeof detail === 'string' ? detail : '固定模拟卷加载失败'
+    mode.value = 'tags'
+    uni.showModal({
+      title: '试卷加载失败',
+      content: loadError.value,
+      showCancel: false,
+      confirmText: '返回模拟卷',
+      success() {
+        returnToMockExamList()
+      }
+    })
+  } finally {
+    loading.value = false
+    uni.hideLoading()
+  }
+}
+
 async function startQuiz() {
   syncAccessToken()
   loadError.value = ''
@@ -1826,7 +2047,7 @@ async function startQuiz() {
   aiSummary.value = null
   aiReviewResults.value = []
   comprehensiveAnswers.value = {}
-  uni.showLoading({ title: '正在加载题目...' })
+  uni.showLoading({ title: '正在整理题目...' })
 
   try {
     const moduleInfos = getTargetModuleInfos()
@@ -2066,6 +2287,7 @@ async function submitComprehensiveAnswers() {
   }
 
   submitting.value = true
+  showGradingFeedback.value = true
 
   try {
     const useRealSubmit = entries.every(({ question }) => isRealSubmitQuestion(question))
@@ -2075,13 +2297,13 @@ async function submitComprehensiveAnswers() {
     summaryMode.value = true
     reviewMode.value = false
     submitted.value = false
-    submitting.value = false
     clearTimer()
     await nextTick()
     scrollToQuestionTop()
   } catch (error) {
     uni.showToast({ title: error?.detail || '提交整卷失败', icon: 'none' })
   } finally {
+    showGradingFeedback.value = false
     submitting.value = false
   }
 }
@@ -2151,22 +2373,27 @@ function saveInstantQuestionResult(answerResult) {
 async function submitComprehensiveBatch(entries) {
   clearTimer()
   try {
-    const response = await request({
-      url: '/answers/submit-batch',
-      method: 'POST',
-      timeout: 25000,
-      data: {
-        exam_code: examCode.value,
-        answers: entries.map(({ question, selected }) => ({
-          question_id: question.questionId,
-          selected_answer: selected,
-          client_submission_id: getClientSubmissionId(question.questionId),
-          used_time: getSubmissionUsedTime(question.questionId)
-        }))
-      }
-    })
+    const resultItems = []
+    for (let offset = 0; offset < entries.length; offset += 50) {
+      const batchEntries = entries.slice(offset, offset + 50)
+      const response = await request({
+        url: '/answers/submit-batch',
+        method: 'POST',
+        timeout: 25000,
+        data: {
+          exam_code: examCode.value,
+          answers: batchEntries.map(({ question, selected }) => ({
+            question_id: question.questionId,
+            selected_answer: selected,
+            client_submission_id: getClientSubmissionId(question.questionId),
+            used_time: getSubmissionUsedTime(question.questionId)
+          }))
+        }
+      })
+      resultItems.push(...(response.items || []))
+    }
 
-    const resultMap = new Map((response.items || []).map((item) => [item.question_id, item]))
+    const resultMap = new Map(resultItems.map((item) => [item.question_id, item]))
     return entries.map(({ question, selected }) => {
       const result = resultMap.get(question.questionId)
       return result ? buildRemoteComprehensiveResult(question, selected, result) : buildPendingComprehensiveResult(question, selected)
@@ -2338,9 +2565,16 @@ async function loadCurrentFavoriteStatus() {
   syncAccessToken()
   const questionId = questionMeta.value.questionId
   favoriteQuestionId.value = questionId
-  currentFavorited.value = false
+  favoriteLoading.value = false
+  currentFavorited.value = favoriteStatusCache.has(questionId)
+    ? Boolean(favoriteStatusCache.get(questionId))
+    : false
 
   if (!hasAccessToken.value || !isRealQuestion()) {
+    return
+  }
+
+  if (favoriteStatusCache.has(questionId)) {
     return
   }
 
@@ -2349,11 +2583,10 @@ async function loadCurrentFavoriteStatus() {
     const result = await fetchFavoriteStatus(questionId)
     if (favoriteQuestionId.value === questionId) {
       currentFavorited.value = Boolean(result.is_favorited)
+      favoriteStatusCache.set(questionId, currentFavorited.value)
     }
   } catch (error) {
-    if (favoriteQuestionId.value === questionId) {
-      currentFavorited.value = false
-    }
+    // Keep the stable local state when the status request is temporarily unavailable.
   } finally {
     if (favoriteQuestionId.value === questionId) {
       favoriteLoading.value = false
@@ -2374,20 +2607,34 @@ async function toggleCurrentFavorite() {
   }
 
   const questionId = questionMeta.value.questionId
+  const previousFavorited = currentFavorited.value
   favoriteLoading.value = true
   try {
-    if (currentFavorited.value) {
+    if (previousFavorited) {
       const confirmed = await confirmFavoriteRemoval()
       if (!confirmed) return
     }
 
+    const nextFavorited = !previousFavorited
+    currentFavorited.value = nextFavorited
+    favoriteStatusCache.set(questionId, nextFavorited)
+
     const result = await toggleFavorite(questionId)
-    currentFavorited.value = Boolean(result.is_favorited)
-    uni.showToast({ title: result.is_favorited ? '已收藏' : '已取消收藏', icon: 'none' })
+    const persistedFavorited = Boolean(result.is_favorited)
+    favoriteStatusCache.set(questionId, persistedFavorited)
+    if (favoriteQuestionId.value === questionId) {
+      currentFavorited.value = persistedFavorited
+    }
   } catch (error) {
+    favoriteStatusCache.set(questionId, previousFavorited)
+    if (favoriteQuestionId.value === questionId) {
+      currentFavorited.value = previousFavorited
+    }
     uni.showToast({ title: error?.detail || '收藏状态更新失败', icon: 'none' })
   } finally {
-    favoriteLoading.value = false
+    if (favoriteQuestionId.value === questionId) {
+      favoriteLoading.value = false
+    }
   }
 }
 
@@ -2429,18 +2676,51 @@ function showSummary() {
   })
 }
 
+function openFirstReviewQuestion() {
+  if (!reviewResults.value.length) {
+    return
+  }
+  openReviewQuestion(firstReviewIndex.value)
+}
+
+async function retryPractice() {
+  if (mockExamMode.value) {
+    if (mockExamPaperId.value) {
+      await startFixedMockExam(mockExamPaperId.value)
+    } else {
+      await startMockExam()
+    }
+    return
+  }
+  await startQuiz()
+}
+
 function handleSummaryBack() {
   if (mockExamMode.value) {
     clearTimer()
-    uni.reLaunch({
-      url: '/pages/home/index',
-      fail() {
-        uni.redirectTo({ url: '/pages/home/index' })
-      }
-    })
+    returnToMockExamList()
     return
   }
   resetToTags()
+}
+
+function returnToMockExamList() {
+  if (exitNavigationPending) return
+
+  exitNavigationPending = true
+  const url = `/pages/mock-exams/index?exam_code=${encodeURIComponent(examCode.value)}`
+  uni.redirectTo({
+    url,
+    fail() {
+      uni.reLaunch({
+        url,
+        fail() {
+          exitNavigationPending = false
+          uni.showToast({ title: '退出失败，请再试一次', icon: 'none' })
+        }
+      })
+    }
+  })
 }
 
 function buildAiReviewResultFromSummaryItem(item) {
@@ -2533,6 +2813,7 @@ function buildSpecialPracticeReviewResults() {
 
 function resetQuizState() {
   clearTimer()
+  showGradingFeedback.value = false
   selectedOption.value = ''
   submitted.value = false
   submitting.value = false
@@ -2663,6 +2944,13 @@ function clearTimer() {
   activeTimerQuestionKey = ''
 }
 
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds || 0)))
+  const min = String(Math.floor(total / 60)).padStart(2, '0')
+  const sec = String(total % 60).padStart(2, '0')
+  return `${min}:${sec}`
+}
+
 function scrollToQuestionTop() {
   setTimeout(() => {
     uni.pageScrollTo({
@@ -2682,6 +2970,11 @@ function scrollToQuestionTop() {
   background:
     radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 28%),
     var(--gyt-page-bg);
+}
+
+.practice-page.result-summary-page {
+  padding: 0 28rpx calc(env(safe-area-inset-bottom) + 56rpx);
+  background: #f7f6f8 !important;
 }
 
 .top-nav {
@@ -2725,18 +3018,17 @@ function scrollToQuestionTop() {
 
 .scope-top-nav {
   position: fixed;
-  top: var(--status-bar-height, 0px);
+  top: 0;
   right: 0;
   left: 0;
   z-index: 24;
-  min-height: 108rpx;
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 108rpx);
   margin: 0;
-  padding: 16rpx 28rpx;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 16rpx) 28rpx 16rpx;
   box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--scope-header-opacity, 0.18));
+  background: var(--gyt-page-bg, #f8faff);
   box-shadow: 0 14rpx 30rpx rgba(20, 31, 66, var(--scope-header-shadow-opacity, 0));
-  backdrop-filter: blur(14rpx);
-  transition: background-color 180ms ease, box-shadow 180ms ease;
+  transition: box-shadow 180ms ease;
 }
 
 .quiz-page .scope-top-nav {
@@ -2758,6 +3050,40 @@ function scrollToQuestionTop() {
   width: 100%;
   height: 114rpx;
   flex: 0 0 114rpx;
+}
+
+.result-summary-page .scope-top-nav {
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 124rpx);
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 28rpx 12rpx;
+  background: #f7f6f8;
+  box-shadow: none;
+}
+
+.result-summary-page .scope-top-nav-spacer {
+  height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 124rpx);
+  flex: 0 0 calc(var(--status-bar-height, env(safe-area-inset-top)) + 124rpx);
+}
+
+.result-summary-page .scope-top-nav .back-btn {
+  width: 100rpx;
+  height: 100rpx;
+  border-radius: 38rpx;
+  box-shadow: 0 8rpx 24rpx rgba(22, 32, 51, 0.045);
+}
+
+.result-summary-page .scope-top-nav .back-icon {
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.result-summary-page .scope-top-copy .top-title-row {
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 62rpx);
+}
+
+.result-summary-page .scope-top-copy .top-title {
+  color: #162033;
+  font-size: 40rpx;
+  font-weight: 900;
 }
 
 .back-btn {
@@ -2788,7 +3114,12 @@ function scrollToQuestionTop() {
 }
 
 .top-copy {
+  min-width: 0;
   flex: 1;
+}
+
+.top-title-row {
+  min-width: 0;
 }
 
 .scope-top-copy {
@@ -2805,25 +3136,40 @@ function scrollToQuestionTop() {
   font-weight: 900;
 }
 
-.scope-top-copy .top-title {
+.scope-top-copy .top-title-row {
   position: absolute;
-  top: 50%;
+  top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 54rpx);
   left: 50%;
   width: max-content;
   max-width: calc(100% - 220rpx);
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 10rpx;
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+}
+
+.scope-top-copy .top-title {
+  min-width: 0;
   overflow: hidden;
   text-align: center;
   line-height: 1.35;
   text-overflow: ellipsis;
   white-space: nowrap;
-  pointer-events: none;
-  transform: translate(-50%, -50%);
 }
 
 .top-sub {
   margin-top: 6rpx;
   color: #667085;
   font-size: 24rpx;
+}
+
+.scope-top-copy .top-sub {
+  flex: 0 0 auto;
+  margin-top: 0;
+  line-height: 1.35;
+  white-space: nowrap;
 }
 
 .setup-hero {
@@ -2859,8 +3205,7 @@ function scrollToQuestionTop() {
 }
 
 .mode-card,
-.count-card,
-.comprehensive-card {
+.count-card {
   margin-bottom: 24rpx;
   padding: 26rpx;
   border-radius: 34rpx;
@@ -2893,15 +3238,13 @@ function scrollToQuestionTop() {
 }
 
 .mode-title,
-.count-title,
-.comprehensive-title {
+.count-title {
   color: #172033;
   font-size: 30rpx;
   font-weight: 900;
 }
 
-.mode-sub,
-.comprehensive-line {
+.mode-sub {
   margin-top: 8rpx;
   color: #667085;
   font-size: 24rpx;
@@ -3084,22 +3427,21 @@ function scrollToQuestionTop() {
   flex: 1;
 }
 
+.sticky-copy--single {
+  min-height: 92rpx;
+  display: flex;
+  align-items: center;
+}
+
+.sticky-copy--comprehensive .sticky-title {
+  white-space: nowrap;
+  word-break: keep-all;
+}
+
 .sticky-title {
   font-size: 28rpx;
   font-weight: 900;
   color: #172033;
-}
-
-.sticky-sub,
-.sticky-tip {
-  margin-top: 8rpx;
-  color: #667085;
-  font-size: 22rpx;
-  line-height: 1.35;
-}
-
-.sticky-tip {
-  color: var(--gyt-primary);
 }
 
 .sticky-btn {
@@ -3118,6 +3460,10 @@ function scrollToQuestionTop() {
   transition: transform 120ms ease, filter 120ms ease, box-shadow 120ms ease;
 }
 
+.sticky-btn::after {
+  border: 0;
+}
+
 .sticky-btn:not([disabled]):active,
 .sticky-btn:not([disabled]).sticky-btn--pressed {
   filter: brightness(0.95);
@@ -3133,8 +3479,12 @@ function scrollToQuestionTop() {
 }
 
 .sticky-actions.dual .sticky-btn {
-  min-width: 168rpx;
-  padding: 0 20rpx;
+  min-width: 156rpx;
+  padding: 0 16rpx;
+}
+
+.sticky-actions.dual {
+  gap: 12rpx;
 }
 
 .start-sticky-btn {
@@ -3151,7 +3501,7 @@ function scrollToQuestionTop() {
 .review-sticky-btn {
   background: #ffffff;
   color: var(--gyt-primary);
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 0;
   box-shadow: 0 12rpx 26rpx rgba(20, 31, 66, 0.08);
   display: flex;
   flex-direction: column;
@@ -3168,7 +3518,7 @@ function scrollToQuestionTop() {
 }
 
 .start-sticky-btn[disabled] {
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 0;
   background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
   box-shadow: none;
@@ -3178,7 +3528,7 @@ function scrollToQuestionTop() {
 .review-sticky-btn[disabled] {
   background: #f2f4f7;
   color: #a7afb9;
-  border-color: #e6ebf5;
+  border: 0;
   box-shadow: none;
 }
 
@@ -3271,6 +3621,10 @@ function scrollToQuestionTop() {
   box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.08);
 }
 
+.question-map-btn::after {
+  border: 0;
+}
+
 .quiz-shell {
   padding: 24rpx 22rpx 22rpx;
   border-radius: 36rpx;
@@ -3323,7 +3677,9 @@ function scrollToQuestionTop() {
   align-items: center;
   justify-content: center;
   box-shadow: none;
-  transform: translateY(-50%);
+  transform: translate3d(0, -50%, 0);
+  transition: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .favorite-btn::after {
@@ -3331,11 +3687,12 @@ function scrollToQuestionTop() {
 }
 
 .practice-favorite-icon {
-  width: 1em;
-  height: 1em;
-  background-color: currentColor;
-  -webkit-mask: url('/static/ui-icons/favorite-outline.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/favorite-outline.svg') center / contain no-repeat;
+  width: 32rpx;
+  height: 32rpx;
+  display: block;
+  flex: none;
+  transform: none;
+  transition: none;
 }
 
 .favorite-btn.active {
@@ -3343,7 +3700,13 @@ function scrollToQuestionTop() {
 }
 
 .favorite-btn[disabled] {
-  opacity: 0.55;
+  opacity: 1;
+}
+
+.favorite-btn:active,
+.favorite-btn.active,
+.favorite-btn[disabled] {
+  transform: translate3d(0, -50%, 0);
 }
 
 .timer {
@@ -3354,6 +3717,15 @@ function scrollToQuestionTop() {
   border: 2rpx solid #fde7b0;
   font-size: 23rpx;
   font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 8rpx;
+}
+
+.timer-icon {
+  display: block;
+  width: 26rpx;
+  height: 26rpx;
 }
 
 .question-card {
@@ -3419,6 +3791,10 @@ function scrollToQuestionTop() {
   transition: transform 110ms ease, filter 110ms ease, box-shadow 110ms ease;
 }
 
+.submit-btn::after {
+  border: 0;
+}
+
 .submit-btn:not([disabled]):active,
 .submit-btn:not([disabled]).submit-btn--pressed {
   filter: brightness(0.9);
@@ -3443,7 +3819,7 @@ function scrollToQuestionTop() {
 }
 
 .submit-btn[disabled] {
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 0;
   background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
   box-shadow: none;
@@ -3457,10 +3833,133 @@ function scrollToQuestionTop() {
   box-shadow: 0 12rpx 28rpx rgba(20, 31, 66, 0.05);
 }
 
+.summary-card--with-stats {
+  min-height: 0;
+}
+
+.result-summary-page .result-overview-card {
+  padding: 30rpx 30rpx 26rpx;
+  border: 1rpx solid #e8edf5;
+  border-radius: 56rpx;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.result-overview-main {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 26rpx;
+}
+
+.summary-card-copy {
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
+.summary-stat-stack {
+  width: 45%;
+  min-width: 224rpx;
+  flex: 0 0 45%;
+  display: flex;
+  flex-direction: column;
+  gap: 10rpx;
+}
+
+.summary-stat-row {
+  min-width: 0;
+  min-height: 68rpx;
+  padding: 8rpx 14rpx;
+  box-sizing: border-box;
+  border: 1rpx solid #edf1f6;
+  border-radius: 34rpx;
+  background: #f6f8fb;
+  display: flex;
+  align-items: center;
+  gap: 11rpx;
+}
+
+.summary-stat-icon {
+  width: 38rpx;
+  height: 38rpx;
+  flex: 0 0 38rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.summary-stat-icon image {
+  width: 30rpx;
+  height: 30rpx;
+  display: block;
+}
+
+.summary-stat-copy {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.summary-stat-value {
+  overflow: hidden;
+  color: #162033;
+  font-size: 28rpx;
+  line-height: 1.1;
+  font-weight: 800;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.summary-stat-label {
+  margin-top: 4rpx;
+  color: #7e889c;
+  font-size: 21rpx;
+  line-height: 1.1;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.result-overview-card .summary-kicker {
+  color: var(--gyt-primary);
+  font-size: 23rpx;
+  line-height: 1.35;
+  font-weight: 800;
+}
+
+.result-overview-card .summary-score {
+  margin-top: 12rpx;
+  display: flex;
+  align-items: baseline;
+  color: #162033;
+  line-height: 1;
+}
+
+.summary-score-main {
+  font-size: 76rpx;
+  font-weight: 900;
+  letter-spacing: -3rpx;
+}
+
+.summary-score-total {
+  margin-left: 10rpx;
+  color: #7e889c;
+  font-size: 46rpx;
+  font-weight: 700;
+  letter-spacing: -1rpx;
+}
+
 .mock-summary-card {
   background:
     linear-gradient(145deg, rgba(255, 255, 255, 0.98), rgba(240, 246, 255, 0.96)),
     radial-gradient(circle at top right, var(--gyt-primary-shadow), transparent 48%);
+}
+
+.result-summary-page .mock-section-card {
+  margin-top: 36rpx;
+  border: 1rpx solid #e8edf5;
+  border-radius: 52rpx;
+  box-shadow: none;
 }
 
 .mock-section-card {
@@ -3621,11 +4120,149 @@ function scrollToQuestionTop() {
   background: #f59e0b;
 }
 
+.result-answer-card {
+  margin-top: 36rpx;
+  padding: 26rpx 28rpx 28rpx;
+  display: block;
+  border: 1rpx solid #e8edf5;
+  border-radius: 52rpx;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+.result-answer-head {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 20rpx;
+}
+
+.result-answer-title {
+  color: #162033;
+  font-size: 28rpx;
+  line-height: 1.3;
+  font-weight: 800;
+}
+
+.result-question-grid {
+  margin-top: 22rpx;
+  display: grid;
+  grid-template-columns: repeat(5, minmax(0, 1fr));
+  gap: 14rpx;
+}
+
+.result-question-grid .summary-dot {
+  width: 80rpx;
+  min-height: 80rpx;
+  justify-self: center;
+  border-radius: 24rpx;
+  font-size: 27rpx;
+}
+
+.result-question-grid .summary-dot.correct {
+  background: #2f946f;
+}
+
+.result-question-grid .summary-dot.wrong {
+  background: #d95c63;
+}
+
+.result-question-grid .summary-dot.pending {
+  background: #bd8730;
+}
+
+.result-advice {
+  min-height: 120rpx;
+  margin-top: 32rpx;
+  padding: 18rpx 22rpx;
+  box-sizing: border-box;
+  border-radius: 40rpx;
+  background: var(--gyt-primary-tint, #f4f8ff);
+  color: #56647a;
+  display: flex;
+  align-items: center;
+  gap: 16rpx;
+  font-size: 26rpx;
+  line-height: 1.5;
+  font-weight: 500;
+}
+
+.result-advice-icon {
+  width: 34rpx;
+  height: 34rpx;
+  flex: 0 0 34rpx;
+  display: block;
+}
+
 .summary-actions {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
   margin-top: 20rpx;
+}
+
+.result-summary-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 14rpx;
+  margin-top: 40rpx;
+}
+
+.summary-action-primary,
+.summary-action-secondary {
+  box-sizing: border-box;
+  width: 100%;
+  margin: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  font-weight: 700;
+  line-height: 1.25;
+}
+
+.summary-action-primary {
+  grid-column: 1 / -1;
+  min-height: 116rpx;
+  padding: 0 24rpx;
+  border: 0;
+  border-radius: 48rpx;
+  background: #172238;
+  color: #ffffff;
+  font-size: 30rpx;
+  font-weight: 800;
+  gap: 20rpx;
+}
+
+.summary-action-primary:active {
+  opacity: 0.88;
+}
+
+.summary-action-arrow {
+  font-size: 38rpx;
+  line-height: 1;
+  font-weight: 400;
+}
+
+.summary-action-secondary {
+  min-height: 96rpx;
+  padding: 0 14rpx;
+  border: 3rpx solid #526076;
+  border-radius: 44rpx;
+  background: #ffffff;
+  color: #26344b;
+  font-size: 26rpx;
+  font-weight: 700;
+  gap: 11rpx;
+}
+
+.summary-action-secondary:active {
+  background: var(--gyt-primary-tint, #f4f8ff);
+}
+
+.summary-action-primary::after,
+.summary-action-secondary::after {
+  border: 0;
 }
 
 .primary-action-row {
@@ -3693,7 +4330,7 @@ function scrollToQuestionTop() {
   align-items: center;
   justify-content: center;
   border-radius: 28rpx;
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 0;
   background: #ffffff;
   color: var(--gyt-primary);
   font-size: 28rpx;
@@ -3701,6 +4338,11 @@ function scrollToQuestionTop() {
   line-height: 1.25;
   text-align: center;
   box-shadow: 0 10rpx 22rpx rgba(20, 31, 66, 0.06);
+}
+
+.prev-btn::after,
+.next-btn::after {
+  border: 0;
 }
 
 .primary-action-row .submit-btn {
@@ -3719,7 +4361,7 @@ function scrollToQuestionTop() {
   align-items: center;
   justify-content: center;
   border-radius: 26rpx;
-  border: 2rpx solid #fed7aa;
+  border: 0;
   background: #fff7ed;
   color: #c2410c;
   font-size: 27rpx;
@@ -3729,8 +4371,12 @@ function scrollToQuestionTop() {
   box-shadow: none;
 }
 
+.unfamiliar-btn::after {
+  border: 0;
+}
+
 .unfamiliar-btn[disabled] {
-  border-color: #e6ebf5;
+  border: 0;
   background: #f2f4f7;
   color: #98a2b3;
 }
@@ -3773,7 +4419,7 @@ function scrollToQuestionTop() {
 }
 
 .prev-btn[disabled] {
-  border-color: #e6ebf5;
+  border: 0;
   background: #f2f4f7;
   color: #98a2b3;
   box-shadow: none;
@@ -3820,9 +4466,9 @@ function scrollToQuestionTop() {
 }
 
 .next-btn.outline {
-  background: #ffffff;
+  background: var(--gyt-primary-soft);
   color: var(--gyt-primary);
-  border: 2rpx solid var(--gyt-primary-border);
+  border: 0;
   box-shadow: none;
 }
 
@@ -4020,6 +4666,84 @@ function scrollToQuestionTop() {
   border: 0;
   border-radius: 0;
   box-shadow: none;
+}
+
+.grading-feedback-mask {
+  position: fixed;
+  top: 0;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  z-index: 320;
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: calc(env(safe-area-inset-top) + 36rpx) 48rpx calc(env(safe-area-inset-bottom) + 36rpx);
+  background: rgba(248, 250, 255, 0.88);
+  -webkit-backdrop-filter: blur(10px);
+  backdrop-filter: blur(10px);
+  animation: grading-feedback-in 160ms ease-out both;
+}
+
+.grading-feedback-card {
+  width: 100%;
+  max-width: 520rpx;
+  box-sizing: border-box;
+  padding: 38rpx 36rpx 34rpx;
+  border: 2rpx solid rgba(215, 229, 255, 0.9);
+  border-radius: 32rpx;
+  background: rgba(255, 255, 255, 0.96);
+  box-shadow: 0 20rpx 54rpx rgba(39, 86, 170, 0.12);
+  text-align: center;
+  transform: translateY(-72rpx);
+}
+
+.grading-feedback-title,
+.grading-feedback-copy {
+  display: block;
+  font-weight: 400;
+}
+
+.grading-feedback-title {
+  color: #33445f;
+  font-size: 30rpx;
+  line-height: 1.5;
+}
+
+.grading-feedback-progress {
+  width: 100%;
+  height: 10rpx;
+  margin: 28rpx 0 22rpx;
+  overflow: hidden;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft, #eaf2ff);
+}
+
+.grading-feedback-progress-bar {
+  width: 42%;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--gyt-primary-gradient, linear-gradient(90deg, #3478f6, #70a5ff));
+  box-shadow: 0 0 16rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2));
+  will-change: transform;
+  animation: grading-progress-slide 1.05s cubic-bezier(0.4, 0, 0.2, 1) infinite;
+}
+
+.grading-feedback-copy {
+  color: #7a899d;
+  font-size: 24rpx;
+  line-height: 1.5;
+}
+
+@keyframes grading-feedback-in {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+@keyframes grading-progress-slide {
+  from { transform: translateX(-120%); }
+  to { transform: translateX(340%); }
 }
 
 @keyframes explanation-mask-in {

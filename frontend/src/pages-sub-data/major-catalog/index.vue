@@ -10,7 +10,7 @@
     <view class="catalog-shell">
       <view class="catalog-topbar">
         <button class="catalog-back-button" hover-class="none" aria-label="返回" @tap="goBack">
-          <image class="catalog-back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+          <image class="catalog-back-icon" src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
         </button>
         <text class="catalog-topbar-title">专业目录</text>
         <view class="catalog-topbar-placeholder"></view>
@@ -29,7 +29,7 @@
             <view class="catalog-select-control">
               <text class="catalog-select-name">统考科目</text>
               <text class="catalog-select-value">{{ selectedExamCompactLabel }}</text>
-              <view class="catalog-select-arrow-icon" aria-hidden="true"></view>
+              <image class="catalog-select-arrow-icon" :src="catalogSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -44,7 +44,7 @@
             <view class="catalog-select-control">
               <text class="catalog-select-name">目录年份</text>
               <text class="catalog-select-value">{{ selectedCatalogYearCompactLabel }}</text>
-              <view class="catalog-select-arrow-icon" aria-hidden="true"></view>
+              <image class="catalog-select-arrow-icon" :src="catalogSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -59,7 +59,7 @@
             <view class="catalog-select-control">
               <text class="catalog-select-name">地域查找</text>
               <text class="catalog-select-value" :class="{ muted: !selectedRegion }">{{ selectedRegionCompactLabel }}</text>
-              <view class="catalog-select-arrow-icon" aria-hidden="true"></view>
+              <image class="catalog-select-arrow-icon" :src="catalogSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -76,14 +76,14 @@
             <view class="catalog-select-control">
               <text class="catalog-select-name">招生院校</text>
               <text class="catalog-select-value" :class="{ muted: !selectedSchool }">{{ selectedSchoolCompactLabel }}</text>
-              <view class="catalog-select-arrow-icon" aria-hidden="true"></view>
+              <image class="catalog-select-arrow-icon" :src="catalogSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
         </view>
 
         <view class="catalog-keyword-row">
           <view class="catalog-keyword-field">
-            <view class="catalog-search-mark" aria-hidden="true"></view>
+            <AppSearchIcon />
             <input
               v-model="keyword"
               class="catalog-keyword-input"
@@ -123,11 +123,13 @@
               :aria-label="isResultsExpanded ? '退出全屏浏览' : '全屏浏览'"
               @tap="toggleResultsExpanded"
             >
-              <view
+              <image
                 class="catalog-expand-icon"
                 :class="{ 'is-shrink': isResultsExpanded }"
+                :src="catalogExpandIconSrc"
+                mode="aspectFit"
                 aria-hidden="true"
-              ></view>
+              />
             </button>
           </view>
         </view>
@@ -150,14 +152,19 @@
               <button class="catalog-retry-button" hover-class="none" @tap="runSearch">重新加载</button>
             </view>
 
-            <view v-else-if="loading" class="catalog-inline-state">正在查找目录信息…</view>
+            <AppPageLoadingState v-else-if="loading" compact message="正在整理招生专业目录..." />
 
             <view v-else-if="hasPendingFilters" class="catalog-inline-state">
               已更新筛选条件，点击“查找”查看结果。
             </view>
 
             <template v-else-if="currentView === 'regions'">
-              <view v-if="regions.length === 0" class="catalog-inline-state">当前筛选条件下暂无可展示的地区。</view>
+              <AppEmptyState
+                v-if="regions.length === 0"
+                compact
+                label="暂无地区数据"
+                title="当前筛选条件下暂无可展示的地区"
+              />
               <view v-else class="catalog-region-grid">
                 <button
                   v-for="region in regions"
@@ -174,7 +181,12 @@
             </template>
 
             <template v-else-if="currentView === 'schools'">
-              <view v-if="schoolItems.length === 0" class="catalog-inline-state">该筛选条件下暂未找到院校。</view>
+              <AppEmptyState
+                v-if="schoolItems.length === 0"
+                compact
+                label="暂未找到院校"
+                title="该筛选条件下暂未找到院校"
+              />
               <view v-else class="catalog-school-list">
                 <button
                   v-for="school in schoolItems"
@@ -196,9 +208,13 @@
             </template>
 
             <template v-else-if="currentView === 'search'">
-              <view v-if="searchResults.total_count === 0" class="catalog-inline-state">
-                没有找到相关院校或专业，请换一个关键词。
-              </view>
+              <AppEmptyState
+                v-if="searchResults.total_count === 0"
+                compact
+                label="没有找到相关院校或专业"
+                title="没有找到相关院校或专业"
+                description="请换一个关键词。"
+              />
               <template v-else>
                 <view v-if="searchResults.schools.length" class="catalog-search-section">
                   <view class="catalog-subsection-heading">
@@ -269,7 +285,13 @@
                 </view>
               </view>
 
-              <view v-if="departments.length === 0" class="catalog-inline-state">没有找到匹配的专业，请调整关键词或统考科目。</view>
+              <AppEmptyState
+                v-if="departments.length === 0"
+                compact
+                label="没有找到匹配的专业"
+                title="没有找到匹配的专业"
+                description="请调整关键词或统考科目。"
+              />
               <view v-else class="catalog-department-list">
                 <view v-for="department in departments" :key="department.name" class="catalog-department-block">
                   <view class="catalog-department-heading">
@@ -320,10 +342,6 @@
               </view>
             </template>
 
-            <view class="catalog-source-note">
-              <text>“全部目录”含完整基础目录与最新 2026 年覆盖数据；“2026”仅展示已核验的 49 所官方目录；“2025”展示已核验的 46 所官方目录。Z001 为综合能力（一），Z002 为综合能力（二）。</text>
-            </view>
-
             <!-- #ifdef H5 -->
             <IcpFooter inline :glass="isGlassTheme" />
             <!-- #endif -->
@@ -338,12 +356,16 @@
 import { computed, ref } from 'vue'
 import { onBackPress, onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   fetchMajorCatalogRegions,
   fetchMajorCatalogSchoolPrograms,
   fetchMajorCatalogSchools,
   searchMajorCatalog
 } from '../../api/majorCatalog'
+import AppSearchIcon from '../../components/ui/AppSearchIcon.vue'
+import { getThemeIconSrc, getToneIconSrc } from '../../utils/iconAssets'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 
@@ -394,6 +416,14 @@ const pageInlineStyle = computed(() => [
   buildThemeStyle(themeKey.value),
   mpLayoutStyle.value
 ].filter(Boolean).join(';'))
+const catalogSelectArrowIconSrc = computed(() => (
+  getThemeIconSrc('/static/ui-icons/png/original/major-catalog-dropdown.png', themeKey.value)
+))
+const catalogExpandIconSrc = computed(() => (
+  isResultsExpanded.value
+    ? getToneIconSrc('/static/ui-icons/png/original/major-catalog-shrink.png', 'white')
+    : getThemeIconSrc('/static/ui-icons/png/original/major-catalog-fullscreen.png', themeKey.value)
+))
 
 const isGlassTheme = computed(() => getThemePreset(themeKey.value).circleGlass === true)
 
@@ -1035,7 +1065,6 @@ function getExamLabel(code) {
 .catalog-expand-mark,
 .catalog-state-title,
 .catalog-state-desc,
-.catalog-source-note,
 .catalog-truncated-note {
   display: block;
 }
@@ -1100,13 +1129,11 @@ function getExamLabel(code) {
   flex: 0 0 auto;
   width: 18rpx;
   height: 11rpx;
-  background: var(--gyt-primary);
-  -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+  display: block;
 }
 
 .catalog-select.disabled .catalog-select-arrow-icon {
-  background: #b2bac7;
+  opacity: 0.42;
 }
 
 .catalog-keyword-row {
@@ -1128,29 +1155,6 @@ function getExamLabel(code) {
   border: 1rpx solid #dfe7f1;
   border-radius: 16rpx;
   background: rgba(255, 255, 255, 0.94);
-}
-
-.catalog-search-mark {
-  position: relative;
-  width: 22rpx;
-  height: 22rpx;
-  flex: 0 0 22rpx;
-  box-sizing: border-box;
-  border: 4rpx solid var(--gyt-primary);
-  border-radius: 50%;
-  opacity: 0.88;
-}
-
-.catalog-search-mark::after {
-  position: absolute;
-  right: -9rpx;
-  bottom: -7rpx;
-  width: 11rpx;
-  height: 4rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary);
-  content: '';
-  transform: rotate(45deg);
 }
 
 .catalog-keyword-input {
@@ -1277,18 +1281,11 @@ function getExamLabel(code) {
 .catalog-expand-icon {
   width: 25rpx;
   height: 25rpx;
-  background: var(--gyt-primary);
-  -webkit-mask: url('/static/ui-icons/major-catalog-fullscreen.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/major-catalog-fullscreen.svg') center / contain no-repeat;
+  display: block;
 }
 
 .catalog-expand-button.active .catalog-expand-icon {
-  background: #ffffff;
-}
-
-.catalog-expand-icon.is-shrink {
-  -webkit-mask-image: url('/static/ui-icons/major-catalog-shrink.svg');
-  mask-image: url('/static/ui-icons/major-catalog-shrink.svg');
+  opacity: 1;
 }
 
 .catalog-results-reset {
@@ -1789,15 +1786,6 @@ function getExamLabel(code) {
   font-size: 20rpx;
   line-height: 1;
   font-weight: 850;
-}
-
-.catalog-source-note {
-  margin-top: 20rpx;
-  padding: 0 8rpx;
-  color: #909aaa;
-  font-size: 17rpx;
-  line-height: 1.55;
-  text-align: center;
 }
 
 .major-catalog-page.is-glass-theme .catalog-topbar,

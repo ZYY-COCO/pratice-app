@@ -1,15 +1,20 @@
 <template>
   <view class="circle-resource-section" :class="`is-${resourceType}`">
-    <view v-if="loading" class="circle-resource-state">正在整理{{ sectionLabel }}…</view>
+    <AppPageLoadingState
+      v-if="loading"
+      class="circle-resource-loading-state"
+      :message="`正在整理${sectionLabel}...`"
+    />
     <view v-else-if="loadError" class="circle-resource-state">
       <view class="circle-resource-state-mark">{{ resourceType === 'material' ? '资' : '课' }}</view>
       <strong>{{ resourceType === 'material' ? '推荐资料正在整理' : '课程正在筹备' }}</strong>
       <button type="button" @tap="loadResources">重新加载</button>
     </view>
-    <view v-else-if="!items.length" class="circle-resource-state">
-      <view class="circle-resource-state-mark">{{ resourceType === 'material' ? '资' : '课' }}</view>
-      <strong>{{ resourceType === 'material' ? '暂未上架推荐资料' : '课程正在筹备' }}</strong>
-    </view>
+    <AppEmptyState
+      v-else-if="!items.length"
+      class="circle-resource-empty-state"
+      :label="`${sectionLabel}暂无内容`"
+    />
     <view v-else class="circle-resource-grid">
       <view v-for="item in items" :key="item.id" class="circle-resource-card">
         <image v-if="item.cover_url" class="circle-resource-cover" :src="item.cover_url" mode="aspectFill" />
@@ -39,6 +44,8 @@
 <script setup>
 import { computed, onMounted, ref } from 'vue'
 import { fetchCircleResources } from '../api/circleResources'
+import AppEmptyState from './ui/AppEmptyState.vue'
+import AppPageLoadingState from './ui/AppPageLoadingState.vue'
 
 const props = defineProps({
   resourceType: {
@@ -97,5 +104,5 @@ function copyMaterialLink(item) {
 </script>
 
 <style scoped>
-.circle-resource-section{width:100%;box-sizing:border-box;padding:4rpx 20rpx 72rpx}.circle-resource-state{min-height:580rpx;padding:42rpx 30rpx;display:flex;align-items:center;flex-direction:column;justify-content:center;text-align:center}.circle-resource-state-mark{width:104rpx;height:104rpx;display:grid;place-items:center;border-radius:24rpx;background:#e7f7f2;color:#2d9a82;font-size:38rpx;font-weight:850}.circle-resource-state strong{margin-top:26rpx;color:#495b70;font-size:30rpx;font-weight:850}.circle-resource-state button{height:62rpx;margin:24rpx 0 0;padding:0 28rpx;display:inline-flex;align-items:center;justify-content:center;border:1rpx solid #dbe8e7;border-radius:12rpx;background:#fff;color:#398c7b;font-size:24rpx;font-weight:750;line-height:1}.circle-resource-state button::after,.circle-resource-material-action button::after{border:0}.circle-resource-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20rpx}.circle-resource-card{min-width:0;overflow:hidden;border:1rpx solid rgba(220,230,234,.92);border-radius:16rpx;background:rgba(255,255,255,.94);box-shadow:0 10rpx 28rpx rgba(47,65,84,.05)}.circle-resource-cover{width:100%;height:188rpx;display:block;background:#edf3f3}.circle-resource-card-body{padding:19rpx 18rpx 18rpx}.circle-resource-card-topline{min-height:30rpx;display:flex;align-items:center;justify-content:space-between;gap:10rpx}.circle-resource-subject{min-width:0;overflow:hidden;color:#338f7c;font-size:20rpx;font-weight:750;text-overflow:ellipsis;white-space:nowrap}.circle-resource-price{flex:0 0 auto;color:#cf7650;font-size:22rpx;font-weight:850}.circle-resource-name{margin-top:8rpx;overflow:hidden;color:#33465c;font-size:27rpx;font-weight:850;line-height:1.42;text-overflow:ellipsis;white-space:nowrap}.circle-resource-summary{min-height:58rpx;margin-top:9rpx;display:-webkit-box;overflow:hidden;color:#8291a0;font-size:21rpx;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2}.circle-resource-tags{min-height:34rpx;margin-top:12rpx;display:flex;align-items:center;gap:7rpx;overflow:hidden}.circle-resource-tags text{max-width:122rpx;padding:5rpx 9rpx;overflow:hidden;border-radius:99rpx;background:#eef6f5;color:#66827f;font-size:18rpx;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.circle-resource-material-action,.circle-resource-course-meta{min-height:52rpx;margin-top:13rpx;padding-top:12rpx;display:flex;align-items:center;justify-content:space-between;gap:10rpx;border-top:1rpx solid #edf1f2}.circle-resource-material-action>text,.circle-resource-course-meta text{min-width:0;overflow:hidden;color:#93a0aa;font-size:19rpx;text-overflow:ellipsis;white-space:nowrap}.circle-resource-material-action button{height:44rpx;flex:0 0 auto;margin:0;padding:0 14rpx;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:9rpx;background:#e4f6f1;color:#268b75;font-size:20rpx;font-weight:800;line-height:1}@media(max-width:360px){.circle-resource-grid{grid-template-columns:1fr}.circle-resource-cover{height:220rpx}}
+.circle-resource-section{width:100%;box-sizing:border-box;padding:4rpx 20rpx 72rpx}.circle-resource-loading-state,.circle-resource-empty-state{min-height:580rpx}.circle-resource-state{min-height:580rpx;padding:42rpx 30rpx;display:flex;align-items:center;flex-direction:column;justify-content:center;text-align:center}.circle-resource-state-mark{width:104rpx;height:104rpx;display:grid;place-items:center;border-radius:24rpx;background:#e7f7f2;color:#2d9a82;font-size:38rpx;font-weight:850}.circle-resource-state strong{margin-top:26rpx;color:#495b70;font-size:30rpx;font-weight:850}.circle-resource-state button{height:62rpx;margin:24rpx 0 0;padding:0 28rpx;display:inline-flex;align-items:center;justify-content:center;border:1rpx solid #dbe8e7;border-radius:12rpx;background:#fff;color:#398c7b;font-size:24rpx;font-weight:750;line-height:1}.circle-resource-state button::after,.circle-resource-material-action button::after{border:0}.circle-resource-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20rpx}.circle-resource-card{min-width:0;overflow:hidden;border:1rpx solid rgba(220,230,234,.92);border-radius:16rpx;background:rgba(255,255,255,.94);box-shadow:0 10rpx 28rpx rgba(47,65,84,.05)}.circle-resource-cover{width:100%;height:188rpx;display:block;background:#edf3f3}.circle-resource-card-body{padding:19rpx 18rpx 18rpx}.circle-resource-card-topline{min-height:30rpx;display:flex;align-items:center;justify-content:space-between;gap:10rpx}.circle-resource-subject{min-width:0;overflow:hidden;color:#338f7c;font-size:20rpx;font-weight:750;text-overflow:ellipsis;white-space:nowrap}.circle-resource-price{flex:0 0 auto;color:#cf7650;font-size:22rpx;font-weight:850}.circle-resource-name{margin-top:8rpx;overflow:hidden;color:#33465c;font-size:27rpx;font-weight:850;line-height:1.42;text-overflow:ellipsis;white-space:nowrap}.circle-resource-summary{min-height:58rpx;margin-top:9rpx;display:-webkit-box;overflow:hidden;color:#8291a0;font-size:21rpx;line-height:1.5;-webkit-box-orient:vertical;-webkit-line-clamp:2}.circle-resource-tags{min-height:34rpx;margin-top:12rpx;display:flex;align-items:center;gap:7rpx;overflow:hidden}.circle-resource-tags text{max-width:122rpx;padding:5rpx 9rpx;overflow:hidden;border-radius:99rpx;background:#eef6f5;color:#66827f;font-size:18rpx;font-weight:650;text-overflow:ellipsis;white-space:nowrap}.circle-resource-material-action,.circle-resource-course-meta{min-height:52rpx;margin-top:13rpx;padding-top:12rpx;display:flex;align-items:center;justify-content:space-between;gap:10rpx;border-top:1rpx solid #edf1f2}.circle-resource-material-action>text,.circle-resource-course-meta text{min-width:0;overflow:hidden;color:#93a0aa;font-size:19rpx;text-overflow:ellipsis;white-space:nowrap}.circle-resource-material-action button{height:44rpx;flex:0 0 auto;margin:0;padding:0 14rpx;display:inline-flex;align-items:center;justify-content:center;border:0;border-radius:9rpx;background:#e4f6f1;color:#268b75;font-size:20rpx;font-weight:800;line-height:1}@media(max-width:360px){.circle-resource-grid{grid-template-columns:1fr}.circle-resource-cover{height:220rpx}}
 </style>

@@ -1,5 +1,5 @@
 <template>
-  <view class="favorite-icon" aria-hidden="true"></view>
+  <image class="favorite-icon" src="/static/ui-icons/png/gold/favorite.png" mode="aspectFit" aria-hidden="true" />
 </template>
 
 <style scoped>
@@ -8,8 +8,5 @@
   width: 1em;
   height: 1em;
   flex-shrink: 0;
-  background-color: currentColor;
-  -webkit-mask: url('/static/ui-icons/favorite.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/favorite.svg') center / contain no-repeat;
 }
 </style>

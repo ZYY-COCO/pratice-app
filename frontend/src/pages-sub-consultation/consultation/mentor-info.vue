@@ -117,7 +117,7 @@
         <view class="mentor-info-bottom-space"></view>
       </view>
 
-      <view v-else-if="infoLoading" class="mentor-info-state">正在加载我的信息…</view>
+      <AppPageLoadingState v-else-if="infoLoading" message="正在整理我的信息..." />
       <view v-else class="mentor-info-state mentor-info-state-empty">
         <view>前辈资料暂时不可用</view>
         <button @tap="goBack">返回咨询主页</button>
@@ -146,6 +146,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   createMyMentorProfileChangeRequest,
   fetchMyMentorProfile,

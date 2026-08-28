@@ -6,6 +6,7 @@
       'circle-glass-page': activeTab === 'circle' || isCircleGlassTheme,
       'circle-themed-page': activeTab === 'circle' && !isCircleGlassTheme,
       'landing-glass-page': activeTab === 'landing' && isCircleGlassTheme,
+      'landing-home-page': activeTab === 'landing',
       'practice-home-page': activeTab === 'home',
       'profile-reference-page': activeTab === 'profile',
       'profile-function-page': activeTab === 'mistakes' || activeTab === 'report',
@@ -15,7 +16,7 @@
     :style="pageInlineStyle"
   >
     <template v-if="activeTab === 'landing'">
-        <view class="landing-dashboard">
+        <view key="landing" class="landing-dashboard">
         <view class="home-header">
           <view class="brand-line">
             <view class="home-header-copy">
@@ -32,7 +33,12 @@
           </view>
           <view class="home-actions">
             <button class="message-bell" :class="{ unread: messageUnreadCount > 0 }" aria-label="打开消息中心" @tap="openMessageCenter">
-              <view class="message-bell-icon" aria-hidden="true"></view>
+              <image
+                class="message-bell-icon-image"
+                :src="getToneIconSrc('/static/ui-icons/png/original/notification-bell.png', messageUnreadCount > 0 ? 'gold' : 'dark')"
+                mode="aspectFit"
+                aria-hidden="true"
+              />
               <view v-if="messageUnreadCount > 0" class="message-dot"></view>
             </button>
             <view class="profile-entry" aria-label="打开我的页面" @tap.stop="openProfileTab">
@@ -106,7 +112,7 @@
 
           <view class="landing-news-list">
             <view
-              v-for="(item, index) in homeNewsItems.slice(0, 2)"
+              v-for="(item, index) in homeNewsItems.slice(0, 3)"
               :key="item.title"
               class="landing-news-card"
               :class="index === 0 ? 'is-featured' : ''"
@@ -155,7 +161,7 @@
               <view class="landing-service-icon">
                 <image
                   class="landing-service-icon-image"
-                  :src="item.iconSrc"
+                  :src="getOriginalIconSrc(item.iconSrc)"
                   mode="aspectFit"
                   :alt="item.title"
                 />
@@ -173,84 +179,159 @@
       </view>
     </template>
 
-    <template v-else-if="activeTab === 'home'">
-      <view class="home-dashboard practice-dashboard">
-        <view
-          class="welcome-card practice-data-card"
-          role="button"
-          aria-label="查看详细刷题数据"
-          @tap="goLeaderboard"
-        >
-          <view class="practice-data-header">
-            <text class="practice-data-title">我的刷题数据</text>
-            <view class="practice-data-period" aria-hidden="true">
-              <text>本周数据</text>
-            </view>
-          </view>
+    <template v-if="activeTab === 'home'">
+      <view key="home" class="home-dashboard practice-dashboard">
+        <view class="practice-overview-carousel">
+          <swiper
+            class="practice-overview-swiper"
+            :current="practiceOverviewIndex"
+            :autoplay="true"
+            :interval="5000"
+            :duration="420"
+            circular
+            @change="handlePracticeOverviewChange"
+          >
+            <swiper-item>
+              <view
+                class="welcome-card practice-data-card"
+                role="button"
+                aria-label="查看详细刷题数据"
+                @tap="goLeaderboard"
+              >
+                <view class="practice-data-header">
+                  <text class="practice-data-title">我的刷题数据</text>
+                  <view class="practice-data-period" aria-hidden="true">
+                    <text>本周数据</text>
+                  </view>
+                </view>
 
-          <view class="practice-data-overview">
-            <view class="practice-accuracy-ring" aria-label="总正确率">
-              <svg class="practice-accuracy-svg" viewBox="0 0 100 100" aria-hidden="true">
-                <circle class="practice-accuracy-track" cx="50" cy="50" r="43" pathLength="100" />
-                <circle
-                  class="practice-accuracy-progress"
-                  cx="50"
-                  cy="50"
-                  r="43"
-                  pathLength="100"
-                  stroke-dasharray="100"
-                  :stroke-dashoffset="homeStats.accuracyOffset"
-                />
-              </svg>
-              <view class="practice-accuracy-copy">
-                <text class="practice-accuracy-value">{{ homeStats.accuracy }}</text>
-                <text class="practice-accuracy-label">总正确率</text>
-              </view>
-            </view>
+                <view class="practice-data-overview">
+                  <view
+                    class="practice-accuracy-ring"
+                    :class="{ 'is-animating': practiceStatsAnimating }"
+                    :style="{ '--practice-ring-progress': `${practiceStats.accuracyProgress}%` }"
+                    aria-label="总正确率"
+                  >
+                    <!-- #ifdef H5 -->
+                    <svg class="practice-accuracy-svg" viewBox="0 0 100 100" aria-hidden="true">
+                      <circle class="practice-accuracy-track" cx="50" cy="50" r="43" pathLength="100" />
+                      <circle
+                        class="practice-accuracy-progress"
+                        cx="50"
+                        cy="50"
+                        r="43"
+                        pathLength="100"
+                        stroke-dasharray="100"
+                        :stroke-dashoffset="practiceStats.accuracyOffset"
+                      />
+                    </svg>
+                    <!-- #endif -->
+                    <!-- #ifndef H5 -->
+                    <view class="practice-accuracy-app-ring" aria-hidden="true"></view>
+                    <!-- #endif -->
+                    <view class="practice-accuracy-copy">
+                      <text class="practice-accuracy-value">{{ practiceStats.accuracy }}</text>
+                      <text class="practice-accuracy-label">总正确率</text>
+                    </view>
+                  </view>
 
-            <view class="practice-key-metrics">
-              <view class="practice-key-metric">
-                <view class="practice-key-icon" aria-hidden="true">
-                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                    <path class="practice-stat-icon-fill practice-stat-icon-outline" d="M6 22 24 10l18 12-18 12Z" />
-                    <path class="practice-stat-icon-fill-secondary practice-stat-icon-outline" d="M14 28v8c0 4 5 7 10 7s10-3 10-7v-8" />
-                  </svg>
+                  <view class="practice-key-metrics">
+                    <view class="practice-key-metric">
+                      <view class="practice-key-copy">
+                        <text class="practice-key-value">{{ practiceStats.weeklyAnswers }}</text>
+                        <text class="practice-key-label">本周刷题</text>
+                      </view>
+                    </view>
+                    <view class="practice-key-metric">
+                      <view class="practice-key-copy">
+                        <text class="practice-key-value">{{ practiceStats.accuracy }}</text>
+                        <text class="practice-key-label">总正确率</text>
+                      </view>
+                    </view>
+                    <view class="practice-key-metric">
+                      <view class="practice-key-copy">
+                        <text class="practice-key-value">{{ practiceStats.wrongCount }}</text>
+                        <text class="practice-key-label">错题数</text>
+                      </view>
+                    </view>
+                  </view>
                 </view>
-                <view class="practice-key-copy">
-                  <text class="practice-key-value">{{ homeStats.weeklyAnswers }}</text>
-                  <text class="practice-key-label">本周刷题</text>
-                </view>
-              </view>
-              <view class="practice-key-metric">
-                <view class="practice-key-icon" aria-hidden="true">
-                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                    <circle class="practice-stat-icon-fill practice-stat-icon-outline" cx="24" cy="24" r="16" />
-                    <path class="practice-stat-icon-line" d="m16.5 24 5 5 10-11" />
-                  </svg>
-                </view>
-                <view class="practice-key-copy">
-                  <text class="practice-key-value">{{ homeStats.accuracy }}</text>
-                  <text class="practice-key-label">总正确率</text>
-                </view>
-              </view>
-              <view class="practice-key-metric">
-                <view class="practice-key-icon" aria-hidden="true">
-                  <svg class="practice-stat-icon" viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
-                    <path class="practice-stat-icon-fill practice-stat-icon-outline" d="M13 7h22a4 4 0 0 1 4 4v30l-15-7-15 7V11a4 4 0 0 1 4-4Z" />
-                    <path class="practice-stat-icon-line" d="M19 17h10M19 24h10" />
-                  </svg>
-                </view>
-                <view class="practice-key-copy">
-                  <text class="practice-key-value">{{ homeStats.wrongCount }}</text>
-                  <text class="practice-key-label">错题数</text>
-                </view>
-              </view>
-            </view>
-          </view>
 
-          <view class="practice-data-link" aria-hidden="true">
-            <text>查看详细数据</text>
-            <text class="practice-data-link-arrow">›</text>
+                <view class="practice-data-link" aria-hidden="true">
+                  <text>查看详细数据</text>
+                  <text class="practice-data-link-arrow">›</text>
+                </view>
+              </view>
+            </swiper-item>
+
+            <swiper-item>
+              <view
+                class="welcome-card daily-rank-preview-card"
+                role="button"
+                aria-label="查看今日学习榜"
+                @tap="goDailyLeaderboard"
+              >
+                <view class="daily-rank-preview-header">
+                  <view>
+                    <text class="practice-data-title">今日学习榜</text>
+                    <text class="daily-rank-preview-subtitle">按有效刷题时长排名</text>
+                  </view>
+                  <view class="daily-rank-preview-live"><view></view><text>实时更新</text></view>
+                </view>
+
+                <view v-if="dailyLeaderboardLoading && !dailyLeaderboardLoaded" class="daily-rank-preview-state">
+                  正在同步今日排名…
+                </view>
+                <view v-else-if="dailyLeaderboardError && !dailyLeaderboardLoaded" class="daily-rank-preview-state is-error">
+                  {{ dailyLeaderboardError }}
+                </view>
+                <view v-else-if="!dailyLeaderboardItems.length" class="daily-rank-preview-state">
+                  今天还没有学习记录，完成一道题即可上榜
+                </view>
+                <view v-else class="daily-rank-preview-list">
+                  <view v-for="item in dailyLeaderboardItems" :key="item.userId" class="daily-rank-preview-row">
+                    <view
+                      class="daily-rank-preview-position"
+                      :class="{ 'has-medal': item.rank >= 1 && item.rank <= 3 }"
+                      aria-hidden="true"
+                    >
+                      <image
+                        v-if="item.rank >= 1 && item.rank <= 3"
+                        class="daily-rank-preview-medal"
+                        :src="getDailyRankMedalIcon(item.rank)"
+                        mode="aspectFit"
+                      />
+                      <text v-else>{{ item.rank }}</text>
+                    </view>
+                    <view class="daily-rank-preview-avatar" aria-hidden="true">
+                      <image v-if="item.avatarUrl" :src="item.avatarUrl" mode="aspectFill" />
+                      <text v-else>{{ getDailyRankAvatarText(item.nickname) }}</text>
+                    </view>
+                    <view class="daily-rank-preview-user">
+                      <text>{{ item.nickname }}</text>
+                      <text class="daily-rank-preview-answer-count">今日 {{ item.answerCount }} 题</text>
+                    </view>
+                    <text class="daily-rank-preview-duration">{{ formatDailyRankDuration(item.studySeconds) }}</text>
+                  </view>
+                </view>
+
+                <view class="daily-rank-preview-footer">
+                  <text>{{ dailyLeaderboardMyRankLabel }}</text>
+                  <view><text>查看完整榜单</text><text class="practice-data-link-arrow">›</text></view>
+                </view>
+              </view>
+            </swiper-item>
+          </swiper>
+          <view class="practice-overview-pagination" aria-label="刷题数据卡片轮播">
+            <button
+              v-for="index in 2"
+              :key="index"
+              class="practice-overview-dot"
+              :class="{ active: practiceOverviewIndex === index - 1 }"
+              :aria-label="`切换到第${index}张卡片`"
+              hover-class="none"
+              @tap="selectPracticeOverview(index - 1)"
+            ></button>
           </view>
         </view>
 
@@ -260,13 +341,20 @@
             :key="item.key"
             :item="item"
             :index="index + 1"
+            :theme-key="selectedThemeKey"
             @select="goModule"
           />
           <view class="mock-exam-card" @tap="openMockExamIntro">
             <view class="mock-exam-main">
-              <view class="mock-exam-icon">卷</view>
+              <view class="mock-exam-icon" aria-hidden="true">
+                <image
+                  class="mock-exam-icon-image"
+                  :src="getThemeIconSrc('/static/ui-icons/png/original/mock-paper-logo.png', selectedThemeKey)"
+                  mode="aspectFit"
+                />
+              </view>
               <view class="mock-exam-copy">
-                <view class="mock-exam-title">模拟测试</view>
+                <view class="mock-exam-title">模拟卷</view>
                 <view class="mock-exam-sub">55 题 · 105 分 · {{ examCode }} 轻量组卷</view>
               </view>
             </view>
@@ -277,27 +365,14 @@
       </view>
     </template>
 
-    <template v-else-if="activeTab === 'circle'">
-      <view class="circle-dashboard">
+    <template v-if="activeTab === 'circle'">
+      <view key="circle" class="circle-dashboard">
+        <view class="circle-view-stage">
         <view
-          v-if="isCircleCommunityDetail"
-          class="circle-detail-header circle-detail-header--fixed"
-          :style="circleCommunityHeaderStyle"
+          v-if="!circleDetailVisible"
+          key="circle-overview"
+          class="circle-overview circle-view-panel"
         >
-          <button class="circle-back-button" aria-label="返回研圈首页" @tap="handleCircleDetailBack">
-            <image src="/static/ui-icons/back.svg" mode="aspectFit" />
-          </button>
-          <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
-          <view class="circle-detail-header-spacer"></view>
-        </view>
-
-        <view
-          class="circle-view-stage"
-          @touchstart="beginCircleEdgeSwipe"
-          @touchend="finishCircleEdgeSwipe"
-        >
-          <transition :name="circleSectionTransitionName">
-        <view v-if="selectedCircleSection === 'overview'" key="circle-overview" class="circle-overview circle-view-panel">
           <swiper
             class="circle-insight-swiper"
             :current="circleInsightIndex"
@@ -353,19 +428,37 @@
               <view
                 class="circle-score-card circle-glass-surface"
                 role="button"
-                :aria-label="`查看${activeCircleScoreSchool?.school || ''}历年分数线`"
+                :aria-label="`查看${getScoreLineRecordDisplayName(activeCircleScoreSchool)}历年分数线`"
                 @tap="handleCircleScoreCardTap(activeCircleScoreSchool)"
               >
                 <view class="circle-score-heading">
-                  <view>
-                    <view class="circle-score-title">{{ activeCircleScoreSchool?.school }}</view>
+                  <view class="circle-score-copy">
+                    <view class="circle-score-title">{{ getScoreLineSchoolName(activeCircleScoreSchool) }}</view>
+                    <view v-if="activeCircleScoreSchool?.unitName" class="circle-score-subtitle">
+                      {{ activeCircleScoreSchool.unitName }}
+                    </view>
                   </view>
                   <view class="circle-score-total">总分 <text>150</text></view>
                 </view>
-                <view class="circle-score-chart" :aria-label="`${activeCircleScoreSchool?.school || ''}历年分数线`">
+                <view class="circle-score-chart" :aria-label="`${getScoreLineRecordDisplayName(activeCircleScoreSchool)}历年分数线`">
                   <view class="circle-score-axis" aria-hidden="true">
                     <text v-for="label in activeCircleScoreChart.axis" :key="label">{{ label }}</text>
                   </view>
+                  <!-- #ifdef APP-PLUS -->
+                  <CanvasLineChart
+                    class="circle-score-canvas"
+                    canvas-id="circle-score-overview-canvas"
+                    :points="activeCircleScoreCanvasPoints"
+                    :grid-y="activeCircleScoreChart.gridY"
+                    :active-index="circleScoreOverviewActiveIndex"
+                    interactive
+                    @point-touch-start="startCircleScorePointHold('overview', $event)"
+                    @point-touch-move="cancelCircleScorePointHold"
+                    @point-touch-end="finishCircleScorePointHold"
+                    @point-tap="showCircleScorePointTooltip('overview', $event)"
+                  />
+                  <!-- #endif -->
+                  <!-- #ifndef APP-PLUS -->
                   <svg class="circle-score-svg" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
                     <line v-for="y in activeCircleScoreChart.gridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
                     <polyline :points="circleScoreLinePoints" class="circle-score-line" />
@@ -394,6 +487,7 @@
                       </g>
                     </g>
                   </svg>
+                  <!-- #endif -->
                   <view class="circle-score-tooltip-layer" aria-hidden="true">
                     <template v-for="(score, index) in activeCircleScoreValues" :key="circleScoreYears[index]">
                       <view
@@ -412,7 +506,6 @@
               </view>
             </swiper-item>
           </swiper>
-
           <view class="circle-insight-pagination" aria-label="数据卡片轮播">
             <button
               v-for="index in 2"
@@ -433,7 +526,11 @@
               @tap="openCircleSection(item.key)"
             >
               <view class="circle-entry-icon">
-                <view class="circle-entry-icon-mask" :style="getThemeIconStyle(item.iconSrc)"></view>
+                <image
+                  class="circle-entry-icon-image"
+                  :src="getThemeIconSrc(item.iconSrc, selectedThemeKey)"
+                  mode="aspectFit"
+                />
               </view>
               <text class="circle-entry-label">{{ item.label }}</text>
               <text v-if="getCircleSectionUnreadCount(item.key)" class="circle-entry-unread-count">
@@ -443,24 +540,38 @@
             </button>
           </view>
         </view>
+        </view>
 
         <view
-          v-else
+          v-if="circleDetailVisible"
           key="circle-detail"
-          class="circle-detail-page circle-view-panel"
-          :class="{ 'circle-detail-page--with-fixed-header': isCircleCommunityDetail }"
+          class="circle-detail-route-layer"
+          :class="{ 'is-scoreline-browser': isScoreLineBrowser }"
+          @touchstart="beginCircleEdgeSwipe"
+          @touchend="finishCircleEdgeSwipe"
         >
-          <view v-if="!isCircleCommunityDetail" class="circle-detail-header">
+          <view class="circle-detail-header circle-detail-route-header" :style="circleCommunityHeaderStyle">
             <button
               class="circle-back-button"
               :aria-label="selectedScoreLineRecord ? (selectedScoreLineRecordEntry === 'overview' ? '返回研圈首页' : '返回分数线列表') : '返回研圈首页'"
               @tap="handleCircleDetailBack"
             >
-              <image src="/static/ui-icons/back.svg" mode="aspectFit" />
+              <image src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
             </button>
             <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
             <view class="circle-detail-header-spacer"></view>
           </view>
+
+          <scroll-view
+            class="circle-detail-route-scroll"
+            scroll-y
+            :scroll-top="circleDetailScrollTop"
+            :show-scrollbar="false"
+            :lower-threshold="120"
+            @scroll="handleCircleDetailScroll"
+            @scrolltolower="handleCircleDetailReachBottom"
+          >
+          <view class="circle-detail-page circle-view-panel circle-detail-route-content">
 
           <view v-if="selectedCircleSection === 'community'" class="circle-section circle-community-section">
             <view class="circle-community-tabs circle-glass-group" role="tablist" aria-label="考研圈栏目">
@@ -512,7 +623,7 @@
               </view>
 
               <view class="experience-search circle-glass-group mentor-search">
-                <text class="experience-search-icon">⌕</text>
+                <AppSearchIcon class="experience-search-icon" />
                 <input
                   v-model="mentorSearchKeyword"
                   class="experience-search-input"
@@ -558,39 +669,31 @@
                   :key="mentor.id"
                   :mentor="mentor"
                   :favorite="mentorFavoriteIds.includes(mentor.id)"
+                  :favorite-pending="mentorFavoritePendingIds.includes(mentor.id)"
                   :view-only="isCurrentMentorProfile(mentor)"
                   @open="openMentorDetail(mentor)"
                   @consult="beginMentorConsultation(mentor)"
                   @toggle-favorite="toggleMentorFavoriteState(mentor.id)"
                 />
-                <template v-if="mentorProfilesLoading && mentorProfiles.length === 0">
-                  <view v-for="index in 2" :key="`mentor-loading-${index}`" class="mentor-loading-card" aria-hidden="true">
-                    <view class="mentor-loading-person-row">
-                      <view class="mentor-loading-avatar"></view>
-                      <view class="mentor-loading-copy">
-                        <view class="mentor-loading-line mentor-loading-line-name"></view>
-                        <view class="mentor-loading-line mentor-loading-line-school"></view>
-                      </view>
-                    </view>
-                    <view class="mentor-loading-line mentor-loading-line-meta"></view>
-                    <view class="mentor-loading-line mentor-loading-line-copy"></view>
-                    <view class="mentor-loading-line mentor-loading-line-copy short"></view>
-                    <view class="mentor-loading-bottom-row">
-                      <view class="mentor-loading-line mentor-loading-line-price"></view>
-                      <view class="mentor-loading-action"></view>
-                    </view>
-                  </view>
-                </template>
+                <AppPageLoadingState
+                  v-if="mentorProfilesLoading && mentorProfiles.length === 0"
+                  class="mentor-directory-state"
+                  message="正在整理前辈咨询..."
+                />
                 <view v-else-if="mentorProfilesError && mentorProfiles.length === 0" class="circle-empty-card mentor-empty-card">
                   <view class="circle-empty-title">前辈资料暂时不可用</view>
                   <view class="circle-empty-copy">平台不会展示未验证的示例前辈，请检查网络后重新加载。</view>
                   <button class="mentor-empty-reset" @tap="retryMentorProfiles">重新加载</button>
                 </view>
-                <view v-else-if="filteredMentors.length === 0" class="circle-empty-card mentor-empty-card">
-                  <view class="circle-empty-title">{{ mentorHasActiveSearch ? '暂时没有匹配的前辈' : '暂时没有可咨询的认证前辈' }}</view>
-                  <view class="circle-empty-copy">{{ mentorHasActiveSearch ? '可以尝试调整搜索关键词或筛选条件。' : '请稍后再来查看，或先申请成为认证前辈。' }}</view>
+                <AppEmptyState
+                  v-else-if="filteredMentors.length === 0"
+                  class="mentor-directory-state"
+                  :label="mentorHasActiveSearch ? '暂时没有匹配的前辈' : '暂时没有可咨询的认证前辈'"
+                  :title="mentorHasActiveSearch ? '暂时没有匹配的前辈' : '暂时没有可咨询的认证前辈'"
+                  :description="mentorHasActiveSearch ? '可以尝试调整搜索关键词或筛选条件。' : '请稍后再来查看，或先申请成为认证前辈。'"
+                >
                   <button v-if="mentorHasActiveSearch" class="mentor-empty-reset" @tap="resetMentorFilters">清除筛选</button>
-                </view>
+                </AppEmptyState>
               </view>
 
             </template>
@@ -607,7 +710,7 @@
               </button>
 
               <view class="experience-search circle-glass-group">
-                <text class="experience-search-icon">⌕</text>
+                <AppSearchIcon class="experience-search-icon" />
                 <input
                   v-model="activeCommunitySearchKeyword"
                   class="experience-search-input"
@@ -677,7 +780,7 @@
                       <view v-if="isCommunityPostUnread(post)" class="community-post-unread-badge">新互动</view>
                       <view class="community-topic">{{ post.category }}</view>
                       <button class="community-post-more" aria-label="帖子更多操作" @tap.stop="openCommunityPostActions(post)">
-                        <image src="/static/ui-icons/more.svg" mode="aspectFit" />
+                        <image src="/static/ui-icons/png/original/more.png" mode="aspectFit" />
                       </button>
                     </view>
                   </view>
@@ -722,7 +825,11 @@
                       :aria-pressed="post.liked"
                       @tap.stop="toggleCommunityLike(post)"
                     >
-                      <image class="community-action-icon" src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
+                      <image
+                        class="community-action-icon"
+                        :src="post.liked ? communityLikeFilledIconSrc : communityLikeIconSrc"
+                        mode="aspectFit"
+                      />
                       <text>{{ post.stats.likes }}</text>
                     </button>
                     <button
@@ -730,28 +837,24 @@
                       aria-label="查看并评论"
                       @tap.stop="openCommunityPostComments(post)"
                     >
-                      <image class="community-action-icon" src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
+                      <image class="community-action-icon" src="/static/ui-icons/png/original/circle-comment.png" mode="aspectFit" />
                       <text>{{ post.stats.comments }}</text>
-                    </button>
-                    <button
-                      class="community-post-action"
-                      aria-label="查看帖子"
-                      @tap.stop="openCommunityPost(post)"
-                    >
-                      <image class="community-action-icon" src="/static/ui-icons/circle-view.svg" mode="aspectFit" />
-                      <text>{{ post.stats.views }}</text>
                     </button>
                   </view>
                 </view>
 
-                <view v-if="communityPostsLoading && filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
-                  <view class="circle-empty-title">正在加载{{ selectedCircleCommunityTab === 'experience' ? '经验贴' : '交流内容' }}</view>
-                  <view class="circle-empty-copy">正在同步最新帖子。</view>
-                </view>
-                <view v-else-if="filteredActiveCommunityPosts.length === 0" class="circle-empty-card">
-                  <view class="circle-empty-title">{{ selectedCircleCommunityTab === 'experience' ? '当前暂无已认证前辈经验贴' : '暂无匹配的交流内容' }}</view>
-                  <view class="circle-empty-copy">{{ selectedCircleCommunityTab === 'experience' ? '经验贴仅展示已认证前辈的公开分享，可先浏览研友聊中的讨论。' : '换个关键词或分类试试。' }}</view>
-                </view>
+                <AppPageLoadingState
+                  v-if="communityPostsLoading && filteredActiveCommunityPosts.length === 0"
+                  class="community-feed-state"
+                  :message="selectedCircleCommunityTab === 'experience' ? '正在整理经验贴...' : '正在整理研友聊...'"
+                />
+                <AppEmptyState
+                  v-else-if="filteredActiveCommunityPosts.length === 0"
+                  class="community-feed-state"
+                  :label="selectedCircleCommunityTab === 'experience' ? '暂无经验贴' : '暂无交流内容'"
+                  :title="selectedCircleCommunityTab === 'experience' ? '当前暂无已认证前辈经验贴' : '暂无匹配的交流内容'"
+                  :description="selectedCircleCommunityTab === 'experience' ? '经验贴仅展示已认证前辈的公开分享，可先浏览研友聊中的讨论。' : '换个关键词或分类试试。'"
+                />
                 <view v-if="filteredActiveCommunityPosts.length || activeCommunityHasMore" class="community-load-state" @tap="loadMoreCircleCommunityPosts">
                   {{ communityPostsLoading ? '正在加载更多帖子…' : activeCommunityHasMore ? '继续下滑加载更多帖子' : '已加载全部帖子' }}
                 </view>
@@ -761,7 +864,7 @@
 
             <template v-else>
               <view class="experience-search circle-glass-group">
-                <text class="experience-search-icon">⌕</text>
+                <AppSearchIcon class="experience-search-icon" />
                 <input
                   v-model="experienceSearchKeyword"
                   class="experience-search-input"
@@ -817,17 +920,18 @@
                 </view>
                 <view class="experience-footer">
                   <view class="experience-stats">
-                    <text>{{ post.stats.views }} 阅读</text>
                     <text>{{ post.stats.likes }} 赞</text>
                     <text>{{ post.stats.saves }} 收藏</text>
                   </view>
                 </view>
               </view>
 
-              <view v-if="filteredCircleExperiencePosts.length === 0" class="circle-empty-card">
-                <view class="circle-empty-title">暂无匹配的经验贴</view>
-                <view class="circle-empty-copy">换个关键词或分类试试</view>
-              </view>
+              <AppEmptyState
+                v-if="filteredCircleExperiencePosts.length === 0"
+                label="暂无匹配的经验贴"
+                title="暂无匹配的经验贴"
+                description="换个关键词或分类试试。"
+              />
             </template>
           </view>
 
@@ -840,7 +944,7 @@
               <view class="scoreline-detail-card circle-glass-surface">
                 <view class="scoreline-detail-school-row">
                   <view>
-                    <view class="scoreline-detail-school">{{ selectedScoreLineRecord.school }}</view>
+                    <view class="scoreline-detail-school">{{ getScoreLineSchoolName(selectedScoreLineRecord) }}</view>
                     <view class="scoreline-detail-meta">
                       {{ selectedScoreLineRecord.region }}地区
                       <text v-if="selectedScoreLineRecord.unitName"> · {{ selectedScoreLineRecord.unitName }}</text>
@@ -855,6 +959,21 @@
                     <view class="circle-score-axis" aria-hidden="true">
                       <text v-for="label in selectedScoreLineChart.axis" :key="label">{{ label }}</text>
                     </view>
+                    <!-- #ifdef APP-PLUS -->
+                    <CanvasLineChart
+                      class="circle-score-canvas"
+                      canvas-id="circle-score-detail-canvas"
+                      :points="selectedScoreLineCanvasPoints"
+                      :grid-y="selectedScoreLineChart.gridY"
+                      :active-index="circleScoreDetailActiveIndex"
+                      interactive
+                      @point-touch-start="startCircleScorePointHold('detail', $event)"
+                      @point-touch-move="cancelCircleScorePointHold"
+                      @point-touch-end="finishCircleScorePointHold"
+                      @point-tap="showCircleScorePointTooltip('detail', $event)"
+                    />
+                    <!-- #endif -->
+                    <!-- #ifndef APP-PLUS -->
                     <svg class="circle-score-svg" viewBox="0 0 300 112" preserveAspectRatio="none" aria-hidden="true">
                       <line v-for="y in selectedScoreLineChart.gridY" :key="y" x1="30" x2="292" :y1="y" :y2="y" class="circle-score-grid-line" />
                       <polyline :points="scoreLineDetailLinePoints" class="circle-score-line" />
@@ -883,6 +1002,7 @@
                         </g>
                       </g>
                     </svg>
+                    <!-- #endif -->
                     <view class="circle-score-tooltip-layer" aria-hidden="true">
                       <template v-for="(score, index) in selectedScoreLineValues" :key="circleScoreYears[index]">
                         <view
@@ -939,7 +1059,12 @@
                   <view class="scoreline-select-control">
                     <text class="scoreline-select-name">年份</text>
                     <text class="scoreline-select-value">{{ selectedScoreLineYearCompactLabel }}</text>
-                    <view class="scoreline-select-arrow-icon" aria-hidden="true"></view>
+                    <image
+                      class="scoreline-select-arrow-icon"
+                      :src="getThemeIconSrc('/static/ui-icons/png/original/major-catalog-dropdown.png', selectedThemeKey)"
+                      mode="aspectFit"
+                      aria-hidden="true"
+                    />
                   </view>
                 </picker>
 
@@ -954,13 +1079,18 @@
                   <view class="scoreline-select-control">
                     <text class="scoreline-select-name">地区</text>
                     <text class="scoreline-select-value">{{ selectedScoreLineRegionCompactLabel }}</text>
-                    <view class="scoreline-select-arrow-icon" aria-hidden="true"></view>
+                    <image
+                      class="scoreline-select-arrow-icon"
+                      :src="getThemeIconSrc('/static/ui-icons/png/original/major-catalog-dropdown.png', selectedThemeKey)"
+                      mode="aspectFit"
+                      aria-hidden="true"
+                    />
                   </view>
                 </picker>
               </view>
 
               <view class="scoreline-search circle-glass-group">
-                <text class="scoreline-search-icon">⌕</text>
+                <AppSearchIcon class="scoreline-search-icon" />
                 <input
                   v-model="scoreLineSearchKeyword"
                   class="scoreline-search-input"
@@ -995,7 +1125,7 @@
                   </button>
                 </view>
 
-                <scroll-view class="scoreline-results-scroll" scroll-y show-scrollbar="false">
+                <view class="scoreline-results-scroll">
                   <view class="scoreline-results-content">
                     <view v-if="visibleScoreLineRecords.length" class="scoreline-school-list">
                       <button
@@ -1007,7 +1137,8 @@
                       >
                         <view class="scoreline-school-top">
                           <view class="scoreline-school-copy">
-                            <text class="scoreline-school-name">{{ record.school }}</text>
+                            <text class="scoreline-school-name">{{ getScoreLineSchoolName(record) }}</text>
+                            <text v-if="record.unitName" class="scoreline-school-unit">{{ record.unitName }}</text>
                             <text class="scoreline-school-meta">
                               {{ record.region }}地区 · {{ getScoreLineAvailableYearCount(record) }} 年有数据
                             </text>
@@ -1028,10 +1159,13 @@
                       </button>
                     </view>
 
-                    <view v-else class="circle-empty-card scoreline-empty-card">
-                      <view class="circle-empty-title">没有找到匹配的高校</view>
-                      <view class="circle-empty-copy">尝试更换关键词、地区或年份筛选。</view>
-                    </view>
+                    <AppEmptyState
+                      v-else
+                      class="scoreline-empty-card"
+                      label="没有找到匹配的高校"
+                      title="没有找到匹配的高校"
+                      description="尝试更换关键词、地区或年份筛选。"
+                    />
 
                     <button
                       v-if="visibleScoreLineRecords.length < scoreLineResults.length"
@@ -1042,7 +1176,7 @@
                       加载更多（已显示 {{ visibleScoreLineRecords.length }} / {{ scoreLineResults.length }}）
                     </button>
                   </view>
-                </scroll-view>
+                </view>
               </view>
             </view>
           </view>
@@ -1054,13 +1188,14 @@
           <view v-else-if="selectedCircleSection === 'courses'" class="circle-section circle-resource-empty-section">
             <CircleResourceSection resource-type="course" />
           </view>
-        </view>
-          </transition>
+          </view>
+          </scroll-view>
         </view>
       </view>
     </template>
 
-    <template v-else-if="activeTab === 'mistakes'">
+    <template v-if="activeTab === 'mistakes'">
+      <view key="mistakes" class="home-detail-route-page mistakes-route-page">
       <AppPageHeader
         :title="retestMode ? '错题重测' : '错题本'"
         :subtitle="retestMode ? retestScopeText : ''"
@@ -1105,7 +1240,7 @@
           </view>
         </SectionCard>
 
-        <view v-else-if="retestLoading" class="state-box">正在加载本题...</view>
+        <view v-else-if="retestLoading" class="state-box">正在整理本题...</view>
 
         <SectionCard v-else-if="retestDetail" :title="`重测进度 ${retestProgressLabel}`">
           <view class="wrong-detail retest-detail">
@@ -1142,7 +1277,8 @@
       </template>
 
       <template v-else>
-        <SectionCard>
+        <AppPageLoadingState v-if="wrongLoading" message="正在整理错题本..." />
+        <SectionCard v-else>
           <view v-if="!isAuthed" class="state-box warning">登录后才能查看你的真实错题本。</view>
           <view v-else class="wrong-filter-card">
             <view class="wrong-filter-grid">
@@ -1196,9 +1332,13 @@
               </picker>
             </view>
           </view>
-          <view v-if="wrongLoading" class="state-box">正在读取真实错题记录...</view>
-          <view v-else-if="wrongError" class="state-box warning">{{ wrongError }}</view>
-          <view v-else-if="isAuthed && filteredMistakes.length === 0" class="state-box">当前筛选条件下还没有错题。</view>
+          <view v-if="wrongError" class="state-box warning">{{ wrongError }}</view>
+          <AppEmptyState
+            v-else-if="isAuthed && filteredMistakes.length === 0"
+            label="暂无错题"
+            title="当前筛选条件下还没有错题"
+            description="继续练习后，答错的题目会自动收录在这里。"
+          />
           <MistakeList v-else :items="visibleMistakes" @select="openWrongDetail" />
           <view v-if="isAuthed && (fullMistakes.length || wrongHasMore)" class="list-load-state" @tap="loadMoreMistakes">
             {{ wrongLoadingMore ? '正在加载更多错题…' : hasMoreMistakes ? '继续下滑加载更多错题' : '已加载全部错题' }}
@@ -1257,27 +1397,33 @@
           </scroll-view>
         </view>
       </view>
+      </view>
     </template>
-
-    <template v-else-if="activeTab === 'report'">
-      <view class="report-dashboard">
+    <template v-if="activeTab === 'report'">
+      <view key="report" class="report-dashboard">
         <AppPageHeader title="学习报告" fixed @back="activeTab = 'profile'" />
 
-        <view v-if="reportLoading" class="state-box">正在生成真实学习报告...</view>
+        <AppPageLoadingState v-if="reportLoading" message="正在整理学习报告..." />
         <view v-else-if="reportError" class="state-box warning">{{ reportError }}</view>
 
-        <view v-if="!isAuthed" class="report-empty-card">
-          <view class="report-empty-icon">✦</view>
-          <view class="report-empty-title">尚未形成有效诊断</view>
-          <view class="report-empty-copy">登录并完成第一组练习后，我们会根据真实作答情况生成学习报告。</view>
+        <AppEmptyState
+          v-if="!isAuthed"
+          class="report-empty-card"
+          label="尚未形成有效诊断"
+          title="尚未形成有效诊断"
+          description="登录并完成第一组练习后，我们会根据真实作答情况生成学习报告。"
+        >
           <button class="report-empty-action" @tap="goLogin">登录后开始练习</button>
-        </view>
-        <view v-else-if="report.items.length === 0" class="report-empty-card">
-          <view class="report-empty-icon">✦</view>
-          <view class="report-empty-title">尚未形成有效诊断</view>
-          <view class="report-empty-copy">完成第一组练习后，我们会根据你的真实作答情况生成学习报告。</view>
+        </AppEmptyState>
+        <AppEmptyState
+          v-else-if="report.items.length === 0"
+          class="report-empty-card"
+          label="尚未形成有效诊断"
+          title="尚未形成有效诊断"
+          description="完成第一组练习后，我们会根据你的真实作答情况生成学习报告。"
+        >
           <button class="report-empty-action" @tap="goPractice">开始第一次练习</button>
-        </view>
+        </AppEmptyState>
 
         <template v-else>
           <view class="report-diagnosis-card">
@@ -1286,7 +1432,7 @@
                 <view class="report-card-title">本周学习诊断</view>
                 <view class="report-card-subtitle">根据你的真实练习数据生成</view>
               </view>
-              <view class="report-diagnosis-icon">⌁</view>
+              <view class="report-diagnosis-icon"><image :src="getThemeIconSrc('/static/ui-icons/png/original/report.png', selectedThemeKey)" mode="aspectFit" aria-hidden="true" /></view>
             </view>
             <view class="diagnosis-copy">{{ report.diagnosis }}</view>
             <view class="diagnosis-metrics">
@@ -1308,6 +1454,25 @@
             </view>
             <template v-if="trendUnlocked">
               <view class="trend-chart-wrap">
+                <!-- #ifdef APP-PLUS -->
+                <CanvasLineChart
+                  class="trend-chart"
+                  canvas-id="learning-report-trend-canvas"
+                  :view-width="320"
+                  :view-height="126"
+                  :points="trendChartPoints"
+                  :grid-y="trendCanvasGridY"
+                  :line-color="currentTheme.primary"
+                  :point-stroke="currentTheme.primary"
+                  :fill-color="currentTheme.primarySoft"
+                  :area-baseline="112"
+                  :line-width="4"
+                  :point-radius="4"
+                  grid-color="#e9eef7"
+                  :grid-line-width="1.5"
+                />
+                <!-- #endif -->
+                <!-- #ifndef APP-PLUS -->
                 <svg class="trend-chart" viewBox="0 0 320 126" preserveAspectRatio="none" aria-label="近七天正确率趋势">
                   <line x1="8" x2="312" y1="24" y2="24" class="trend-grid-line" />
                   <line x1="8" x2="312" y1="66" y2="66" class="trend-grid-line" />
@@ -1323,6 +1488,7 @@
                     class="trend-point"
                   />
                 </svg>
+                <!-- #endif -->
               </view>
               <view class="trend-axis-labels">
                 <text v-for="item in reportTrend" :key="item.date">{{ item.label }}</text>
@@ -1354,7 +1520,9 @@
             <view class="subject-report-main">
               <view class="subject-head">
                 <view class="subject-name">
-                  <view class="subject-icon">{{ item.icon }}</view>
+                  <view class="subject-icon">
+                    <image :src="item.iconSrc" mode="aspectFit" aria-hidden="true" />
+                  </view>
                   <view class="subject-title">{{ item.subject }}</view>
                 </view>
                 <view class="subject-status" :class="item.tone">{{ item.status }}</view>
@@ -1399,7 +1567,9 @@
         <view class="learning-advice-card">
           <view class="advice-head">
             <view class="advice-title-wrap">
-              <view class="advice-icon">💡</view>
+              <view class="advice-icon">
+                <image :src="getToneIconSrc('/static/ui-icons/png/original/lightbulb.png', 'gold')" mode="aspectFit" aria-hidden="true" />
+              </view>
               <view>
                 <view class="advice-title">学习建议</view>
                 <view class="advice-subtitle">{{ studyAdviceSubtitle }}</view>
@@ -1426,7 +1596,9 @@
               <view class="report-card-title">今日推荐训练</view>
               <view class="report-card-subtitle">{{ todayTraining.meta }}</view>
             </view>
-            <view class="today-training-icon">▶</view>
+            <view class="today-training-icon">
+              <image :src="getThemeIconSrc('/static/ui-icons/png/original/play.png', selectedThemeKey)" mode="aspectFit" aria-hidden="true" />
+            </view>
           </view>
           <view class="today-training-list">
             <text v-for="(item, index) in todayTraining.items" :key="item.subject">{{ index ? '＋' : '' }}{{ item.label }}</text>
@@ -1437,8 +1609,8 @@
       </view>
     </template>
 
-      <template v-else>
-        <view class="profile-dashboard">
+      <template v-if="activeTab === 'profile'">
+        <view key="profile" class="profile-dashboard">
         <view class="profile-identity">
           <button class="profile-avatar-button" :aria-label="isAuthed ? '编辑头像和昵称' : '登录或注册'" @tap="openProfileEditModal">
             <image
@@ -1473,23 +1645,13 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <!-- #ifdef MP-WEIXIN -->
                 <image
                   v-if="item.iconSrc"
                   class="menu-icon-img"
-                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  :src="getThemeIconSrc(item.iconSrc, selectedThemeKey)"
                   mode="aspectFit"
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
-                <!-- #ifndef MP-WEIXIN -->
-                <view
-                  v-if="item.iconSrc"
-                  class="menu-icon-img theme-icon-mask"
-                  :style="getThemeIconStyle(item.iconSrc)"
-                />
-                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
               </view>
               <view class="menu-copy">
                 <view class="menu-title-row">
@@ -1515,23 +1677,13 @@
               @tap="handleMenu(item)"
             >
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <!-- #ifdef MP-WEIXIN -->
                 <image
                   v-if="item.iconSrc"
                   class="menu-icon-img"
-                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  :src="getThemeIconSrc(item.iconSrc, selectedThemeKey)"
                   mode="aspectFit"
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
-                <!-- #ifndef MP-WEIXIN -->
-                <view
-                  v-if="item.iconSrc"
-                  class="menu-icon-img theme-icon-mask"
-                  :style="getThemeIconStyle(item.iconSrc)"
-                />
-                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
                 <view v-if="item.unread" class="menu-unread-dot" aria-label="有新消息"></view>
               </view>
               <view class="menu-copy">
@@ -1550,23 +1702,13 @@
           <view class="menu-list">
             <view v-for="item in serviceTools" :key="item.label" class="menu-row" @tap="handleMenu(item)">
               <view class="menu-icon" :class="[item.tone, item.iconClass]">
-                <!-- #ifdef MP-WEIXIN -->
                 <image
                   v-if="item.iconSrc"
                   class="menu-icon-img"
-                  :src="getMpThemeIconSrc(item.iconSrc)"
+                  :src="getThemeIconSrc(item.iconSrc, selectedThemeKey)"
                   mode="aspectFit"
                 />
                 <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
-                <!-- #ifndef MP-WEIXIN -->
-                <view
-                  v-if="item.iconSrc"
-                  class="menu-icon-img theme-icon-mask"
-                  :style="getThemeIconStyle(item.iconSrc)"
-                />
-                <text v-else-if="!item.iconClass">{{ item.icon }}</text>
-                <!-- #endif -->
                 <view v-if="item.unread" class="menu-unread-dot" aria-label="有新消息"></view>
               </view>
               <view class="menu-copy">
@@ -1594,17 +1736,35 @@
       v-if="showSubscriptionSheet"
       class="subscription-sheet-mask"
       :class="{ 'is-visible': subscriptionSheetVisible }"
+      :style="subscriptionSheetMaskStyle"
       role="presentation"
       @tap="closeSubscriptionSheet"
     >
       <view
         class="subscription-sheet"
+        :class="{ 'is-dragging': subscriptionSheetDragging }"
+        :style="subscriptionSheetDragStyle"
         role="dialog"
         aria-modal="true"
         aria-label="开通港研通 Plus"
         @tap.stop
         @click.stop
+        @mousemove.stop="moveSubscriptionSheetDrag"
+        @mouseup.stop="finishSubscriptionSheetDrag"
+        @mouseleave="cancelSubscriptionSheetDrag"
       >
+        <view
+          class="subscription-sheet-drag-handle"
+          role="button"
+          aria-label="向下拖动关闭我的 PLUS"
+          @touchstart.stop="beginSubscriptionSheetDrag"
+          @touchmove.stop.prevent="moveSubscriptionSheetDrag"
+          @touchend.stop="finishSubscriptionSheetDrag"
+          @touchcancel.stop="cancelSubscriptionSheetDrag"
+          @mousedown.stop="beginSubscriptionSheetDrag"
+        >
+          <view class="subscription-sheet-drag-bar"></view>
+        </view>
         <MembershipSubscriptionPreview
           :config="subscriptionPageConfig"
           :membership="subscriptionMembership"
@@ -1653,12 +1813,6 @@
           </view>
 
           <view v-if="smartMode" class="smart-recommend-card">
-            <view class="smart-tip">
-              <view class="smart-tip-icon">✦</view>
-              <view class="smart-tip-copy">
-                {{ recommendationLoading ? '正在读取你的错题和能力统计...' : '系统将根据你的正确率、错题类型和薄弱知识点，自动生成本次训练题目。' }}
-              </view>
-            </view>
             <view class="recommend-lines">
               <view class="recommend-line">
                 <text>推荐模块：</text>
@@ -1800,36 +1954,6 @@
       </view>
     </view>
 
-    <view v-if="showThemeModal" class="theme-modal-mask" @tap="handleCloseThemeModal">
-      <view class="theme-modal-sheet" @tap.stop>
-        <view class="theme-modal-handle"></view>
-        <button class="theme-modal-close" aria-label="关闭" @tap="handleCloseThemeModal"><CloseIcon /></button>
-        <view class="theme-modal-head">
-          <view class="theme-modal-title">外观主题</view>
-          <view class="theme-modal-subtitle">选择一套主题方案，首页和常用页面会立即更新。</view>
-        </view>
-        <view class="theme-option-list">
-          <view
-            v-for="item in themePresets"
-            :key="item.key"
-            class="theme-option"
-            :class="{ active: selectedThemeKey === item.key }"
-            @tap="selectTheme(item.key)"
-          >
-            <view class="theme-preview" :style="{ background: item.panelBg }">
-              <view class="theme-preview-dot" :style="{ background: item.primary }"></view>
-              <view class="theme-preview-line" :style="{ background: item.primarySoft }"></view>
-            </view>
-            <view class="theme-option-copy">
-              <view class="theme-option-name">{{ item.name }}</view>
-              <view class="theme-option-desc">{{ item.desc }}</view>
-            </view>
-            <view v-if="selectedThemeKey === item.key" class="theme-option-check">✓</view>
-          </view>
-        </view>
-      </view>
-    </view>
-
     <view v-if="showExamSwitchModal" class="profile-exam-modal-mask" @tap="closeExamSwitchModal">
       <view class="profile-exam-modal" role="dialog" aria-label="切换考试版本" @tap.stop>
         <view class="profile-exam-modal-title">切换考试版本</view>
@@ -1923,7 +2047,45 @@
       </view>
     </view>
 
-    <transition name="circle-reader">
+    <view v-if="showPhoneBindingModal" class="profile-email-modal-mask" @tap="closePhoneBindingModal">
+      <view class="profile-email-modal" role="dialog" aria-label="绑定或更改手机号码" @tap.stop>
+        <view class="profile-edit-modal-head">
+          <view class="profile-edit-modal-title">绑定手机号码</view>
+          <button class="profile-edit-modal-cancel" @tap="closePhoneBindingModal">取消</button>
+        </view>
+        <view class="profile-email-current">当前手机号码：{{ currentProfilePhone }}</view>
+        <view class="profile-edit-field-label">手机号码</view>
+        <input
+          v-model.trim="profilePhoneForm.phone"
+          class="profile-edit-input"
+          type="number"
+          maxlength="15"
+          placeholder="请输入手机号码"
+        />
+        <view class="profile-edit-field-label">验证码</view>
+        <view class="profile-email-code-row">
+          <input
+            v-model.trim="profilePhoneForm.code"
+            class="profile-edit-input profile-email-code-input"
+            type="number"
+            maxlength="8"
+            placeholder="请输入验证码"
+          />
+          <button
+            class="profile-email-code-button"
+            :disabled="profilePhoneSending || profilePhoneCountdown > 0"
+            @tap="sendProfilePhoneCode"
+          >
+            {{ profilePhoneCodeButtonText }}
+          </button>
+        </view>
+        <view class="profile-phone-note">号码通过验证码核验后绑定，不会改变当前邮箱密码和登录方式。</view>
+        <button class="profile-edit-save" :disabled="profilePhoneSaving" @tap="submitProfilePhoneBinding">
+          {{ profilePhoneSaving ? '处理中...' : '确认绑定' }}
+        </button>
+      </view>
+    </view>
+
     <view
       v-if="selectedCommunityPost"
       class="community-reader"
@@ -1933,7 +2095,7 @@
       <view class="community-reader-surface">
         <view class="community-reader-topbar">
           <button class="community-reader-back" aria-label="返回社区" @tap="closeCommunityPost">
-            <image src="/static/ui-icons/back.svg" mode="aspectFit" />
+            <image src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
           </button>
           <view class="community-reader-author">
             <view class="community-reader-avatar" :class="`tone-${selectedCommunityPost.tone}`">
@@ -2023,10 +2185,14 @@
               </view>
 
               <template v-if="communityInteractionTab === 'comments'">
-                <view v-if="communityCommentsLoading" class="community-reader-empty">正在加载评论</view>
-                <view v-else-if="sortedCommunityComments.length === 0" class="community-reader-empty">
-                  暂无评论，来留下第一条讨论吧。
-                </view>
+                <AppPageLoadingState v-if="communityCommentsLoading" compact message="正在整理评论..." />
+                <AppEmptyState
+                  v-else-if="sortedCommunityComments.length === 0"
+                  compact
+                  label="暂无评论"
+                  title="暂无评论"
+                  description="来留下第一条讨论吧。"
+                />
                   <view v-else class="community-reader-comment-list">
                   <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
                     <view class="community-reader-comment-avatar">
@@ -2046,7 +2212,17 @@
                       :aria-busy="communityCommentLikeId === comment.id"
                       @tap.stop="toggleCommunityCommentLike(comment)"
                     >
-                      <view class="community-reader-comment-like-icon" aria-hidden="true"></view>
+                      <image
+                        class="community-reader-comment-like-icon-image"
+                        :src="getToneIconSrc(
+                          comment.liked
+                            ? '/static/ui-icons/png/original/community-comment-heart-filled.png'
+                            : '/static/ui-icons/png/original/community-comment-heart.png',
+                          comment.liked ? 'danger' : 'neutral'
+                        )"
+                        mode="aspectFit"
+                        aria-hidden="true"
+                      />
                       <text>{{ comment.likeCount }}</text>
                     </button>
                     <button class="community-reader-comment-more" aria-label="评论更多操作" @tap.stop="openCommunityCommentActions(comment)">•••</button>
@@ -2055,10 +2231,14 @@
               </template>
 
               <template v-else>
-                <view v-if="communityLikesLoading" class="community-reader-empty">正在加载点赞用户</view>
-                <view v-else-if="communityLikes.length === 0" class="community-reader-empty">
-                  暂无点赞，来成为第一位点赞的研友吧。
-                </view>
+                <AppPageLoadingState v-if="communityLikesLoading" compact message="正在整理点赞用户..." />
+                <AppEmptyState
+                  v-else-if="communityLikes.length === 0"
+                  compact
+                  label="暂无点赞"
+                  title="暂无点赞"
+                  description="来成为第一位点赞的研友吧。"
+                />
                 <view v-else class="community-reader-like-list">
                   <view v-for="like in communityLikes" :key="like.id" class="community-reader-like-item">
                     <view class="community-reader-comment-avatar">
@@ -2078,7 +2258,7 @@
 
         <view class="community-reader-actions">
           <view class="community-reader-comment-entry">
-            <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
+            <image src="/static/ui-icons/png/original/circle-comment.png" mode="aspectFit" />
             <input
               v-model="communityCommentDraft"
               maxlength="500"
@@ -2089,19 +2269,42 @@
               @confirm="submitCommunityComment"
             />
           </view>
-          <button
-            class="community-reader-action"
-            :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
-            @tap="toggleCommunityLike(selectedCommunityPost)"
-          >
-            <image src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
-            <text>{{ selectedCommunityPost.stats.likes }}</text>
-          </button>
-          <button class="community-reader-action" @tap="focusCommunityReaderComments">
-            <image src="/static/ui-icons/circle-comment.svg" mode="aspectFit" />
-            <text>{{ selectedCommunityPost.stats.comments }}</text>
-          </button>
-        </view>
+            <button
+              class="community-reader-action"
+              :class="{
+                active: selectedCommunityPost.liked,
+                pending: communityLikePostId === selectedCommunityPost.id,
+                'is-bursting': communityLikeBurstPostId === selectedCommunityPost.id
+              }"
+              :aria-label="selectedCommunityPost.liked ? '取消点赞' : '点赞'"
+              :aria-pressed="selectedCommunityPost.liked"
+              :aria-busy="communityLikePostId === selectedCommunityPost.id"
+              @tap="toggleCommunityLike(selectedCommunityPost)"
+            >
+              <view class="community-reader-like-icon-wrap">
+                <image
+                  class="community-reader-like-icon"
+                  :src="selectedCommunityPost.liked ? communityLikeFilledIconSrc : communityLikeIconSrc"
+                  mode="aspectFit"
+                  aria-hidden="true"
+                />
+                <view
+                  v-if="communityLikeBurstPostId === selectedCommunityPost.id"
+                  class="community-like-burst"
+                  aria-hidden="true"
+                >
+                  <image
+                    v-for="bubble in communityLikeBurstBubbles"
+                    :key="bubble"
+                    class="community-like-bubble"
+                    :src="communityLikeFilledIconSrc"
+                    mode="aspectFit"
+                  />
+                </view>
+              </view>
+              <text>{{ selectedCommunityPost.stats.likes }}</text>
+            </button>
+          </view>
       </view>
 
       <view v-if="false" class="community-detail-sheet" @tap.stop>
@@ -2150,7 +2353,7 @@
               :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
               @tap="toggleCommunityLike(selectedCommunityPost)"
             >
-              <image src="/static/ui-icons/circle-like.svg" mode="aspectFit" />
+              <image src="/static/ui-icons/png/original/circle-like.png" mode="aspectFit" />
               <text>{{ selectedCommunityPost.liked ? '已点赞' : '点赞' }} {{ selectedCommunityPost.stats.likes }}</text>
             </button>
             <text>{{ selectedCommunityPost.stats.views }} 浏览</text>
@@ -2166,7 +2369,6 @@
         </scroll-view>
       </view>
     </view>
-    </transition>
 
       <view v-if="false && selectedCommunityCommentsPost" class="community-comments-mask" @tap="closeCommunityComments">
       <view class="community-comments-sheet" @tap.stop>
@@ -2207,10 +2409,14 @@
 
         <scroll-view scroll-y class="community-comments-scroll">
           <template v-if="communityInteractionTab === 'comments'">
-            <view v-if="communityCommentsLoading" class="community-comments-empty">正在加载评论</view>
-            <view v-else-if="sortedCommunityComments.length === 0" class="community-comments-empty">
-              暂无评论，来留下第一条讨论吧。
-            </view>
+            <AppPageLoadingState v-if="communityCommentsLoading" compact message="正在整理评论..." />
+            <AppEmptyState
+              v-else-if="sortedCommunityComments.length === 0"
+              compact
+              label="暂无评论"
+              title="暂无评论"
+              description="来留下第一条讨论吧。"
+            />
             <view v-else class="community-comments-list">
               <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-comments-item">
                 <view class="community-comments-avatar">
@@ -2226,10 +2432,14 @@
             </view>
           </template>
           <template v-else>
-            <view v-if="communityLikesLoading" class="community-comments-empty">正在加载点赞用户</view>
-            <view v-else-if="communityLikes.length === 0" class="community-comments-empty">
-              暂无点赞，来成为第一位点赞的研友吧。
-            </view>
+            <AppPageLoadingState v-if="communityLikesLoading" compact message="正在整理点赞用户..." />
+            <AppEmptyState
+              v-else-if="communityLikes.length === 0"
+              compact
+              label="暂无点赞"
+              title="暂无点赞"
+              description="来成为第一位点赞的研友吧。"
+            />
             <view v-else class="community-likes-list">
               <view v-for="like in communityLikes" :key="like.id" class="community-likes-item">
                 <view class="community-likes-avatar">
@@ -2389,7 +2599,8 @@
 
     <!-- #ifdef H5 -->
     <IcpFooter
-      v-if="activeTab !== 'landing' && !isScoreLineBrowser"
+      v-if="activeTab !== 'landing'"
+      :class="{ 'is-route-obscured': isCircleDetail || isScoreLineBrowser || ['mistakes', 'report'].includes(activeTab) }"
       :compact="showBottomTab"
       :inline="showBottomTab"
       :lower="activeTab === 'home' || activeTab === 'profile'"
@@ -2415,7 +2626,7 @@
         <view v-else class="mentor-entry-pending-dot" aria-hidden="true"></view>
         <text>{{ mentorEntryLabel }}</text>
       </view>
-      <image v-else src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+      <image v-else src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
       <text
         v-if="mentorEntryStatus === 'verified' && mentorConsultationUnreadCount"
         class="mentor-entry-unread-badge"
@@ -2429,7 +2640,7 @@
       @tap.stop="openExperiencePublishPage"
       @click.stop="openExperiencePublishPage"
     >
-      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+      <image src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
     </button>
     <button
       v-else-if="showCommunityPublishButton"
@@ -2439,7 +2650,7 @@
       @tap.stop="openChatPublishPage"
       @click.stop="openChatPublishPage"
     >
-      <image src="/static/ui-icons/circle-publish.svg" mode="aspectFit" />
+      <image src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
     </button>
     <BottomTabBar
       v-if="showBottomTab"
@@ -2447,6 +2658,7 @@
       :items="tabs"
       :glass="true"
       :collapsed="isCircleTabbarCollapsed"
+      :theme-key="selectedThemeKey"
       @expand="expandCircleTabbar"
     />
   </view>
@@ -2456,11 +2668,15 @@
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
+import CanvasLineChart from '../../components/CanvasLineChart.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import CircleResourceSection from '../../components/CircleResourceSection.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import MembershipSubscriptionPreview from '../../components/MembershipSubscriptionPreview.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
+import AppSearchIcon from '../../components/ui/AppSearchIcon.vue'
 import MistakeList from '../../components/MistakeList.vue'
 import MentorConsultCard from '../../components/MentorConsultCard.vue'
 import ModuleCard from '../../components/ModuleCard.vue'
@@ -2470,8 +2686,10 @@ import { createAiTrainingRequestTask, fetchAiTrainingRecommendation } from '../.
 import { fetchMembershipStatus, fetchSubscriptionPageConfig } from '../../api/membership'
 import { createSubscriptionPageConfig } from '../../data/membershipSubscription'
 import {
+  bindPhone,
   bindWechatEmail,
   changeEmailWithCode,
+  sendBindPhoneCode,
   sendBindEmailCode,
   sendChangeEmailCode,
   updateProfile,
@@ -2501,7 +2719,12 @@ import {
   fetchMyMentorVerificationApplication,
   toggleMentorFavoriteRequest
 } from '../../api/mentorConsultation'
-import { fetchAbilityReport, fetchLearningSummary, fetchPlatformPracticeTrend } from '../../api/reports'
+import {
+  fetchAbilityReport,
+  fetchDailyStudyLeaderboard,
+  fetchLearningSummary,
+  fetchPlatformPracticeTrend
+} from '../../api/reports'
 import { fetchWrongQuestionDetail, fetchWrongQuestions, reviewWrongQuestion } from '../../api/wrongQuestions'
 import {
   historicalScoreLineRecords as fallbackHistoricalScoreLineRecords,
@@ -2534,12 +2757,12 @@ import {
 } from '../../mock/appMock'
 import { clearAuthSession, getAuthUser, isLoggedIn, saveAuthSession, updateAuthUser } from '../../utils/auth'
 import { EXAM_OPTIONS } from '../../utils/exam'
+import { getOriginalIconSrc, getSubjectIconSrc, getThemeIconSrc, getToneIconSrc } from '../../utils/iconAssets'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
-import { THEME_PRESETS, applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
+import { applyThemeByKey, buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../utils/userDisplay'
 
 const examOptions = EXAM_OPTIONS
-const themePresets = THEME_PRESETS
 const ENABLE_CIRCLE = true
 const historicalScoreLineYears = reactive([...fallbackHistoricalScoreLineYears])
 const historicalScoreLineRecords = reactive(fallbackHistoricalScoreLineRecords.map((record) => ({
@@ -2569,6 +2792,15 @@ const wrongError = ref('')
 const visibleMistakeCount = ref(15)
 const abilityReport = ref(null)
 const learningSummary = ref(null)
+const practiceOverviewIndex = ref(0)
+const dailyLeaderboardItems = ref([])
+const dailyLeaderboardCurrentUser = ref(null)
+const dailyLeaderboardLoading = ref(false)
+const dailyLeaderboardLoaded = ref(false)
+const dailyLeaderboardError = ref('')
+const dailyLeaderboardUpdatedAt = ref(0)
+const DAILY_LEADERBOARD_REFRESH_INTERVAL = 30000
+let dailyLeaderboardRefreshTimer = null
 const studyAdvice = ref(null)
 const studyAdviceLoading = ref(false)
 const studyAdviceError = ref('')
@@ -2601,16 +2833,20 @@ const circleCommunityHeaderScrollTop = ref(0)
 const showTrainingSheet = ref(false)
 const showSubscriptionSheet = ref(false)
 const subscriptionSheetVisible = ref(false)
+const subscriptionSheetDragY = ref(0)
+const subscriptionSheetDragging = ref(false)
 const subscriptionPageConfig = ref(createSubscriptionPageConfig())
 const subscriptionMembership = ref(createDefaultSubscriptionMembershipStatus())
 let subscriptionSheetOpenTimer = null
 let subscriptionSheetCloseTimer = null
 let subscriptionMembershipRequest = null
+let subscriptionSheetDragStartY = 0
+let subscriptionSheetDragStartAt = 0
 const showStudyAdviceDetail = ref(false)
-const showThemeModal = ref(false)
 const showExamSwitchModal = ref(false)
 const showProfileEditModal = ref(false)
 const showEmailBindingModal = ref(false)
+const showPhoneBindingModal = ref(false)
 const profileEditNickname = ref('')
 const profileEditAvatarPreview = ref('')
 const profileEditAvatarPath = ref('')
@@ -2621,6 +2857,11 @@ const profileEditUploading = ref(false)
 const profileEmailForm = reactive({ email: '', code: '' })
 const profileEmailSending = ref(false)
 const profileEmailSaving = ref(false)
+const profilePhoneForm = reactive({ phone: '', code: '' })
+const profilePhoneSending = ref(false)
+const profilePhoneSaving = ref(false)
+const profilePhoneCountdown = ref(0)
+let profilePhoneCountdownTimer = null
 const officialUnreadCount = ref(0)
 const notificationUnreadCount = ref(0)
 const communityUnreadCount = ref(0)
@@ -2638,7 +2879,10 @@ const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
 const selectedCircleSection = ref('overview')
 const selectedCirclePost = ref(null)
-const circleSectionTransitionDirection = ref('forward')
+const circleDetailVisible = ref(false)
+const circleDetailScrollTop = ref(0)
+const circleOverviewScrollTop = ref(0)
+let circleOverviewRestoreTimer = null
 const circleEdgeSwipeStart = ref(null)
 const communityReaderEdgeSwipeStart = ref(null)
 const circleInsightIndex = ref(0)
@@ -2682,6 +2926,7 @@ const mentorFilterVisible = ref(false)
 const mentorFilterClosing = ref(false)
 let mentorFilterCloseTimer = null
 const mentorFavoriteIds = ref(getMentorFavoriteIds())
+const mentorFavoritePendingIds = ref([])
 const selectedCommunityPost = ref(null)
 const selectedCommunityCommentsPost = ref(null)
 const communityReaderScrollTarget = ref('')
@@ -2696,6 +2941,10 @@ const communityPostsLoading = ref(false)
 const communityFeedNextCursors = reactive({})
 const communityFeedHasMore = reactive({})
 const communityLikePostId = ref('')
+const communityLikeIconSrc = '/static/ui-icons/png/original/circle-like.png'
+const communityLikeFilledIconSrc = '/static/ui-icons/png/original/circle-like-filled.png'
+const communityLikeBurstPostId = ref('')
+const communityLikeBurstBubbles = Object.freeze([1, 2, 3])
 const communityCommentLikeId = ref('')
 const communityCommentDraft = ref('')
 const communityCommentSubmitting = ref(false)
@@ -2758,19 +3007,19 @@ const homeServiceItems = [
   {
     key: 'school-notices',
     title: '院校公告',
-    iconSrc: '/static/ui-icons/home-school-notices.svg',
+    iconSrc: '/static/ui-icons/png/original/home-school-notices.png',
     tone: 'is-school'
   },
   {
     key: 'major-catalog',
     title: '专业目录',
-    iconSrc: '/static/ui-icons/home-major-catalog.svg',
+    iconSrc: '/static/ui-icons/png/original/home-major-catalog.png',
     tone: 'is-major'
   },
   {
     key: 'application-guide',
     title: '报考指南',
-    iconSrc: '/static/ui-icons/home-application-guide.svg',
+    iconSrc: '/static/ui-icons/png/original/home-application-guide.png',
     tone: 'is-guide'
   }
 ]
@@ -2787,6 +3036,8 @@ const generationCancelled = ref(false)
 let generateTimerId = null
 let generateRequestTask = null
 let communityViewTimerId = null
+let communityLikeBurstTimerId = null
+let communityFeedPersistTimerId = null
 let lastCommunityPublishNavigationAt = 0
 const communityPostsLoadingTypes = new Set()
 const COMMUNITY_FEED_PAGE_SIZE = 12
@@ -2794,21 +3045,21 @@ const COMMUNITY_FEED_CACHE_TTL = 60 * 1000
 const COMMUNITY_FEED_CACHE_PREFIX = 'circle-community-feed-v2'
 const communityFeedCacheHydratedKeys = new Set()
 const communityFeedCacheFreshness = new Map()
+const pendingCommunityFeedPersistTypes = new Set()
 let communityFeedPrefetchStarted = false
 const tabs = computed(() => {
   const items = [
     {
       key: 'landing',
       label: '首页',
-      icon: '⌂',
-      iconSrc: '/static/ui-icons/tab-home.svg'
+      icon: '',
+      iconSrc: '/static/ui-icons/png/original/tab-home.png'
     },
     {
       key: 'home',
       label: '刷题',
       iconClass: 'tab-icon-practice',
-      iconSrc: '/static/ui-icons/tab-practice.svg',
-      mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-home.svg')
+      iconSrc: '/static/ui-icons/png/original/tab-practice.png'
     }
   ]
 
@@ -2816,7 +3067,7 @@ const tabs = computed(() => {
     items.push({
       key: 'circle',
       label: '研圈',
-      iconSrc: '/static/ui-icons/tab-circle.svg',
+      iconSrc: '/static/ui-icons/png/original/tab-circle.png',
       unread: communityUnreadCount.value > 0
     })
   }
@@ -2824,47 +3075,46 @@ const tabs = computed(() => {
   items.push({
     key: 'profile',
     label: '我的',
-    iconSrc: '/static/ui-icons/tab-profile.svg',
-    mpIconSrc: getMpThemeIconSrc('/static/ui-icons/tab-profile.svg')
+    iconSrc: '/static/ui-icons/png/original/tab-profile.png'
   })
 
   return items
 })
-const isCircleDetail = computed(() =>
-  activeTab.value === 'circle' && selectedCircleSection.value !== 'overview'
-)
+const isCircleDetail = computed(() => (
+  activeTab.value === 'circle' && circleDetailVisible.value
+))
 const showBottomTab = computed(() =>
-  !retestMode.value && !['mistakes', 'report'].includes(activeTab.value) && !isCircleDetail.value
+  !retestMode.value
+  && !['mistakes', 'report'].includes(activeTab.value)
+  && !isCircleDetail.value
 )
 const isScoreLineBrowser = computed(() => (
-  activeTab.value === 'circle' &&
+  isCircleDetail.value &&
   selectedCircleSection.value === 'scores' &&
   !selectedScoreLineRecord.value
 ))
-const isCircleTabbarCollapsed = computed(() =>
-  activeTab.value === 'circle' && selectedCircleSection.value !== 'overview' && circleTabCollapsed.value
-)
+const isCircleTabbarCollapsed = computed(() => isCircleDetail.value && circleTabCollapsed.value)
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
 const circleSections = [
   {
     key: 'community',
     label: '考研圈',
-    iconSrc: '/static/ui-icons/circle-community.svg'
+    iconSrc: '/static/ui-icons/png/original/circle-community.png'
   },
   {
     key: 'scores',
     label: '历年分数线',
-    iconSrc: '/static/ui-icons/circle-scores.svg'
+    iconSrc: '/static/ui-icons/png/original/circle-scores.png'
   },
   {
     key: 'materials',
     label: '推荐资料',
-    iconSrc: '/static/ui-icons/circle-materials.svg'
+    iconSrc: '/static/ui-icons/png/original/circle-materials.png'
   },
   {
     key: 'courses',
     label: '精选课程',
-    iconSrc: '/static/ui-icons/circle-courses.svg'
+    iconSrc: '/static/ui-icons/png/original/circle-courses.png'
   }
 ]
 const CIRCLE_PRACTICE_TREND_DAYS = 7
@@ -2891,6 +3141,12 @@ const circleScoreLinePoints = computed(() =>
     .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score, activeCircleScoreChart.value)}`)
     .join(' ')
 )
+const activeCircleScoreCanvasPoints = computed(() => (
+  activeCircleScoreValues.value.map((score, index) => ({
+    x: circleScoreX[index],
+    y: getCircleScoreY(score, activeCircleScoreChart.value)
+  }))
+))
 const scoreLineYearFilterOptions = computed(() => ['全部', ...historicalScoreLineDisplayYears.value])
 const scoreLineRegionFilterOptions = computed(() => [
   { name: '全部', count: historicalScoreLineStats.recordCount },
@@ -2964,6 +3220,18 @@ const scoreLineDetailLinePoints = computed(() => (
   selectedScoreLineValues.value
     .map((score, index) => `${circleScoreX[index]},${getCircleScoreY(score, selectedScoreLineChart.value)}`)
     .join(' ')
+))
+const selectedScoreLineCanvasPoints = computed(() => (
+  selectedScoreLineValues.value.map((score, index) => ({
+    x: circleScoreX[index],
+    y: getCircleScoreY(score, selectedScoreLineChart.value)
+  }))
+))
+const circleScoreOverviewActiveIndex = computed(() => (
+  circleScoreTooltip.value.scope === 'overview' ? circleScoreTooltip.value.index : -1
+))
+const circleScoreDetailActiveIndex = computed(() => (
+  circleScoreTooltip.value.scope === 'detail' ? circleScoreTooltip.value.index : -1
 ))
 watch(
   [scoreLineSearchKeyword, selectedScoreLineRegion, selectedScoreLineYear],
@@ -3157,6 +3425,7 @@ const mentorEntryAriaLabel = computed(() => {
 })
 const showCommunityPublishButton = computed(() => (
   activeTab.value === 'circle'
+  && circleDetailVisible.value
   && selectedCircleSection.value === 'community'
   && Boolean(selectedCircleCommunityTab.value)
   && !selectedCommunityPost.value
@@ -3175,9 +3444,6 @@ const circleTrendAxis = computed(() => [circleTrendScaleMax.value, Math.round(ci
 const selectedCircleSectionLabel = computed(() =>
   circleSections.find((item) => item.key === selectedCircleSection.value)?.label || '研圈'
 )
-const circleSectionTransitionName = computed(() => (
-  circleSectionTransitionDirection.value === 'back' ? 'circle-section-back' : 'circle-section-forward'
-))
 const circlePlannedSection = computed(() =>
   circleSections.find((item) => item.key === selectedCircleSection.value) || circleSections[0]
 )
@@ -3219,6 +3485,25 @@ const subjectFallbackTargets = {
 }
 const isAuthed = computed(() => authed.value)
 const currentProfileEmail = computed(() => getPublicEmail(authUser.value) || '未绑定')
+const currentProfilePhone = computed(() => maskProfilePhone(authUser.value?.phone) || '未绑定')
+const profilePhoneCodeButtonText = computed(() => {
+  if (profilePhoneSending.value) return '发送中...'
+  if (profilePhoneCountdown.value > 0) return `${profilePhoneCountdown.value}s 后重发`
+  return '发送验证码'
+})
+const subscriptionSheetDragStyle = computed(() => {
+  if (!subscriptionSheetDragging.value || subscriptionSheetDragY.value <= 0) return {}
+  return {
+    transform: `translate3d(0, ${subscriptionSheetDragY.value}px, 0)`,
+    transition: 'none'
+  }
+})
+const subscriptionSheetMaskStyle = computed(() => {
+  if (!subscriptionSheetDragging.value || subscriptionSheetDragY.value <= 0) return {}
+  return {
+    opacity: String(Math.max(0.18, 1 - subscriptionSheetDragY.value / 520))
+  }
+})
 const profileUsesWechatBinding = computed(() => Boolean(authUser.value?.wechat_openid))
 const avatarText = computed(() => (dashboard.value.userName || '游').slice(0, 1))
 const avatarImageUrl = computed(() => {
@@ -3296,8 +3581,213 @@ const homeStats = computed(() => {
   }
 })
 
+// 进入“刷题”页时，圆环和右侧指标共用同一条动画时间线，目标值仍来自真实学习统计。
+const practiceStatsAnimating = ref(false)
+const practiceStatsAnimationPending = ref(false)
+const animatedPracticeAccuracy = ref(0)
+const animatedPracticeWeeklyAnswers = ref(0)
+const animatedPracticeWrongCount = ref(0)
+const PRACTICE_STATS_ANIMATION_DURATION = 900
+let practiceStatsAnimationTimer = null
+let practiceStatsAnimationToken = 0
+let practiceStatsAnimationTarget = null
+
+function parsePracticeStatsValue(value) {
+  const normalized = String(value ?? '').replace(/[^\d.-]/g, '')
+  if (!normalized) return null
+  const parsed = Number(normalized)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null
+}
+
+const practiceStats = computed(() => {
+  const base = homeStats.value
+  const target = practiceStatsAnimationTarget
+  const isAnimating = practiceStatsAnimating.value && target
+  const baseAccuracy = parsePracticeStatsValue(base.accuracy)
+  const accuracyProgress = isAnimating && target.accuracy !== null
+    ? animatedPracticeAccuracy.value
+    : baseAccuracy ?? 0
+  const boundedAccuracyProgress = Math.min(100, Math.max(0, accuracyProgress))
+
+  return {
+    weeklyAnswers: isAnimating && target.weeklyAnswers !== null
+      ? String(Math.round(animatedPracticeWeeklyAnswers.value))
+      : base.weeklyAnswers,
+    accuracy: isAnimating && target.accuracy !== null
+      ? `${Math.round(boundedAccuracyProgress)}%`
+      : base.accuracy,
+    accuracyProgress: boundedAccuracyProgress,
+    accuracyOffset: 100 - boundedAccuracyProgress,
+    wrongCount: isAnimating && target.wrongCount !== null
+      ? String(Math.round(animatedPracticeWrongCount.value))
+      : base.wrongCount
+  }
+})
+
+const dailyLeaderboardMyRankLabel = computed(() => {
+  if (!isAuthed.value) return '登录后查看我的排名'
+  if (dailyLeaderboardLoading.value && !dailyLeaderboardLoaded.value) return '正在同步我的排名'
+  const item = dailyLeaderboardCurrentUser.value
+  if (!item) return '我今天还未上榜'
+  return `我的排名 ${item.rank} · ${formatDailyRankDuration(item.studySeconds)}`
+})
+
+function normalizeDailyLeaderboardItem(item = {}) {
+  return {
+    rank: Math.max(0, Number(item.rank || 0)),
+    userId: String(item.user_id || item.userId || ''),
+    nickname: String(item.nickname || '学习用户'),
+    avatarUrl: String(item.avatar_url || item.avatarUrl || '').trim(),
+    studySeconds: Math.max(0, Number(item.study_seconds ?? item.studySeconds ?? 0)),
+    answerCount: Math.max(0, Number(item.answer_count ?? item.answerCount ?? 0)),
+    isCurrentUser: item.is_current_user === true || item.isCurrentUser === true
+  }
+}
+
+async function loadDailyLeaderboardPreview({ force = false } = {}) {
+  if (!isAuthed.value) {
+    dailyLeaderboardItems.value = []
+    dailyLeaderboardCurrentUser.value = null
+    dailyLeaderboardLoaded.value = false
+    dailyLeaderboardError.value = ''
+    return
+  }
+  if (dailyLeaderboardLoading.value) return
+  if (!force && dailyLeaderboardLoaded.value && Date.now() - dailyLeaderboardUpdatedAt.value < 25000) return
+
+  dailyLeaderboardLoading.value = true
+  dailyLeaderboardError.value = ''
+  try {
+    const response = await fetchDailyStudyLeaderboard({ limit: 3, offset: 0 })
+    dailyLeaderboardItems.value = Array.isArray(response?.items)
+      ? response.items.map(normalizeDailyLeaderboardItem).filter((item) => item.userId)
+      : []
+    dailyLeaderboardCurrentUser.value = response?.current_user
+      ? normalizeDailyLeaderboardItem(response.current_user)
+      : null
+    dailyLeaderboardLoaded.value = true
+    dailyLeaderboardUpdatedAt.value = Date.now()
+  } catch (error) {
+    dailyLeaderboardError.value = getSafeError(error, '今日学习榜暂时不可用')
+  } finally {
+    dailyLeaderboardLoading.value = false
+  }
+}
+
+function startDailyLeaderboardRefresh() {
+  stopDailyLeaderboardRefresh()
+  if (activeTab.value !== 'home' || !isAuthed.value) return
+  dailyLeaderboardRefreshTimer = setInterval(() => {
+    if (activeTab.value === 'home' && isAuthed.value) {
+      void loadDailyLeaderboardPreview({ force: true })
+    }
+  }, DAILY_LEADERBOARD_REFRESH_INTERVAL)
+}
+
+function stopDailyLeaderboardRefresh() {
+  if (!dailyLeaderboardRefreshTimer) return
+  clearInterval(dailyLeaderboardRefreshTimer)
+  dailyLeaderboardRefreshTimer = null
+}
+
+function handlePracticeOverviewChange(event) {
+  const nextIndex = Number(event?.detail?.current)
+  if (!Number.isInteger(nextIndex)) return
+  practiceOverviewIndex.value = nextIndex
+  if (nextIndex === 1) void loadDailyLeaderboardPreview()
+}
+
+function selectPracticeOverview(index) {
+  if (index !== 0 && index !== 1) return
+  practiceOverviewIndex.value = index
+  if (index === 1) void loadDailyLeaderboardPreview()
+}
+
+function formatDailyRankDuration(value) {
+  const seconds = Math.max(0, Math.floor(Number(value || 0)))
+  if (seconds > 0 && seconds < 60) return '<1分钟'
+  const minutes = Math.floor(seconds / 60)
+  const hours = Math.floor(minutes / 60)
+  const remaining = minutes % 60
+  if (hours && remaining) return `${hours}小时${remaining}分`
+  if (hours) return `${hours}小时`
+  return `${minutes}分钟`
+}
+
+function getDailyRankAvatarText(value) {
+  return String(value || '学').trim().slice(0, 1) || '学'
+}
+
+function getDailyRankMedalIcon(rank) {
+  const normalizedRank = Math.floor(Number(rank || 0))
+  if (normalizedRank < 1 || normalizedRank > 3) return ''
+  return `/static/ui-icons/png/original/rank-medal-${normalizedRank}.png`
+}
+
+function cancelPracticeStatsAnimation() {
+  practiceStatsAnimationToken += 1
+  if (practiceStatsAnimationTimer) {
+    clearTimeout(practiceStatsAnimationTimer)
+    practiceStatsAnimationTimer = null
+  }
+  practiceStatsAnimating.value = false
+  practiceStatsAnimationPending.value = false
+  practiceStatsAnimationTarget = null
+}
+
+function requestPracticeStatsAnimation() {
+  cancelPracticeStatsAnimation()
+  if (!isAuthed.value) return
+
+  // onShow 会同时刷新学习统计；等真实响应落地后再开始，避免从临时 0 播放到真实值。
+  if (!learningSummary.value) {
+    practiceStatsAnimationPending.value = true
+    return
+  }
+
+  const base = homeStats.value
+  const target = {
+    weeklyAnswers: parsePracticeStatsValue(base.weeklyAnswers),
+    accuracy: parsePracticeStatsValue(base.accuracy),
+    wrongCount: parsePracticeStatsValue(base.wrongCount)
+  }
+  if (![target.weeklyAnswers, target.accuracy, target.wrongCount].some((value) => value !== null)) return
+
+  practiceStatsAnimationTarget = target
+  animatedPracticeAccuracy.value = 0
+  animatedPracticeWeeklyAnswers.value = 0
+  animatedPracticeWrongCount.value = 0
+  practiceStatsAnimationPending.value = false
+  practiceStatsAnimating.value = true
+
+  const token = ++practiceStatsAnimationToken
+  const startedAt = Date.now()
+  const tick = () => {
+    if (token !== practiceStatsAnimationToken || !practiceStatsAnimating.value) return
+
+    const elapsed = Date.now() - startedAt
+    const linearProgress = Math.min(1, elapsed / PRACTICE_STATS_ANIMATION_DURATION)
+    const easedProgress = 1 - Math.pow(1 - linearProgress, 3)
+    if (target.accuracy !== null) animatedPracticeAccuracy.value = target.accuracy * easedProgress
+    if (target.weeklyAnswers !== null) animatedPracticeWeeklyAnswers.value = target.weeklyAnswers * easedProgress
+    if (target.wrongCount !== null) animatedPracticeWrongCount.value = target.wrongCount * easedProgress
+
+    if (linearProgress >= 1) {
+      if (target.accuracy !== null) animatedPracticeAccuracy.value = target.accuracy
+      if (target.weeklyAnswers !== null) animatedPracticeWeeklyAnswers.value = target.weeklyAnswers
+      if (target.wrongCount !== null) animatedPracticeWrongCount.value = target.wrongCount
+      practiceStatsAnimating.value = false
+      practiceStatsAnimationTimer = null
+      return
+    }
+
+    practiceStatsAnimationTimer = setTimeout(tick, 16)
+  }
+
+  tick()
+}
+
 const moduleCards = computed(() => getHomeModules(examCode.value))
-const mockExamThirdSubject = computed(() => (examCode.value === 'Z002' ? '数学基础' : '逻辑推理'))
 const trainingSubjectOptions = computed(() => {
   const option = EXAM_OPTIONS.find((item) => item.code === examCode.value) || EXAM_OPTIONS[0]
   return (option?.subjects || []).map((subject) => ({
@@ -3329,13 +3819,13 @@ const reportStatus = computed(() => (isAuthed.value && abilityReport.value?.item
 const practiceTools = computed(() => {
   const proLocked = false
   const items = [
-    { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '', iconSrc: '/static/ui-icons/favorite.svg', tone: 'blue', action: 'favorites' },
-    { label: '练习历史', desc: '回顾我的练习记录', icon: '', iconSrc: '/static/ui-icons/history.svg', tone: 'green', action: 'history' },
+    { label: '收藏夹', desc: '查看我收藏的重点题目', icon: '', iconSrc: '/static/ui-icons/png/original/menu-favorite.png', tone: 'blue', action: 'favorites' },
+    { label: '练习历史', desc: '回顾我的练习记录', icon: '', iconSrc: '/static/ui-icons/png/original/menu-history.png', tone: 'green', action: 'history' },
     {
       label: '错题本',
       desc: `查看与重刷 ${wrongSummaryCount.value} 道错题`,
       icon: '',
-      iconSrc: '/static/ui-icons/wrong-book.svg',
+      iconSrc: '/static/ui-icons/png/original/menu-wrong-book.png',
       tone: proLocked ? 'locked' : 'blue',
       action: 'mistakes',
       locked: proLocked
@@ -3345,7 +3835,8 @@ const practiceTools = computed(() => {
   items.push({
     label: '智能专项出题',
     desc: '按知识点生成专项练习',
-    icon: '智',
+    icon: '',
+    iconSrc: '/static/ui-icons/png/original/question-admin.png',
     tone: proLocked ? 'locked' : 'green',
     action: 'ai-generator',
     locked: proLocked
@@ -3354,7 +3845,8 @@ const practiceTools = computed(() => {
   items.push({
     label: '订阅',
     desc: '查看 PLUS 权益与套餐',
-    icon: '★',
+    icon: '',
+    iconSrc: '/static/ui-icons/png/original/star.png',
     tone: 'dark',
     action: 'subscription',
     value: 'PLUS'
@@ -3366,7 +3858,7 @@ const communityTools = computed(() => [
     label: '我的咨询',
     desc: '找回咨询记录与聊天内容',
     icon: '',
-    iconSrc: '/static/ui-icons/menu-consultation.svg',
+    iconSrc: '/static/ui-icons/png/original/menu-consultation-outline.png',
     tone: 'blue',
     action: 'my-consultations',
     unread: consultationUnreadCount.value > 0
@@ -3375,35 +3867,30 @@ const communityTools = computed(() => [
     label: '我的帖子',
     desc: '查看我在研圈发布的内容',
     icon: '',
-    iconSrc: '/static/ui-icons/menu-my-posts.svg',
+    iconSrc: '/static/ui-icons/png/original/menu-my-posts.png',
     tone: 'blue',
     action: 'my-posts',
     unread: postInteractionUnreadCount.value > 0
   },
   {
-    label: '赞过的帖子',
-    desc: '查看我在研圈点赞的内容',
+    label: '我的收藏与点赞',
+    desc: '查看点赞帖子与收藏前辈',
     icon: '',
-    iconSrc: '/static/ui-icons/menu-liked-posts.svg',
-    tone: 'violet',
+    iconSrc: '/static/ui-icons/png/original/menu-favorite.png',
+    tone: 'blue',
     action: 'liked-posts'
   }
 ])
 const currentTheme = computed(() => getThemePreset(selectedThemeKey.value))
-const currentThemeName = computed(() => currentTheme.value.name)
 const isCircleGlassTheme = computed(() => currentTheme.value.circleGlass === true)
 const themeInlineStyle = computed(() => buildThemeStyle(selectedThemeKey.value))
 const mpLayoutStyle = ref('')
 const pageInlineStyle = computed(() => [themeInlineStyle.value, mpLayoutStyle.value].filter(Boolean).join(';'))
-const isCircleCommunityDetail = computed(() => (
-  activeTab.value === 'circle' && selectedCircleSection.value === 'community'
-))
 
 const circleCommunityHeaderStyle = computed(() => {
   const progress = Math.min(1, Math.max(0, circleCommunityHeaderScrollTop.value / 220))
 
   return {
-    '--circle-community-header-opacity': String(0.2 + progress * 0.78),
     '--circle-community-header-shadow-opacity': String(progress * 0.11)
   }
 })
@@ -3414,15 +3901,6 @@ function syncMpSafeLayout() {
 }
 // #endif
 
-const getMpThemeIconSrc = (iconSrc) => {
-  const filename = String(iconSrc || '').split('/').pop().replace(/\.svg$/i, '.png')
-  const iconThemeKey = currentTheme.value.iconThemeKey || currentTheme.value.key
-  return `/static/mp-weixin/theme-icons/${iconThemeKey}/${filename}`
-}
-const getThemeIconStyle = (iconSrc) => ({
-  WebkitMaskImage: `url("${iconSrc}")`,
-  maskImage: `url("${iconSrc}")`
-})
 const isAdminUser = computed(() => {
   // #ifdef APP-PLUS
   return false
@@ -3436,16 +3914,26 @@ const serviceTools = computed(() => {
       label: '消息中心',
       desc: '处理进度、复核结果与平台公告',
       icon: '',
-      iconSrc: '/static/ui-icons/notification-bell.svg',
-      tone: 'dark',
+      iconSrc: '/static/ui-icons/png/original/notification-bell.png',
+      tone: 'blue',
       action: 'messages',
       value: messageUnreadCount.value > 0 ? `${Math.min(messageUnreadCount.value, 99)} 条未读` : '',
       unread: messageUnreadCount.value > 0
     },
     {
+      label: '绑定手机号码',
+      desc: '绑定或更改手机号码',
+      icon: '',
+      iconSrc: '/static/ui-icons/png/original/menu-phone.png',
+      tone: 'blue',
+      action: 'bind-phone',
+      value: currentProfilePhone.value
+    },
+    {
       label: '绑定邮箱',
       desc: '绑定或更改 QQ 邮箱',
-      icon: '@',
+      icon: '',
+      iconSrc: '/static/ui-icons/png/original/email-login.png',
       tone: 'dark',
       action: 'bind-email',
       value: currentProfileEmail.value
@@ -3454,24 +3942,15 @@ const serviceTools = computed(() => {
       label: '我的钱包',
       desc: '余额、账单与咨询收入',
       icon: '',
-      iconSrc: '/static/ui-icons/menu-wallet.svg',
+      iconSrc: '/static/ui-icons/png/original/menu-wallet.png',
       tone: 'blue',
       action: 'wallet'
-    },
-    {
-      label: '外观主题',
-      desc: `当前：${currentThemeName.value}`,
-      icon: '',
-      iconSrc: '/static/ui-icons/theme.svg',
-      tone: 'blue',
-      action: 'theme',
-      value: currentThemeName.value
     },
     {
       label: '关于我们',
       desc: '帮助反馈、隐私政策与支持信息',
       icon: '',
-      iconSrc: '/static/ui-icons/about.svg',
+      iconSrc: '/static/ui-icons/png/original/about.png',
       tone: 'blue',
       action: 'about'
     },
@@ -3479,7 +3958,7 @@ const serviceTools = computed(() => {
       label: '我的举报',
       desc: '查看举报进度与处理结果',
       icon: '',
-      iconSrc: '/static/ui-icons/menu-community-report.svg',
+      iconSrc: '/static/ui-icons/png/original/menu-community-report.png',
       tone: 'orange',
       action: 'community-reports',
       unread: communityReportUnreadCount.value > 0
@@ -3491,7 +3970,7 @@ const serviceTools = computed(() => {
         label: '后台管理',
         desc: '管理用户、反馈和系统消息',
         icon: '',
-        iconSrc: '/static/ui-icons/admin.svg',
+        iconSrc: '/static/ui-icons/png/original/admin.png',
         tone: 'purple',
         action: 'admin'
       },
@@ -3499,7 +3978,7 @@ const serviceTools = computed(() => {
         label: '题库管理',
         desc: '查看、筛选和上下架题目',
         icon: '',
-        iconSrc: '/static/ui-icons/question-admin.svg',
+        iconSrc: '/static/ui-icons/png/original/question-admin.png',
         tone: 'blue',
         action: 'question-admin'
       }
@@ -3612,7 +4091,7 @@ const subjectReportCards = computed(() => {
       return {
         ...item,
         accuracy,
-        icon: getSubjectIcon(item.subject),
+        iconSrc: getSubjectIconSrc(item.subject, selectedThemeKey.value),
         status: mastery.label,
         tone: mastery.tone,
         weeklyChange: getSubjectWeeklyChange(item.subject),
@@ -3668,6 +4147,7 @@ const trendUnlocked = computed(() => (
 ))
 const trendUnlockRemaining = computed(() => Math.max(0, 20 - trendAnsweredCount.value))
 const trendUnlockProgress = computed(() => Math.min(100, Math.round((trendAnsweredCount.value / 20) * 100)))
+const trendCanvasGridY = [24, 66, 108]
 const trendChartPoints = computed(() => {
   const points = reportTrend.value
     .map((item, index) => ({ ...item, index }))
@@ -3910,17 +4390,34 @@ watch(examCode, (value) => {
 
 watch(activeTab, (value) => {
   resetCircleTabbar()
+  if (value === 'home') {
+    requestPracticeStatsAnimation()
+    void loadDailyLeaderboardPreview({ force: true })
+    startDailyLeaderboardRefresh()
+  } else {
+    cancelPracticeStatsAnimation()
+    stopDailyLeaderboardRefresh()
+  }
+  if (value === 'landing') {
+    resetLandingPageScroll()
+  }
   if (value !== 'profile') {
     showExamSwitchModal.value = false
     showProfileEditModal.value = false
     showEmailBindingModal.value = false
+    closePhoneBindingModal(true)
   }
   if (value === 'circle' && !ENABLE_CIRCLE) {
     activeTab.value = 'landing'
     return
   }
   if (value === 'circle') {
+    clearCircleOverviewRestoreTimer()
     selectedCircleSection.value = 'overview'
+    circleDetailVisible.value = false
+    circleDetailScrollTop.value = 0
+    circleOverviewScrollTop.value = 0
+    circleCommunityHeaderScrollTop.value = 0
     selectedCirclePost.value = null
     closeCommunityPost()
     // 在进入研圈时预取，用户切到“前辈咨询”时大多已准备就绪。
@@ -3936,9 +4433,17 @@ watch(activeTab, (value) => {
     resetMistakeVisibleCount()
   }
   if (value !== 'circle') {
+    clearCircleOverviewRestoreTimer()
+    circleDetailVisible.value = false
     selectedCirclePost.value = null
     closeCommunityPost()
   }
+})
+
+watch([learningSummary, authed], () => {
+  if (activeTab.value !== 'home' || !practiceStatsAnimationPending.value) return
+  if (isAuthed.value && !learningSummary.value) return
+  requestPracticeStatsAnimation()
 })
 
 watch(wrongFilters, () => {
@@ -3962,6 +4467,8 @@ onLoad((options) => {
       const requestedCommunityPostId = String(launchOptions?.postId || '').trim()
       const restoreCommunityDeepLink = () => {
         selectedCircleSection.value = 'community'
+        circleDetailVisible.value = true
+        circleDetailScrollTop.value = 0
         if (circleCommunityTabs.some((item) => item.key === requestedCommunityTab)) {
           selectedCircleCommunityTab.value = requestedCommunityTab
         }
@@ -3976,7 +4483,7 @@ onLoad((options) => {
         void openCommunityPost({
           id: requestedCommunityPostId,
           post_type: requestedCommunityTab === 'experience' ? 'experience' : 'chat',
-          title: '正在加载帖子…'
+          title: '正在整理帖子...'
         })
       }
       nextTick(() => {
@@ -4001,7 +4508,7 @@ onLoad((options) => {
   void loadSubscriptionPageConfig()
 })
 
-const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 2 })
+const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 3 })
 
 async function loadPublishedOperationContent() {
   const [homeContentResult, scorelineResult] = await Promise.allSettled([
@@ -4189,6 +4696,13 @@ onShow(() => {
   void loadSubscriptionMembershipStatus()
   loadPublishedOperationContent()
   void loadCirclePracticeTrend()
+  if (activeTab.value === 'home') {
+    void loadDailyLeaderboardPreview({ force: true })
+    startDailyLeaderboardRefresh()
+  }
+  if (activeTab.value === 'landing') {
+    resetLandingPageScroll()
+  }
   if (activeTab.value === 'circle' && selectedCircleSection.value === 'community') {
     const postType = selectedCircleCommunityTab.value
     if (postType === 'mentor') {
@@ -4207,22 +4721,35 @@ onShow(() => {
 })
 
 onHide(() => {
+  cancelPracticeStatsAnimation()
+  stopDailyLeaderboardRefresh()
   clearCommunityViewTimer()
+  clearCommunityLikeBurst()
   clearCircleScoreTooltip()
   showExamSwitchModal.value = false
   showProfileEditModal.value = false
   showEmailBindingModal.value = false
+  closePhoneBindingModal(true)
 })
 
 onBeforeUnmount(() => {
+  cancelPracticeStatsAnimation()
+  stopDailyLeaderboardRefresh()
+  clearCommunityLikeBurst()
   clearCircleScoreTooltip()
+  clearCircleOverviewRestoreTimer()
   clearMentorFilterMotionTimers()
+  flushScheduledCircleCommunityFeedPersist()
   if (subscriptionSheetOpenTimer) clearTimeout(subscriptionSheetOpenTimer)
   if (subscriptionSheetCloseTimer) clearTimeout(subscriptionSheetCloseTimer)
+  clearProfilePhoneCountdown()
 })
 
 onPageScroll(({ scrollTop }) => {
   const nextScrollTop = Number(scrollTop) || 0
+  if (activeTab.value === 'circle' && !circleDetailVisible.value) {
+    circleOverviewScrollTop.value = nextScrollTop
+  }
   circleCommunityHeaderScrollTop.value = nextScrollTop
   updateCircleTabbarOnScroll(nextScrollTop)
 })
@@ -4370,19 +4897,8 @@ function openHomeExternalLink(url) {
 }
 
 function openMockExamIntro() {
-  const thirdSubject = mockExamThirdSubject.value
-  uni.showModal({
-    title: '模拟测试说明',
-    content: `本次为 105 分轻量模拟测试，共 55 题：中华文化常识 20 题、英语语言知识 20 题、${thirdSubject} 15 题。不包含中华文化阅读理解和英语阅读理解题型，按标准卷难度组卷：基础 35%、中等 50%、较难 15%，完成后会生成分数与复盘。`,
-    confirmText: '开始测试',
-    cancelText: '稍后再说',
-    success(result) {
-      if (!result.confirm) return
-      uni.setStorageSync('subject', thirdSubject)
-      uni.navigateTo({
-        url: `/pages/practice/index?mock_exam=1&exam_code=${encodeURIComponent(examCode.value)}`
-      })
-    }
+  uni.navigateTo({
+    url: `/pages/mock-exams/index?exam_code=${encodeURIComponent(examCode.value)}`
   })
 }
 
@@ -4417,7 +4933,7 @@ function goReportTask(task) {
       module: task.module || '',
       submodule: task.submodule || ''
     }
-    activeTab.value = 'mistakes'
+    openMistakes()
     return
   }
   goTaskPractice(task)
@@ -4496,6 +5012,7 @@ function closeRecommendedTrainingSheet() {
 function openSubscriptionSheet() {
   void loadSubscriptionPageConfig()
   void loadSubscriptionMembershipStatus()
+  resetSubscriptionSheetDrag()
   if (subscriptionSheetCloseTimer) {
     clearTimeout(subscriptionSheetCloseTimer)
     subscriptionSheetCloseTimer = null
@@ -4513,6 +5030,7 @@ function openSubscriptionSheet() {
 
 function closeSubscriptionSheet() {
   if (!showSubscriptionSheet.value) return
+  resetSubscriptionSheetDrag()
   if (subscriptionSheetOpenTimer) {
     clearTimeout(subscriptionSheetOpenTimer)
     subscriptionSheetOpenTimer = null
@@ -4523,6 +5041,57 @@ function closeSubscriptionSheet() {
     showSubscriptionSheet.value = false
     subscriptionSheetCloseTimer = null
   }, 340)
+}
+
+function beginSubscriptionSheetDrag(event) {
+  if (!subscriptionSheetVisible.value) return
+  const touch = getSubscriptionSheetDragPoint(event)
+  if (!touch) return
+  subscriptionSheetDragStartY = Number(touch.clientY ?? touch.pageY ?? 0)
+  subscriptionSheetDragStartAt = Date.now()
+  subscriptionSheetDragY.value = 0
+  subscriptionSheetDragging.value = true
+}
+
+function moveSubscriptionSheetDrag(event) {
+  if (!subscriptionSheetDragging.value) return
+  const touch = getSubscriptionSheetDragPoint(event)
+  if (!touch) return
+  const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - subscriptionSheetDragStartY
+  if (deltaY <= 0) {
+    subscriptionSheetDragY.value = 0
+    return
+  }
+  event?.preventDefault?.()
+  subscriptionSheetDragY.value = Math.round(deltaY <= 320 ? deltaY : 320 + (deltaY - 320) * 0.35)
+}
+
+function finishSubscriptionSheetDrag() {
+  if (!subscriptionSheetDragging.value) return
+  const elapsed = Math.max(1, Date.now() - subscriptionSheetDragStartAt)
+  const velocity = subscriptionSheetDragY.value / elapsed
+  const shouldClose = subscriptionSheetDragY.value >= 112
+    || (subscriptionSheetDragY.value >= 48 && velocity >= 0.55)
+  resetSubscriptionSheetDrag()
+  if (shouldClose) closeSubscriptionSheet()
+}
+
+function cancelSubscriptionSheetDrag() {
+  resetSubscriptionSheetDrag()
+}
+
+function resetSubscriptionSheetDrag() {
+  subscriptionSheetDragging.value = false
+  subscriptionSheetDragY.value = 0
+  subscriptionSheetDragStartY = 0
+  subscriptionSheetDragStartAt = 0
+}
+
+function getSubscriptionSheetDragPoint(event) {
+  const touch = getCircleTouchPoint(event)
+  if (touch) return touch
+  const clientY = Number(event?.clientY ?? event?.pageY)
+  return Number.isFinite(clientY) ? event : null
 }
 
 async function loadSubscriptionPageConfig() {
@@ -4941,6 +5510,114 @@ async function submitProfileEmailBinding() {
   }
 }
 
+function openPhoneBindingModal() {
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+  profilePhoneForm.phone = ''
+  profilePhoneForm.code = ''
+  clearProfilePhoneCountdown()
+  showPhoneBindingModal.value = true
+}
+
+function closePhoneBindingModal(force = false) {
+  if (!force && (profilePhoneSending.value || profilePhoneSaving.value)) return
+  showPhoneBindingModal.value = false
+  profilePhoneForm.phone = ''
+  profilePhoneForm.code = ''
+  clearProfilePhoneCountdown()
+}
+
+function normalizeProfilePhoneInput(value) {
+  return String(value || '').replace(/[\s\-()]/g, '')
+}
+
+function isValidProfilePhone(value) {
+  return /^\+?\d{8,15}$/.test(normalizeProfilePhoneInput(value))
+}
+
+function maskProfilePhone(value) {
+  const normalized = normalizeProfilePhoneInput(value)
+  if (!normalized) return ''
+  const sign = normalized.startsWith('+') ? '+' : ''
+  const digits = normalized.replace(/\D/g, '')
+  if (digits.length < 8) return normalized
+  return `${sign}${digits.slice(0, 3)}****${digits.slice(-4)}`
+}
+
+function startProfilePhoneCountdown(seconds = 60) {
+  clearProfilePhoneCountdown()
+  profilePhoneCountdown.value = Math.max(0, Number(seconds) || 0)
+  if (!profilePhoneCountdown.value) return
+  profilePhoneCountdownTimer = setInterval(() => {
+    profilePhoneCountdown.value = Math.max(0, profilePhoneCountdown.value - 1)
+    if (profilePhoneCountdown.value <= 0) clearProfilePhoneCountdown()
+  }, 1000)
+}
+
+function clearProfilePhoneCountdown() {
+  if (profilePhoneCountdownTimer) {
+    clearInterval(profilePhoneCountdownTimer)
+    profilePhoneCountdownTimer = null
+  }
+  profilePhoneCountdown.value = 0
+}
+
+async function sendProfilePhoneCode() {
+  const phone = normalizeProfilePhoneInput(profilePhoneForm.phone)
+  if (!isValidProfilePhone(phone)) {
+    uni.showToast({ title: '请填写正确的手机号码', icon: 'none' })
+    return
+  }
+  if (normalizeProfilePhoneInput(authUser.value?.phone) === phone) {
+    uni.showToast({ title: '该号码已绑定当前账号', icon: 'none' })
+    return
+  }
+
+  profilePhoneSending.value = true
+  try {
+    const response = await sendBindPhoneCode({ phone })
+    startProfilePhoneCountdown(60)
+    if (response?.debug_code) {
+      profilePhoneForm.code = String(response.debug_code)
+      uni.showModal({
+        title: '本地测试验证码',
+        content: String(response.debug_code),
+        showCancel: false
+      })
+    } else {
+      uni.showToast({ title: '验证码已发送', icon: 'success' })
+    }
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '验证码发送失败', icon: 'none' })
+  } finally {
+    profilePhoneSending.value = false
+  }
+}
+
+async function submitProfilePhoneBinding() {
+  const phone = normalizeProfilePhoneInput(profilePhoneForm.phone)
+  const code = String(profilePhoneForm.code || '').trim()
+  if (!isValidProfilePhone(phone) || !code) {
+    uni.showToast({ title: '请填写手机号码和验证码', icon: 'none' })
+    return
+  }
+
+  profilePhoneSaving.value = true
+  try {
+    const nextUser = await bindPhone({ phone, verification_code: code })
+    const savedUser = updateAuthUser(nextUser) || nextUser
+    if (savedUser) authUser.value = savedUser
+    closePhoneBindingModal(true)
+    uni.showToast({ title: '手机号码绑定成功', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '绑定失败，请检查验证码', icon: 'none' })
+  } finally {
+    profilePhoneSaving.value = false
+  }
+}
+
 function applyProfileAuthResult(auth) {
   if (!auth?.access_token || !auth?.user) {
     throw { detail: '账号会话更新失败，请重新登录' }
@@ -4998,6 +5675,16 @@ function goLeaderboard() {
     return
   }
   uni.navigateTo({ url: '/pages/leaderboard/index' })
+}
+
+function goDailyLeaderboard() {
+  if (!isAuthed.value) {
+    uni.navigateTo({
+      url: `/pages/login/index?redirect=${encodeURIComponent('/pages/daily-leaderboard/index')}`
+    })
+    return
+  }
+  uni.navigateTo({ url: '/pages/daily-leaderboard/index' })
 }
 
 function formatUnreadBadge(count) {
@@ -5148,10 +5835,30 @@ function openMyPostUpdates(postType) {
   uni.navigateTo({ url: `/pages/circle/my-posts?type=${normalizedType}` })
 }
 
+function clearCircleOverviewRestoreTimer() {
+  if (!circleOverviewRestoreTimer) return
+  clearTimeout(circleOverviewRestoreTimer)
+  circleOverviewRestoreTimer = null
+}
+
+function restoreCircleOverviewScrollPosition(scrollTop) {
+  const targetScrollTop = Math.max(0, Number(scrollTop) || 0)
+  const restore = () => {
+    uni.pageScrollTo({ scrollTop: targetScrollTop, duration: 0 })
+  }
+  clearCircleOverviewRestoreTimer()
+  nextTick(() => {
+    restore()
+    circleOverviewRestoreTimer = setTimeout(() => {
+      restore()
+      circleOverviewRestoreTimer = null
+    }, 48)
+  })
+}
+
 function openCircleSection(key) {
-  if (!circleSections.some((item) => item.key === key) || selectedCircleSection.value === key) return
-  circleSectionTransitionDirection.value = 'forward'
-  scrollCircleContentToTop()
+  if (!circleSections.some((item) => item.key === key) || circleDetailVisible.value) return
+  clearCircleOverviewRestoreTimer()
   resetCircleTabbar()
   clearCircleScoreTooltip()
   selectedCircleSection.value = key
@@ -5159,37 +5866,47 @@ function openCircleSection(key) {
   selectedScoreLineRecordEntry.value = 'list'
   selectedCirclePost.value = null
   closeCommunityPost()
+  circleDetailScrollTop.value = 0
+  circleCommunityHeaderScrollTop.value = 0
+  circleDetailVisible.value = true
   if (key === 'community') {
     selectedCircleCommunityTab.value = 'chat'
     selectedCommunityCategory.value = '全部'
     communitySearchKeyword.value = ''
     selectedExperienceCategory.value = '全部'
     experienceSearchKeyword.value = ''
-    // 浏览研友聊时并行预取前辈目录，不阻塞当前内容加载。
-    void loadMentorProfiles()
-    const shouldRefreshChat = consumeCircleCommunityFeedRefresh('chat')
-    const sortBy = selectedCommunityPostSort.value
-    const featuredOnly = sortBy === 'featured'
-    if (!featuredOnly && sortBy !== 'hot') hydrateCircleCommunityFeed('chat')
-    loadCircleCommunityPosts('chat', {
-      force: shouldRefreshChat || featuredOnly || sortBy === 'hot',
-      featuredOnly,
-      sortBy
+    // 先完成详情首帧，再加载社区内容，避免 iOS 点击后被同步任务阻塞。
+    nextTick(() => {
+      setTimeout(() => {
+        if (!circleDetailVisible.value || selectedCircleSection.value !== 'community') return
+        void loadMentorProfiles()
+        const shouldRefreshChat = consumeCircleCommunityFeedRefresh('chat')
+        const sortBy = selectedCommunityPostSort.value
+        const featuredOnly = sortBy === 'featured'
+        if (!featuredOnly && sortBy !== 'hot') hydrateCircleCommunityFeed('chat')
+        void loadCircleCommunityPosts('chat', {
+          force: shouldRefreshChat || featuredOnly || sortBy === 'hot',
+          featuredOnly,
+          sortBy
+        })
+      }, 0)
     })
   }
 }
 
 function returnToCircleOverview() {
-  if (selectedCircleSection.value === 'overview') return
-  circleSectionTransitionDirection.value = 'back'
-  scrollCircleContentToTop()
+  if (!circleDetailVisible.value) return
+  const overviewScrollTop = circleOverviewScrollTop.value
   resetCircleTabbar()
   clearCircleScoreTooltip()
+  circleDetailVisible.value = false
   selectedCircleSection.value = 'overview'
   selectedScoreLineRecord.value = null
   selectedScoreLineRecordEntry.value = 'list'
   selectedCirclePost.value = null
   closeCommunityPost()
+  circleCommunityHeaderScrollTop.value = 0
+  restoreCircleOverviewScrollPosition(overviewScrollTop)
 }
 
 function handleCircleDetailBack() {
@@ -5201,9 +5918,8 @@ function handleCircleDetailBack() {
 }
 
 function openCircleScoreLineRecord(record) {
-  if (!record) return
-  circleSectionTransitionDirection.value = 'forward'
-  scrollCircleContentToTop()
+  if (!record || circleDetailVisible.value) return
+  clearCircleOverviewRestoreTimer()
   resetCircleTabbar()
   clearCircleScoreTooltip()
   selectedCircleSection.value = 'scores'
@@ -5211,14 +5927,17 @@ function openCircleScoreLineRecord(record) {
   selectedScoreLineRecordEntry.value = 'overview'
   selectedCirclePost.value = null
   closeCommunityPost()
+  circleDetailScrollTop.value = 0
+  circleCommunityHeaderScrollTop.value = 0
+  circleDetailVisible.value = true
 }
 
 function openScoreLineRecord(record) {
   if (!record) return
-  scrollCircleContentToTop()
   clearCircleScoreTooltip()
   selectedScoreLineRecord.value = record
   selectedScoreLineRecordEntry.value = 'list'
+  scrollCircleContentToTop()
 }
 
 function closeScoreLineRecord() {
@@ -5267,8 +5986,30 @@ function loadMoreScoreLineRecords() {
   visibleScoreLineRecordCount.value += 24
 }
 
+function handleCircleDetailScroll(event) {
+  const nextScrollTop = Number(event?.detail?.scrollTop) || 0
+  circleCommunityHeaderScrollTop.value = nextScrollTop
+  updateCircleTabbarOnScroll(nextScrollTop)
+}
+
+function handleCircleDetailReachBottom() {
+  if (
+    selectedCircleSection.value === 'community'
+    && selectedCircleCommunityTab.value !== 'mentor'
+  ) {
+    void loadMoreCircleCommunityPosts()
+  }
+}
+
 function scrollCircleContentToTop() {
   circleCommunityHeaderScrollTop.value = 0
+  if (circleDetailVisible.value || selectedCircleSection.value !== 'overview') {
+    circleDetailScrollTop.value = circleDetailScrollTop.value === 0 ? 1 : 0
+    nextTick(() => {
+      circleDetailScrollTop.value = 0
+    })
+    return
+  }
   uni.pageScrollTo({
     scrollTop: 0,
     duration: 0
@@ -5280,7 +6021,7 @@ function getCircleTouchPoint(event) {
 }
 
 function beginCircleEdgeSwipe(event) {
-  if (selectedCircleSection.value === 'overview' || selectedCommunityPost.value || selectedCirclePost.value) {
+  if (!circleDetailVisible.value || selectedCommunityPost.value || selectedCirclePost.value) {
     circleEdgeSwipeStart.value = null
     return
   }
@@ -5296,7 +6037,7 @@ function beginCircleEdgeSwipe(event) {
 function finishCircleEdgeSwipe(event) {
   const start = circleEdgeSwipeStart.value
   circleEdgeSwipeStart.value = null
-  if (!start || selectedCircleSection.value === 'overview') return
+  if (!start || !circleDetailVisible.value) return
 
   const touch = getCircleTouchPoint(event)
   if (!touch) return
@@ -5465,6 +6206,16 @@ function getCircleScoreTooltipStyle(x, score, chart) {
 
 function getScoreLineValue(record, year) {
   return record?.scores?.[year] || { raw: '', score: null, kind: 'missing' }
+}
+
+function getScoreLineSchoolName(record) {
+  return String(record?.schoolName || record?.school || '').trim()
+}
+
+function getScoreLineRecordDisplayName(record) {
+  const schoolName = getScoreLineSchoolName(record)
+  const unitName = String(record?.unitName || '').trim()
+  return unitName ? `${schoolName} ${unitName}` : schoolName
 }
 
 function normalizeScoreLineSearch(value) {
@@ -5722,20 +6473,35 @@ function applyMentorFilters() {
 }
 
 async function toggleMentorFavoriteState(mentorId) {
+  const normalizedMentorId = String(mentorId || '')
+  if (!normalizedMentorId || mentorFavoritePendingIds.value.includes(normalizedMentorId)) return
   if (!isLoggedIn()) {
     uni.showToast({ title: '请先登录后再收藏前辈', icon: 'none' })
     return
   }
+
+  const previousFavoriteIds = [...mentorFavoriteIds.value]
+  const nextFavoriteIds = previousFavoriteIds.includes(normalizedMentorId)
+    ? previousFavoriteIds.filter((id) => id !== normalizedMentorId)
+    : [...previousFavoriteIds, normalizedMentorId]
+  mentorFavoriteIds.value = nextFavoriteIds
+  mentorFavoritePendingIds.value = [...mentorFavoritePendingIds.value, normalizedMentorId]
+  setTimeout(() => setMentorFavoriteIds(nextFavoriteIds), 80)
+
   try {
-    const result = await toggleMentorFavoriteRequest(mentorId)
-    const nextFavoriteIds = result?.is_favorited ?? result?.isFavorited
-      ? [...mentorFavoriteIds.value, String(mentorId)]
-      : mentorFavoriteIds.value.filter((id) => id !== String(mentorId))
-    mentorFavoriteIds.value = setMentorFavoriteIds(nextFavoriteIds)
+    const result = await toggleMentorFavoriteRequest(normalizedMentorId)
+    const confirmedFavorite = Boolean(result?.is_favorited ?? result?.isFavorited)
+    const confirmedIds = confirmedFavorite
+      ? [...new Set([...mentorFavoriteIds.value, normalizedMentorId])]
+      : mentorFavoriteIds.value.filter((id) => id !== normalizedMentorId)
+    mentorFavoriteIds.value = confirmedIds
+    setTimeout(() => setMentorFavoriteIds(confirmedIds), 80)
   } catch (error) {
-    // 保留本地缓存用于接口短暂失败时的页面回显，不把失败操作伪装成已同步。
-    mentorFavoriteIds.value = getMentorFavoriteIds()
+    mentorFavoriteIds.value = previousFavoriteIds
+    setTimeout(() => setMentorFavoriteIds(previousFavoriteIds), 80)
     uni.showToast({ title: error?.detail || '收藏操作失败，请稍后重试', icon: 'none' })
+  } finally {
+    mentorFavoritePendingIds.value = mentorFavoritePendingIds.value.filter((id) => id !== normalizedMentorId)
   }
 }
 
@@ -5759,6 +6525,15 @@ function beginMentorConsultation(mentor) {
   uni.navigateTo({ url: `/pages-sub-consultation/consultation/${page}?mentorId=${encodeURIComponent(mentor.id)}${suffix}` })
 }
 
+function resetLandingPageScroll() {
+  nextTick(() => {
+    uni.pageScrollTo({
+      scrollTop: 0,
+      duration: 0
+    })
+  })
+}
+
 async function openMentorVerificationEntry() {
   await loadMentorEntryStatus()
   const verificationStatus = mentorEntryStatus.value
@@ -5766,18 +6541,23 @@ async function openMentorVerificationEntry() {
   uni.navigateTo({ url: `/pages-sub-consultation/consultation/mentor-apply?mode=${mode}` })
 }
 
-async function openMyConsultationEntry() {
+function getMyConsultationEntryUrl(status = mentorEntryStatus.value) {
+  return status === 'verified'
+    ? '/pages-sub-consultation/consultation/mentor-apply?mode=center&from=profile-consultations'
+    : '/pages-sub-consultation/consultation/my-consultations'
+}
+
+function openMyConsultationEntry() {
   if (openingMyConsultationEntry.value) return
   openingMyConsultationEntry.value = true
-  try {
-    await loadMentorEntryStatus({ force: true })
-    const url = mentorEntryStatus.value === 'verified'
-      ? '/pages-sub-consultation/consultation/mentor-apply?mode=center&from=profile-consultations'
-      : '/pages-sub-consultation/consultation/my-consultations'
-    uni.navigateTo({ url })
-  } finally {
-    openingMyConsultationEntry.value = false
-  }
+  const url = getMyConsultationEntryUrl()
+  uni.navigateTo({
+    url,
+    complete() {
+      openingMyConsultationEntry.value = false
+    }
+  })
+  void loadMentorEntryStatus({ force: true })
 }
 
 function getCommunityPostTimestamp(post = {}) {
@@ -5919,7 +6699,7 @@ function normalizeCommunityComment(comment = {}) {
   }
 }
 
-function patchCommunityPost(postId, patch) {
+function patchCommunityPost(postId, patch, { persist = true } = {}) {
   if (!postId) return
   const applyPatch = (post) => ({
     ...post,
@@ -5929,32 +6709,34 @@ function patchCommunityPost(postId, patch) {
       ...(patch.stats || {})
     }
   })
-  circleCommunityPosts.value = circleCommunityPosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
-  circleFeaturedCommunityPosts.value = circleFeaturedCommunityPosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
-  circleHotCommunityPosts.value = circleHotCommunityPosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
-  circleExperienceCommunityPosts.value = circleExperienceCommunityPosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
-  circleFeaturedExperiencePosts.value = circleFeaturedExperiencePosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
-  circleHotExperienceCommunityPosts.value = circleHotExperienceCommunityPosts.value.map((post) => (
-    post.id === postId ? applyPatch(post) : post
-  ))
   if (selectedCommunityPost.value?.id === postId) {
     selectedCommunityPost.value = applyPatch(selectedCommunityPost.value)
   }
   if (selectedCommunityCommentsPost.value?.id === postId) {
     selectedCommunityCommentsPost.value = applyPatch(selectedCommunityCommentsPost.value)
   }
-  persistCircleCommunityFeed('chat')
-  persistCircleCommunityFeed('experience')
+
+  const patchList = (listRef) => {
+    const index = listRef.value.findIndex((post) => post.id === postId)
+    if (index < 0) return
+    const nextList = [...listRef.value]
+    nextList[index] = applyPatch(nextList[index])
+    listRef.value = nextList
+  }
+  const communityPostLists = [
+    circleCommunityPosts,
+    circleFeaturedCommunityPosts,
+    circleHotCommunityPosts,
+    circleExperienceCommunityPosts,
+    circleFeaturedExperiencePosts,
+    circleHotExperienceCommunityPosts
+  ]
+  communityPostLists.forEach(patchList)
+
+  if (persist) {
+    scheduleCircleCommunityFeedPersist('chat')
+    scheduleCircleCommunityFeedPersist('experience')
+  }
 }
 
 function patchCommunityCommentLike(commentId, patch) {
@@ -6060,6 +6842,27 @@ function persistCircleCommunityFeed(postType) {
   }
 }
 
+function scheduleCircleCommunityFeedPersist(postType) {
+  pendingCommunityFeedPersistTypes.add(normalizeCircleCommunityPostType(postType))
+  if (communityFeedPersistTimerId !== null) return
+  communityFeedPersistTimerId = setTimeout(() => {
+    communityFeedPersistTimerId = null
+    const postTypes = [...pendingCommunityFeedPersistTypes]
+    pendingCommunityFeedPersistTypes.clear()
+    postTypes.forEach((type) => persistCircleCommunityFeed(type))
+  }, 160)
+}
+
+function flushScheduledCircleCommunityFeedPersist() {
+  if (communityFeedPersistTimerId !== null) {
+    clearTimeout(communityFeedPersistTimerId)
+    communityFeedPersistTimerId = null
+  }
+  const postTypes = [...pendingCommunityFeedPersistTypes]
+  pendingCommunityFeedPersistTypes.clear()
+  postTypes.forEach((type) => persistCircleCommunityFeed(type))
+}
+
 function hydrateCircleCommunityFeed(postType) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
   const storageKey = getCircleCommunityFeedStorageKey(normalizedPostType)
@@ -6155,6 +6958,7 @@ async function openCommunityPost(post, options = {}) {
   if (!initialPost.id) return
   markCommunityPostNotificationsRead(initialPost)
   clearCommunityViewTimer()
+  clearCommunityLikeBurst()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
@@ -6324,6 +7128,7 @@ async function deleteOwnCommunityComment(post, comment) {
 
 function closeCommunityPost() {
   clearCommunityViewTimer()
+  clearCommunityLikeBurst()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
@@ -6453,6 +7258,27 @@ function clearCommunityViewTimer() {
   communityViewTimerId = null
 }
 
+function clearCommunityLikeBurst() {
+  if (communityLikeBurstTimerId !== null) {
+    clearTimeout(communityLikeBurstTimerId)
+    communityLikeBurstTimerId = null
+  }
+  communityLikeBurstPostId.value = ''
+}
+
+function triggerCommunityLikeBurst(postId) {
+  const normalizedPostId = String(postId || '').trim()
+  if (!normalizedPostId || selectedCommunityPost.value?.id !== normalizedPostId) return
+  clearCommunityLikeBurst()
+  communityLikeBurstPostId.value = normalizedPostId
+  communityLikeBurstTimerId = setTimeout(() => {
+    if (communityLikeBurstPostId.value === normalizedPostId) {
+      communityLikeBurstPostId.value = ''
+    }
+    communityLikeBurstTimerId = null
+  }, 520)
+}
+
 function scheduleCommunityView(postId) {
   clearCommunityViewTimer()
   communityViewTimerId = setTimeout(() => {
@@ -6511,25 +7337,37 @@ async function toggleCommunityLike(post) {
   patchCommunityPost(post.id, {
     liked: nextLiked,
     stats: { likes: nextLikeCount }
-  })
+  }, { persist: false })
+  if (nextLiked) {
+    triggerCommunityLikeBurst(post.id)
+  } else if (communityLikeBurstPostId.value === String(post.id)) {
+    clearCommunityLikeBurst()
+  }
 
   try {
     const response = await toggleCommunityPostLike(post.id)
+    const confirmedLiked = Boolean(response?.is_liked)
     patchCommunityPost(post.id, {
-      liked: Boolean(response?.is_liked),
+      liked: confirmedLiked,
       stats: { likes: Number(response?.like_count || 0) }
     })
+    if (!confirmedLiked && communityLikeBurstPostId.value === String(post.id)) {
+      clearCommunityLikeBurst()
+    }
     if (
       selectedCommunityCommentsPost.value?.id === post.id
       && communityInteractionTab.value === 'likes'
     ) {
-      await loadCommunityPostLikes(post.id)
+      void loadCommunityPostLikes(post.id)
     }
   } catch (error) {
     patchCommunityPost(post.id, {
       liked: previousLiked,
       stats: { likes: previousLikeCount }
     })
+    if (!previousLiked && communityLikeBurstPostId.value === String(post.id)) {
+      clearCommunityLikeBurst()
+    }
     uni.showToast({ title: getSafeError(error, '点赞失败，请稍后重试'), icon: 'none' })
   } finally {
     communityLikePostId.value = ''
@@ -6753,6 +7591,7 @@ function openProfileTab() {
 }
 
 function openMistakes() {
+  if (activeTab.value === 'mistakes') return
   activeTab.value = 'mistakes'
 }
 
@@ -6822,6 +7661,10 @@ function handleMenu(item) {
     openMessageCenter()
     return
   }
+  if (item.action === 'bind-phone') {
+    openPhoneBindingModal()
+    return
+  }
   if (item.action === 'bind-email') {
     openEmailBindingModal()
     return
@@ -6829,10 +7672,6 @@ function handleMenu(item) {
   if (item.action === 'wallet') {
     const walletRole = mentorEntryStatus.value === 'verified' ? 'mentor' : 'user'
     uni.navigateTo({ url: `/pages-sub-wallet/wallet/index?role=${walletRole}` })
-    return
-  }
-  if (item.action === 'theme') {
-    handleOpenThemeModal()
     return
   }
   if (item.action === 'admin') {
@@ -6852,20 +7691,6 @@ function handleMenu(item) {
 
 function showMockToast() {
   uni.showToast({ title: '完整 AI 诊断后续再接入', icon: 'none' })
-}
-
-function handleOpenThemeModal() {
-  showThemeModal.value = true
-}
-
-function handleCloseThemeModal() {
-  showThemeModal.value = false
-}
-
-function selectTheme(key) {
-  selectedThemeKey.value = getThemePreset(key).key
-  applyThemeByKey(selectedThemeKey.value)
-  uni.showToast({ title: '主题已更新', icon: 'none' })
 }
 
 async function refreshLearningData() {
@@ -7016,16 +7841,6 @@ function buildReportView() {
     tasks,
     items: sortedByWeakness
   }
-}
-
-function getSubjectIcon(subject) {
-  const iconMap = {
-    中华文化: '📚',
-    英语运用: '📝',
-    逻辑推理: '🧠',
-    数学基础: '📐'
-  }
-  return iconMap[subject] || '📊'
 }
 
 function getMasteryLevel(accuracy) {
@@ -7431,11 +8246,27 @@ function formatDateTime(value) {
   min-height: 100dvh;
   overflow-x: hidden;
   overflow-x: clip;
-  padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 152rpx);
+  padding: calc(env(safe-area-inset-top) + 16rpx) 22rpx calc(env(safe-area-inset-bottom) + 124px);
 }
 
 .home-page.profile-function-page {
   padding-top: 0;
+}
+
+.home-detail-route-page {
+  position: fixed !important;
+  inset: 0;
+  z-index: 50 !important;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior-y: contain;
+  -webkit-overflow-scrolling: touch;
+  padding: 0 22rpx calc(env(safe-area-inset-bottom) + 36rpx);
+  background: var(--gyt-page-bg, #fbfcff);
 }
 
 .home-page.circle-glass-page {
@@ -7468,19 +8299,24 @@ function formatDateTime(value) {
   --circle-glass-press: 0.98;
   --circle-insight-slide-gap: 8px;
   --circle-insight-slide-offset: 4px;
-  --circle-route-duration: 300ms;
-  --circle-route-ease: cubic-bezier(0.22, 1, 0.36, 1);
   --circle-tab-bg: rgba(247, 250, 249, 0.38);
   --circle-tab-shadow: 0 14px 34px rgba(30, 55, 56, 0.16);
   --circle-font: var(--gyt-app-font);
   position: relative;
   isolation: isolate;
   overflow-x: clip;
-  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px);
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 124px);
   background: #416d6e;
   color: var(--circle-text);
   font-family: var(--circle-font);
 }
+
+/* App 端的页面内容与固定研圈标题栏共用同一套状态栏高度，避免首屏内容落入安全区。 */
+/* #ifdef APP-PLUS */
+.home-page.circle-glass-page {
+  padding-top: calc(var(--status-bar-height, env(safe-area-inset-top)) + 16px);
+}
+/* #endif */
 
 .home-page.circle-glass-page::before {
   content: '';
@@ -7498,6 +8334,11 @@ function formatDateTime(value) {
 .circle-glass-page :deep(.icp-footer) {
   position: relative;
   z-index: 1;
+}
+
+:deep(.icp-footer.is-route-obscured) {
+  visibility: hidden;
+  pointer-events: none;
 }
 
 /* 首页沿用研圈的背景，但维持资讯门户所需的阅读对比度。 */
@@ -7555,6 +8396,14 @@ function formatDateTime(value) {
 
 .landing-glass-page .message-bell {
   color: #2d3d3b;
+  border: 0;
+  background: transparent;
+  background-color: transparent !important;
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  -webkit-appearance: none;
+  appearance: none;
 }
 
 .landing-glass-page .profile-entry {
@@ -7696,7 +8545,7 @@ function formatDateTime(value) {
 
 
 /* 方案一：将研圈玻璃质感延展到首页、刷题、报告和我的的主卡片。 */
-.glass-theme-page > view:not(.tabbar):not(.theme-modal-mask):not(.official-modal-mask):not(.mentor-filter-mask):not(.subscription-sheet-mask) {
+.glass-theme-page > view:not(.tabbar):not(.official-modal-mask):not(.mentor-filter-mask):not(.subscription-sheet-mask) {
   position: relative;
   z-index: 1;
 }
@@ -7767,6 +8616,16 @@ function formatDateTime(value) {
   padding-bottom: calc(env(safe-area-inset-bottom) + 36rpx);
 }
 
+.home-page.landing-home-page {
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  overscroll-behavior-y: none;
+}
+
 .home-dashboard {
   box-sizing: border-box;
   width: 100%;
@@ -7782,26 +8641,18 @@ function formatDateTime(value) {
   box-sizing: border-box;
   width: 100%;
   max-width: 760rpx;
+  min-height: 0;
+  flex: 1 1 auto;
   margin: 0 auto;
   display: flex;
   flex-direction: column;
   gap: 16rpx;
-  overflow-x: hidden;
+  overflow: hidden;
 }
 
 /* #ifdef H5 */
-.landing-dashboard {
-  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 198rpx);
-  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 198rpx);
-}
-
-.landing-glass-page .landing-dashboard {
-  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 208rpx);
-  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 208rpx);
-}
-
 .landing-dashboard :deep(.icp-footer.inline) {
-  margin-top: auto;
+  flex: none;
 }
 /* #endif */
 
@@ -7833,7 +8684,7 @@ function formatDateTime(value) {
 .landing-focus-swiper {
   width: calc(100% + var(--landing-focus-slide-gap));
   min-height: 0;
-  height: clamp(240rpx, 21.5dvh, 320rpx);
+  height: clamp(190rpx, 16dvh, 236rpx);
   flex: none;
   margin-left: calc(0px - var(--landing-focus-slide-offset));
 }
@@ -7850,7 +8701,7 @@ function formatDateTime(value) {
   width: calc(100% - var(--landing-focus-slide-gap));
   height: 100%;
   margin: 0 var(--landing-focus-slide-offset);
-  padding: 28rpx;
+  padding: 22rpx 28rpx;
   border-radius: 34rpx;
   overflow: hidden;
   color: #ffffff;
@@ -7908,8 +8759,8 @@ function formatDateTime(value) {
 .landing-focus-copy-main {
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
-  margin-top: 30rpx;
+  gap: 9rpx;
+  margin-top: 20rpx;
 }
 
 .landing-focus-badge {
@@ -7926,7 +8777,7 @@ function formatDateTime(value) {
 
 .landing-focus-title {
   color: #ffffff;
-  font-size: 35rpx;
+  font-size: 32rpx;
   line-height: 1.24;
   font-weight: 900;
 }
@@ -7943,9 +8794,9 @@ function formatDateTime(value) {
   z-index: 1;
   right: 28rpx;
   top: 50%;
-  width: 140rpx;
-  height: 178rpx;
-  padding: 14rpx;
+  width: 126rpx;
+  height: 150rpx;
+  padding: 11rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.32);
   border-radius: 20rpx;
   background: rgba(255, 255, 255, 0.9);
@@ -7957,24 +8808,24 @@ function formatDateTime(value) {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 17rpx 13rpx;
+  padding: 13rpx 11rpx;
   border: 2rpx solid rgba(32, 93, 184, 0.12);
   border-radius: 12rpx;
   color: #2d73d9;
   display: flex;
   flex-direction: column;
-  gap: 12rpx;
+  gap: 9rpx;
 }
 
 .landing-focus-art-year {
-  font-size: 30rpx;
+  font-size: 27rpx;
   line-height: 1;
   font-weight: 900;
 }
 
 .landing-focus-art-label {
   color: #5575a7;
-  font-size: 19rpx;
+  font-size: 17rpx;
   line-height: 1.3;
   font-weight: 800;
 }
@@ -8071,24 +8922,25 @@ function formatDateTime(value) {
 }
 
 .landing-news-list {
-  flex: none;
+  min-height: 0;
+  flex: 1 1 0;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
 }
 
 .landing-news-card {
-  flex: none;
-  min-height: 0;
-  height: clamp(160rpx, 13dvh, 200rpx);
-  padding: 16rpx;
+  min-height: 132rpx;
+  flex: 1 1 0;
+  height: auto;
+  padding: 12rpx 14rpx;
   border: 2rpx solid #e7edf7;
   border-radius: 28rpx;
   background: rgba(255, 255, 255, 0.94);
   box-shadow: 0 12rpx 30rpx rgba(30, 55, 93, 0.06);
   display: flex;
   align-items: center;
-  gap: 18rpx;
+  gap: 14rpx;
   transition: transform 180ms ease, box-shadow 180ms ease;
 }
 
@@ -8100,10 +8952,10 @@ function formatDateTime(value) {
 .landing-news-copy {
   min-width: 0;
   flex: 1;
-  padding-top: 8rpx;
+  padding-top: 2rpx;
   display: flex;
   flex-direction: column;
-  gap: 10rpx;
+  gap: 7rpx;
 }
 
 .landing-news-source {
@@ -8116,8 +8968,8 @@ function formatDateTime(value) {
 .landing-news-title {
   overflow: hidden;
   color: #263044;
-  font-size: 25rpx;
-  line-height: 1.42;
+  font-size: 23rpx;
+  line-height: 1.34;
   font-weight: 800;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -8135,9 +8987,9 @@ function formatDateTime(value) {
 
 .landing-news-cover {
   box-sizing: border-box;
-  width: 174rpx;
-  min-width: 174rpx;
-  height: 134rpx;
+  width: 146rpx;
+  min-width: 146rpx;
+  height: 108rpx;
   flex: 0 0 auto;
   padding: 10rpx;
   border-radius: 20rpx;
@@ -8163,13 +9015,13 @@ function formatDateTime(value) {
   box-sizing: border-box;
   width: 100%;
   height: 100%;
-  padding: 11rpx;
+  padding: 9rpx;
   border-radius: 10rpx;
   background: rgba(255, 255, 255, 0.9);
   box-shadow: 0 8rpx 18rpx rgba(37, 72, 117, 0.12);
   display: flex;
   flex-direction: column;
-  gap: 8rpx;
+  gap: 6rpx;
   overflow: hidden;
 }
 
@@ -8191,7 +9043,7 @@ function formatDateTime(value) {
 
 .landing-news-document-title {
   color: #32466c;
-  font-size: 20rpx;
+  font-size: 18rpx;
   line-height: 1.32;
   font-weight: 900;
 }
@@ -8225,11 +9077,13 @@ function formatDateTime(value) {
 }
 
 .landing-news-section {
-  flex: none;
+  min-height: 0;
+  flex: 1 1 0;
 }
 
 .landing-services-section {
   flex: none;
+  margin-top: 0;
 }
 
 .landing-service-card {
@@ -8332,7 +9186,7 @@ function formatDateTime(value) {
   }
 
   .landing-focus-swiper {
-    height: clamp(240rpx, 21.5dvh, 320rpx);
+    height: clamp(190rpx, 16dvh, 236rpx);
   }
 
   .landing-focus-slide {
@@ -8340,7 +9194,7 @@ function formatDateTime(value) {
   }
 
   .landing-focus-slide {
-    padding: 22rpx 24rpx;
+    padding: 18rpx 24rpx;
   }
 
   .landing-focus-copy {
@@ -8348,19 +9202,19 @@ function formatDateTime(value) {
   }
 
   .landing-focus-copy-main {
-    gap: 9rpx;
-    margin-top: 26rpx;
+    gap: 7rpx;
+    margin-top: 16rpx;
   }
 
   .landing-focus-title {
-    font-size: 32rpx;
+    font-size: 29rpx;
   }
 
   .landing-focus-art {
     right: 22rpx;
     top: 50%;
-    width: 126rpx;
-    height: 164rpx;
+    width: 114rpx;
+    height: 138rpx;
   }
 
   .landing-section {
@@ -8372,17 +9226,19 @@ function formatDateTime(value) {
   }
 
   .landing-news-card {
-    padding: 12rpx 14rpx;
+    min-height: 136rpx;
+    height: auto;
+    padding: 10rpx 12rpx;
   }
 
   .landing-news-title {
-    font-size: 22rpx;
+    font-size: 21rpx;
   }
 
   .landing-news-cover {
-    width: 150rpx;
-    min-width: 150rpx;
-    height: 116rpx;
+    width: 132rpx;
+    min-width: 132rpx;
+    height: 96rpx;
     padding: 8rpx;
   }
 
@@ -8402,6 +9258,23 @@ function formatDateTime(value) {
 
 }
 
+@media (max-width: 600px) and (max-height: 760px) {
+  .landing-news-section,
+  .landing-news-list,
+  .landing-news-card {
+    flex: none;
+  }
+
+  .landing-news-card {
+    min-height: 0;
+    height: clamp(136rpx, 9.2dvh, 160rpx);
+  }
+
+  .landing-services-section {
+    margin-top: auto;
+  }
+}
+
 @media (max-width: 350px) {
   .landing-focus-slide {
     padding-right: 22rpx;
@@ -8418,17 +9291,17 @@ function formatDateTime(value) {
 
   .landing-focus-art {
     right: 18rpx;
-    width: 126rpx;
+    width: 108rpx;
   }
 
   .landing-news-card {
-    gap: 12rpx;
-    padding: 15rpx;
+    gap: 10rpx;
+    padding: 11rpx;
   }
 
   .landing-news-cover {
-    width: 152rpx;
-    min-width: 152rpx;
+    width: 122rpx;
+    min-width: 122rpx;
   }
 
   .landing-service-card {
@@ -8472,59 +9345,58 @@ function formatDateTime(value) {
   transform: translateZ(0);
 }
 
-.circle-section-forward-enter-active,
-.circle-section-forward-leave-active,
-.circle-section-back-enter-active,
-.circle-section-back-leave-active {
-  transition: transform var(--circle-route-duration) var(--circle-route-ease);
-  will-change: transform;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-  transform-style: preserve-3d;
+/* #ifdef APP-PLUS */
+/* App 端直接切换页面节点，避免 swiper/canvas 原生层被 transform/contain 留在新页面上方。 */
+.circle-view-stage {
+  isolation: auto;
+  contain: none;
+  overflow-x: hidden;
 }
 
-.circle-section-forward-enter-active,
-.circle-section-back-enter-active {
-  position: relative;
-  z-index: 2;
+.circle-view-panel {
+  isolation: auto;
+  -webkit-backface-visibility: visible;
+  backface-visibility: visible;
+  transform: none;
 }
+/* #endif */
 
-.circle-section-forward-leave-active,
-.circle-section-back-leave-active {
-  position: absolute;
+.circle-detail-route-layer {
+  position: fixed;
   inset: 0;
-  pointer-events: none;
+  z-index: 24;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  isolation: isolate;
   background:
     linear-gradient(180deg, rgba(10, 41, 42, 0.22) 0%, rgba(18, 49, 49, 0.12) 48%, rgba(18, 43, 43, 0.32) 100%),
     url('/static/circle-study-sky.jpg') center center / cover no-repeat;
-  background-attachment: fixed;
 }
 
-.circle-section-forward-leave-active {
-  z-index: 1;
-  visibility: hidden;
+.circle-themed-page .circle-detail-route-layer {
+  background: var(--gyt-page-bg, #f4f8ff);
 }
 
-.circle-section-back-leave-active {
-  /* 返回总览时不保留离场页，避免它在首页上方短暂叠出。 */
-  z-index: 1;
-  visibility: hidden;
+.circle-detail-route-scroll {
+  width: 100%;
+  height: 0;
+  min-height: 0;
+  flex: 1;
 }
 
-.circle-section-forward-enter-from {
-  transform: translate3d(100%, 0, 0);
-}
-
-.circle-section-forward-leave-to {
-  transform: translate3d(-12%, 0, 0);
-}
-
-.circle-section-back-enter-from {
-  transform: translate3d(0, 0, 0);
-}
-
-.circle-section-back-leave-to {
-  transform: translate3d(100%, 0, 0);
+.circle-detail-route-content {
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 860rpx;
+  min-height: 100%;
+  margin: 0 auto;
+  padding: 18rpx 22rpx calc(env(safe-area-inset-bottom) + 36rpx);
 }
 
 .circle-dashboard view,
@@ -8542,8 +9414,8 @@ function formatDateTime(value) {
 }
 
 .circle-overview {
-  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 92px);
-  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 92px);
+  min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 124px);
+  min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 124px);
 }
 
 .circle-trend-card {
@@ -8813,16 +9685,14 @@ function formatDateTime(value) {
   flex-shrink: 0;
 }
 
-.circle-entry-icon-mask {
+.circle-entry-icon-image {
   width: 100%;
   height: 100%;
-  background: currentColor;
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  mask-size: contain;
+}
+
+.circle-entry-icon-image {
+  display: block;
+  opacity: 0.82;
 }
 
 .circle-entry-label {
@@ -8909,8 +9779,8 @@ function formatDateTime(value) {
 
 /* Content stays opaque; only navigation and compact controls use glass. */
 .circle-glass-page .circle-overview {
-  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
-  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 140px);
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 140px);
   min-height: 0;
   gap: 10px;
 }
@@ -8925,6 +9795,42 @@ function formatDateTime(value) {
   height: 210px;
   flex: 0 0 210px;
   margin-left: calc(0px - var(--circle-insight-slide-offset));
+}
+
+.circle-insight-route-placeholder {
+  padding: 0 var(--circle-insight-slide-offset);
+}
+
+.circle-insight-placeholder-card {
+  box-sizing: border-box;
+  width: calc(100% - var(--circle-insight-slide-gap));
+  height: 100%;
+  padding: 24px 22px 20px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.94);
+}
+
+.circle-insight-placeholder-line {
+  width: 42%;
+  height: 14px;
+  border-radius: 999px;
+  background: rgba(105, 124, 142, 0.14);
+}
+
+.circle-insight-placeholder-chart {
+  height: 124px;
+  margin-top: 24px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.circle-insight-placeholder-chart view {
+  width: 100%;
+  min-height: 28%;
+  border-radius: 8px 8px 3px 3px;
+  background: var(--gyt-primary-soft, rgba(52, 120, 246, 0.12));
 }
 
 .circle-insight-swiper swiper-item,
@@ -9103,7 +10009,7 @@ function formatDateTime(value) {
   backdrop-filter: blur(12px) saturate(116%);
 }
 
-.circle-glass-page .circle-entry-icon-mask {
+.circle-glass-page .circle-entry-icon-image {
   width: 100%;
   height: 100%;
 }
@@ -9151,11 +10057,18 @@ function formatDateTime(value) {
   gap: 12px;
 }
 
+.circle-score-copy {
+  min-width: 0;
+  flex: 1;
+}
+
 .circle-score-title {
   color: #1c2423;
   font-size: 24px;
   line-height: 1.18;
   font-weight: 650;
+  overflow: hidden;
+  text-overflow: ellipsis;
   white-space: nowrap;
 }
 
@@ -9165,6 +10078,9 @@ function formatDateTime(value) {
   font-size: 12px;
   line-height: 1.2;
   font-weight: 500;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .circle-score-total {
@@ -9214,7 +10130,8 @@ function formatDateTime(value) {
   transform: translateY(50%);
 }
 
-.circle-score-svg {
+.circle-score-svg,
+.circle-score-canvas {
   position: absolute;
   top: 0;
   right: 0;
@@ -9326,6 +10243,9 @@ function formatDateTime(value) {
 
 .home-page.scoreline-browser-page .circle-dashboard,
 .home-page.scoreline-browser-page .circle-view-stage,
+.home-page.scoreline-browser-page .circle-detail-route-layer,
+.home-page.scoreline-browser-page .circle-detail-route-scroll,
+.home-page.scoreline-browser-page .circle-detail-route-content,
 .home-page.scoreline-browser-page .circle-detail-page,
 .home-page.scoreline-browser-page .circle-scoreline-section,
 .home-page.scoreline-browser-page .scoreline-browser-layout {
@@ -9334,7 +10254,8 @@ function formatDateTime(value) {
 }
 
 .home-page.scoreline-browser-page .circle-dashboard,
-.home-page.scoreline-browser-page .circle-view-stage {
+.home-page.scoreline-browser-page .circle-view-stage,
+.home-page.scoreline-browser-page .circle-detail-route-content {
   display: flex;
 }
 
@@ -9361,9 +10282,7 @@ function formatDateTime(value) {
 }
 
 .scoreline-search-icon {
-  color: #637682;
-  font-size: 32rpx;
-  line-height: 1;
+  color: var(--gyt-primary, #3478f6);
 }
 
 .scoreline-search-input {
@@ -9466,12 +10385,10 @@ function formatDateTime(value) {
 }
 
 .scoreline-select-arrow-icon {
+  display: block;
   width: 18rpx;
   height: 11rpx;
   flex: 0 0 auto;
-  background: var(--gyt-primary, #3478f6);
-  -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
 }
 
 .scoreline-school-card:active,
@@ -9483,7 +10400,7 @@ function formatDateTime(value) {
 .scoreline-results-frame {
   display: flex;
   min-height: 0;
-  flex: 1;
+  flex: 0 0 auto;
   flex-direction: column;
   overflow: hidden;
   border: 2rpx solid rgba(215, 229, 255, 0.92);
@@ -9546,9 +10463,9 @@ function formatDateTime(value) {
 }
 
 .scoreline-results-scroll {
-  height: 0;
+  height: auto;
   min-height: 0;
-  flex: 1;
+  flex: 0 0 auto;
 }
 
 .scoreline-results-scroll::-webkit-scrollbar,
@@ -9604,6 +10521,19 @@ function formatDateTime(value) {
   line-height: 1.35;
   font-weight: 800;
   word-break: break-word;
+}
+
+.scoreline-school-unit {
+  display: block;
+  max-width: 100%;
+  margin-top: 3rpx;
+  overflow: hidden;
+  color: #7f8b99;
+  font-size: 21rpx;
+  line-height: 1.4;
+  font-weight: 400;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .scoreline-school-meta {
@@ -9893,30 +10823,28 @@ function formatDateTime(value) {
   justify-content: space-between;
 }
 
-.circle-detail-page--with-fixed-header {
-  padding-top: 88rpx;
-}
-
-.circle-detail-header--fixed {
-  position: fixed;
-  top: var(--status-bar-height, env(safe-area-inset-top));
-  right: 0;
-  left: 0;
-  z-index: 28;
-  min-height: 104rpx;
+.circle-detail-route-header {
+  position: relative;
+  z-index: 2;
+  width: 100%;
+  flex: 0 0 auto;
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 104rpx);
   margin: 0;
-  padding: 14rpx 16px;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 14rpx) 16px 14rpx;
   box-sizing: border-box;
-  background: rgba(248, 250, 255, var(--circle-community-header-opacity, 0.2));
+  background: var(--gyt-page-bg, #f8faff);
   box-shadow: 0 14rpx 30rpx rgba(25, 48, 89, var(--circle-community-header-shadow-opacity, 0));
-  -webkit-backdrop-filter: blur(18rpx);
-  backdrop-filter: blur(18rpx);
-  transition: background 180ms ease, box-shadow 180ms ease;
+  transition: box-shadow 180ms ease;
 }
 
 /* #ifdef MP-WEIXIN */
-.circle-detail-header--fixed {
-  top: var(--mp-page-content-top, 96px);
+.circle-detail-route-layer {
+  padding-top: var(--mp-page-content-top, 96px);
+}
+
+.circle-detail-route-header {
+  min-height: 104rpx;
+  padding: 14rpx 16px;
 }
 /* #endif */
 
@@ -10011,9 +10939,7 @@ function formatDateTime(value) {
 }
 
 .experience-search-icon {
-  color: #7c8c8c;
-  font-size: 32rpx;
-  line-height: 1;
+  color: var(--gyt-primary, #3478f6);
 }
 
 .experience-search-input {
@@ -10199,7 +11125,7 @@ function formatDateTime(value) {
   display: flex;
   flex-direction: column;
   align-items: stretch;
-  gap: 18rpx;
+  gap: 14rpx;
 }
 
 .mentor-directory-grid .mentor-empty-card {
@@ -10209,7 +11135,7 @@ function formatDateTime(value) {
 .mentor-loading-card {
   box-sizing: border-box;
   min-height: 430rpx;
-  padding: 28rpx;
+  padding: 22rpx 28rpx;
   border: 2rpx solid var(--gyt-primary-border, #d7e5ff);
   border-radius: 30rpx;
   background: var(--gyt-panel-bg, #ffffff);
@@ -10773,7 +11699,7 @@ function formatDateTime(value) {
 
 .community-filter-row {
   display: flex;
-  gap: 10rpx;
+  gap: 7rpx;
   min-width: max-content;
   padding: 0 2rpx 4rpx;
 }
@@ -11074,7 +12000,7 @@ function formatDateTime(value) {
   padding-top: 16rpx;
   border-top: 2rpx solid rgba(99, 124, 120, 0.12);
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   align-items: center;
   gap: 10rpx;
   color: #83918f;
@@ -11084,6 +12010,8 @@ function formatDateTime(value) {
 }
 
 .community-post-action {
+  width: 100%;
+  box-sizing: border-box;
   min-width: 0;
   min-height: 56rpx;
   margin: 0;
@@ -11105,7 +12033,7 @@ function formatDateTime(value) {
 }
 
 .community-post-action.active {
-  color: #3478f6;
+  color: #eb5964;
 }
 
 .community-post-action.pending {
@@ -11167,7 +12095,7 @@ function formatDateTime(value) {
 .community-stream .community-author-meta {
   margin-top: 6rpx;
   color: #8b96a8;
-  font-size: 20rpx;
+  font-size: 18rpx;
 }
 
 .community-stream-header-actions {
@@ -11242,8 +12170,8 @@ function formatDateTime(value) {
 .community-stream .community-media-grid {
   width: 100%;
   margin-top: 20rpx;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 8rpx;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6rpx;
 }
 
 .community-stream .community-media-grid.count-1 {
@@ -11423,23 +12351,6 @@ function formatDateTime(value) {
   transform: scale(0.94);
   box-shadow: 0 7px 16px rgba(52, 120, 246, 0.2);
   background: #2867DE;
-}
-
-.circle-reader-enter-active,
-.circle-reader-leave-active {
-  transition: transform var(--circle-route-duration) var(--circle-route-ease);
-  will-change: transform;
-  contain: paint;
-  -webkit-backface-visibility: hidden;
-  backface-visibility: hidden;
-}
-
-.circle-reader-enter-from {
-  transform: translate3d(100%, 0, 0);
-}
-
-.circle-reader-leave-to {
-  transform: translate3d(100%, 0, 0);
 }
 
 .community-reader {
@@ -11894,13 +12805,12 @@ function formatDateTime(value) {
   border: 0;
 }
 
-.community-reader-comment-like-icon {
+.community-reader-comment-like-icon-image {
+  display: block;
   width: 42rpx;
   height: 42rpx;
-  background: #879895;
-  -webkit-mask: url('/static/ui-icons/community-comment-heart.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/community-comment-heart.svg') center / contain no-repeat;
-  transition: background-color 180ms ease, transform 180ms ease;
+  opacity: 0.72;
+  transition: opacity 180ms ease, transform 180ms ease;
 }
 
 .community-reader-comment-like text {
@@ -11916,10 +12826,8 @@ function formatDateTime(value) {
   color: #eb5964;
 }
 
-.community-reader-comment-like.active .community-reader-comment-like-icon {
-  background: #eb5964;
-  -webkit-mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/community-comment-heart-filled.svg') center / contain no-repeat;
+.community-reader-comment-like.active .community-reader-comment-like-icon-image {
+  opacity: 1;
   animation: community-comment-like-pop 220ms ease-out;
   transform: scale(1.06);
 }
@@ -11988,10 +12896,10 @@ function formatDateTime(value) {
 }
 
 .community-reader-action {
-  min-width: 62rpx;
-  min-height: 66rpx;
+  min-width: 86rpx;
+  min-height: 76rpx;
   margin: 0;
-  padding: 0 8rpx;
+  padding: 0 12rpx;
   border: 0;
   border-radius: 18rpx;
   background: transparent;
@@ -12004,6 +12912,7 @@ function formatDateTime(value) {
   line-height: 1;
   font-weight: 800;
   flex: 0 0 auto;
+  overflow: visible;
 }
 
 .community-reader-action image {
@@ -12011,18 +12920,139 @@ function formatDateTime(value) {
   height: 30rpx;
 }
 
+.community-reader-action::after {
+  border: 0;
+}
+
+.community-reader-like-icon-wrap {
+  position: relative;
+  z-index: 1;
+  width: 46rpx;
+  height: 46rpx;
+  flex: 0 0 46rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: visible;
+}
+
+.community-reader-action .community-reader-like-icon {
+  position: relative;
+  z-index: 1;
+  display: block;
+  width: 46rpx;
+  height: 46rpx;
+  flex: 0 0 46rpx;
+  transform-origin: center;
+}
+
 .community-reader-action.active {
-  color: #3478f6;
+  color: #eb5964;
+}
+
+.community-reader-action.is-bursting .community-reader-like-icon {
+  animation: community-reader-like-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.22) both;
+}
+
+.community-like-burst {
+  position: absolute;
+  z-index: 2;
+  inset: 0;
+  pointer-events: none;
+  overflow: visible;
+}
+
+.community-reader-action .community-like-bubble {
+  --community-like-bubble-x: 0rpx;
+  --community-like-bubble-y: -70rpx;
+  --community-like-bubble-rotate: 0deg;
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  display: block;
+  width: 18rpx;
+  height: 18rpx;
+  opacity: 0;
+  transform: translate(-50%, -50%) translate3d(0, 6rpx, 0) scale(0.35);
+  transform-origin: center;
+  animation: community-like-bubble-rise 480ms cubic-bezier(0.2, 0.72, 0.24, 1) forwards;
+  will-change: transform, opacity;
+}
+
+.community-reader-action .community-like-bubble:nth-child(1) {
+  --community-like-bubble-x: -42rpx;
+  --community-like-bubble-y: -60rpx;
+  --community-like-bubble-rotate: -18deg;
+  width: 16rpx;
+  height: 16rpx;
+}
+
+.community-reader-action .community-like-bubble:nth-child(2) {
+  --community-like-bubble-x: -22rpx;
+  --community-like-bubble-y: -84rpx;
+  --community-like-bubble-rotate: 12deg;
+  animation-delay: 36ms;
+}
+
+.community-reader-action .community-like-bubble:nth-child(3) {
+  --community-like-bubble-y: -74rpx;
+  --community-like-bubble-rotate: -8deg;
+  width: 21rpx;
+  height: 21rpx;
+  animation-delay: 18ms;
+}
+
+@keyframes community-reader-like-pop {
+  0% {
+    transform: scale(0.9);
+  }
+  46% {
+    transform: scale(1.12);
+  }
+  100% {
+    transform: scale(1);
+  }
+}
+
+@keyframes community-like-bubble-rise {
+  0% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate3d(0, 6rpx, 0) scale(0.35) rotate(0deg);
+  }
+  18% {
+    opacity: 0.96;
+  }
+  68% {
+    opacity: 0.88;
+    transform: translate(-50%, -50%) translate3d(var(--community-like-bubble-x), var(--community-like-bubble-y), 0) scale(1) rotate(var(--community-like-bubble-rotate));
+  }
+  100% {
+    opacity: 0;
+    transform: translate(-50%, -50%) translate3d(var(--community-like-bubble-x), var(--community-like-bubble-y), 0) scale(0.72) rotate(var(--community-like-bubble-rotate));
+  }
 }
 
 .community-reader-action.pending {
   pointer-events: none;
 }
 
-.community-reader-actions button:active,
+@media (prefers-reduced-motion: reduce) {
+  .community-reader-action.is-bursting .community-reader-like-icon {
+    animation-duration: 1ms;
+  }
+
+  .community-reader-action .community-like-bubble {
+    display: none;
+  }
+}
+
 .community-reader-share:active,
 .community-reader-back:active {
   transform: scale(0.96);
+}
+
+.community-reader-action:active {
+  transform: none;
 }
 
 @media (max-width: 340px) {
@@ -13103,28 +14133,38 @@ function formatDateTime(value) {
   padding: 0;
   border: 0;
   border-radius: 999rpx;
-  background: rgba(255, 255, 255, 0.72);
+  background: transparent;
+  background-color: transparent !important;
   color: #344054;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 34rpx;
   line-height: 72rpx;
-  box-shadow: 0 10rpx 24rpx rgba(20, 31, 66, 0.06);
+  box-shadow: none;
+  -webkit-appearance: none;
+  appearance: none;
+  overflow: visible;
+}
+
+.message-bell::after {
+  display: none;
 }
 
 .message-bell.unread {
   color: #f5b700;
 }
 
-.message-bell-icon {
+.message-bell-icon-image {
   display: block;
   width: 34rpx;
   height: 34rpx;
   flex-shrink: 0;
-  background-color: currentColor;
-  -webkit-mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
+  opacity: 0.82;
+}
+
+.message-bell.unread .message-bell-icon-image {
+  opacity: 1;
 }
 
 .message-dot {
@@ -13286,20 +14326,20 @@ function formatDateTime(value) {
 }
 
 .mock-exam-icon {
-  width: 72rpx;
-  height: 72rpx;
-  border-radius: 24rpx;
+  width: 96rpx;
+  height: 96rpx;
+  flex: 0 0 96rpx;
+  border-radius: 28rpx;
   background: var(--gyt-primary-soft);
-  color: var(--gyt-primary);
   display: flex;
   align-items: center;
   justify-content: center;
-  box-shadow: 0 12rpx 26rpx var(--gyt-primary-shadow);
 }
 
-.mock-exam-icon svg {
-  width: 44rpx;
-  height: 44rpx;
+.mock-exam-icon-image {
+  width: 78rpx;
+  height: 78rpx;
+  flex: 0 0 78rpx;
   display: block;
 }
 
@@ -13488,12 +14528,13 @@ function formatDateTime(value) {
 }
 
 .wrong-filter-select-arrow-icon {
-  width: 18rpx;
-  height: 11rpx;
+  width: 13rpx;
+  height: 13rpx;
   flex: 0 0 auto;
-  background: var(--gyt-primary, #2563eb);
-  -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat;
+  border-right: 3rpx solid var(--gyt-primary, #2563eb);
+  border-bottom: 3rpx solid var(--gyt-primary, #2563eb);
+  transform: translateY(-3rpx) rotate(45deg);
+  box-sizing: border-box;
 }
 
 .wrong-filter-select.disabled .wrong-filter-select-control {
@@ -13502,7 +14543,7 @@ function formatDateTime(value) {
 }
 
 .wrong-filter-select.disabled .wrong-filter-select-arrow-icon {
-  background: #b2bac7;
+  border-color: #b2bac7;
 }
 
 .list-load-state {
@@ -13557,8 +14598,12 @@ function formatDateTime(value) {
   width: 72rpx;
   height: 72rpx;
   border-radius: 24rpx;
-  font-size: 34rpx;
-  font-weight: 950;
+}
+
+.report-empty-icon image {
+  display: block;
+  width: 42rpx;
+  height: 42rpx;
 }
 
 .report-empty-title {
@@ -13982,7 +15027,18 @@ function formatDateTime(value) {
   align-items: center;
   justify-content: center;
   background: #f4f7ff;
-  font-size: 26rpx;
+}
+
+.report-diagnosis-icon image {
+  display: block;
+  width: 32rpx;
+  height: 32rpx;
+}
+
+.subject-icon image {
+  display: block;
+  width: 34rpx;
+  height: 34rpx;
 }
 
 .subject-title {
@@ -14256,7 +15312,13 @@ function formatDateTime(value) {
   align-items: center;
   justify-content: center;
   background: #fff8d8;
-  font-size: 25rpx;
+}
+
+.advice-icon image,
+.today-training-icon image {
+  display: block;
+  width: 32rpx;
+  height: 32rpx;
 }
 
 .advice-title {
@@ -14449,6 +15511,7 @@ function formatDateTime(value) {
 }
 
 .subscription-sheet {
+  position: relative;
   width: 100%;
   max-height: calc(100dvh - env(safe-area-inset-top) - 20rpx);
   padding: 42rpx 48rpx calc(env(safe-area-inset-bottom) + 38rpx);
@@ -14463,6 +15526,30 @@ function formatDateTime(value) {
   transform: translateY(105%);
   transition: transform 320ms cubic-bezier(0.22, 1, 0.36, 1);
   will-change: transform;
+}
+
+.subscription-sheet.is-dragging {
+  transition: none;
+}
+
+.subscription-sheet-drag-handle {
+  position: absolute;
+  top: 4rpx;
+  right: 0;
+  left: 0;
+  z-index: 2;
+  height: 38rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  touch-action: none;
+}
+
+.subscription-sheet-drag-bar {
+  width: 72rpx;
+  height: 8rpx;
+  border-radius: 999rpx;
+  background: #d6d7da;
 }
 
 .subscription-sheet-mask.is-visible {
@@ -14706,39 +15793,8 @@ function formatDateTime(value) {
   margin-top: 22rpx;
 }
 
-.smart-tip {
-  display: flex;
-  align-items: flex-start;
-  gap: 16rpx;
-  padding: 20rpx;
-  border-radius: 20rpx;
-  background: var(--gyt-primary-soft, #eef5ff);
-}
-
-.smart-tip-icon {
-  width: 42rpx;
-  height: 42rpx;
-  flex: 0 0 42rpx;
-  border-radius: 50%;
-  background: var(--gyt-primary-gradient, linear-gradient(135deg, #3478f6, #7ca7ff));
-  color: #ffffff;
-  text-align: center;
-  font-size: 24rpx;
-  line-height: 42rpx;
-  font-weight: 900;
-}
-
-.smart-tip-copy {
-  flex: 1;
-  min-width: 0;
-  color: #52627a;
-  font-size: 22rpx;
-  line-height: 1.55;
-  font-weight: 700;
-}
-
 .recommend-lines {
-  margin-top: 20rpx;
+  margin-top: 0;
   display: flex;
   flex-direction: column;
   gap: 14rpx;
@@ -14855,7 +15911,12 @@ function formatDateTime(value) {
 .sheet-cancel-btn {
   background: #f6f8fb;
   color: #475467;
-  border: 2rpx solid #e1e8f4;
+  border: 0;
+}
+
+.sheet-cancel-btn::after,
+.sheet-generate-btn::after {
+  border: 0;
 }
 
 .sheet-generate-btn {
@@ -14992,7 +16053,7 @@ function formatDateTime(value) {
 .generating-cancel-btn {
   min-height: 76rpx;
   margin: 28rpx 0 0;
-  border: 2rpx solid #e1e8f4;
+  border: 0;
   border-radius: 18rpx;
   background: #f8fafc;
   color: #475467;
@@ -15000,6 +16061,10 @@ function formatDateTime(value) {
   line-height: 76rpx;
   font-weight: 900;
   box-shadow: none;
+}
+
+.generating-cancel-btn::after {
+  border: 0;
 }
 
 @keyframes generating-spin {
@@ -15346,7 +16411,7 @@ function formatDateTime(value) {
 .pro-later-btn {
   background: #f6f8fb;
   color: #475467;
-  border: 2rpx solid #e1e8f4;
+  border: 0;
 }
 
 .pro-open-btn {
@@ -15355,158 +16420,9 @@ function formatDateTime(value) {
   box-shadow: 0 16rpx 30rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.22));
 }
 
-.theme-modal-mask {
-  position: fixed;
-  left: 0;
-  right: 0;
-  top: 0;
-  bottom: 0;
-  z-index: 86;
-  display: flex;
-  align-items: flex-end;
-  background: rgba(15, 23, 42, 0.36);
-}
-
-.theme-modal-sheet {
-  position: relative;
-  width: 100%;
-  max-height: 86vh;
-  padding: 16rpx 34rpx calc(env(safe-area-inset-bottom) + 30rpx);
-  border-radius: 48rpx 48rpx 0 0;
-  background: #ffffff;
-  box-shadow: 0 -18rpx 54rpx rgba(15, 23, 42, 0.16);
-  box-sizing: border-box;
-  display: flex;
-  flex-direction: column;
-}
-
-.theme-modal-handle {
-  width: 74rpx;
-  height: 8rpx;
-  margin: 0 auto 18rpx;
-  border-radius: 999rpx;
-  background: #d8deea;
-}
-
-.theme-modal-close {
-  position: absolute;
-  top: 20rpx;
-  right: 28rpx;
-  width: 58rpx;
-  height: 58rpx;
-  margin: 0;
-  padding: 0;
+.pro-later-btn::after,
+.pro-open-btn::after {
   border: 0;
-  border-radius: 50%;
-  background: #f5f7fb;
-  color: #8a95a8;
-  font-size: 36rpx;
-  line-height: 56rpx;
-  font-weight: 800;
-}
-
-.theme-modal-head {
-  padding: 0 58rpx 18rpx;
-  text-align: center;
-}
-
-.theme-modal-title {
-  color: #101828;
-  font-size: 36rpx;
-  line-height: 1.25;
-  font-weight: 950;
-}
-
-.theme-modal-subtitle {
-  margin-top: 10rpx;
-  color: #8a95a8;
-  font-size: 23rpx;
-  line-height: 1.45;
-  font-weight: 650;
-}
-
-.theme-option-list {
-  min-height: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 14rpx;
-  overflow-y: auto;
-  overscroll-behavior: contain;
-}
-
-.theme-option {
-  min-height: 112rpx;
-  padding: 16rpx 18rpx;
-  border: 2rpx solid #edf1f7;
-  border-radius: 24rpx;
-  background: #ffffff;
-  display: flex;
-  align-items: center;
-  gap: 18rpx;
-  box-shadow: 0 8rpx 24rpx rgba(25, 48, 89, 0.04);
-}
-
-.theme-option.active {
-  border-color: var(--gyt-primary, #3478f6);
-  background: var(--gyt-primary-tint, #f7fbff);
-}
-
-.theme-preview {
-  width: 96rpx;
-  height: 72rpx;
-  flex: 0 0 96rpx;
-  border-radius: 22rpx;
-  border: 2rpx solid rgba(255, 255, 255, 0.76);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8rpx;
-  box-shadow: inset 0 0 0 2rpx rgba(255, 255, 255, 0.45);
-}
-
-.theme-preview-dot {
-  width: 24rpx;
-  height: 24rpx;
-  border-radius: 999rpx;
-}
-
-.theme-preview-line {
-  width: 34rpx;
-  height: 12rpx;
-  border-radius: 999rpx;
-}
-
-.theme-option-copy {
-  flex: 1;
-  min-width: 0;
-}
-
-.theme-option-name {
-  color: #172033;
-  font-size: 26rpx;
-  line-height: 1.35;
-  font-weight: 950;
-}
-
-.theme-option-desc {
-  margin-top: 6rpx;
-  color: #667085;
-  font-size: 22rpx;
-  line-height: 1.4;
-  font-weight: 650;
-}
-
-.theme-option-check {
-  width: 42rpx;
-  height: 42rpx;
-  flex: 0 0 42rpx;
-  border-radius: 999rpx;
-  background: var(--gyt-primary, #3478f6);
-  color: #ffffff;
-  text-align: center;
-  font-size: 25rpx;
-  line-height: 42rpx;
-  font-weight: 950;
 }
 
 .official-modal-mask {
@@ -15739,9 +16655,9 @@ function formatDateTime(value) {
 }
 
 .task-btn.ghost {
-  background: #ffffff;
-  color: #475467;
-  border: 2rpx solid var(--gyt-primary-border);
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  border: 0;
 }
 
 .wrong-modal-mask {
@@ -16201,6 +17117,10 @@ function formatDateTime(value) {
   font-weight: 800;
 }
 
+.task-btn::after {
+  border: 0;
+}
+
 .unlock-btn {
   margin-top: 22rpx;
   width: 100%;
@@ -16487,16 +17407,6 @@ function formatDateTime(value) {
   width: 32rpx;
   height: 32rpx;
   display: block;
-}
-
-.theme-icon-mask {
-  background-color: currentColor;
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  mask-size: contain;
 }
 
 .benefit-icon.book-icon,
@@ -17516,7 +18426,6 @@ function formatDateTime(value) {
 }
 
 .advice-detail-close,
-.theme-modal-close,
 .official-modal-close,
 .wrong-modal-close {
   display: flex;
@@ -17595,7 +18504,6 @@ function formatDateTime(value) {
   backdrop-filter: blur(16px) saturate(118%);
 }
 
-.circle-glass-page .experience-search-icon,
 .circle-glass-page .experience-search-input {
   color: #2d3d3b;
 }
@@ -17788,7 +18696,7 @@ function formatDateTime(value) {
   }
 }
 
-/* 普通外观主题下，研圈沿用当前主题的配色与页面背景；方案一继续使用天空玻璃。 */
+/* 清爽蓝主题下，研圈沿用全局蓝色配色与统一页面背景。 */
 .home-page.circle-glass-page.circle-themed-page {
   --circle-bg: var(--gyt-primary-tint, #f4f8ff);
   --circle-bg-muted: var(--gyt-primary-soft, #edf4ff);
@@ -17970,16 +18878,74 @@ function formatDateTime(value) {
 .home-page.practice-home-page {
   --practice-overview-height: 230px;
   --practice-entry-gap: 10px;
-  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 92px);
+  padding: calc(env(safe-area-inset-top) + 16px) 16px calc(env(safe-area-inset-bottom) + 124px);
 }
 
 .practice-dashboard {
   width: 100%;
   max-width: 860rpx;
-  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
-  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 108px);
+  height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 140px);
+  height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 140px);
   min-height: 0;
   gap: var(--practice-entry-gap);
+}
+
+.practice-overview-carousel {
+  position: relative;
+  width: 100%;
+  height: var(--practice-overview-height);
+  min-height: 0;
+  flex: 0 0 var(--practice-overview-height);
+}
+
+.practice-overview-swiper {
+  width: 100%;
+  height: 100%;
+}
+
+.practice-overview-swiper swiper-item,
+.practice-overview-swiper .welcome-card {
+  box-sizing: border-box;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+}
+
+.practice-overview-pagination {
+  position: absolute;
+  right: 0;
+  bottom: -8px;
+  left: 0;
+  z-index: 4;
+  height: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  pointer-events: none;
+}
+
+.practice-overview-dot {
+  width: 6px;
+  height: 6px;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(126, 136, 156, 0.24);
+  line-height: 0;
+  transition: width 180ms ease, background-color 180ms ease;
+  pointer-events: auto;
+}
+
+.practice-overview-dot::after {
+  border: 0;
+}
+
+.practice-overview-dot.active {
+  width: 18px;
+  background: var(--gyt-primary, #3478f6);
 }
 
 .practice-dashboard .welcome-card {
@@ -17997,6 +18963,198 @@ function formatDateTime(value) {
   padding: 12px 14px 9px;
 }
 
+.practice-dashboard .daily-rank-preview-card {
+  overflow: hidden;
+  justify-content: flex-start;
+  padding: 12px 14px 9px;
+}
+
+.daily-rank-preview-header {
+  min-height: 38px;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.daily-rank-preview-subtitle {
+  display: block;
+  margin-top: 3px;
+  color: #8b94a4;
+  font-size: 10px;
+  line-height: 1.15;
+  font-weight: 550;
+}
+
+.daily-rank-preview-live {
+  min-height: 25px;
+  padding: 0 9px;
+  border-radius: 999px;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.daily-rank-preview-live view {
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--gyt-primary, #3478f6);
+}
+
+.daily-rank-preview-list,
+.daily-rank-preview-state {
+  min-height: 0;
+  flex: 1 1 0;
+}
+
+.daily-rank-preview-list {
+  display: grid;
+  grid-template-rows: repeat(3, minmax(0, 1fr));
+  gap: 2px;
+}
+
+.daily-rank-preview-row {
+  min-width: 0;
+  padding: 2px 4px;
+  border-radius: 11px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.daily-rank-preview-row:first-child {
+  background: var(--gyt-primary-tint, #f6f9ff);
+}
+
+.daily-rank-preview-position {
+  width: 27px;
+  height: 30px;
+  flex: 0 0 27px;
+  border-radius: 8px;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.daily-rank-preview-position.has-medal {
+  border-radius: 0;
+  background: transparent;
+}
+
+.daily-rank-preview-medal {
+  display: block;
+  width: 27px;
+  height: 30px;
+}
+
+.daily-rank-preview-avatar {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  overflow: hidden;
+  border-radius: 50%;
+  background: var(--gyt-primary-soft, #edf4ff);
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.daily-rank-preview-avatar image {
+  width: 100%;
+  height: 100%;
+}
+
+.daily-rank-preview-user {
+  min-width: 0;
+  flex: 1;
+}
+
+.daily-rank-preview-user > text {
+  display: block;
+  overflow: hidden;
+  color: #243343;
+  font-size: 12px;
+  line-height: 1.15;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-rank-preview-user > .daily-rank-preview-answer-count {
+  margin-top: 2px;
+  color: #929baa;
+  font-size: 9px;
+  font-weight: 550;
+}
+
+.daily-rank-preview-duration {
+  flex: 0 0 auto;
+  color: #172033;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 800;
+  white-space: nowrap;
+}
+
+.daily-rank-preview-state {
+  color: #8b94a4;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0 20px;
+  text-align: center;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.daily-rank-preview-state.is-error {
+  color: #a85b55;
+}
+
+.daily-rank-preview-footer {
+  min-height: 19px;
+  padding: 1px 2px 0;
+  color: #7d8798;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 650;
+}
+
+.daily-rank-preview-footer > text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.daily-rank-preview-footer > view {
+  flex: 0 0 auto;
+  color: #4d596b;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
 .practice-data-header {
   min-height: 24px;
   display: flex;
@@ -18012,6 +19170,14 @@ function formatDateTime(value) {
   line-height: 1.2;
   font-weight: 800;
   white-space: nowrap;
+}
+
+.profile-phone-note {
+  margin: 22rpx 2rpx 0;
+  color: #8b94a4;
+  font-size: 20rpx;
+  line-height: 1.55;
+  font-weight: 600;
 }
 
 .practice-data-period {
@@ -18051,6 +19217,32 @@ function formatDateTime(value) {
   width: 100%;
   height: 100%;
   transform: rotate(-90deg);
+}
+
+.practice-accuracy-app-ring {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  background: var(--gyt-primary-soft, #edf4ff);
+  background: conic-gradient(
+    var(--gyt-primary, #3478f6) 0 var(--practice-ring-progress, 0%),
+    var(--gyt-primary-soft, #edf4ff) var(--practice-ring-progress, 0%) 100%
+  );
+  transition: background 320ms ease;
+}
+
+/* 数字与圆环由同一条 JS 时间线驱动，动画期间关闭 CSS 过渡以保持同步。 */
+.practice-accuracy-ring.is-animating .practice-accuracy-app-ring,
+.practice-accuracy-ring.is-animating .practice-accuracy-progress {
+  transition: none;
+}
+
+.practice-accuracy-app-ring::after {
+  content: '';
+  position: absolute;
+  inset: 10px;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.98);
 }
 
 .practice-accuracy-track,
@@ -18098,7 +19290,7 @@ function formatDateTime(value) {
   min-width: 0;
   height: 128px;
   box-sizing: border-box;
-  padding-left: 12px;
+  padding-left: 60px;
   display: grid;
   grid-template-rows: repeat(3, minmax(0, 1fr));
   align-items: stretch;
@@ -18108,47 +19300,6 @@ function formatDateTime(value) {
   min-width: 0;
   display: flex;
   align-items: center;
-  gap: 10px;
-}
-
-.practice-key-icon {
-  width: 32px;
-  height: 32px;
-  flex: 0 0 32px;
-  border-radius: 11px;
-  background: var(--gyt-primary-tint, #f4f8ff);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.practice-stat-icon {
-  width: 100%;
-  height: 100%;
-  display: block;
-  overflow: visible;
-}
-
-.practice-stat-icon-fill {
-  fill: var(--gyt-primary, #3478f6);
-  fill-opacity: 0.3;
-}
-
-.practice-stat-icon-fill-secondary {
-  fill: var(--gyt-primary, #3478f6);
-  fill-opacity: 0.16;
-}
-
-.practice-stat-icon-outline,
-.practice-stat-icon-line {
-  stroke: #263345;
-  stroke-width: 3;
-  stroke-linecap: round;
-  stroke-linejoin: round;
-}
-
-.practice-stat-icon-line {
-  fill: none;
 }
 
 .practice-key-copy {
@@ -18366,6 +19517,7 @@ function formatDateTime(value) {
 
   .practice-key-metrics {
     width: auto;
+    padding-left: 56px;
   }
 
   .practice-accuracy-value {
@@ -18374,12 +19526,6 @@ function formatDateTime(value) {
 
   .practice-accuracy-label {
     font-size: 11px;
-  }
-
-  .practice-key-icon {
-    width: 29px;
-    height: 29px;
-    flex-basis: 29px;
   }
 
   .practice-key-value {
@@ -18474,13 +19620,7 @@ function formatDateTime(value) {
 
   .practice-key-metrics {
     width: auto;
-    padding-left: 6px;
-  }
-
-  .practice-key-icon {
-    width: 28px;
-    height: 28px;
-    flex-basis: 28px;
+    padding-left: 50px;
   }
 
   .practice-key-copy {
@@ -18565,7 +19705,7 @@ function formatDateTime(value) {
   backdrop-filter: none;
 }
 
-.home-page.circle-glass-page .circle-overview .circle-entry-icon-mask {
+.home-page.circle-glass-page .circle-overview .circle-entry-icon-image {
   width: 88rpx;
   height: 88rpx;
 }
@@ -18778,7 +19918,7 @@ function formatDateTime(value) {
     border-radius: 24rpx;
   }
 
-  .home-page.circle-glass-page .circle-overview .circle-entry-icon-mask {
+  .home-page.circle-glass-page .circle-overview .circle-entry-icon-image {
     width: 78rpx;
     height: 78rpx;
   }
@@ -18866,12 +20006,6 @@ function formatDateTime(value) {
 /* #endif */
 
 @media (prefers-reduced-motion: reduce) {
-  .circle-section-forward-enter-active,
-  .circle-section-forward-leave-active,
-  .circle-section-back-enter-active,
-  .circle-section-back-leave-active,
-  .circle-reader-enter-active,
-  .circle-reader-leave-active,
   .subscription-sheet-mask,
   .subscription-sheet {
     transition-duration: 1ms !important;
@@ -18933,14 +20067,6 @@ function formatDateTime(value) {
   border-radius: 18rpx;
   color: var(--gyt-primary, #3478f6);
   background: var(--gyt-primary-soft, #edf4ff);
-}
-
-.profile-message-icon > view {
-  width: 28rpx;
-  height: 28rpx;
-  background: currentColor;
-  -webkit-mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
-  mask: url('/static/ui-icons/notification-bell.svg') center / contain no-repeat;
 }
 
 .profile-message-copy {
@@ -19012,17 +20138,12 @@ function formatDateTime(value) {
 }
 
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-select-name,
-.home-page.circle-glass-page .circle-scoreline-section .scoreline-search-icon,
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-search-placeholder {
   color: var(--scoreline-muted);
 }
 
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-select-value {
   color: #4b4750;
-}
-
-.home-page.circle-glass-page .circle-scoreline-section .scoreline-select-arrow-icon {
-  background: #aaa5ad;
 }
 
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-search-clear {

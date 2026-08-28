@@ -5,14 +5,14 @@
     <scroll-view scroll-y class="mentor-waiting-scroll">
       <view v-if="mentor" class="mentor-waiting-content">
         <view v-if="isPaymentPending" class="mentor-waiting-main">
-          <view class="mentor-waiting-icon waiting">⌛</view>
+          <view class="mentor-waiting-icon waiting"><image src="/static/ui-icons/png/blue/hourglass.png" mode="aspectFit" aria-hidden="true" /></view>
           <view class="mentor-waiting-title">{{ isDemoOrder ? '确认咨询' : (paymentStatus === 'failed' ? '本次支付未完成' : '等待支付确认') }}</view>
           <view class="mentor-waiting-copy">{{ isDemoOrder ? '点击下方“跳过支付并继续”，即可把咨询请求发送给前辈。' : (paymentStatus === 'failed' ? '支付渠道未确认本次付款。你可以重新进入支付页面，或取消本次订单。' : (paymentMessage || '支付完成后，系统会自动确认并把咨询请求发送给前辈。')) }}</view>
           <view v-if="showCountdown" class="mentor-countdown"><text>{{ countdownLabel }}</text>{{ countdownText }}</view>
         </view>
 
         <view v-else-if="isRefunding" class="mentor-waiting-main mentor-failed-main">
-          <view class="mentor-waiting-icon waiting">⌛</view>
+          <view class="mentor-waiting-icon waiting"><image src="/static/ui-icons/png/blue/hourglass.png" mode="aspectFit" aria-hidden="true" /></view>
           <view class="mentor-waiting-title">退款处理中</view>
           <view class="mentor-waiting-copy">平台已提交 ¥{{ refundAmount || 0 }} 的退款申请；支付渠道确认完成后，这里会自动更新。</view>
         </view>
@@ -43,7 +43,7 @@
         </view>
 
         <view v-else class="mentor-waiting-main">
-          <view class="mentor-waiting-icon waiting">⌛</view>
+          <view class="mentor-waiting-icon waiting"><image src="/static/ui-icons/png/blue/hourglass.png" mode="aspectFit" aria-hidden="true" /></view>
           <view class="mentor-waiting-title">{{ waitingTitle }}</view>
           <view class="mentor-waiting-copy">{{ waitingCopy }}</view>
           <view v-if="showCountdown" class="mentor-countdown"><text>{{ countdownLabel }}</text>{{ countdownText }}</view>
@@ -439,7 +439,7 @@ function goBack() {
 .mentor-waiting-page { height: 100vh; height: 100dvh; overflow: hidden; background:#f4f8ff; display:flex; flex-direction:column; }
 .mentor-waiting-scroll { min-height:0; flex:1; }.mentor-waiting-content { padding:32rpx 24rpx 0; }
 .mentor-waiting-main { padding:38rpx 28rpx 32rpx; border:2rpx solid #d6e6ff; border-radius:30rpx; background:rgba(255,255,255,.94); text-align:center; box-shadow:0 16rpx 38rpx rgba(52,120,246,.08); }
-.mentor-waiting-icon { width:92rpx; height:92rpx; margin:0 auto; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:45rpx; line-height:1; font-weight:900; }.mentor-waiting-icon.waiting{background:#edf4ff;color:#3478f6}.mentor-waiting-icon.booked{background:#e6f6ec;color:#26955a}.mentor-waiting-icon.failed{background:#fff0ee;color:#e46a5f}
+.mentor-waiting-icon { width:92rpx; height:92rpx; margin:0 auto; border-radius:50%; display:flex; align-items:center; justify-content:center; font-size:45rpx; line-height:1; font-weight:900; }.mentor-waiting-icon image{display:block;width:50rpx;height:50rpx}.mentor-waiting-icon.waiting{background:#edf4ff;color:#3478f6}.mentor-waiting-icon.booked{background:#e6f6ec;color:#26955a}.mentor-waiting-icon.failed{background:#fff0ee;color:#e46a5f}
 .mentor-waiting-title { margin-top:20rpx; color:#243550; font-size:31rpx; line-height:1.25; font-weight:900; }.mentor-waiting-copy{margin-top:12rpx;color:#73839a;font-size:22rpx;line-height:1.55;font-weight:650}.mentor-countdown{margin:25rpx auto 0;padding:15rpx 28rpx;border-radius:18rpx;background:#f4f8ff;color:#3478f6;font-size:42rpx;line-height:1;font-weight:900;letter-spacing:2rpx;width:max-content}.mentor-booked-slot{margin-top:20rpx;color:#277b54;font-size:24rpx;font-weight:850}
 .mentor-waiting-person-card,.mentor-waiting-flow-card,.mentor-waiting-notice,.mentor-demo-card { margin-top:18rpx; border:2rpx solid #dce8fa; border-radius:26rpx; background:rgba(255,255,255,.91); box-shadow:0 12rpx 30rpx rgba(52,120,246,.055); }
 .mentor-waiting-person-card { padding:24rpx; display:flex; align-items:center; gap:15rpx; color:#7c8ca1;font-size:21rpx;line-height:1.4;font-weight:650; }.mentor-waiting-avatar{width:68rpx;height:68rpx;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26rpx;font-weight:900;flex-shrink:0}.mentor-waiting-avatar.tone-blue{background:#e6efff;color:#3478f6}.mentor-waiting-avatar.tone-mint{background:#e2f4ef;color:#198777}.mentor-waiting-avatar.tone-violet{background:#eeeafe;color:#7162bd}.mentor-waiting-avatar.tone-warm{background:#f9eee1;color:#b66c32}.mentor-waiting-name{color:#354863;font-size:25rpx;font-weight:900}.mentor-waiting-name text{margin-left:8rpx;padding:5rpx 9rpx;border-radius:999rpx;background:#edf4ff;color:#3478f6;font-size:17rpx;font-weight:800}.mentor-waiting-booked-note{margin-top:5rpx;color:#3d9161;font-size:19rpx;font-weight:750}

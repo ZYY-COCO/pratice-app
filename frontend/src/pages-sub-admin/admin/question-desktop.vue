@@ -86,7 +86,7 @@
             </button>
           </view>
           <button class="header-refresh" :disabled="refreshing" @tap="refreshCurrentSection">
-            <text class="refresh-symbol" :class="{ spinning: refreshing }">↻</text>
+            <view class="refresh-symbol" :class="{ spinning: refreshing }" aria-hidden="true"><AppRefreshIcon /></view>
             <text>{{ refreshing ? '刷新中' : '刷新数据' }}</text>
           </button>
           <view class="profile-chip">
@@ -687,7 +687,7 @@
         <section v-if="activeSection === 'homeOps'" class="content-section operations-section home-operations-content-section">
           <view v-if="homeContentEditorVisible" class="drawer-backdrop home-content-editor-backdrop" @tap="closeHomeContentEditor()">
             <view class="home-content-editor-modal" @tap.stop>
-              <view class="workspace-heading home-editor-modal-heading"><view><view class="panel-title">{{ homeContentEditingId ? '编辑首页内容' : '新增首页内容' }}</view><view class="panel-subtitle">{{ homeContentSlotLabel(homeContentForm.slot) }} · {{ homeContentForm.status === 'published' ? '保存后会立即更新学生端。' : '保存后仍留在后台，需单独发布才会进入学生端。' }}</view></view><button class="drawer-close admin-modal-close" :disabled="homeContentSaving" @tap="closeHomeContentEditor">×</button></view>
+              <view class="workspace-heading home-editor-modal-heading"><view><view class="panel-title">{{ homeContentEditingId ? '编辑首页内容' : '新增首页内容' }}</view><view class="panel-subtitle">{{ homeContentSlotLabel(homeContentForm.slot) }} · {{ homeContentForm.status === 'published' ? '保存后会立即更新学生端。' : homeContentForm.status === 'archived' ? '可仅保存修改，或保存并重新上架。' : '可保存为草稿，或保存并上架。' }}</view></view><button class="drawer-close admin-modal-close" :disabled="homeContentSaving" @tap="closeHomeContentEditor">×</button></view>
               <scroll-view scroll-y class="home-editor-scroll">
                 <view class="home-editor-content">
                   <view class="home-editor-grid">
@@ -706,12 +706,25 @@
                   <view class="home-editor-sample" :class="homeContentForm.tone"><small>{{ homeContentForm.slot === 'focus' ? '焦点轮播预览' : '考研资讯预览' }}</small><strong>{{ homeContentForm.title || '标题将在这里显示' }}</strong><text>{{ homeContentForm.slot === 'focus' ? (homeContentForm.subtitle || homeContentForm.badge || '补充简短说明') : `${homeContentForm.source || '信息来源'} · ${homeContentForm.display_date || '展示日期'}` }}</text></view>
                 </view>
               </scroll-view>
-              <view class="home-editor-actions"><button class="secondary-button" :disabled="homeContentSaving" @tap="closeHomeContentEditor">取消</button><button class="primary-button" :disabled="homeContentSaving || !homeContentForm.title" @tap="saveHomeContent">{{ homeContentSaving ? '保存中…' : homeContentForm.status === 'published' ? '保存并更新' : '保存内容' }}</button></view>
+              <view class="home-editor-actions">
+                <button class="secondary-button" :disabled="homeContentSaving" @tap="closeHomeContentEditor">取消</button>
+                <button
+                  v-if="homeContentForm.status !== 'published'"
+                  class="secondary-button home-editor-save-button"
+                  :disabled="homeContentSaving || !homeContentForm.title"
+                  @tap="saveHomeContent"
+                >{{ homeContentSaving ? '保存中…' : '保存内容' }}</button>
+                <button
+                  class="primary-button"
+                  :disabled="homeContentSaving || !homeContentForm.title"
+                  @tap="homeContentForm.status === 'published' ? saveHomeContent() : saveHomeContent('published')"
+                >{{ homeContentSaving ? '保存中…' : homeContentForm.status === 'published' ? '保存并更新' : homeContentForm.status === 'archived' ? '保存并重新上架' : '保存并上架' }}</button>
+              </view>
             </view>
           </view>
 
           <view class="question-workspace home-live-preview-workspace">
-            <view class="workspace-heading"><view><view class="panel-title">用户端当前展示</view><view class="panel-subtitle">以下内容按发布状态、生效时间和排序实时计算，与首页首屏规则一致。</view></view><view v-if="!homeContentLoading && !homeContentError" class="home-preview-counts"><text>轮播 {{ homeVisibleFocusItems.length }}/3</text><text>资讯 {{ homeVisibleNewsItems.length }}/2</text></view></view>
+            <view class="workspace-heading"><view><view class="panel-title">用户端当前展示</view><view class="panel-subtitle">以下内容按发布状态、生效时间和排序实时计算，与首页首屏规则一致。</view></view><view v-if="!homeContentLoading && !homeContentError" class="home-preview-counts"><text>轮播 {{ homeVisibleFocusItems.length }}/3</text><text>资讯 {{ homeVisibleNewsItems.length }}/3</text></view></view>
             <view v-if="homeContentLoading" class="table-state">正在计算用户端展示…</view>
             <view v-else-if="homeContentError" class="table-state error"><view>用户端展示预览暂时不可用。</view><button @tap="loadHomeContent">重新加载</button></view>
             <view v-else class="home-user-preview-grid">
@@ -726,14 +739,14 @@
               <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
               <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
               <view v-else-if="!homeFocusContentItems.length" class="table-state">暂未配置焦点轮播</view>
-              <view v-else v-for="(item, index) in homeFocusContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '焦点' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
+              <view v-else v-for="(item, index) in homeFocusContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '焦点' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button v-else class="row-action home-content-publish-action" :disabled="homeContentStatusSavingId === item.id" @tap="publishHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : item.status === 'archived' ? '重新上架' : '上架' }}</button><button class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
             </view>
             <view class="question-workspace home-content-column">
               <view class="workspace-heading"><view><view class="panel-title">港澳台考研资讯</view><view class="panel-subtitle">最多 {{ HOME_CONTENT_SLOT_LIMITS.news }} 个 · 已发布 {{ homeNewsPublishedCount }}/{{ HOME_CONTENT_SLOT_LIMITS.news }}</view></view><button class="row-action home-content-add-button" :disabled="homeNewsContentAtCapacity" @tap="openHomeContentEditor('news')">{{ homeNewsContentAtCapacity ? `已满 ${HOME_CONTENT_SLOT_LIMITS.news}/${HOME_CONTENT_SLOT_LIMITS.news}` : '新增' }}</button></view>
               <view v-if="homeContentLoading" class="table-state">正在读取首页内容…</view>
               <view v-else-if="homeContentError" class="table-state error"><view>首页内容读取失败。</view><button @tap="loadHomeContent">重新加载</button></view>
               <view v-else-if="!homeNewsContentItems.length" class="table-state">暂未配置考研资讯</view>
-              <view v-else v-for="(item, index) in homeNewsContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '资讯' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button class="row-action" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
+              <view v-else v-for="(item, index) in homeNewsContentItems" :key="item.id" class="home-content-row"><view class="home-content-chip" :class="item.tone">{{ item.cover_label || '资讯' }}</view><view class="home-content-copy"><strong>{{ item.title }}</strong><text>{{ homeContentListMeta(item, index) }}</text></view><text class="status-pill" :class="homeContentStatusClass(item)">{{ homeContentStatusText(item) }}</text><button v-if="item.status === 'published'" class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="archiveHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : '下架' }}</button><button v-else class="row-action home-content-publish-action" :disabled="homeContentStatusSavingId === item.id" @tap="publishHomeContent(item)">{{ homeContentStatusSavingId === item.id ? '处理中' : item.status === 'archived' ? '重新上架' : '上架' }}</button><button class="row-action" :disabled="homeContentStatusSavingId === item.id" @tap="openHomeContentEditor(item.slot, item)">编辑</button></view>
             </view>
           </view>
         </section>
@@ -751,6 +764,25 @@
             <button class="secondary-button" @tap="loadQuestionBanks">重新加载</button>
           </view>
           <view v-else class="bank-file-grid">
+            <view class="bank-file-card bank-file-card--mock-exam">
+              <view class="bank-file-icon" aria-hidden="true">
+                <view class="bank-file-tab"></view>
+                <view class="bank-file-face bank-file-face--mock-exam">
+                  <text>卷</text>
+                </view>
+              </view>
+              <view class="bank-file-main">
+                <view class="bank-file-title-row">
+                  <view class="bank-file-name">模拟卷</view>
+                  <text class="bank-file-fixed-badge">固定组卷</text>
+                </view>
+                <view class="bank-file-date">可同时选用已发布和未发布题目</view>
+              </view>
+              <button class="bank-file-enter" @tap="openMockExamManagement">
+                进入组卷 <text>→</text>
+              </button>
+            </view>
+
             <view
               v-for="bank in questionBanks"
               :key="bank.id"
@@ -781,6 +813,13 @@
               <view class="bank-file-create-title">新建题库</view>
             </button>
           </view>
+        </section>
+
+        <section
+          v-if="activeSection === 'mockExams'"
+          class="content-section mock-exam-management-section"
+        >
+          <AdminMockExamManagement ref="mockExamManagementRef" />
         </section>
 
         <section
@@ -1504,8 +1543,10 @@ import AdminCommunityAppeals from '../../components/AdminCommunityAppeals.vue'
 import AdminCommunityModeration from '../../components/AdminCommunityModeration.vue'
 import AdminConsultationManagement from '../../components/AdminConsultationManagement.vue'
 import AdminMembershipPageManager from '../../components/AdminMembershipPageManager.vue'
+import AdminMockExamManagement from '../../components/AdminMockExamManagement.vue'
 import AdminResourceManagement from '../../components/AdminResourceManagement.vue'
 import AdminSelect from '../../components/AdminSelect.vue'
+import AppRefreshIcon from '../../components/ui/AppRefreshIcon.vue'
 import {
   bootstrapQuestionAdminScorelines,
   bulkUpdateQuestionAdminCommunityPostFeatured,
@@ -1584,6 +1625,7 @@ const contentManagementMountedTabs = reactive({ posts: true, reports: false, app
 const consultationManagementRef = ref(null)
 const consultationInitialView = ref('applications')
 const consultationInitialCaseView = ref('reports')
+const mockExamManagementRef = ref(null)
 const resourceManagementRef = ref(null)
 const communityModerationRef = ref(null)
 const communityAppealsRef = ref(null)
@@ -1990,7 +2032,7 @@ const homeToneOptions = [
   { label: '橙色', value: 'is-orange' },
   { label: '紫色', value: 'is-violet' }
 ]
-const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 2 })
+const HOME_CONTENT_SLOT_LIMITS = Object.freeze({ focus: 3, news: 3 })
 const homeTargetOptions = [
   { label: '外部链接 / 不跳转', value: '' },
   { label: '院校公告', value: 'school-announcements' },
@@ -2200,6 +2242,9 @@ const currentNavLabel = computed(() => {
       ? `题目管理 / ${reviewQuestionBank.value.name} / 待审核`
       : '题目管理 / 待审核'
   }
+  if (activeSection.value === 'mockExams') {
+    return '题目管理 / 模拟卷'
+  }
   const label = navItems.find((item) => item.key === activeSection.value)?.label || '后台管理'
   return activeSection.value === 'questions' && activeQuestionBank.value
     ? `${label} / ${activeQuestionBank.value.name}`
@@ -2210,11 +2255,13 @@ const contentManagementTabLabel = computed(() => (
 ))
 const showHeaderBackButton = computed(() => (
   activeSection.value === 'review' ||
+  activeSection.value === 'mockExams' ||
   (activeSection.value === 'import' && importPreviewVisible.value) ||
   (activeSection.value === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value))
 ))
 const headerBackDisabled = computed(() => (
-  activeSection.value === 'questions' && saving.value
+  (activeSection.value === 'questions' && saving.value) ||
+  (activeSection.value === 'mockExams' && Boolean(mockExamManagementRef.value?.isBusy?.()))
 ))
 const pageTitle = computed(() => {
   if (activeSection.value === 'import' && importPreviewVisible.value) {
@@ -2229,6 +2276,7 @@ const pageTitle = computed(() => {
     resources: '资料管理',
     homeOps: '首页运营',
     questions: '题目管理',
+    mockExams: '模拟卷',
     review: '审核队列',
     import: '批量导入'
   }
@@ -2564,7 +2612,7 @@ onLoad(async (options = {}) => {
     activeSection.value = 'consultation'
     consultationInitialView.value = legacyConsultationSections[options.section].view
     consultationInitialCaseView.value = legacyConsultationSections[options.section].caseView
-  } else if (['dashboard', 'users', 'consultation', 'admission', 'resources', 'homeOps', 'questions', 'import'].includes(options.section)) {
+  } else if (['dashboard', 'users', 'consultation', 'admission', 'resources', 'homeOps', 'questions', 'mockExams', 'import'].includes(options.section)) {
     activeSection.value = options.section
   }
   requestedQuestionBankId.value = String(options.question_bank_id || '')
@@ -2609,6 +2657,8 @@ async function bootstrap() {
       await resourceManagementRef.value?.refresh?.()
     } else if (activeSection.value === 'homeOps') {
       await Promise.all([loadOperationsOverview(), loadHomeContent()])
+    } else if (activeSection.value === 'mockExams') {
+      await nextTick()
     } else if (activeSection.value === 'questions') {
       await loadQuestionBanks()
       const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
@@ -2928,6 +2978,8 @@ async function refreshCurrentSection() {
       await resourceManagementRef.value?.refresh?.()
     } else if (activeSection.value === 'homeOps') {
       await Promise.all([loadOperationsOverview(), loadHomeContent()])
+    } else if (activeSection.value === 'mockExams') {
+      await mockExamManagementRef.value?.refresh?.()
     } else if (activeSection.value === 'questions' && !activeQuestionBank.value && !showGlobalQuestionList.value) {
       await loadQuestionBanks()
     } else if (activeSection.value === 'questions' || activeSection.value === 'review') {
@@ -3144,7 +3196,19 @@ async function startReviewQueue() {
 }
 
 function navItemActive(key) {
-  return key === activeSection.value || (key === 'questions' && activeSection.value === 'review')
+  return key === activeSection.value || (
+    key === 'questions' && ['review', 'mockExams'].includes(activeSection.value)
+  )
+}
+
+async function openMockExamManagement() {
+  activeSection.value = 'mockExams'
+  activeQuestionBank.value = null
+  reviewQuestionBank.value = null
+  showGlobalQuestionList.value = false
+  currentPage.value = 1
+  selectedIds.value = []
+  await nextTick()
 }
 
 function openQuestionBankDialog(mode, bank = null) {
@@ -3258,6 +3322,11 @@ async function returnFromReviewSection() {
   await loadQuestionBanks()
 }
 
+async function returnFromMockExamSection() {
+  activeSection.value = 'questions'
+  await returnToQuestionBanks()
+}
+
 async function handleHeaderBack() {
   if (activeSection.value === 'import') {
     await returnFromImportSection()
@@ -3265,6 +3334,10 @@ async function handleHeaderBack() {
   }
   if (activeSection.value === 'review') {
     await returnFromReviewSection()
+    return
+  }
+  if (activeSection.value === 'mockExams') {
+    await returnFromMockExamSection()
     return
   }
   await returnToQuestionBanks()
@@ -5485,8 +5558,11 @@ function homeDatetimeToIso(value) {
   return Number.isNaN(parsed.getTime()) ? null : parsed.toISOString()
 }
 
-async function saveHomeContent() {
+async function saveHomeContent(requestedStatus = '') {
   if (!homeContentForm.title.trim()) return
+  const explicitStatus = typeof requestedStatus === 'string' ? requestedStatus : ''
+  const desiredStatus = explicitStatus || homeContentForm.status
+  const isPublishingInactiveContent = desiredStatus === 'published' && homeContentForm.status !== 'published'
   const startsAt = homeDatetimeToIso(homeContentForm.starts_at)
   const endsAt = homeDatetimeToIso(homeContentForm.ends_at)
   if ((homeContentForm.starts_at && !startsAt) || (homeContentForm.ends_at && !endsAt)) {
@@ -5497,18 +5573,31 @@ async function saveHomeContent() {
     uni.showToast({ title: '下线时间必须晚于生效时间', icon: 'none' })
     return
   }
-  if (homeContentEditingId.value && homeContentForm.status === 'published') {
+  if (isPublishingInactiveContent && homeContentSlotAtCapacity(homeContentForm.slot)) {
+    uni.showToast({ title: `${homeContentSlotLabel(homeContentForm.slot)}已满 ${homeContentSlotLimit(homeContentForm.slot)}/${homeContentSlotLimit(homeContentForm.slot)}，请先下架现有内容`, icon: 'none' })
+    return
+  }
+  if (isPublishingInactiveContent && endsAt && new Date(endsAt).getTime() < Date.now()) {
+    uni.showToast({ title: '下线时间已过期，请调整后再上架', icon: 'none' })
+    return
+  }
+  if (desiredStatus === 'published') {
+    const isRepublishing = homeContentForm.status === 'archived'
     const confirmed = await confirmAction(
-      '保存已发布内容？',
-      '标题、排序、点击去向和展示时间的修改会立即同步到学生端。',
-      '确认保存'
+      isPublishingInactiveContent ? (isRepublishing ? '保存并重新上架？' : '保存并上架？') : '保存已发布内容？',
+      isPublishingInactiveContent
+        ? '保存后会恢复为已发布状态，并继续遵循当前排序、生效时间和下线时间。'
+        : '标题、排序、点击去向和展示时间的修改会立即同步到学生端。',
+      isPublishingInactiveContent ? (isRepublishing ? '重新上架' : '上架') : '确认保存'
     )
     if (!confirmed) return
   }
+  const previousStatus = homeContentForm.status
   homeContentSaving.value = true
   try {
     const payload = {
       ...homeContentForm,
+      status: desiredStatus,
       display_date: homeContentForm.slot === 'news' ? (homeContentForm.display_date || null) : null,
       target_url: homeContentForm.route_key ? '' : homeContentForm.target_url,
       starts_at: startsAt,
@@ -5532,7 +5621,12 @@ async function saveHomeContent() {
     }
     closeHomeContentEditor(true)
     await loadOperationsOverview()
-    uni.showToast({ title: '首页内容已保存', icon: 'success' })
+    uni.showToast({
+      title: isPublishingInactiveContent
+        ? (previousStatus === 'archived' ? '首页内容已重新上架' : '首页内容已上架')
+        : '首页内容已保存',
+      icon: 'success'
+    })
   } catch (error) {
     uni.showToast({ title: error?.detail || '首页内容保存失败', icon: 'none' })
   } finally {
@@ -5560,19 +5654,37 @@ function homeContentPayloadFromItem(item, status = item.status) {
   }
 }
 
-async function archiveHomeContent(item) {
-  if (!item?.id || item.status !== 'published' || homeContentStatusSavingId.value) return
+async function updateHomeContentStatus(item, nextStatus) {
+  if (!item?.id || homeContentStatusSavingId.value) return
+  const isPublishing = nextStatus === 'published'
+  if ((isPublishing && item.status === 'published') || (!isPublishing && item.status !== 'published')) return
+  if (isPublishing && homeContentSlotAtCapacity(item.slot)) {
+    uni.showToast({ title: `${homeContentSlotLabel(item.slot)}已满 ${homeContentSlotLimit(item.slot)}/${homeContentSlotLimit(item.slot)}，请先下架现有内容`, icon: 'none' })
+    return
+  }
+  if (isPublishing && homeContentTimeState(item) === 'expired') {
+    const editNow = await confirmAction(
+      '下线时间已过期',
+      '请先编辑并调整下线时间，再重新上架，避免状态已发布但学生端仍不展示。',
+      '去编辑'
+    )
+    if (editNow) openHomeContentEditor(item.slot, item)
+    return
+  }
+  const isRepublishing = isPublishing && item.status === 'archived'
   const confirmed = await confirmAction(
-    '下架首页内容？',
-    '下架后学生端将不再展示该内容，后台记录会保留。',
-    '下架'
+    isPublishing ? (isRepublishing ? '重新上架首页内容？' : '上架首页内容？') : '下架首页内容？',
+    isPublishing
+      ? '上架后会恢复为已发布状态，并继续遵循当前排序、生效时间和下线时间。'
+      : '下架后学生端将不再展示该内容，后台记录会保留。',
+    isPublishing ? (isRepublishing ? '重新上架' : '上架') : '下架'
   )
   if (!confirmed) return
   homeContentStatusSavingId.value = item.id
   try {
     const updated = devPreviewMode.value
-      ? { ...item, status: 'archived' }
-      : await updateQuestionAdminHomeContent(item.id, homeContentPayloadFromItem(item, 'archived'))
+      ? { ...item, status: nextStatus }
+      : await updateQuestionAdminHomeContent(item.id, homeContentPayloadFromItem(item, nextStatus))
     if (devPreviewMode.value) {
       devPreviewHomeContentItems.value = devPreviewHomeContentItems.value.map((candidate) => (
         candidate.id === updated.id ? { ...candidate, ...updated } : candidate
@@ -5580,12 +5692,20 @@ async function archiveHomeContent(item) {
     }
     homeContentItems.value = homeContentItems.value.map((candidate) => candidate.id === updated.id ? { ...candidate, ...updated } : candidate)
     await loadOperationsOverview()
-    uni.showToast({ title: '首页内容已下架', icon: 'success' })
+    uni.showToast({ title: isPublishing ? (isRepublishing ? '首页内容已重新上架' : '首页内容已上架') : '首页内容已下架', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '首页状态更新失败', icon: 'none' })
   } finally {
     homeContentStatusSavingId.value = ''
   }
+}
+
+function archiveHomeContent(item) {
+  return updateHomeContentStatus(item, 'archived')
+}
+
+function publishHomeContent(item) {
+  return updateHomeContentStatus(item, 'published')
 }
 
 function sortHomeContentItems(items) {
@@ -5778,7 +5898,8 @@ function loadDevPreviewHomeContent() {
       { id: 'preview-focus-3', slot: 'focus', title: '院校公告更新提醒', subtitle: '最新简章与复试分数线集中查看', badge: '院校公告', cover_label: '公告', tone: 'is-violet', route_key: 'school-announcements', status: 'published', sort_order: 3, starts_at: '2026-08-25T00:00:00Z' },
       { id: 'preview-focus-4', slot: 'focus', title: 'Z001 / Z002 考试指南', subtitle: '了解考试模块、范围与备考方向', badge: '备考指南', cover_label: '考试指南', tone: 'is-orange', status: 'draft', sort_order: 4 },
       { id: 'preview-news-1', slot: 'news', title: '2026 年面向港澳台地区研究生招生初试统考准考证打印提醒', source: '广东省教育考试院', display_date: '2026-04-01', cover_label: '准考证打印', tone: 'is-blue', target_url: 'https://www.gatzs.com.cn/', status: 'published', sort_order: 1 },
-      { id: 'preview-news-2', slot: 'news', title: '2026 年港澳台研究生招生广州报考点通告', source: '广东省教育考试院', display_date: '2025-12-16', cover_label: '广州报考点', tone: 'is-orange', status: 'draft', sort_order: 2 }
+      { id: 'preview-news-2', slot: 'news', title: '2026 年港澳台研究生招生广州报考点通告', source: '广东省教育考试院', display_date: '2025-12-16', cover_label: '广州报考点', tone: 'is-orange', status: 'published', sort_order: 2 },
+      { id: 'preview-news-3', slot: 'news', title: '2026 年面向香港、澳门、台湾地区研究生招生考试指南正式公布', source: '教育部教育考试院', display_date: '2025-12-07', cover_label: '考试指南', tone: 'is-mint', status: 'published', sort_order: 3 }
     ]
   }
   homeContentItems.value = devPreviewHomeContentItems.value.map((item) => ({ ...item }))
@@ -6325,7 +6446,11 @@ button {
 }
 
 .refresh-symbol {
-  font-size: 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
 }
 
 .refresh-symbol.spinning {
@@ -6385,6 +6510,10 @@ button {
   max-width: 1420px;
 }
 
+.mock-exam-management-section {
+  max-width: 1800px;
+}
+
 .bank-library-state {
   min-height: 280px;
   display: flex;
@@ -6432,6 +6561,11 @@ button {
   box-shadow: 0 14px 30px rgba(38, 109, 96, 0.11);
 }
 
+.bank-file-card--mock-exam {
+  border-color: #b9e5dc;
+  background: linear-gradient(145deg, #ffffff 0%, #f3fbf8 100%);
+}
+
 .bank-file-icon {
   width: 55px;
   height: 49px;
@@ -6465,6 +6599,12 @@ button {
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
   font-size: 14px;
   font-weight: 800;
+}
+
+.bank-file-face--mock-exam {
+  border-color: #69cdb8;
+  color: #197964;
+  background: linear-gradient(135deg, #d4f6ed, #9fe3d3);
 }
 
 .bank-file-main {
@@ -7026,6 +7166,17 @@ button {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.bank-file-fixed-badge {
+  flex: 0 0 auto;
+  padding: 4px 7px;
+  border-radius: 999px;
+  color: #267d6d;
+  background: #e2f7f1;
+  font-size: 8px;
+  font-weight: 750;
+  line-height: 1;
 }
 
 .content-management-tab-label {

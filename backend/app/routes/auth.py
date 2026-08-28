@@ -11,6 +11,7 @@ from app.schemas.auth import (
     AccountMergePreview,
     AuthResponse,
     AuthUser,
+    BindPhoneRequest,
     ChangeEmailRequest,
     EmailBindingResult,
     LoginRequest,
@@ -22,6 +23,7 @@ from app.schemas.auth import (
     RefreshTokenRequest,
     RegisterRequest,
     ResetPasswordRequest,
+    SendBindPhoneCodeRequest,
     SendEmailCodeRequest,
     SendPhoneCodeRequest,
     WechatAuthUrlResponse,
@@ -352,6 +354,7 @@ def _require_wechat_profile(user_id: str) -> dict:
 
 def _auth_user_metadata(profile: dict) -> dict:
     return {
+        "phone": profile.get("phone"),
         "wechat_openid": profile.get("wechat_openid"),
         "nickname": profile.get("nickname"),
         "avatar_url": profile.get("avatar_url"),
@@ -536,6 +539,96 @@ def send_phone_code(payload: SendPhoneCodeRequest) -> PhoneCodeResponse:
         ) from exc
 
     return PhoneCodeResponse(detail="Phone verification code sent", debug_code=debug_code)
+
+
+@router.post("/send-bind-phone-code", response_model=PhoneCodeResponse)
+def send_bind_phone_code(
+    payload: SendBindPhoneCodeRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> PhoneCodeResponse:
+    normalized_phone = normalize_phone(payload.phone)
+    current_profile = _get_profile_by_id(user_id)
+    if not current_profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+    current_phone = current_profile.get("phone")
+    if current_phone and normalize_phone(current_phone) == normalized_phone:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该手机号码已绑定当前账号")
+
+    existing_profile = _get_profile_by_phone(normalized_phone)
+    if existing_profile and str(existing_profile.get("id") or "") != user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该手机号码已绑定其他账号")
+
+    try:
+        debug_code = _send_phone_code(normalized_phone, "bind_phone")
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Send bind phone code failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="手机验证码发送失败，请稍后重试",
+        ) from exc
+
+    return PhoneCodeResponse(detail="手机验证码已发送", debug_code=debug_code)
+
+
+@router.post("/bind-phone", response_model=AuthUser)
+def bind_phone(
+    payload: BindPhoneRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> AuthUser:
+    supabase_admin = get_supabase_admin()
+    normalized_phone = normalize_phone(payload.phone)
+    profile = _get_profile_by_id(user_id)
+    if not profile:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+
+    current_phone = profile.get("phone")
+    if current_phone and normalize_phone(current_phone) == normalized_phone:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="该手机号码已绑定当前账号")
+
+    existing_profile = _get_profile_by_phone(normalized_phone)
+    if existing_profile and str(existing_profile.get("id") or "") != user_id:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该手机号码已绑定其他账号")
+
+    verify_phone_code_or_raise(
+        supabase=supabase_admin,
+        phone=normalized_phone,
+        purpose="bind_phone",
+        code=payload.verification_code,
+    )
+
+    try:
+        update_response = (
+            supabase_admin.table("users")
+            .update({"phone": normalized_phone})
+            .eq("id", user_id)
+            .execute()
+        )
+        if not update_response.data:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="User profile not found")
+        updated_profile = update_response.data[0]
+    except HTTPException:
+        raise
+    except Exception as exc:
+        error_summary = _safe_error_summary(exc)
+        logger.exception("Bind phone failed for user_id=%s: %s", user_id, error_summary)
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="绑定手机号码失败，请稍后重试",
+        ) from exc
+
+    try:
+        supabase_admin.auth.admin.update_user_by_id(
+            user_id,
+            {"user_metadata": _auth_user_metadata(updated_profile)},
+        )
+    except Exception:
+        logger.exception("Update auth metadata after phone binding failed for user_id=%s", user_id)
+
+    return AuthUser(**updated_profile)
 
 
 @router.get("/wechat-auth-url", response_model=WechatAuthUrlResponse)

@@ -23,16 +23,19 @@
           <text>{{ recordCountText }}</text>
         </view>
 
-        <view v-if="loading && !items.length" class="feedback-record-state">正在同步反馈记录…</view>
+        <AppPageLoadingState v-if="loading && !items.length" message="正在整理我的反馈..." />
         <view v-else-if="error" class="feedback-record-state error">
           <text>{{ error }}</text>
           <button @tap="loadFeedback">重新加载</button>
         </view>
-        <view v-else-if="!items.length" class="feedback-record-state empty">
-          <strong>还没有提交过反馈</strong>
-          <text>你可以在“关于我们—帮助与反馈”提交题目、功能或体验建议。</text>
+        <AppEmptyState
+          v-else-if="!items.length"
+          label="还没有提交过反馈"
+          title="还没有提交过反馈"
+          description="你可以在“关于我们—帮助与反馈”提交题目、功能或体验建议。"
+        >
           <button @tap="goToFeedbackForm">去提交反馈</button>
-        </view>
+        </AppEmptyState>
 
         <view v-else class="feedback-record-list">
           <view v-for="item in items" :key="item.id" class="feedback-record-card">
@@ -61,7 +64,9 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchMyFeedback } from '../../api/feedback'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import AppRefreshIcon from '../../components/ui/AppRefreshIcon.vue'
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'

@@ -27,7 +27,13 @@
           <view class="mentor-detail-facts">
             <view><text>初试成绩</text><strong>{{ mentor.score }} 分</strong></view>
             <view><text>考试类别</text><strong>{{ mentor.examType }}</strong></view>
-            <view><text>用户评分</text><strong class="rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating).toFixed(1)}` : '暂无评分' }}</strong></view>
+            <view>
+              <text>用户评分</text>
+              <strong class="rating">
+                <image v-if="mentor.ratingCount" src="/static/ui-icons/png/gold/star.png" mode="aspectFit" aria-hidden="true" />
+                <text>{{ mentor.ratingCount ? Number(mentor.rating).toFixed(1) : '暂无评分' }}</text>
+              </strong>
+            </view>
             <view><text>已咨询</text><strong>{{ mentor.consultCount }} 人</strong></view>
           </view>
         </view>
@@ -57,18 +63,25 @@
           <view v-for="review in mentor.reviews" :key="review.id" class="mentor-review-card">
             <view class="mentor-review-head">
               <text>{{ review.author }}</text>
-              <text class="mentor-review-rating">★ {{ Number(review.rating).toFixed(1) }}</text>
+              <view class="mentor-review-rating">
+                <image src="/static/ui-icons/png/gold/star.png" mode="aspectFit" aria-hidden="true" />
+                <text>{{ Number(review.rating).toFixed(1) }}</text>
+              </view>
               <text>{{ review.date }}</text>
             </view>
             <view class="mentor-review-copy">{{ review.content }}</view>
           </view>
-          <view v-if="!mentor.reviews?.length" class="mentor-review-empty">暂无公开评价</view>
+          <AppEmptyState
+            v-if="!mentor.reviews?.length"
+            class="mentor-review-empty"
+            compact
+            label="暂无公开评价"
+            title="暂无公开评价"
+          />
         </view>
       </view>
 
-      <view v-else-if="detailLoading" class="mentor-detail-missing">
-        <view>正在加载前辈资料…</view>
-      </view>
+      <AppPageLoadingState v-else-if="detailLoading" message="正在整理前辈资料..." />
       <view v-else class="mentor-detail-missing">
         <view>该前辈信息暂时不可用</view>
         <button @tap="goHome">返回前辈咨询</button>
@@ -77,8 +90,19 @@
     </scroll-view>
 
     <view v-if="mentor" class="mentor-detail-action-bar" :class="{ 'mentor-detail-action-bar-self': isCurrentMentorProfile }">
-      <button class="mentor-detail-favorite" :class="{ active: isFavorite }" @tap="toggleFavorite">
-        <text>{{ isFavorite ? '♥' : '♡' }}</text>
+      <button
+        class="mentor-detail-favorite"
+        :class="{ active: isFavorite, pending: favoritePending }"
+        :aria-busy="favoritePending"
+        @tap="toggleFavorite"
+      >
+        <image
+          :src="isFavorite
+            ? '/static/ui-icons/png/gold/favorite.png'
+            : '/static/ui-icons/png/neutral/favorite-outline.png'"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
         <view>{{ isFavorite ? '已收藏' : '收藏' }}</view>
       </button>
       <view class="mentor-detail-price">
@@ -95,6 +119,8 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   fetchMentorProfile,
   fetchMyMentorProfile,
@@ -113,6 +139,7 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const mentor = ref(null)
 const favoriteIds = ref([])
+const favoritePending = ref(false)
 const detailLoading = ref(false)
 const currentMentorProfileId = ref('')
 const currentMentorProfileResolved = ref(!isLoggedIn())
@@ -223,20 +250,35 @@ function loadCurrentMentorProfileId({ preserveResolved = false } = {}) {
 }
 
 async function toggleFavorite() {
-  if (!mentor.value) return
+  if (!mentor.value || favoritePending.value) return
   if (!isLoggedIn()) {
     uni.showToast({ title: '请先登录后再收藏前辈', icon: 'none' })
     return
   }
+
+  const mentorId = String(mentor.value.id || '')
+  const previousFavoriteIds = [...favoriteIds.value]
+  const nextFavoriteIds = previousFavoriteIds.includes(mentorId)
+    ? previousFavoriteIds.filter((id) => id !== mentorId)
+    : [...previousFavoriteIds, mentorId]
+  favoriteIds.value = nextFavoriteIds
+  favoritePending.value = true
+  setTimeout(() => setMentorFavoriteIds(nextFavoriteIds), 80)
+
   try {
-    const result = await toggleMentorFavoriteRequest(mentor.value.id)
-    const isFavorited = result?.is_favorited ?? result?.isFavorited
-    const nextFavoriteIds = isFavorited
-      ? [...favoriteIds.value, mentor.value.id]
-      : favoriteIds.value.filter((id) => id !== mentor.value.id)
-    favoriteIds.value = setMentorFavoriteIds(nextFavoriteIds)
+    const result = await toggleMentorFavoriteRequest(mentorId)
+    const confirmedFavorite = Boolean(result?.is_favorited ?? result?.isFavorited)
+    const confirmedIds = confirmedFavorite
+      ? [...new Set([...favoriteIds.value, mentorId])]
+      : favoriteIds.value.filter((id) => id !== mentorId)
+    favoriteIds.value = confirmedIds
+    setTimeout(() => setMentorFavoriteIds(confirmedIds), 80)
   } catch (error) {
+    favoriteIds.value = previousFavoriteIds
+    setTimeout(() => setMentorFavoriteIds(previousFavoriteIds), 80)
     uni.showToast({ title: error?.detail || '收藏操作失败，请稍后重试', icon: 'none' })
+  } finally {
+    favoritePending.value = false
   }
 }
 
@@ -423,7 +465,8 @@ function goHome() {
   font-weight: 900;
 }
 
-.mentor-detail-facts .rating { color: #d78a22; }
+.mentor-detail-facts .rating { color: #d78a22; display: inline-flex; align-items: center; justify-content: center; gap: 5rpx; }
+.mentor-detail-facts .rating image { width: 22rpx; height: 22rpx; display: block; }
 
 .mentor-detail-section {
   margin-top: 18rpx;
@@ -476,7 +519,8 @@ function goHome() {
 
 .mentor-review-head { gap: 12rpx; color: #7a899e; font-size: 20rpx; line-height: 1.2; font-weight: 700; }
 .mentor-review-head > text:first-child { color: #3b4d66; font-weight: 850; }
-.mentor-review-rating { color: #d78a22; }
+.mentor-review-rating { color: #d78a22; display: inline-flex; align-items: center; gap: 5rpx; }
+.mentor-review-rating image { width: 20rpx; height: 20rpx; display: block; }
 
 .mentor-review-copy { margin-top: 12rpx; color: #5e6d82; font-size: 23rpx; line-height: 1.6; font-weight: 600; }
 .mentor-review-empty { padding: 34rpx 0 12rpx; color: #92a0b3; text-align: center; font-size: 21rpx; line-height: 1.4; font-weight: 650; }
@@ -517,8 +561,11 @@ function goHome() {
 
 .mentor-detail-favorite::after,
 .mentor-detail-primary::after { border: 0; }
-.mentor-detail-favorite.active { color: #3478f6; background: #eaf2ff; }
-.mentor-detail-favorite text { font-size: 28rpx; line-height: 0.95; }
+.mentor-detail-favorite { box-shadow: none; transition: none; -webkit-tap-highlight-color: transparent; }
+.mentor-detail-favorite:active { transform: none; }
+.mentor-detail-favorite.active { color: #d99b00; background: #fff8e6; }
+.mentor-detail-favorite.pending { pointer-events: none; }
+.mentor-detail-favorite image { width: 28rpx; height: 28rpx; display: block; }
 .mentor-detail-favorite view { margin-top: 4rpx; font-size: 17rpx; line-height: 1.1; font-weight: 750; }
 
 .mentor-detail-price { min-width: 0; }

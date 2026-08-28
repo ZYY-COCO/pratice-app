@@ -28,19 +28,12 @@
       </button>
     </view>
 
-    <view v-if="loading" class="my-posts-state-card">正在同步你发布的帖子...</view>
+    <AppPageLoadingState v-if="entryLoading || loading" message="正在整理我的帖子..." />
     <view v-else-if="error" class="my-posts-state-card my-posts-state-card--warning">
       <text>{{ error }}</text>
       <button hover-class="none" @tap="loadMyPosts">重新加载</button>
     </view>
-    <view v-else-if="posts.length === 0" class="my-posts-empty-state" aria-label="暂无已发布帖子">
-      <image
-        class="my-posts-empty-image"
-        src="/static/ui-icons/empty-favorites.svg"
-        mode="aspectFit"
-        alt="暂无已发布帖子"
-      />
-    </view>
+    <AppEmptyState v-else-if="posts.length === 0" label="暂无已发布帖子" />
 
     <scroll-view v-else scroll-y class="my-posts-list-scroll" @scrolltolower="loadMoreMyPosts">
       <view class="my-posts-list">
@@ -81,9 +74,9 @@
 
           <view class="my-post-card-footer">
             <view class="my-post-stats">
-              <text>👍 {{ post.stats.likes }}</text>
-              <text>💬 {{ post.stats.comments }}</text>
-              <text>👁 {{ post.stats.views }}</text>
+              <view><image src="/static/ui-icons/png/neutral/circle-like.png" mode="aspectFit" /><text>{{ post.stats.likes }}</text></view>
+              <view><image src="/static/ui-icons/png/neutral/circle-comment.png" mode="aspectFit" /><text>{{ post.stats.comments }}</text></view>
+              <view><image src="/static/ui-icons/png/neutral/circle-view.png" mode="aspectFit" /><text>{{ post.stats.views }}</text></view>
             </view>
             <text v-if="!selectionMode" class="my-post-detail-link">查看详情 ›</text>
           </view>
@@ -114,7 +107,9 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import { deleteMyCommunityPosts, fetchMyCommunityPosts } from '../../api/community'
 import {
   fetchUserNotificationUnreadSummary,
@@ -136,6 +131,7 @@ const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].f
 const activePostType = ref('all')
 const posts = ref([])
 const loading = ref(false)
+const entryLoading = ref(true)
 const error = ref('')
 const selectionMode = ref(false)
 const selectedPostIds = ref([])
@@ -236,6 +232,7 @@ async function loadMyPosts() {
     error.value = requestError?.detail || '我的帖子读取失败，请稍后重试'
   } finally {
     loading.value = false
+    entryLoading.value = false
   }
 }
 
@@ -392,9 +389,7 @@ function goBack() {
   padding: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 91% 2%, var(--gyt-primary-soft, #eef5ff) 0, transparent 30%),
-    var(--gyt-page-bg, #f5f7fb);
+  background: linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
   display: flex;
   flex-direction: column;
 }
@@ -436,28 +431,28 @@ function goBack() {
 }
 
 .my-posts-tabs {
-  margin-right: 24rpx;
-  margin-left: 24rpx;
+  box-sizing: border-box;
+  margin: 0 22rpx 22rpx;
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10rpx;
-  margin-top: 14rpx;
   padding: 8rpx;
-  border: 2rpx solid #e1eafa;
+  border: 0;
   border-radius: 24rpx;
-  background: rgba(255, 255, 255, 0.8);
+  background: #ffffff;
+  box-shadow: 0 12rpx 34rpx rgba(25, 48, 89, 0.06);
 }
 
 .my-posts-tab {
-  min-height: 58rpx;
+  min-height: 64rpx;
   margin: 0;
   padding: 0 8rpx;
   border: 0;
-  border-radius: 17rpx;
+  border-radius: 18rpx;
   background: transparent;
-  color: #7c8ca4;
-  font-size: 22rpx;
-  line-height: 58rpx;
+  color: #667085;
+  font-size: 25rpx;
+  line-height: 64rpx;
   font-weight: 800;
   display: flex;
   align-items: center;
@@ -466,9 +461,9 @@ function goBack() {
 }
 
 .my-posts-tab.active {
-  background: var(--gyt-primary-soft, #eef5ff);
-  color: var(--gyt-primary, #3478f6);
-  box-shadow: 0 6rpx 14rpx rgba(52, 120, 246, 0.1);
+  background: var(--gyt-primary, #3478f6);
+  color: #ffffff;
+  box-shadow: none;
 }
 
 .my-posts-tab-unread {
@@ -488,17 +483,18 @@ function goBack() {
 }
 
 .my-posts-state-card {
-  margin-right: 24rpx;
-  margin-left: 24rpx;
+  margin-right: 22rpx;
+  margin-left: 22rpx;
   padding: 42rpx 30rpx;
-  border: 2rpx solid var(--gyt-primary-border, #e4ebf8);
+  border: 2rpx solid #edf2fb;
   border-radius: 28rpx;
-  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.94));
-  color: #6c7890;
+  background: #ffffff;
+  color: #667085;
   font-size: 24rpx;
   line-height: 1.6;
   text-align: center;
   box-sizing: border-box;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
 }
 
 .my-posts-state-card--warning {
@@ -519,26 +515,8 @@ function goBack() {
   font-weight: 800;
 }
 
-.my-posts-empty-state {
-  width: 100%;
-  min-height: 320rpx;
-  flex: 1 1 320rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.my-posts-empty-image {
-  width: 240rpx;
-  height: 240rpx;
-  max-width: 150px;
-  max-height: 150px;
-  display: block;
-  opacity: 0.92;
-}
-
 .my-posts-list {
-  padding: 0 24rpx;
+  padding: 0 22rpx;
   display: flex;
   flex-direction: column;
   gap: 18rpx;
@@ -597,13 +575,13 @@ function goBack() {
 }
 
 .my-post-card {
-  padding: 26rpx;
-  border: 2rpx solid var(--gyt-primary-border, #e5edf9);
-  border-radius: 30rpx;
-  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.96));
-  box-shadow: 0 12rpx 30rpx var(--gyt-primary-shadow, rgba(25, 48, 89, 0.055));
+  padding: 26rpx 24rpx;
+  border: 2rpx solid #edf2fb;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
   box-sizing: border-box;
-  transition: transform 260ms cubic-bezier(.22,.8,.28,1), border-color 160ms ease, box-shadow 160ms ease;
+  transition: background-color 140ms ease, border-color 160ms ease;
 }
 
 .my-post-card.has-unread-interaction {
@@ -612,11 +590,11 @@ function goBack() {
 
 .my-post-selectable.selected .my-post-card {
   border-color: var(--gyt-primary-border, #d7e5ff);
-  box-shadow: 0 14rpx 32rpx rgba(52, 120, 246, .1);
 }
 
 .my-post-card:active {
-  transform: scale(0.99);
+  background: var(--gyt-primary-tint, #f4f8ff);
+  transform: none;
 }
 
 .my-post-card-header {
@@ -647,7 +625,7 @@ function goBack() {
 
 .my-post-author-name {
   overflow: hidden;
-  color: #27354d;
+  color: #101828;
   font-size: 24rpx;
   line-height: 1.25;
   font-weight: 900;
@@ -657,8 +635,8 @@ function goBack() {
 
 .my-post-author-meta {
   margin-top: 5rpx;
-  color: #8b97aa;
-  font-size: 19rpx;
+  color: #8a95a8;
+  font-size: 20rpx;
   line-height: 1.25;
 }
 
@@ -699,9 +677,9 @@ function goBack() {
 
 .my-post-card-title {
   overflow: hidden;
-  color: #172033;
-  font-size: 27rpx;
-  line-height: 1.42;
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.35;
   font-weight: 900;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -712,8 +690,8 @@ function goBack() {
 .my-post-content {
   margin-top: 8rpx;
   overflow: hidden;
-  color: #66758c;
-  font-size: 22rpx;
+  color: #475467;
+  font-size: 25rpx;
   line-height: 1.55;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -730,9 +708,9 @@ function goBack() {
 }
 
 .my-post-card-footer {
-  margin-top: 22rpx;
-  padding-top: 18rpx;
-  border-top: 2rpx solid #edf1f7;
+  margin-top: 18rpx;
+  padding-top: 0;
+  border-top: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -743,16 +721,28 @@ function goBack() {
   display: flex;
   align-items: center;
   gap: 14rpx;
-  color: #758299;
-  font-size: 19rpx;
-  line-height: 1.2;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.my-post-stats > view {
+  display: inline-flex;
+  align-items: center;
+  gap: 5rpx;
+}
+
+.my-post-stats image {
+  display: block;
+  width: 24rpx;
+  height: 24rpx;
 }
 
 .my-post-detail-link {
   color: var(--gyt-primary, #3478f6);
   font-size: 22rpx;
-  line-height: 1.2;
-  font-weight: 800;
+  line-height: 1.4;
+  font-weight: 900;
   white-space: nowrap;
 }
 

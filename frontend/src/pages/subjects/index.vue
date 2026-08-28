@@ -5,7 +5,9 @@
     <view class="subject-list">
       <view v-for="subject in exam.subjects" :key="subject" class="subject-card" @tap="goPractice(subject)">
         <view class="subject-main">
-          <view class="subject-icon">{{ getSubjectIcon(subject) }}</view>
+          <view class="subject-icon">
+            <image :src="getSubjectIconSrc(subject, themeKey)" mode="aspectFit" aria-hidden="true" />
+          </view>
           <view class="subject-copy">
             <view class="subject-title">{{ subject }}</view>
             <view class="subject-desc">{{ getSubjectMeta(subject) }}</view>
@@ -28,21 +30,13 @@ import { computed } from 'vue'
 import IcpFooter from '../../components/IcpFooter.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { getExamOption } from '../../utils/exam'
+import { getSubjectIconSrc } from '../../utils/iconAssets'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
-const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
+const themeKey = getStoredThemeKey()
+const themeInlineStyle = buildThemeStyle(themeKey)
 const examCode = uni.getStorageSync('examCode') || 'Z001'
 const exam = computed(() => getExamOption(examCode))
-
-function getSubjectIcon(subject) {
-  const iconMap = {
-    中华文化: '📚',
-    英语运用: '📝',
-    逻辑推理: '🧠',
-    数学基础: '📐'
-  }
-  return iconMap[subject] || '📘'
-}
 
 function getSubjectMeta(subject) {
   const scoreMap = {
@@ -99,7 +93,12 @@ function changeVersion() {
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 40rpx;
+}
+
+.subject-icon image {
+  display: block;
+  width: 62rpx;
+  height: 62rpx;
 }
 
 .subject-copy {

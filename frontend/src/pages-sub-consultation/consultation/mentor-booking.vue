@@ -12,7 +12,11 @@
               <text>✓ 已认证</text>
             </view>
             <view>{{ mentor.school }} · {{ mentor.major }}</view>
-            <view class="mentor-booking-rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating).toFixed(1)}` : '暂无评分' }} <text>· {{ mentor.priceLabel }} / 次</text></view>
+            <view class="mentor-booking-rating">
+              <image v-if="mentor.ratingCount" src="/static/ui-icons/png/gold/star.png" mode="aspectFit" aria-hidden="true" />
+              <strong>{{ mentor.ratingCount ? Number(mentor.rating).toFixed(1) : '暂无评分' }}</strong>
+              <text>· {{ mentor.priceLabel }} / 次</text>
+            </view>
           </view>
         </view>
 
@@ -41,9 +45,13 @@
           </view>
         </view>
 
-        <view v-if="!bookingLoading && slotGroups.length === 0" class="mentor-booking-empty-slots">
-          该前辈暂未开放新的预约时间
-        </view>
+        <AppEmptyState
+          v-if="!bookingLoading && slotGroups.length === 0"
+          class="mentor-booking-empty-slots"
+          compact
+          label="暂无预约时间"
+          title="该前辈暂未开放新的预约时间"
+        />
 
         <view class="mentor-booking-notice">
           <text>预约说明</text>
@@ -68,6 +76,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import { fetchMentorProfile } from '../../api/mentorConsultation'
 import {
   cacheMentors,
@@ -176,7 +185,9 @@ function goBack() {
 .mentor-booking-name-row { display: flex; align-items: center; gap: 10rpx; margin-bottom: 6rpx; }
 .mentor-booking-name-row > text:first-child { color: #1e2b40; font-size: 28rpx; font-weight: 900; }
 .mentor-booking-name-row > text:last-child { padding: 5rpx 9rpx; border-radius: 999rpx; background: #edf4ff; color: #3478f6; font-size: 17rpx; font-weight: 800; }
-.mentor-booking-rating { margin-top: 8rpx; color: #dc942d; font-weight: 900; }
+.mentor-booking-rating { margin-top: 8rpx; color: #dc942d; font-weight: 900; display: flex; align-items: center; gap: 5rpx; }
+.mentor-booking-rating image { display: block; width: 22rpx; height: 22rpx; }
+.mentor-booking-rating strong { font-weight: 900; }
 .mentor-booking-rating text { color: #6f7f95; font-weight: 700; }
 
 .mentor-booking-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 18rpx; margin: 30rpx 6rpx 18rpx; }

@@ -4,7 +4,7 @@
       <view class="app-page-header-side is-left">
         <slot name="left">
           <button v-if="showBack" class="app-page-header-back" aria-label="返回" @tap="emit('back')">
-            <image src="/static/ui-icons/back.svg?v=wallet-header-20260825" mode="aspectFit" />
+            <image src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
           </button>
           <view v-else class="app-page-header-placeholder"></view>
         </slot>
@@ -44,7 +44,7 @@ defineProps({
   },
   fixed: {
     type: Boolean,
-    default: false
+    default: true
   }
 })
 
@@ -62,10 +62,10 @@ const emit = defineEmits(['back'])
   z-index: 24;
   width: 100%;
   max-width: 760rpx;
-  min-height: calc(env(safe-area-inset-top) + 116rpx);
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 116rpx);
   margin: 0 auto;
   box-sizing: border-box;
-  padding: calc(env(safe-area-inset-top) + 14rpx) 28rpx 10rpx;
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 14rpx) 28rpx 10rpx;
   border-bottom: 0;
   background: transparent;
   display: grid;
@@ -75,7 +75,7 @@ const emit = defineEmits(['back'])
 }
 
 .app-page-header-layout.is-fixed {
-  min-height: calc(env(safe-area-inset-top) + 116rpx);
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 116rpx);
 }
 
 .app-page-header-layout.is-fixed .app-page-header {
@@ -85,9 +85,9 @@ const emit = defineEmits(['back'])
   left: 0;
   z-index: 80;
   width: 100vw;
-  background: rgba(251, 252, 255, 0.96);
-  -webkit-backdrop-filter: blur(18px) saturate(118%);
-  backdrop-filter: blur(18px) saturate(118%);
+  background: var(--gyt-page-bg, #fbfcff);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .app-page-header.variant-transparent { border-bottom-color: transparent; background: transparent; }

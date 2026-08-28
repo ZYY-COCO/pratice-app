@@ -16,11 +16,21 @@
       </view>
       <button
         class="mentor-favorite"
-        :class="{ active: favorite }"
+        :class="{ active: favorite, pending: favoritePending }"
         :aria-label="favorite ? '取消收藏前辈' : '收藏前辈'"
         :aria-pressed="favorite"
+        :aria-busy="favoritePending"
         @tap.stop="emit('toggle-favorite')"
-      >{{ favorite ? '♥' : '♡' }}</button>
+      >
+        <image
+          class="mentor-favorite-icon"
+          :src="favorite
+            ? '/static/ui-icons/png/gold/favorite.png'
+            : '/static/ui-icons/png/neutral/favorite-outline.png'"
+          mode="aspectFit"
+          aria-hidden="true"
+        />
+      </button>
     </view>
 
     <view class="mentor-major-row">
@@ -36,7 +46,11 @@
 
     <view class="mentor-service-row">
       <view class="mentor-service-meta">
-        <text class="mentor-rating">{{ mentor.ratingCount ? `★ ${Number(mentor.rating || 0).toFixed(1)}` : '暂无评分' }}</text>
+        <view v-if="mentor.ratingCount" class="mentor-rating">
+          <image src="/static/ui-icons/png/gold/star.png" mode="aspectFit" aria-hidden="true" />
+          <text>{{ Number(mentor.rating || 0).toFixed(1) }}</text>
+        </view>
+        <text v-else>暂无评分</text>
         <text>已咨询 {{ mentor.consultCount || 0 }} 人</text>
       </view>
       <view class="mentor-status" :class="{ online: mentor.onlineStatus === 'online' }">
@@ -65,6 +79,10 @@ defineProps({
     type: Boolean,
     default: false
   },
+  favoritePending: {
+    type: Boolean,
+    default: false
+  },
   viewOnly: {
     type: Boolean,
     default: false
@@ -88,12 +106,11 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  transition: transform 180ms ease, box-shadow 180ms ease;
+  transition: none;
 }
 
 .mentor-card:active {
-  transform: scale(0.985);
-  box-shadow: 0 10rpx 24rpx rgba(52, 120, 246, 0.1);
+  transform: none;
 }
 
 .mentor-card-top,
@@ -215,14 +232,16 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   padding: 0;
   border: 0;
   border-radius: 50%;
-  background: rgba(237, 244, 255, 0.86);
+  background: transparent;
   color: #7890ae;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 32rpx;
   line-height: 1;
-  transition: transform 180ms ease, color 180ms ease, background-color 180ms ease;
+  box-shadow: none;
+  transition: none;
+  -webkit-tap-highlight-color: transparent;
 }
 
 .mentor-favorite::after,
@@ -231,11 +250,18 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-favorite.active {
-  background: #edf4ff;
-  color: #3478f6;
+  background: transparent;
+  color: #f3b515;
 }
 
-.mentor-favorite:active,
+.mentor-favorite:active {
+  transform: none;
+}
+
+.mentor-favorite.pending {
+  pointer-events: none;
+}
+
 .mentor-consult-button:active {
   transform: scale(0.96);
 }
@@ -249,6 +275,12 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
   font-size: 23rpx;
   line-height: 1.35;
   font-weight: 800;
+}
+
+.mentor-favorite-icon {
+  display: block;
+  width: 30rpx;
+  height: 30rpx;
 }
 
 .mentor-major-row > text:first-child {
@@ -288,12 +320,18 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 }
 
 .mentor-skills text {
-  padding: 8rpx 13rpx;
+  box-sizing: border-box;
+  min-height: 46rpx;
+  padding: 0 13rpx;
   border-radius: 999rpx;
   background: rgba(237, 244, 255, 0.92);
   color: #4b6fa8;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
   font-size: 18rpx;
-  line-height: 1.2;
+  line-height: 1;
   font-weight: 800;
 }
 
@@ -318,6 +356,15 @@ const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
 .mentor-rating {
   color: #e49a31;
   font-weight: 900;
+  display: inline-flex;
+  align-items: center;
+  gap: 5rpx;
+}
+
+.mentor-rating image {
+  display: block;
+  width: 22rpx;
+  height: 22rpx;
 }
 
 .mentor-status {

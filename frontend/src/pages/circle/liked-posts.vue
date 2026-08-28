@@ -1,24 +1,37 @@
 <template>
   <view class="page liked-posts-page" :style="pageInlineStyle">
-    <AppPageHeader title="赞过的帖子" @back="goBack" />
+    <AppPageHeader title="我的收藏与点赞" @back="goBack" />
 
-    <view v-if="loading" class="liked-posts-state-card">正在同步你赞过的帖子...</view>
-    <view v-else-if="error" class="liked-posts-state-card liked-posts-state-card--warning">
-      <text>{{ error }}</text>
-      <button hover-class="none" @tap="loadLikedPosts">重新加载</button>
-    </view>
-    <view v-else-if="likedPosts.length === 0" class="liked-posts-empty-state" aria-label="暂无点赞帖子">
-      <image
-        class="liked-posts-empty-image"
-        src="/static/ui-icons/empty-favorites.svg"
-        mode="aspectFit"
-        alt="暂无点赞帖子"
-      />
+    <view class="collection-tabs" role="tablist" aria-label="选择收藏类型">
+      <button
+        v-for="tab in collectionTabs"
+        :key="tab.key"
+        class="collection-tab"
+        :class="{ active: activeCollectionTab === tab.key }"
+        role="tab"
+        :aria-selected="activeCollectionTab === tab.key"
+        hover-class="none"
+        @tap="selectCollectionTab(tab.key)"
+      >
+        {{ tab.label }}
+      </button>
     </view>
 
-    <scroll-view v-else scroll-y class="liked-posts-list-scroll" @scrolltolower="loadMoreLikedPosts">
-      <view class="liked-posts-list">
-      <view v-for="post in likedPosts" :key="post.id" class="liked-post-card" @tap="openPost(post)">
+    <AppPageLoadingState v-if="currentLoading" :message="currentLoadingMessage" />
+    <view v-else-if="currentError" class="liked-posts-state-card liked-posts-state-card--warning">
+      <text>{{ currentError }}</text>
+      <button hover-class="none" @tap="reloadCurrentCollection">重新加载</button>
+    </view>
+    <AppEmptyState v-else-if="currentItems.length === 0" :label="currentEmptyLabel" />
+
+    <scroll-view
+      v-else
+      scroll-y
+      class="liked-posts-list-scroll"
+      @scrolltolower="activeCollectionTab === 'posts' && loadMoreLikedPosts()"
+    >
+      <view v-if="activeCollectionTab === 'posts'" class="liked-posts-list">
+        <view v-for="post in likedPosts" :key="post.id" class="liked-post-card" @tap="openPost(post)">
         <view class="liked-post-card-header">
           <view class="liked-post-avatar" :class="`tone-${post.tone}`">
             <image v-if="post.avatarUrl" :src="post.avatarUrl" mode="aspectFill" />
@@ -39,12 +52,11 @@
           <image v-if="post.coverUrl" class="liked-post-cover" :src="post.coverUrl" mode="aspectFill" />
         </view>
 
-        <view class="liked-post-card-footer">
-          <view class="liked-post-stats">
-            <text>👍 {{ post.stats.likes }}</text>
-            <text>💬 {{ post.stats.comments }}</text>
-            <text>👁 {{ post.stats.views }}</text>
-          </view>
+          <view class="liked-post-card-footer">
+            <view class="liked-post-stats">
+              <view><image src="/static/ui-icons/png/neutral/circle-like.png" mode="aspectFit" /><text>{{ post.stats.likes }}</text></view>
+              <view><image src="/static/ui-icons/png/neutral/circle-comment.png" mode="aspectFit" /><text>{{ post.stats.comments }}</text></view>
+            </view>
           <view class="liked-post-time">点赞于 {{ formatDateTime(post.likedAt) }}</view>
         </view>
 
@@ -59,11 +71,24 @@
             {{ likingPostId === post.id ? '处理中…' : '已赞' }}
           </button>
         </view>
+        </view>
       </view>
+      <view v-else class="mentor-favorites-list">
+        <MentorConsultCard
+          v-for="item in mentorFavorites"
+          :key="item.mentor.id"
+          :mentor="item.mentor"
+          :favorite="true"
+          :favorite-pending="togglingMentorIds.includes(item.mentor.id)"
+          @open="openMentor(item.mentor)"
+          @consult="openMentor(item.mentor)"
+          @toggle-favorite="removeMentorFavorite(item)"
+        />
       </view>
-      <view class="liked-posts-load-state" @tap="loadMoreLikedPosts">
+      <view v-if="activeCollectionTab === 'posts'" class="liked-posts-load-state" @tap="loadMoreLikedPosts">
         {{ loadingMore ? '正在加载更多…' : hasMore ? '继续下滑加载更多' : '已加载全部点赞' }}
       </view>
+      <view v-else class="liked-posts-load-state">已加载全部收藏前辈</view>
     </scroll-view>
 
     <!-- #ifdef H5 -->
@@ -76,8 +101,13 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
+import MentorConsultCard from '../../components/MentorConsultCard.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import { fetchLikedCommunityPosts, toggleCommunityPostLike } from '../../api/community'
+import { fetchMyMentorFavorites, toggleMentorFavoriteRequest } from '../../api/mentorConsultation'
+import { normalizeMentorListResponse, setMentorFavoriteIds } from '../../data/mentorConsultation'
 import { isLoggedIn } from '../../utils/auth'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
@@ -85,13 +115,33 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
+const collectionTabs = Object.freeze([
+  { key: 'posts', label: '点赞帖子' },
+  { key: 'mentors', label: '收藏前辈' }
+])
+const activeCollectionTab = ref('posts')
 const likedPosts = ref([])
 const loading = ref(false)
+const entryLoading = ref(true)
 const error = ref('')
 const likingPostId = ref('')
 const loadingMore = ref(false)
 const nextCursor = ref('')
 const hasMore = ref(false)
+const mentorFavorites = ref([])
+const mentorLoading = ref(false)
+const mentorLoaded = ref(false)
+const mentorError = ref('')
+const togglingMentorIds = ref([])
+const currentLoading = computed(() => activeCollectionTab.value === 'posts'
+  ? entryLoading.value || loading.value
+  : mentorLoading.value)
+const currentError = computed(() => activeCollectionTab.value === 'posts' ? error.value : mentorError.value)
+const currentItems = computed(() => activeCollectionTab.value === 'posts' ? likedPosts.value : mentorFavorites.value)
+const currentLoadingMessage = computed(() => activeCollectionTab.value === 'posts'
+  ? '正在整理点赞帖子...'
+  : '正在整理收藏前辈...')
+const currentEmptyLabel = computed(() => activeCollectionTab.value === 'posts' ? '暂无点赞帖子' : '暂无收藏前辈')
 
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
@@ -99,8 +149,28 @@ onShow(() => {
     goLogin()
     return
   }
-  void loadLikedPosts()
+  void loadActiveCollection()
 })
+
+function selectCollectionTab(tab) {
+  activeCollectionTab.value = tab === 'mentors' ? 'mentors' : 'posts'
+  void loadActiveCollection()
+}
+
+function loadActiveCollection() {
+  if (activeCollectionTab.value === 'mentors') {
+    if (!mentorLoaded.value) return loadMentorFavorites()
+    return Promise.resolve()
+  }
+  if (entryLoading.value || !likedPosts.value.length) return loadLikedPosts()
+  return Promise.resolve()
+}
+
+function reloadCurrentCollection() {
+  return activeCollectionTab.value === 'mentors'
+    ? loadMentorFavorites({ force: true })
+    : loadLikedPosts()
+}
 
 async function loadLikedPosts() {
   if (loading.value || loadingMore.value) return
@@ -119,6 +189,7 @@ async function loadLikedPosts() {
     error.value = requestError?.detail || '赞过的帖子读取失败，请稍后重试'
   } finally {
     loading.value = false
+    entryLoading.value = false
   }
 }
 
@@ -135,6 +206,55 @@ async function loadMoreLikedPosts() {
     uni.showToast({ title: requestError?.detail || '更多点赞记录读取失败', icon: 'none' })
   } finally {
     loadingMore.value = false
+  }
+}
+
+async function loadMentorFavorites({ force = false } = {}) {
+  if (mentorLoading.value || (mentorLoaded.value && !force)) return
+  mentorLoading.value = true
+  mentorError.value = ''
+  try {
+    const response = await fetchMyMentorFavorites()
+    const rows = Array.isArray(response?.items) ? response.items : []
+    mentorFavorites.value = rows
+      .map((item) => {
+        const mentor = normalizeMentorListResponse([item?.mentor])[0]
+        return mentor?.id ? {
+          mentor,
+          favoritedAt: item?.created_at || item?.createdAt || ''
+        } : null
+      })
+      .filter(Boolean)
+    setMentorFavoriteIds(rows.map((item) => item?.mentor_id || item?.mentorId).filter(Boolean))
+    mentorLoaded.value = true
+  } catch (requestError) {
+    mentorError.value = requestError?.detail || '收藏前辈读取失败，请稍后重试'
+  } finally {
+    mentorLoading.value = false
+  }
+}
+
+async function removeMentorFavorite(item) {
+  const mentorId = String(item?.mentor?.id || '')
+  if (!mentorId || togglingMentorIds.value.includes(mentorId)) return
+  const previousItems = [...mentorFavorites.value]
+  const nextItems = previousItems.filter((entry) => entry.mentor.id !== mentorId)
+  mentorFavorites.value = nextItems
+  togglingMentorIds.value = [...togglingMentorIds.value, mentorId]
+  setTimeout(() => setMentorFavoriteIds(nextItems.map((entry) => entry.mentor.id)), 80)
+
+  try {
+    const response = await toggleMentorFavoriteRequest(mentorId)
+    if (response?.is_favorited ?? response?.isFavorited) {
+      mentorFavorites.value = previousItems
+      setTimeout(() => setMentorFavoriteIds(previousItems.map((entry) => entry.mentor.id)), 80)
+    }
+  } catch (requestError) {
+    mentorFavorites.value = previousItems
+    setTimeout(() => setMentorFavoriteIds(previousItems.map((entry) => entry.mentor.id)), 80)
+    uni.showToast({ title: requestError?.detail || '取消收藏失败，请稍后重试', icon: 'none' })
+  } finally {
+    togglingMentorIds.value = togglingMentorIds.value.filter((id) => id !== mentorId)
   }
 }
 
@@ -195,6 +315,13 @@ function openPost(post) {
   })
 }
 
+function openMentor(mentor) {
+  if (!mentor?.id) return
+  uni.navigateTo({
+    url: `/pages-sub-consultation/consultation/mentor-detail?id=${encodeURIComponent(mentor.id)}`
+  })
+}
+
 function goLogin() {
   uni.reLaunch({
     url: `/pages/login/index?redirect=${encodeURIComponent('/pages/circle/liked-posts')}`
@@ -229,29 +356,65 @@ function formatDateTime(value) {
   padding: 0;
   box-sizing: border-box;
   overflow: hidden;
-  background:
-    radial-gradient(circle at 91% 2%, var(--gyt-primary-soft, #eef5ff) 0, transparent 30%),
-    var(--gyt-page-bg, #f5f7fb);
+  background: linear-gradient(180deg, #fbfcff 0%, #f4f7fb 100%);
   display: flex;
   flex-direction: column;
 }
 
 .liked-posts-state-card button::after,
-.liked-post-unlike::after {
+.liked-post-unlike::after,
+.collection-tab::after {
   border: 0;
 }
 
+.collection-tabs {
+  box-sizing: border-box;
+  margin: 0 22rpx 22rpx;
+  padding: 8rpx;
+  border: 0;
+  border-radius: 24rpx;
+  background: #ffffff;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10rpx;
+  box-shadow: 0 12rpx 34rpx rgba(25, 48, 89, 0.06);
+}
+
+.collection-tab {
+  box-sizing: border-box;
+  min-height: 64rpx;
+  margin: 0;
+  padding: 0 18rpx;
+  border: 0;
+  border-radius: 18rpx;
+  background: transparent;
+  color: #667085;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 25rpx;
+  line-height: 64rpx;
+  font-weight: 800;
+}
+
+.collection-tab.active {
+  background: var(--gyt-primary, #3478f6);
+  color: #ffffff;
+  box-shadow: none;
+}
+
 .liked-posts-state-card {
-  margin: 0 24rpx;
+  margin: 0 22rpx;
   padding: 42rpx 30rpx;
-  border: 2rpx solid var(--gyt-primary-border, #e4ebf8);
+  border: 2rpx solid #edf2fb;
   border-radius: 28rpx;
-  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.94));
-  color: #6c7890;
+  background: #ffffff;
+  color: #667085;
   font-size: 24rpx;
   line-height: 1.6;
   text-align: center;
   box-sizing: border-box;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
 }
 
 .liked-posts-state-card--warning {
@@ -272,26 +435,15 @@ function formatDateTime(value) {
   font-weight: 800;
 }
 
-.liked-posts-empty-state {
-  width: 100%;
-  min-height: 320rpx;
-  flex: 1 1 320rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.liked-posts-empty-image {
-  width: 240rpx;
-  height: 240rpx;
-  max-width: 150px;
-  max-height: 150px;
-  display: block;
-  opacity: 0.92;
-}
-
 .liked-posts-list {
-  padding: 0 24rpx;
+  padding: 0 22rpx;
+  display: flex;
+  flex-direction: column;
+  gap: 18rpx;
+}
+
+.mentor-favorites-list {
+  padding: 0 22rpx;
   display: flex;
   flex-direction: column;
   gap: 18rpx;
@@ -302,16 +454,18 @@ function formatDateTime(value) {
 
 
 .liked-post-card {
-  padding: 26rpx;
-  border: 2rpx solid var(--gyt-primary-border, #e5edf9);
-  border-radius: 30rpx;
-  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.96));
-  box-shadow: 0 12rpx 30rpx var(--gyt-primary-shadow, rgba(25, 48, 89, 0.055));
+  padding: 26rpx 24rpx;
+  border: 2rpx solid #edf2fb;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
   box-sizing: border-box;
+  transition: background-color 140ms ease;
 }
 
 .liked-post-card:active {
-  transform: scale(0.99);
+  background: var(--gyt-primary-tint, #f4f8ff);
+  transform: none;
 }
 
 .liked-post-card-header {
@@ -362,7 +516,7 @@ function formatDateTime(value) {
 
 .liked-post-author-name {
   overflow: hidden;
-  color: #27354d;
+  color: #101828;
   font-size: 24rpx;
   line-height: 1.25;
   font-weight: 900;
@@ -372,8 +526,8 @@ function formatDateTime(value) {
 
 .liked-post-author-meta {
   margin-top: 5rpx;
-  color: #8b97aa;
-  font-size: 19rpx;
+  color: #8a95a8;
+  font-size: 20rpx;
   line-height: 1.25;
 }
 
@@ -409,9 +563,9 @@ function formatDateTime(value) {
 
 .liked-post-title {
   overflow: hidden;
-  color: #172033;
-  font-size: 27rpx;
-  line-height: 1.42;
+  color: #101828;
+  font-size: 28rpx;
+  line-height: 1.35;
   font-weight: 900;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -422,8 +576,8 @@ function formatDateTime(value) {
 .liked-post-content {
   margin-top: 8rpx;
   overflow: hidden;
-  color: #66758c;
-  font-size: 22rpx;
+  color: #475467;
+  font-size: 25rpx;
   line-height: 1.55;
   text-overflow: ellipsis;
   display: -webkit-box;
@@ -448,24 +602,36 @@ function formatDateTime(value) {
 }
 
 .liked-post-card-footer {
-  margin-top: 22rpx;
-  padding-top: 18rpx;
-  border-top: 2rpx solid #edf1f7;
+  margin-top: 18rpx;
+  padding-top: 0;
+  border-top: 0;
 }
 
 .liked-post-stats {
   display: flex;
   align-items: center;
   gap: 14rpx;
-  color: #758299;
-  font-size: 19rpx;
-  line-height: 1.2;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.4;
+}
+
+.liked-post-stats > view {
+  display: inline-flex;
+  align-items: center;
+  gap: 5rpx;
+}
+
+.liked-post-stats image {
+  display: block;
+  width: 24rpx;
+  height: 24rpx;
 }
 
 .liked-post-time {
-  color: #9aa5b6;
-  font-size: 18rpx;
-  line-height: 1.2;
+  color: #8a95a8;
+  font-size: 22rpx;
+  line-height: 1.4;
   text-align: right;
 }
 
@@ -476,26 +642,39 @@ function formatDateTime(value) {
 .liked-post-detail-link {
   color: var(--gyt-primary, #3478f6);
   font-size: 22rpx;
-  line-height: 1.2;
-  font-weight: 800;
+  line-height: 1.4;
+  font-weight: 900;
 }
 
 .liked-post-unlike {
-  min-width: 112rpx;
-  height: 58rpx;
+  min-width: 0;
+  height: auto;
   margin: 0;
-  padding: 0 22rpx;
+  padding: 0;
   border: 0;
-  border-radius: 18rpx;
-  background: var(--gyt-primary-soft, #eef5ff);
+  border-radius: 0;
+  background: transparent;
   color: var(--gyt-primary, #3478f6);
   font-size: 22rpx;
-  line-height: 58rpx;
+  line-height: 1.4;
   font-weight: 900;
 }
 
 .liked-post-unlike[disabled] {
   opacity: 0.68;
+}
+
+.mentor-favorites-list :deep(.mentor-card) {
+  padding: 26rpx 24rpx;
+  border: 2rpx solid #edf2fb;
+  border-radius: 28rpx;
+  background: #ffffff;
+  box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
+}
+
+.mentor-favorites-list :deep(.mentor-card:active) {
+  background: var(--gyt-primary-tint, #f4f8ff);
+  transform: none;
 }
 
 </style>

@@ -719,6 +719,24 @@ async function deleteCurrentAccount() {
   margin-top: 18rpx;
 }
 
+.bind-btn {
+  border: 0;
+  background: var(--gyt-primary-gradient, var(--gyt-primary, #3478f6));
+  color: #ffffff;
+  box-shadow: 0 12rpx 24rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2));
+}
+
+.bind-btn::after {
+  border: 0;
+}
+
+.bind-btn[disabled] {
+  border: 0;
+  background: #d9e2f1;
+  color: #8a95a8;
+  box-shadow: none;
+}
+
 .unbind-panel {
   margin-top: 28rpx;
   padding-top: 26rpx;

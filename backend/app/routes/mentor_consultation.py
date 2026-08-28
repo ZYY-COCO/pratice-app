@@ -1858,11 +1858,48 @@ def list_my_mentor_favorites(
             operation_name="mentor favorite list",
         )
         rows = response.data or []
+        mentor_ids = [str(row.get("mentor_id") or "") for row in rows if row.get("mentor_id")]
+        mentor_rows_by_id: dict[str, dict] = {}
+        skills_by_mentor: dict[str, list[str]] = {}
+        aggregates_by_mentor: dict[str, dict] = {}
+        if mentor_ids:
+            mentor_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_profiles")
+                    .select(PUBLIC_PROFILE_FIELDS)
+                    .in_("id", mentor_ids)
+                    .eq("is_published", True)
+                    .eq("verification_status", "verified")
+                    .execute()
+                ),
+                operation_name="favorite mentor profile list",
+            )
+            mentor_rows_by_id = {
+                str(row.get("id") or ""): row
+                for row in (mentor_response.data or [])
+                if row.get("id")
+            }
+            visible_mentor_ids = list(mentor_rows_by_id)
+            skills_by_mentor = fetch_mentor_skills(supabase, visible_mentor_ids)
+            aggregates_by_mentor = fetch_mentor_aggregates(supabase, visible_mentor_ids)
+
         return MentorFavoriteListResponse(
-            items=[MentorFavoriteItem(
-                mentor_id=str(row.get("mentor_id") or ""),
-                created_at=row.get("created_at") or None,
-            ) for row in rows],
+            items=[
+                MentorFavoriteItem(
+                    mentor_id=str(row.get("mentor_id") or ""),
+                    created_at=row.get("created_at") or None,
+                    mentor=(
+                        serialize_mentor_public(
+                            mentor_rows_by_id[str(row.get("mentor_id") or "")],
+                            skills_by_mentor.get(str(row.get("mentor_id") or ""), []),
+                            aggregates_by_mentor.get(str(row.get("mentor_id") or "")),
+                        )
+                        if str(row.get("mentor_id") or "") in mentor_rows_by_id
+                        else None
+                    ),
+                )
+                for row in rows
+            ],
             count=int(response.count or len(rows)),
         )
     except Exception as exc:

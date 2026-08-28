@@ -162,6 +162,12 @@ page > scroll-view {
   backdrop-filter: blur(18px) saturate(118%);
 }
 
+:root.gyt-circle-glass-theme .app-page-header-layout.is-fixed .app-page-header {
+  background: var(--gyt-page-bg, #f8fcff);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+}
+
 @supports not ((-webkit-backdrop-filter: blur(1px)) or (backdrop-filter: blur(1px))) {
   :root.gyt-circle-glass-theme .app-page-header,
   :root.gyt-circle-glass-theme .app-card,
@@ -268,11 +274,16 @@ page > scroll-view {
   width: 100%;
   min-height: 100rpx;
   border-radius: 28rpx;
-  border: 2rpx solid #e6ebf5;
-  background: #ffffff;
+  border: 0;
+  background: var(--gyt-primary-soft, #edf4ff);
   color: var(--gyt-primary, #1677ff);
   font-size: 30rpx;
   font-weight: var(--gyt-font-weight-semibold, 600);
+  box-shadow: none;
+}
+
+.ghost-button::after {
+  border: 0;
 }
 
 .gyt-numeric {

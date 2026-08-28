@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import get_settings
-from app.routes import admin, ai, answers, auth, circle_resources, community, favorites, feedback, formulas, home_content, major_catalog, membership, mentor_admin, mentor_consultation, notifications, official_messages, questions, reports, school_announcements, wallet, wrong_questions
+from app.routes import admin, ai, answers, auth, circle_resources, community, favorites, feedback, formulas, home_content, major_catalog, membership, mentor_admin, mentor_consultation, mock_exams, notifications, official_messages, questions, reports, school_announcements, wallet, wrong_questions
 from app.services.mentor_consultation_lifecycle import settle_expired_mentor_consultation_orders
 from app.services.user_notifications import deliver_pending_user_notifications
 from app.services.wallet_ledger import reconcile_consultation_wallet_ledger
@@ -90,6 +90,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth.router)
     app.include_router(questions.router)
+    app.include_router(mock_exams.router)
     app.include_router(answers.router)
     app.include_router(wrong_questions.router)
     app.include_router(favorites.router)
@@ -110,6 +111,7 @@ def create_app() -> FastAPI:
     app.include_router(official_messages.router)
     app.include_router(official_messages.admin_router)
     app.include_router(circle_resources.admin_router)
+    app.include_router(mock_exams.admin_router)
     app.include_router(admin.router)
 
     @app.get("/health")

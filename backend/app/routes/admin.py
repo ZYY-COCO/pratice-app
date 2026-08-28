@@ -167,7 +167,7 @@ SCORELINE_RECORD_KINDS = {"score", "missing", "unavailable", "official", "multip
 SCORELINE_NUMERIC_PATTERN = re.compile(r"^\d+(?:\.\d+)?\s*(?:分)?$")
 ANNOUNCEMENT_NOTICE_TYPES = {"brochure", "scoreline_retest"}
 MAJOR_CATALOG_EXAM_CODES = {"Z001", "Z002"}
-HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 2}
+HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 3}
 HOME_CONTENT_SLOT_LABELS = {"focus": "焦点轮播", "news": "港澳台考研资讯"}
 OPERATIONS_IMPORT_DATASETS = {
     "scorelines": {

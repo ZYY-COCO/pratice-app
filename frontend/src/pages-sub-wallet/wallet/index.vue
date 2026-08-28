@@ -2,7 +2,9 @@
   <view class="wallet-page" :style="themeInlineStyle">
     <AppPageHeader title="我的钱包" @back="goBack" />
 
-    <scroll-view scroll-y class="wallet-scroll">
+    <AppPageLoadingState v-if="walletLoading" message="正在整理我的钱包..." />
+
+    <scroll-view v-else scroll-y class="wallet-scroll">
       <view class="wallet-content">
         <view class="wallet-balance-card">
           <view class="wallet-card-orbit wallet-card-orbit-large"></view>
@@ -69,18 +71,7 @@
             </view>
           </scroll-view>
 
-          <view v-if="walletLoading" class="wallet-loading-state">
-            <view v-for="index in 3" :key="index" class="wallet-loading-row">
-              <view class="wallet-loading-icon"></view>
-              <view class="wallet-loading-copy">
-                <view></view>
-                <view></view>
-              </view>
-              <view class="wallet-loading-amount"></view>
-            </view>
-          </view>
-
-          <view v-else-if="transactionGroups.length" class="wallet-month-list">
+          <view v-if="transactionGroups.length" class="wallet-month-list">
             <view v-for="group in transactionGroups" :key="group.monthKey" class="wallet-month-group">
               <view class="wallet-month-heading">
                 <text>{{ group.label }}</text>
@@ -95,13 +86,14 @@
             </view>
           </view>
 
-          <view v-else class="wallet-empty-state">
-            <view class="wallet-empty-coin">
-              <view>¥</view>
-            </view>
-            <strong>{{ emptyTitle }}</strong>
-            <text>{{ emptyCopy }}</text>
-          </view>
+          <AppEmptyState
+            v-else
+            class="wallet-empty-state"
+            compact
+            :label="emptyTitle"
+            :title="emptyTitle"
+            :description="emptyCopy"
+          />
         </view>
 
         <view v-if="walletStatusMessage" class="wallet-bottom-note">{{ walletStatusMessage }}</view>
@@ -113,7 +105,9 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import WalletTransactionRow from '../../components/WalletTransactionRow.vue'
 import { fetchWalletSummary } from '../../api/wallet'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'

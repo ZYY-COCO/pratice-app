@@ -10,7 +10,7 @@
     <view class="announcement-shell">
       <view class="announcement-topbar">
         <button class="announcement-back-button" hover-class="none" aria-label="返回" @tap="goBack">
-          <image class="announcement-back-icon" src="/static/ui-icons/back.svg" mode="aspectFit" />
+          <image class="announcement-back-icon" src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
         </button>
         <text class="announcement-topbar-title">院校公告</text>
         <view class="announcement-topbar-placeholder"></view>
@@ -29,7 +29,7 @@
             <view class="announcement-select-control">
               <text class="announcement-select-name">公告类型</text>
               <text class="announcement-select-value">{{ selectedNoticeTypeCompactLabel }}</text>
-              <view class="announcement-select-arrow-icon" aria-hidden="true"></view>
+              <image class="announcement-select-arrow-icon" :src="announcementSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -44,7 +44,7 @@
             <view class="announcement-select-control">
               <text class="announcement-select-name">公告年份</text>
               <text class="announcement-select-value">{{ selectedYearCompactLabel }}</text>
-              <view class="announcement-select-arrow-icon" aria-hidden="true"></view>
+              <image class="announcement-select-arrow-icon" :src="announcementSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -61,7 +61,7 @@
               <text class="announcement-select-value" :class="{ muted: !selectedRegion }">
                 {{ selectedRegionCompactLabel }}
               </text>
-              <view class="announcement-select-arrow-icon" aria-hidden="true"></view>
+              <image class="announcement-select-arrow-icon" :src="announcementSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
 
@@ -80,7 +80,7 @@
               <text class="announcement-select-value" :class="{ muted: !selectedSchool }">
                 {{ selectedSchoolCompactLabel }}
               </text>
-              <view class="announcement-select-arrow-icon" aria-hidden="true"></view>
+              <image class="announcement-select-arrow-icon" :src="announcementSelectArrowIconSrc" mode="aspectFit" aria-hidden="true" />
             </view>
           </picker>
         </view>
@@ -130,11 +130,13 @@
               :aria-label="isResultsExpanded ? '退出全屏浏览' : '全屏浏览'"
               @tap="toggleResultsExpanded"
             >
-              <view
+              <image
                 class="announcement-expand-icon"
                 :class="{ 'is-shrink': isResultsExpanded }"
+                :src="announcementExpandIconSrc"
+                mode="aspectFit"
                 aria-hidden="true"
-              ></view>
+              />
             </button>
           </view>
         </view>
@@ -152,14 +154,14 @@
               <button class="announcement-retry-button" hover-class="none" @tap="runSearch">重新加载</button>
             </view>
 
-            <view v-else-if="loading" class="announcement-inline-state">正在加载院校公告…</view>
+            <AppPageLoadingState v-else-if="loading" compact message="正在整理院校公告..." />
 
             <view v-else-if="hasPendingKeyword" class="announcement-inline-state">
               已保留当前筛选条件，点击“查找”检索关键词。
             </view>
 
             <template v-else-if="currentView === 'regions'">
-              <view v-if="regions.length === 0" class="announcement-inline-state">当前条件下暂无地区数据。</view>
+              <AppEmptyState v-if="regions.length === 0" compact label="暂无地区数据" title="当前条件下暂无地区数据" />
               <view v-else class="announcement-region-grid">
                 <button
                   v-for="region in regions"
@@ -176,7 +178,12 @@
             </template>
 
             <template v-else-if="currentView === 'schools'">
-              <view v-if="schoolItems.length === 0" class="announcement-inline-state">当前地区暂无符合条件的院校公告。</view>
+              <AppEmptyState
+                v-if="schoolItems.length === 0"
+                compact
+                label="暂无院校公告"
+                title="当前地区暂无符合条件的院校公告"
+              />
               <view v-else class="announcement-school-list">
                 <button
                   v-for="school in schoolItems"
@@ -198,9 +205,12 @@
             </template>
 
             <template v-else-if="currentView === 'announcements' || currentView === 'search'">
-              <view v-if="visibleAnnouncementItems.length === 0" class="announcement-inline-state">
-                当前条件下没有匹配的公告。
-              </view>
+              <AppEmptyState
+                v-if="visibleAnnouncementItems.length === 0"
+                compact
+                label="没有匹配的公告"
+                title="当前条件下没有匹配的公告"
+              />
               <view v-else class="announcement-notice-list">
                 <button
                   v-for="item in visibleAnnouncementItems"
@@ -272,10 +282,6 @@
               </view>
             </template>
 
-            <view v-if="currentView !== 'detail'" class="announcement-source-note">
-              <text>已收录 2026 年招生简章与分数线/复试公告；院系级公告归入对应院校，图片型文件已完成OCR并开放全文检索。</text>
-            </view>
-
             <!-- #ifdef H5 -->
             <IcpFooter inline :glass="isGlassTheme" />
             <!-- #endif -->
@@ -290,6 +296,8 @@
 import { computed, ref } from 'vue'
 import { onBackPress, onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   fetchSchoolAnnouncementDetail,
   fetchSchoolAnnouncementRegions,
@@ -297,6 +305,7 @@ import {
   fetchSchoolAnnouncementSchools,
   searchSchoolAnnouncements
 } from '../../api/schoolAnnouncements'
+import { getThemeIconSrc, getToneIconSrc } from '../../utils/iconAssets'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 
@@ -340,6 +349,14 @@ const pageInlineStyle = computed(() => [
   buildThemeStyle(themeKey.value),
   mpLayoutStyle.value
 ].filter(Boolean).join(';'))
+const announcementSelectArrowIconSrc = computed(() => (
+  getThemeIconSrc('/static/ui-icons/png/original/major-catalog-dropdown.png', themeKey.value)
+))
+const announcementExpandIconSrc = computed(() => (
+  isResultsExpanded.value
+    ? getToneIconSrc('/static/ui-icons/png/original/major-catalog-shrink.png', 'white')
+    : getThemeIconSrc('/static/ui-icons/png/original/major-catalog-fullscreen.png', themeKey.value)
+))
 
 const isGlassTheme = computed(() => getThemePreset(themeKey.value).circleGlass === true)
 const noticeTypePickerIndex = computed(() => Math.max(0, noticeTypeOptions.findIndex(
@@ -909,8 +926,8 @@ function openExternalLink(url) {
 .announcement-select-name { flex: 0 0 auto; color: #69778c; font-size: 22rpx; line-height: 1.3; font-weight: 780; }
 .announcement-select-value { min-width: 0; flex: 1; overflow: hidden; color: #253047; font-size: 21rpx; line-height: 1.3; font-weight: 780; text-align: right; text-overflow: ellipsis; white-space: nowrap; }
 .announcement-select-value.muted { color: #9aa5b6; }
-.announcement-select-arrow-icon { width: 18rpx; height: 11rpx; flex: 0 0 auto; background: var(--gyt-primary); -webkit-mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat; mask: url('/static/ui-icons/major-catalog-dropdown.svg') center / contain no-repeat; }
-.announcement-select.disabled .announcement-select-arrow-icon { background: #b2bac7; }
+.announcement-select-arrow-icon { display: block; width: 18rpx; height: 11rpx; flex: 0 0 auto; }
+.announcement-select.disabled .announcement-select-arrow-icon { opacity: .42; }
 
 .announcement-keyword-row { display: flex; align-items: center; gap: 12rpx; margin-top: 12rpx; }
 .announcement-keyword-field { display: flex; min-width: 0; min-height: 64rpx; flex: 1; align-items: center; gap: 13rpx; box-sizing: border-box; padding: 0 15rpx; border: 1rpx solid #dfe7f1; border-radius: 16rpx; background: rgba(255, 255, 255, 0.94); }
@@ -930,9 +947,8 @@ function openExternalLink(url) {
 .announcement-results-reset { min-height: 36rpx; margin: 0; padding: 0 4rpx; border: 0; background: transparent; color: #7e8b9e; font-size: 18rpx; line-height: 36rpx; font-weight: 750; }
 .announcement-expand-button { display: flex; width: 52rpx; height: 52rpx; align-items: center; justify-content: center; margin: 0; padding: 0; border: 1rpx solid var(--gyt-primary-border); border-radius: 15rpx; background: var(--gyt-primary-soft); }
 .announcement-expand-button.active { background: var(--gyt-primary); }
-.announcement-expand-icon { width: 25rpx; height: 25rpx; background: var(--gyt-primary); -webkit-mask: url('/static/ui-icons/major-catalog-fullscreen.svg') center / contain no-repeat; mask: url('/static/ui-icons/major-catalog-fullscreen.svg') center / contain no-repeat; }
-.announcement-expand-button.active .announcement-expand-icon { background: #fff; }
-.announcement-expand-icon.is-shrink { -webkit-mask-image: url('/static/ui-icons/major-catalog-shrink.svg'); mask-image: url('/static/ui-icons/major-catalog-shrink.svg'); }
+.announcement-expand-icon { display: block; width: 25rpx; height: 25rpx; }
+.announcement-expand-button.active .announcement-expand-icon { opacity: 1; }
 .announcement-results-scroll { height: 0; min-height: 0; flex: 1; }
 .announcement-results-scroll::-webkit-scrollbar, .announcement-results-scroll ::-webkit-scrollbar { display: none; width: 0; height: 0; }
 .announcement-results-content { min-height: 100%; box-sizing: border-box; padding: 16rpx 16rpx calc(env(safe-area-inset-bottom, 0px) + 30rpx); }
@@ -986,8 +1002,6 @@ function openExternalLink(url) {
 .announcement-state-title { display: block; color: #263149; font-size: 25rpx; line-height: 1.35; font-weight: 900; }
 .announcement-state-desc { display: block; margin-top: 9rpx; }
 .announcement-retry-button { display: inline-flex; min-height: 54rpx; align-items: center; justify-content: center; margin: 18rpx 0 0; padding: 0 22rpx; border: 0; border-radius: 999rpx; background: var(--gyt-primary); color: #fff; font-size: 20rpx; line-height: 1; font-weight: 850; }
-.announcement-source-note { margin-top: 20rpx; padding: 0 8rpx; color: #909aaa; font-size: 17rpx; line-height: 1.55; text-align: center; }
-
 .announcement-back-button::after, .announcement-keyword-clear::after, .announcement-search-button::after,
 .announcement-results-reset::after, .announcement-expand-button::after, .announcement-region-card::after,
 .announcement-school-card::after, .announcement-notice-card::after, .announcement-retry-button::after,

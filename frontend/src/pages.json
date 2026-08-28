@@ -89,6 +89,14 @@
       }
     },
     {
+      "path": "pages/mock-exams/index",
+      "style": {
+        "navigationBarTitleText": "模拟卷",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f7f8fc"
+      }
+    },
+    {
       "path": "pages/pro/index",
       "style": {
         "navigationBarTitleText": "学习功能说明",
@@ -128,6 +136,16 @@
       "style": {
         "navigationBarTitleText": "学习统计",
         "navigationStyle": "custom"
+      }
+    },
+    {
+      "path": "pages/daily-leaderboard/index",
+      "style": {
+        "navigationBarTitleText": "今日学习榜",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f7f6f8",
+        "enablePullDownRefresh": false,
+        "backgroundTextStyle": "dark"
       }
     },
     {

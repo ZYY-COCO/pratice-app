@@ -223,20 +223,19 @@ export function getHomeModules(examCode) {
   return [
     {
       key: '中华文化',
-      icon: '📚',
-      iconVariant: 'culture',
+      iconSrc: '/static/ui-icons/png/original/subject-culture-logo.png',
       title: '中华文化',
       desc: '哲学 / 历史 / 文学 / 艺术'
     },
     {
       key: '英语运用',
-      icon: '📝',
+      iconSrc: '/static/ui-icons/png/original/subject-english-logo.png',
       title: '英语运用',
       desc: '词汇语法 / 阅读理解 / 语篇判断'
     },
     {
       key: exam.thirdSubject,
-      icon: exam.thirdIcon,
+      iconSrc: exam.thirdIconSrc,
       title: exam.thirdSubject,
       desc: examCode === 'Z001' ? '形式逻辑 / 论证分析 / 推理题型' : '函数 / 极限 / 导数 / 积分'
     }

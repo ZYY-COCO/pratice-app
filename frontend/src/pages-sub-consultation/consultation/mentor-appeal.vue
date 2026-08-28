@@ -4,7 +4,7 @@
 
     <scroll-view scroll-y class="mentor-appeal-scroll">
       <view class="mentor-appeal-content">
-        <view v-if="loading" class="mentor-appeal-state">正在读取处理记录…</view>
+        <AppPageLoadingState v-if="loading" message="正在整理复核记录..." />
         <view v-else-if="loadError" class="mentor-appeal-state error">
           <text>{{ loadError }}</text>
           <button @tap="loadReport">重新加载</button>
@@ -91,6 +91,7 @@ import CloseIcon from '../../components/CloseIcon.vue'
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   createMentorConsultationReportAppeal,
   fetchMyMentorConsultationReports,

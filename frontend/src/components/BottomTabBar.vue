@@ -1,23 +1,13 @@
 <template>
   <view class="tabbar" :class="{ glass, collapsed }">
     <view v-if="collapsed && activeItem" class="tab-compact" role="button" :aria-label="`展开${activeItem.label}导航`" @tap="emit('expand')">
-      <!-- #ifdef MP-WEIXIN -->
       <image
-        v-if="activeItem.mpIconSrc"
-        :class="['tab-icon-image', 'tab-icon-png', activeItem.iconClass]"
-        :src="activeItem.mpIconSrc"
+        v-if="activeItem.iconSrc"
+        :class="['tab-icon-image', 'tab-icon-raster', activeItem.iconClass]"
+        :src="resolveTabIcon(activeItem, true)"
         mode="aspectFit"
       />
       <text v-else class="tab-icon">{{ activeItem.icon }}</text>
-      <!-- #endif -->
-      <!-- #ifndef MP-WEIXIN -->
-      <view
-        v-if="activeItem.iconSrc"
-        :class="['tab-icon-image', 'tab-icon-mask', activeItem.iconClass]"
-        :style="getIconMaskStyle(activeItem.iconSrc)"
-      />
-      <text v-else class="tab-icon">{{ activeItem.icon }}</text>
-      <!-- #endif -->
       <text class="tab-label">{{ activeItem.label }}</text>
       <view v-if="activeItem.unread" class="tab-unread-dot tab-unread-dot--compact" aria-label="有新消息"></view>
     </view>
@@ -33,23 +23,13 @@
         :class="{ active: modelValue === item.key }"
         @tap="emit('update:modelValue', item.key)"
       >
-        <!-- #ifdef MP-WEIXIN -->
         <image
-          v-if="item.mpIconSrc"
-          :class="['tab-icon-image', 'tab-icon-png', item.iconClass]"
-          :src="item.mpIconSrc"
+          v-if="item.iconSrc"
+          :class="['tab-icon-image', 'tab-icon-raster', item.iconClass]"
+          :src="resolveTabIcon(item, modelValue === item.key)"
           mode="aspectFit"
         />
         <text v-else class="tab-icon">{{ item.icon }}</text>
-        <!-- #endif -->
-        <!-- #ifndef MP-WEIXIN -->
-        <view
-          v-if="item.iconSrc"
-          :class="['tab-icon-image', 'tab-icon-mask', item.iconClass]"
-          :style="getIconMaskStyle(item.iconSrc)"
-        />
-        <text v-else class="tab-icon">{{ item.icon }}</text>
-        <!-- #endif -->
         <text class="tab-label">{{ item.label }}</text>
         <view v-if="item.unread" class="tab-unread-dot" aria-label="有新消息"></view>
       </view>
@@ -59,6 +39,7 @@
 
 <script setup>
 import { computed } from 'vue'
+import { getThemeIconSrc, getToneIconSrc } from '../utils/iconAssets'
 
 const props = defineProps({
   modelValue: {
@@ -76,6 +57,10 @@ const props = defineProps({
   collapsed: {
     type: Boolean,
     default: false
+  },
+  themeKey: {
+    type: String,
+    default: 'blue'
   }
 })
 
@@ -98,10 +83,10 @@ const activeIndicatorStyle = computed(() => {
   }
 })
 
-const getIconMaskStyle = (iconSrc) => ({
-  WebkitMaskImage: `url("${iconSrc}")`,
-  maskImage: `url("${iconSrc}")`
-})
+const resolveTabIcon = (item, active) => {
+  if (active) return getThemeIconSrc(item.iconSrc, props.themeKey)
+  return getToneIconSrc(item.iconSrc, 'neutral')
+}
 </script>
 
 <style scoped>
@@ -291,7 +276,7 @@ const getIconMaskStyle = (iconSrc) => ({
 .tabbar.glass .tab-compact .tab-icon-image {
   width: 20px;
   height: 20px;
-  background-color: var(--gyt-primary, #3478f6);
+  background-color: transparent;
 }
 
 .tabbar.glass .tab-compact .tab-label {
@@ -325,26 +310,17 @@ const getIconMaskStyle = (iconSrc) => ({
 .tab-icon-image {
   width: 36rpx;
   height: 36rpx;
-  background-color: #98a2b3;
-  transition: background-color 160ms ease, opacity 160ms ease;
-}
-
-.tab-icon-mask {
-  -webkit-mask-position: center;
-  mask-position: center;
-  -webkit-mask-repeat: no-repeat;
-  mask-repeat: no-repeat;
-  -webkit-mask-size: contain;
-  mask-size: contain;
+  background-color: transparent;
+  transition: opacity 160ms ease;
 }
 
 .tab-icon-practice {
   transform: scale(0.9);
 }
 
-.tab-icon-png {
-  background-color: transparent;
-  opacity: 0.46;
+.tab-icon-raster {
+  display: block;
+  opacity: 0.9;
 }
 
 .tab-label {
@@ -363,7 +339,7 @@ const getIconMaskStyle = (iconSrc) => ({
 .tabbar.glass .tab-icon-image {
   width: 20px;
   height: 20px;
-  background-color: rgba(84, 98, 116, 0.72);
+  background-color: transparent;
 }
 
 .tabbar.glass .tab-label {
@@ -376,10 +352,6 @@ const getIconMaskStyle = (iconSrc) => ({
 }
 
 .tab-item.active .tab-icon-image {
-  background-color: var(--gyt-primary, #1677ff);
-}
-
-.tab-item.active .tab-icon-png {
   background-color: transparent;
   opacity: 1;
 }
@@ -394,7 +366,7 @@ const getIconMaskStyle = (iconSrc) => ({
 }
 
 .tabbar.glass .tab-item.active .tab-icon-image {
-  background-color: var(--gyt-primary, #3478f6);
+  background-color: transparent;
 }
 
 @supports not (backdrop-filter: blur(1px)) {

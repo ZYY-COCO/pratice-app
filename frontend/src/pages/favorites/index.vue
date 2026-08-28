@@ -3,7 +3,7 @@
     <AppPageHeader title="收藏夹" fixed @back="goBack" />
 
     <view class="search-card">
-      <text class="search-icon">⌕</text>
+      <AppSearchIcon class="search-icon" />
       <input
         v-model="keyword"
         class="search-input"
@@ -27,20 +27,12 @@
       </view>
     </scroll-view>
 
-    <view v-if="loading" class="empty-card">正在同步你的收藏题目...</view>
+    <AppPageLoadingState v-if="entryLoading || loading" message="正在整理收藏夹..." />
     <view v-else-if="error" class="empty-card warning">{{ error }}</view>
-    <view v-else-if="filteredItems.length === 0" class="favorites-empty-state" aria-label="暂无收藏题目">
-      <image
-        class="favorites-empty-image"
-        src="/static/ui-icons/empty-favorites.svg"
-        mode="aspectFit"
-        alt="暂无收藏题目"
-      />
-    </view>
+    <AppEmptyState v-else-if="filteredItems.length === 0" label="暂无收藏题目" />
 
     <template v-else>
       <view class="list-head">
-        <text class="list-title">我的收藏题目</text>
         <text class="list-note">按收藏时间展示</text>
       </view>
 
@@ -110,7 +102,10 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import { fetchFavorites, toggleFavorite } from '../../api/favorites'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
+import AppSearchIcon from '../../components/ui/AppSearchIcon.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 import FavoriteIcon from '../../components/FavoriteIcon.vue'
 import IcpFooter from '../../components/IcpFooter.vue'
@@ -128,6 +123,7 @@ const activeSubject = ref('全部')
 const selectedItem = ref(null)
 const favoriteRows = ref([])
 const loading = ref(false)
+const entryLoading = ref(true)
 const error = ref('')
 const toggling = ref(false)
 
@@ -198,6 +194,7 @@ async function loadFavorites() {
     error.value = err?.detail || '收藏夹读取失败，请稍后重试'
   } finally {
     loading.value = false
+    entryLoading.value = false
   }
 }
 
@@ -282,8 +279,7 @@ function goBack() {
 }
 
 .search-icon {
-  color: #98a2b3;
-  font-size: 30rpx;
+  color: var(--gyt-primary, #3478f6);
 }
 
 .search-input {
@@ -341,14 +337,8 @@ function goBack() {
 .list-head {
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: flex-end;
   margin-bottom: 16rpx;
-}
-
-.list-title {
-  color: #101828;
-  font-size: 30rpx;
-  font-weight: 900;
 }
 
 .list-note {
@@ -361,24 +351,6 @@ function goBack() {
   display: flex;
   flex-direction: column;
   gap: 18rpx;
-}
-
-.favorites-empty-state {
-  width: 100%;
-  min-height: 320rpx;
-  flex: 1 1 320rpx;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.favorites-empty-image {
-  width: 240rpx;
-  height: 240rpx;
-  max-width: 150px;
-  max-height: 150px;
-  display: block;
-  opacity: 0.92;
 }
 
 .favorite-card,

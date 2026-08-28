@@ -32,12 +32,15 @@
           />
         </view>
 
-        <view v-else class="wallet-records-empty">
-          <view>提</view>
-          <strong>暂无提现记录</strong>
-          <text>{{ withdrawalEnabled ? '发起提现申请后，记录会显示在这里。' : '微信支付商户资质与打款能力接通后才会开放提现。' }}</text>
+        <AppEmptyState
+          v-else
+          class="wallet-records-empty"
+          label="暂无提现记录"
+          title="暂无提现记录"
+          :description="withdrawalEnabled ? '发起提现申请后，记录会显示在这里。' : '微信支付商户资质与打款能力接通后才会开放提现。'"
+        >
           <button v-if="withdrawalEnabled" @tap="openWithdraw">去提现</button>
-        </view>
+        </AppEmptyState>
       </view>
     </scroll-view>
   </view>
@@ -47,6 +50,7 @@
 import { computed, ref } from 'vue'
 import { onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import WalletTransactionRow from '../../components/WalletTransactionRow.vue'
 import { fetchWalletSummary } from '../../api/wallet'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'

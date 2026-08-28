@@ -6,15 +6,17 @@
 
     <scroll-view scroll-y class="notifications-scroll">
       <view class="notifications-content">
-        <view v-if="loading" class="notifications-state">正在同步消息…</view>
+        <AppPageLoadingState v-if="entryLoading || loading" message="正在整理消息中心..." />
         <view v-else-if="loadError" class="notifications-state error">
           <text>{{ loadError }}</text>
           <button @tap="load">重新加载</button>
         </view>
-        <view v-else-if="allMessages.length === 0" class="notifications-state">
-          <strong>暂时没有消息</strong>
-          <text>咨询动态、研圈互动和平台公告会在这里通知你。</text>
-        </view>
+        <AppEmptyState
+          v-else-if="allMessages.length === 0"
+          label="暂时没有消息"
+          title="暂时没有消息"
+          description="咨询动态、研圈互动和平台公告会在这里通知你。"
+        />
 
         <view v-else class="notifications-list">
           <view
@@ -57,11 +59,14 @@ import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 import { resolveLegacyAppRoute } from '../../utils/routeCompat'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import AppRefreshIcon from '../../components/ui/AppRefreshIcon.vue'
 
 const personalMessages = ref([])
 const officialMessages = ref([])
 const loading = ref(false)
+const entryLoading = ref(true)
 const loadError = ref('')
 const expandedMessageKey = ref('')
 const themeKey = ref(getStoredThemeKey())
@@ -129,6 +134,7 @@ async function load() {
     loadError.value = error?.detail || '消息读取失败，请稍后重试'
   } finally {
     loading.value = false
+    entryLoading.value = false
   }
 }
 

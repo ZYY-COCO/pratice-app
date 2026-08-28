@@ -52,6 +52,24 @@ export function loginWithPhone(payload) {
   return buildNoAuthRequest('/auth/phone-login', payload, 25000)
 }
 
+export function sendBindPhoneCode(payload) {
+  return request({
+    url: '/auth/send-bind-phone-code',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
+export function bindPhone(payload) {
+  return request({
+    url: '/auth/bind-phone',
+    method: 'POST',
+    timeout: 25000,
+    data: payload
+  })
+}
+
 export function loginWithWechat(payload = {}) {
   return buildNoAuthRequest('/auth/wechat-login', payload, 25000)
 }

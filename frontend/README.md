@@ -64,6 +64,28 @@ dist/build/h5
 
 如果部署平台的项目根目录设置为 `frontend`，发布目录填写 `dist/build/h5`。
 
+## 跨端图标规则
+
+H5、iOS App 和微信端的页面图标统一使用 `src/static/ui-icons/png/` 中的透明 PNG。`src/static/ui-icons/*.svg` 只作为设计源文件，不允许在用户端模板或 CSS 中直接加载。
+
+首次安装依赖或新增/修改图标后执行：
+
+```bash
+npm install
+npm run icons:build
+npm run icons:check
+```
+
+日常打包前至少执行：
+
+```bash
+npm run icons:check
+npm run build:h5
+npm run build:app
+```
+
+`build:h5`、`build:app` 和 `build:mp-weixin` 已自动执行图标审计。审计会阻止用户端重新引入 SVG、CSS mask/filter、Emoji 或易产生平台差异的字体图标；也会检查 PNG 是否缺失、多余或落后于设计源。
+
 ## App 打包
 
 - Android 内测 APK：见 [APK_PACKAGING.md](APK_PACKAGING.md)

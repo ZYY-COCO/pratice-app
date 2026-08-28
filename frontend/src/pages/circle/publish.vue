@@ -68,7 +68,7 @@
               <view v-for="(image, index) in selectedImages" :key="image.id" class="publish-image-item">
                 <image class="publish-image-preview" :src="image.path" mode="aspectFill" />
                 <view v-if="image.uploading" class="publish-image-uploading">上传中</view>
-                <button class="publish-image-remove" :aria-label="`删除第 ${index + 1} 张图片`" :disabled="submitting" @tap.stop="removeImage(index)"><CloseIcon /></button>
+                <button class="publish-image-remove" :aria-label="`删除第 ${index + 1} 张图片`" :disabled="submitting" @tap.stop="removeImage(index)"><CloseIcon tone="white" /></button>
               </view>
               <button
                 v-if="selectedImages.length < MAX_IMAGE_COUNT"
@@ -540,7 +540,7 @@ function getSafeError(error, fallback) {
   align-items: center;
   justify-content: center;
 }
-.publish-image-remove :deep(.close-icon-image) { width: 26rpx; height: 26rpx; filter: brightness(0) invert(1); }
+.publish-image-remove :deep(.close-icon-image) { width: 26rpx; height: 26rpx; }
 
 .publish-image-add {
   width: 100%;

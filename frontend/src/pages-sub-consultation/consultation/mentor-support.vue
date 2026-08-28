@@ -37,15 +37,17 @@
           </view>
         </view>
 
-        <view v-if="loading" class="mentor-support-state">正在同步处理记录…</view>
+        <AppPageLoadingState v-if="loading" message="正在整理平台处理进度..." />
         <view v-else-if="error" class="mentor-support-state error">
           <text>{{ error }}</text>
           <button @tap="load">重新加载</button>
         </view>
-        <view v-else-if="!reportLoadError && reports.length === 0 && settlementOrders.length === 0" class="mentor-support-state">
-          <strong>暂时没有平台介入记录</strong>
-          <text>遇到咨询问题时，可从聊天右上角进入“举报此咨询”。</text>
-        </view>
+        <AppEmptyState
+          v-else-if="!reportLoadError && reports.length === 0 && settlementOrders.length === 0"
+          label="暂时没有平台介入记录"
+          title="暂时没有平台介入记录"
+          description="遇到咨询问题时，可从聊天右上角进入“举报此咨询”。"
+        />
 
         <template v-else-if="reports.length">
           <view class="mentor-support-filter" role="tablist" aria-label="处理记录分类">
@@ -54,9 +56,12 @@
             <button :class="{ active: activeFilter === 'respondent' }" @tap="activeFilter = 'respondent'">涉及我 {{ respondentReports.length }}</button>
           </view>
 
-          <view v-if="filteredReports.length === 0" class="mentor-support-state compact">
-            {{ activeFilter === 'reporter' ? '你暂未发起问题反馈' : '暂时没有涉及你的问题反馈' }}
-          </view>
+          <AppEmptyState
+            v-if="filteredReports.length === 0"
+            compact
+            :label="activeFilter === 'reporter' ? '你暂未发起问题反馈' : '暂时没有涉及你的问题反馈'"
+            :title="activeFilter === 'reporter' ? '你暂未发起问题反馈' : '暂时没有涉及你的问题反馈'"
+          />
 
           <view v-for="item in filteredReports" v-else :key="item.id" class="mentor-support-record">
             <view class="mentor-support-record-top">
@@ -142,6 +147,8 @@
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
+import AppEmptyState from '../../components/ui/AppEmptyState.vue'
+import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
   fetchMyMentorConsultationOrders,
   fetchMyReceivedMentorOrders,

@@ -8,7 +8,7 @@
           aria-label="返回邮密登录"
           @tap="switchMode('login')"
         >
-          <image class="topbar-back-icon" src="/static/ui-icons/auth-back.svg" mode="aspectFit" alt="返回" />
+          <image class="topbar-back-icon" src="/static/ui-icons/png/original/auth-back.png" mode="aspectFit" alt="返回" />
         </button>
         <button class="topbar-help" @tap="openHelp">帮助</button>
       </view>
@@ -250,7 +250,7 @@
             <view class="shortcut-icon login-icon">
               <image
                 class="shortcut-image"
-                src="/static/ui-icons/email-login.svg"
+                src="/static/ui-icons/png/original/email-login.png"
                 mode="aspectFit"
                 alt="邮密登录"
               />
@@ -262,7 +262,7 @@
             <view class="shortcut-icon register-icon">
               <image
                 class="shortcut-image"
-                src="/static/ui-icons/register.svg"
+                src="/static/ui-icons/png/original/register.png"
                 mode="aspectFit"
                 alt="注册"
               />
@@ -274,7 +274,7 @@
             <view class="shortcut-icon lock-icon">
               <image
                 class="shortcut-image"
-                src="/static/ui-icons/reset-password.svg"
+                src="/static/ui-icons/png/original/reset-password.png"
                 mode="aspectFit"
                 alt="找回密码"
               />

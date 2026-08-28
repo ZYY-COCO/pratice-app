@@ -288,6 +288,62 @@ export function publishAdminQuestionBankPendingQuestions(questionBankId, payload
   })
 }
 
+export function fetchAdminMockExamPapers(params = {}) {
+  return request({
+    url: '/admin/mock-exams',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchAdminMockExamPaperDetail(paperId) {
+  return request({
+    url: `/admin/mock-exams/${encodeURIComponent(paperId)}`,
+    method: 'GET'
+  })
+}
+
+export function createAdminMockExamPaper(payload) {
+  return request({
+    url: '/admin/mock-exams',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function updateAdminMockExamPaper(paperId, payload) {
+  return request({
+    url: `/admin/mock-exams/${encodeURIComponent(paperId)}`,
+    method: 'PATCH',
+    data: payload,
+    timeout: 30000
+  })
+}
+
+export function publishAdminMockExamPaper(paperId) {
+  return request({
+    url: `/admin/mock-exams/${encodeURIComponent(paperId)}/publish`,
+    method: 'POST',
+    timeout: 30000
+  })
+}
+
+export function archiveAdminMockExamPaper(paperId) {
+  return request({
+    url: `/admin/mock-exams/${encodeURIComponent(paperId)}/archive`,
+    method: 'POST'
+  })
+}
+
+export function fetchAdminMockExamQuestionOptions(params = {}) {
+  return request({
+    url: '/admin/mock-exams/question-options',
+    method: 'GET',
+    data: params,
+    timeout: 30000
+  })
+}
+
 export function fetchAdminOverview() {
   return request({
     url: '/admin/overview',

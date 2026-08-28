@@ -18,7 +18,7 @@ from app.services.supabase_resilience import call_supabase, is_missing_supabase_
 
 
 router = APIRouter(tags=["首页运营"])
-HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 2}
+HOME_CONTENT_SLOT_LIMITS = {"focus": 3, "news": 3}
 
 
 def _parse_timestamp(value: Any) -> datetime | None:
