@@ -241,6 +241,7 @@ class QuestionBankPublishPendingResponse(BaseModel):
 class QuestionAdminPortalMeResponse(BaseModel):
     allowed: bool = True
     profile: dict
+    permissions: dict
 
 
 class QuestionAdminDashboardQuestionItem(BaseModel):

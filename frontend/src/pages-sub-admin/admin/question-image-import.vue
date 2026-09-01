@@ -508,7 +508,19 @@ async function initializeWorkspace(options = {}) {
   }
   try {
     const me = await fetchQuestionAdminPortalMe()
-    allowed.value = Boolean(me?.allowed)
+    const permissions = me?.permissions && typeof me.permissions === 'object'
+      ? me.permissions
+      : null
+    allowed.value = Boolean(me?.allowed) && (permissions ? Boolean(permissions.can_import_questions) : true)
+    if (allowed.value && permissions && permissions.scope !== 'full' && questionBankId.value) {
+      const allowedQuestionBankIds = Array.isArray(permissions?.allowed_question_bank_ids)
+        ? permissions.allowed_question_bank_ids.map((value) => String(value || '')).filter(Boolean)
+        : []
+      if (!allowedQuestionBankIds.includes(questionBankId.value)) {
+        questionBankId.value = ''
+        questionBankName.value = ''
+      }
+    }
     if (!allowed.value) {
       uni.showToast({ title: '无后台权限', icon: 'none' })
     }

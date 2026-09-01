@@ -10,10 +10,15 @@ from pydantic import ValidationError
 
 from app.db import get_supabase_admin
 from app.dependencies import (
+    get_question_admin_permissions,
     invalidate_user_access_cache,
     is_admin_profile,
     require_admin_user,
+    require_question_admin_access_user,
+    require_question_admin_bank_access,
+    require_question_admin_importer,
     require_question_admin_portal_user,
+    require_question_admin_reader,
     require_question_admin_user,
 )
 from app.schemas.admin import (
@@ -2452,9 +2457,18 @@ def admin_update_feedback_status(
 
 @router.get("/question-portal/me", response_model=QuestionAdminPortalMeResponse)
 def question_admin_portal_me(
-    profile: dict = Depends(require_question_admin_portal_user),
+    profile: dict = Depends(require_question_admin_access_user),
 ) -> QuestionAdminPortalMeResponse:
-    return QuestionAdminPortalMeResponse(allowed=True, profile=profile)
+    public_profile = {
+        key: value
+        for key, value in profile.items()
+        if not str(key).startswith("_question_admin_")
+    }
+    return QuestionAdminPortalMeResponse(
+        allowed=True,
+        profile=public_profile,
+        permissions=get_question_admin_permissions(profile),
+    )
 
 
 @router.get("/question-portal/dashboard", response_model=QuestionAdminDashboardResponse)
@@ -5014,9 +5028,14 @@ def question_admin_update_community_appeal(
 
 @router.get("/question-banks", response_model=QuestionBankListResponse)
 def admin_question_banks(
-    _: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_reader),
 ) -> QuestionBankListResponse:
-    return QuestionBankListResponse(items=_list_question_bank_items(get_supabase_admin()))
+    items = _list_question_bank_items(get_supabase_admin())
+    permissions = get_question_admin_permissions(admin_profile)
+    if permissions.get("scope") != "full":
+        allowed_ids = set(permissions.get("allowed_question_bank_ids") or [])
+        items = [item for item in items if item.id in allowed_ids]
+    return QuestionBankListResponse(items=items)
 
 
 @router.post("/question-banks", response_model=QuestionBankItem, status_code=status.HTTP_201_CREATED)
@@ -5165,8 +5184,9 @@ def _count_question_statuses(supabase, question_bank_id: str | None = None) -> A
 @router.get("/question-stats", response_model=AdminQuestionStatsResponse)
 def admin_question_stats(
     question_bank_id: str | None = Query(default=None, max_length=80),
-    _: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_reader),
 ) -> AdminQuestionStatsResponse:
+    require_question_admin_bank_access(admin_profile, question_bank_id, capability="view")
     return _count_question_statuses(get_supabase_admin(), question_bank_id)
 
 
@@ -5183,8 +5203,9 @@ def admin_questions(
     difficulty: str | None = Query(default=None, max_length=8),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
-    _: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_reader),
 ) -> AdminQuestionListResponse:
+    require_question_admin_bank_access(admin_profile, question_bank_id, capability="view")
     supabase = get_supabase_admin()
     query = exclude_ai_generated_questions(
         supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
@@ -5236,8 +5257,13 @@ def admin_create_question(
 @router.post("/questions/image-import/dry-run", response_model=AdminQuestionImageImportDryRunResponse)
 def admin_question_image_import_dry_run(
     payload: AdminQuestionImageImportRequest,
-    admin_profile: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_importer),
 ) -> AdminQuestionImageImportDryRunResponse:
+    require_question_admin_bank_access(
+        admin_profile,
+        payload.question_bank_id,
+        capability="import",
+    )
     supabase = get_supabase_admin()
     return _dry_run_image_import_questions(supabase, payload, admin_profile)
 
@@ -5245,7 +5271,7 @@ def admin_question_image_import_dry_run(
 @router.post("/questions/image-import/recognize", response_model=AdminQuestionFileRecognizeResponse)
 async def admin_question_image_import_recognize(
     file: UploadFile = File(...),
-    admin_profile: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_importer),
 ) -> AdminQuestionFileRecognizeResponse:
     _ = admin_profile
     content = await file.read()
@@ -5259,8 +5285,13 @@ async def admin_question_image_import_recognize(
 @router.post("/questions/image-import/commit", response_model=AdminQuestionImageImportCommitResponse)
 def admin_question_image_import_commit(
     payload: AdminQuestionImageImportRequest,
-    admin_profile: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_importer),
 ) -> AdminQuestionImageImportCommitResponse:
+    require_question_admin_bank_access(
+        admin_profile,
+        payload.question_bank_id,
+        capability="import",
+    )
     supabase = get_supabase_admin()
     dry_run = _dry_run_image_import_questions(supabase, payload, admin_profile)
     if dry_run.invalid_count or dry_run.duplicate_count:
@@ -5369,10 +5400,16 @@ def admin_bulk_delete_questions(
 @router.get("/questions/{question_id}", response_model=AdminQuestionDetailResponse)
 def admin_question_detail(
     question_id: str,
-    _: dict = Depends(require_question_admin_user),
+    admin_profile: dict = Depends(require_question_admin_reader),
 ) -> AdminQuestionDetailResponse:
     supabase = get_supabase_admin()
-    return AdminQuestionDetailResponse(question=_get_manageable_question_or_404(supabase, question_id))
+    question = _get_manageable_question_or_404(supabase, question_id)
+    require_question_admin_bank_access(
+        admin_profile,
+        question.get("question_bank_id"),
+        capability="view",
+    )
+    return AdminQuestionDetailResponse(question=question)
 
 
 @router.patch("/questions/{question_id}", response_model=AdminQuestionDetailResponse)

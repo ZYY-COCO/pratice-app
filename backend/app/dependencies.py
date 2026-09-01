@@ -32,6 +32,11 @@ _USER_ACCESS_STATUS_MAX_ENTRIES = 4096
 _user_access_status: OrderedDict[str, tuple[bool, float]] = OrderedDict()
 _user_access_status_lock = Lock()
 
+QUESTION_ADMIN_PERMISSION_KEY = "_question_admin_permissions"
+QUESTION_ADMIN_PERMISSION_NOTE_TYPE = "question_admin_permissions_v1"
+QUESTION_ADMIN_SCOPE_FULL = "full"
+QUESTION_ADMIN_SCOPE_IMPORTER = "question_importer"
+
 
 def _auth_cache_key(token: str) -> str:
     return hashlib.sha256(token.encode("utf-8")).hexdigest()
@@ -240,13 +245,84 @@ def require_admin_user(profile: Annotated[dict, Depends(get_current_user_profile
     return profile
 
 
+def _full_question_admin_permissions() -> dict:
+    return {
+        "scope": QUESTION_ADMIN_SCOPE_FULL,
+        "allowed_question_bank_ids": [],
+        "can_access_full_portal": True,
+        "can_view_questions": True,
+        "can_import_questions": True,
+        "can_manage_questions": True,
+    }
+
+
+def _no_question_admin_permissions() -> dict:
+    return {
+        "scope": "none",
+        "allowed_question_bank_ids": [],
+        "can_access_full_portal": False,
+        "can_view_questions": False,
+        "can_import_questions": False,
+        "can_manage_questions": False,
+    }
+
+
+def _question_importer_permissions(question_bank_ids: object) -> dict:
+    allowed_question_bank_ids: list[str] = []
+    if isinstance(question_bank_ids, list):
+        for value in question_bank_ids:
+            question_bank_id = str(value or "").strip()
+            if question_bank_id and question_bank_id not in allowed_question_bank_ids:
+                allowed_question_bank_ids.append(question_bank_id)
+    return {
+        "scope": QUESTION_ADMIN_SCOPE_IMPORTER,
+        "allowed_question_bank_ids": allowed_question_bank_ids,
+        "can_access_full_portal": False,
+        "can_view_questions": True,
+        "can_import_questions": True,
+        "can_manage_questions": False,
+    }
+
+
+def _question_admin_permissions_from_access_row(access_row: dict) -> dict:
+    note = access_row.get("note")
+    if not isinstance(note, str) or not note.strip().startswith("{"):
+        return _full_question_admin_permissions()
+
+    try:
+        payload = json.loads(note)
+    except (TypeError, ValueError, json.JSONDecodeError):
+        return _no_question_admin_permissions()
+
+    if not isinstance(payload, dict) or payload.get("type") != QUESTION_ADMIN_PERMISSION_NOTE_TYPE:
+        return _no_question_admin_permissions()
+    if str(payload.get("scope") or "").strip().lower() != QUESTION_ADMIN_SCOPE_IMPORTER:
+        return _no_question_admin_permissions()
+    return _question_importer_permissions(payload.get("allowed_question_bank_ids"))
+
+
+def _attach_question_admin_permissions(profile: dict, permissions: dict) -> dict:
+    principal = dict(profile)
+    principal[QUESTION_ADMIN_PERMISSION_KEY] = dict(permissions)
+    return principal
+
+
+def get_question_admin_permissions(profile: dict) -> dict:
+    permissions = profile.get(QUESTION_ADMIN_PERMISSION_KEY)
+    if isinstance(permissions, dict):
+        return dict(permissions)
+    if is_admin_profile(profile):
+        return _full_question_admin_permissions()
+    return _no_question_admin_permissions()
+
+
 def _require_question_portal_access(profile: dict) -> dict:
     supabase = get_supabase_admin()
     try:
         response = call_supabase(
             lambda: (
                 supabase.table("question_admin_access")
-                .select("user_id")
+                .select("*")
                 .eq("user_id", profile.get("id"))
                 .eq("is_active", True)
                 .limit(1)
@@ -266,23 +342,35 @@ def _require_question_portal_access(profile: dict) -> dict:
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Question portal permission required",
         )
-    return profile
+    permissions = _question_admin_permissions_from_access_row(response.data[0])
+    return _attach_question_admin_permissions(profile, permissions)
 
 
-def require_question_admin_portal_user(
+def require_question_admin_access_user(
     profile: Annotated[dict, Depends(get_current_user_profile)],
 ) -> dict:
-    """Allow only users explicitly enabled in the question portal access table."""
+    """Allow any active question-portal whitelist entry."""
 
     if profile.get("disabled_at"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
     return _require_question_portal_access(profile)
 
 
+def require_question_admin_portal_user(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow whitelist users with access to the complete operations portal."""
+
+    principal = require_question_admin_access_user(profile)
+    if not get_question_admin_permissions(principal)["can_access_full_portal"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Full portal permission required")
+    return principal
+
+
 def require_question_admin_user(
     profile: Annotated[dict, Depends(get_current_user_profile)],
 ) -> dict:
-    """Allow existing admins or users explicitly enabled for the question portal."""
+    """Allow only users who may change, review, publish, or delete questions."""
 
     if profile.get("disabled_at"):
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
@@ -290,6 +378,72 @@ def require_question_admin_user(
     # Keep the existing mobile admin flow working without requiring a migration
     # to be applied before deployment.
     if is_admin_profile(profile):
-        return profile
+        return _attach_question_admin_permissions(profile, _full_question_admin_permissions())
 
-    return _require_question_portal_access(profile)
+    principal = _require_question_portal_access(profile)
+    if not get_question_admin_permissions(principal)["can_manage_questions"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Question management permission required")
+    return principal
+
+
+def require_question_admin_reader(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow full administrators and scoped question-bank readers."""
+
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+    principal = (
+        _attach_question_admin_permissions(profile, _full_question_admin_permissions())
+        if is_admin_profile(profile)
+        else _require_question_portal_access(profile)
+    )
+    if not get_question_admin_permissions(principal)["can_view_questions"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Question read permission required")
+    return principal
+
+
+def require_question_admin_importer(
+    profile: Annotated[dict, Depends(get_current_user_profile)],
+) -> dict:
+    """Allow full administrators and scoped question importers."""
+
+    if profile.get("disabled_at"):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account disabled")
+    principal = (
+        _attach_question_admin_permissions(profile, _full_question_admin_permissions())
+        if is_admin_profile(profile)
+        else _require_question_portal_access(profile)
+    )
+    if not get_question_admin_permissions(principal)["can_import_questions"]:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Question import permission required")
+    return principal
+
+
+def require_question_admin_bank_access(
+    profile: dict,
+    question_bank_id: str | None,
+    *,
+    capability: str = "view",
+) -> str | None:
+    permissions = get_question_admin_permissions(profile)
+    capability_field = {
+        "view": "can_view_questions",
+        "import": "can_import_questions",
+        "manage": "can_manage_questions",
+    }.get(capability)
+    if not capability_field or not permissions.get(capability_field):
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Question permission required")
+
+    normalized_question_bank_id = str(question_bank_id or "").strip() or None
+    if permissions.get("scope") == QUESTION_ADMIN_SCOPE_FULL:
+        return normalized_question_bank_id
+
+    allowed_ids = {
+        str(value or "").strip()
+        for value in permissions.get("allowed_question_bank_ids") or []
+        if str(value or "").strip()
+    }
+    if not normalized_question_bank_id or normalized_question_bank_id not in allowed_ids:
+        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Question bank permission required")
+    return normalized_question_bank_id

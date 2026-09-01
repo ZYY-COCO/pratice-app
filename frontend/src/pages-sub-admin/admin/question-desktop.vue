@@ -38,7 +38,7 @@
       <view class="sidebar-section-label">工作台</view>
       <view class="sidebar-nav">
         <button
-          v-for="item in navItems"
+          v-for="item in visibleNavItems"
           :key="item.key"
           class="nav-item"
           :class="{ active: navItemActive(item.key) }"
@@ -764,7 +764,7 @@
             <button class="secondary-button" @tap="loadQuestionBanks">重新加载</button>
           </view>
           <view v-else class="bank-file-grid">
-            <view class="bank-file-card bank-file-card--mock-exam">
+            <view v-if="canManageQuestions" class="bank-file-card bank-file-card--mock-exam">
               <view class="bank-file-icon" aria-hidden="true">
                 <view class="bank-file-tab"></view>
                 <view class="bank-file-face bank-file-face--mock-exam">
@@ -797,7 +797,7 @@
               <view class="bank-file-main">
                 <view class="bank-file-title-row">
                   <view class="bank-file-name">{{ bank.name }}</view>
-                  <button class="bank-rename-button" @tap.stop="openQuestionBankDialog('rename', bank)">
+                  <button v-if="canManageQuestions" class="bank-rename-button" @tap.stop="openQuestionBankDialog('rename', bank)">
                     重命名
                   </button>
                 </view>
@@ -808,7 +808,7 @@
               </button>
             </view>
 
-            <button class="bank-file-card bank-file-create-card" @tap="openQuestionBankDialog('create')">
+            <button v-if="canManageQuestions" class="bank-file-card bank-file-create-card" @tap="openQuestionBankDialog('create')">
               <view class="bank-file-create-icon">＋</view>
               <view class="bank-file-create-title">新建题库</view>
             </button>
@@ -854,7 +854,9 @@
                   {{ activeSection === 'review'
                     ? '逐题检查内容，确认后发布或退回修改。'
                     : activeQuestionBank
-                      ? '搜索、筛选、编辑并维护当前题库。'
+                      ? canManageQuestions
+                        ? '搜索、筛选、编辑并维护当前题库。'
+                        : '可搜索和筛选当前题库；该账号仅拥有查看权限。'
                       : '按状态筛选并查看全部题库中的题目。' }}
                 </view>
               </view>
@@ -924,7 +926,7 @@
               >清空</button>
             </view>
 
-            <view v-if="activeSection !== 'review' && selectedIds.length" class="bulk-toolbar">
+            <view v-if="canManageQuestions && activeSection !== 'review' && selectedIds.length" class="bulk-toolbar">
               <view class="bulk-copy">已选择 <text>{{ selectedIds.length }}</text> 道题</view>
               <view class="bulk-actions">
                 <button
@@ -944,7 +946,7 @@
               <view class="question-table">
                 <view class="question-grid table-head">
                   <view class="check-cell">
-                    <button class="check-box" :class="{ checked: allPageSelected }" @tap="toggleSelectPage">
+                    <button v-if="canManageQuestions" class="check-box" :class="{ checked: allPageSelected }" @tap="toggleSelectPage">
                       {{ allPageSelected ? '✓' : '' }}
                     </button>
                   </view>
@@ -973,6 +975,7 @@
                 >
                   <view class="check-cell">
                     <button
+                      v-if="canManageQuestions"
                       class="check-box"
                       :class="{ checked: isSelected(item.id) }"
                       @tap.stop="toggleSelection(item.id)"
@@ -1007,7 +1010,7 @@
                   <view class="date-cell">{{ formatDate(item.created_at) }}</view>
                   <view class="action-cell">
                     <button class="row-action" @tap.stop="openEditDrawer(item, activeSection === 'review')">
-                      {{ activeSection === 'review' ? '审核' : '编辑' }}
+                      {{ activeSection === 'review' ? '审核' : canManageQuestions ? '编辑' : '查看' }}
                     </button>
                   </view>
                 </view>
@@ -1287,6 +1290,7 @@
                   class="form-admin-select"
                   :options="editorSubjectLabels"
                   :value-index="editorSubjectIndex"
+                  :disabled="!canManageQuestions"
                   aria-label="科目"
                   @change="handleEditorSubjectChange"
                 />
@@ -1297,6 +1301,7 @@
                   class="form-admin-select"
                   :options="editorModuleLabels"
                   :value-index="editorModuleIndex"
+                  :disabled="!canManageQuestions"
                   aria-label="模块"
                   @change="handleEditorModuleChange"
                 />
@@ -1310,6 +1315,7 @@
                   class="form-admin-select"
                   :options="editorSubmoduleLabels"
                   :value-index="editorSubmoduleIndex"
+                  :disabled="!canManageQuestions"
                   aria-label="考点"
                   @change="handleEditorSubmoduleChange"
                 />
@@ -1321,6 +1327,7 @@
                     v-for="level in 5"
                     :key="level"
                     :class="{ active: Number(form.difficulty) === level }"
+                    :disabled="!canManageQuestions"
                     @tap="form.difficulty = level"
                   >{{ level }}</button>
                 </view>
@@ -1344,7 +1351,7 @@
                 <view class="form-label">题干</view>
                 <text class="required-tag">必填</text>
               </view>
-              <textarea v-model.trim="form.stem" class="form-textarea stem" placeholder="请输入完整题干" />
+              <textarea v-model.trim="form.stem" class="form-textarea stem" :disabled="!canManageQuestions" placeholder="请输入完整题干" />
             </view>
 
             <view class="form-field full">
@@ -1359,10 +1366,11 @@
                   class="option-row"
                   :class="{ correct: form.answer === option }"
                 >
-                  <button class="answer-selector" @tap="form.answer = option">{{ option }}</button>
+                  <button class="answer-selector" :disabled="!canManageQuestions" @tap="form.answer = option">{{ option }}</button>
                   <input
                     v-model.trim="form[`option_${option.toLowerCase()}`]"
                     class="option-input"
+                    :disabled="!canManageQuestions"
                     :placeholder="`${option} 选项`"
                   />
                 </view>
@@ -1374,12 +1382,12 @@
                 <view class="form-label">解析</view>
                 <text class="form-hint">建议包含答案理由与易错点</text>
               </view>
-              <textarea v-model.trim="form.explanation" class="form-textarea explanation" placeholder="请输入题目解析" />
+              <textarea v-model.trim="form.explanation" class="form-textarea explanation" :disabled="!canManageQuestions" placeholder="请输入题目解析" />
             </view>
 
             <view v-if="drawerMode === 'review'" class="form-field full review-note-field">
               <view class="form-label">审核备注</view>
-              <textarea v-model.trim="form.review_note" class="form-textarea note" placeholder="退回修改时请写明问题" />
+              <textarea v-model.trim="form.review_note" class="form-textarea note" :disabled="!canManageQuestions" placeholder="退回修改时请写明问题" />
             </view>
 
             <view v-if="form.id" class="question-meta-note">
@@ -1390,11 +1398,12 @@
         </scroll-view>
 
         <view class="drawer-footer">
-          <button v-if="drawerMode === 'review'" class="footer-button warning" :disabled="saving" @tap="markNeedsChanges">
+          <button v-if="!canManageQuestions" class="footer-button secondary" @tap="requestCloseDrawer">关闭</button>
+          <button v-if="canManageQuestions && drawerMode === 'review'" class="footer-button warning" :disabled="saving" @tap="markNeedsChanges">
             需要修改
           </button>
           <button
-            v-if="drawerMode === 'edit' && form.id"
+            v-if="canManageQuestions && drawerMode === 'edit' && form.id"
             class="footer-button select"
             :class="{ active: isSelected(form.id) }"
             :disabled="saving"
@@ -1402,20 +1411,20 @@
           >
             {{ isSelected(form.id) ? '已选中' : '选中' }}
           </button>
-          <button v-if="drawerMode !== 'create'" class="footer-button secondary" :disabled="saving" @tap="saveQuestionEdits">
+          <button v-if="canManageQuestions && drawerMode !== 'create'" class="footer-button secondary" :disabled="saving" @tap="saveQuestionEdits">
             保存修改
           </button>
-          <button v-if="drawerMode === 'create'" class="footer-button secondary" :disabled="saving" @tap="createQuestion('pending')">
+          <button v-if="canManageQuestions && drawerMode === 'create'" class="footer-button secondary" :disabled="saving" @tap="createQuestion('pending')">
             存入待审核
           </button>
-          <button v-if="drawerMode === 'review'" class="footer-button primary" :disabled="saving" @tap="approveAndPublish">
+          <button v-if="canManageQuestions && drawerMode === 'review'" class="footer-button primary" :disabled="saving" @tap="approveAndPublish">
             通过并发布
           </button>
-          <button v-else-if="drawerMode === 'create'" class="footer-button primary" :disabled="saving" @tap="createQuestion('publish')">
+          <button v-else-if="canManageQuestions && drawerMode === 'create'" class="footer-button primary" :disabled="saving" @tap="createQuestion('publish')">
             直接发布
           </button>
           <button
-            v-else
+            v-else-if="canManageQuestions"
             class="footer-button"
             :class="questionDisplayStatus(form) === 'active' ? 'danger' : 'primary'"
             :disabled="saving"
@@ -1632,6 +1641,18 @@ const communityAppealsRef = ref(null)
 const sidebarCollapsed = ref(false)
 const sidebarToggleTitle = computed(() => (sidebarCollapsed.value ? '打开边栏' : '关闭边栏'))
 const authUser = ref(getAuthUser() || {})
+const portalPermissions = reactive({
+  scope: 'none',
+  allowed_question_bank_ids: [],
+  can_access_full_portal: false,
+  can_view_questions: false,
+  can_import_questions: false,
+  can_manage_questions: false
+})
+const canAccessFullPortal = computed(() => Boolean(portalPermissions.can_access_full_portal))
+const canViewQuestions = computed(() => Boolean(portalPermissions.can_view_questions))
+const canImportQuestions = computed(() => Boolean(portalPermissions.can_import_questions))
+const canManageQuestions = computed(() => Boolean(portalPermissions.can_manage_questions))
 const dashboard = reactive({
   today_practicing_users: 0,
   registered_users: 0,
@@ -1957,6 +1978,7 @@ const navItems = [
   { key: 'questions', label: '题目管理', icon: '/static/admin-icons/nav-question-management.svg' },
   { key: 'import', label: '批量导入', icon: '/static/admin-icons/nav-batch-import.svg' }
 ]
+const visibleNavItems = computed(() => navItems.filter((item) => canAccessSection(item.key)))
 
 const contentManagementTabs = [
   { key: 'posts', label: '社区内容', description: '研友聊、经验贴', icon: '/static/ui-icons/circle-community.svg' },
@@ -2245,7 +2267,7 @@ const currentNavLabel = computed(() => {
   if (activeSection.value === 'mockExams') {
     return '题目管理 / 模拟卷'
   }
-  const label = navItems.find((item) => item.key === activeSection.value)?.label || '后台管理'
+  const label = visibleNavItems.value.find((item) => item.key === activeSection.value)?.label || '后台管理'
   return activeSection.value === 'questions' && activeQuestionBank.value
     ? `${label} / ${activeQuestionBank.value.name}`
     : label
@@ -2313,7 +2335,7 @@ const activeQuestionBankCount = computed(() => (
 ))
 const summaryCards = computed(() => [
   { key: '', label: '全部题目', value: activeQuestionBankCount.value, iconSrc: '/static/admin-icons/question-count.svg', tone: 'blue', interactive: true },
-  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: currentQuestionStats.value.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange', interactive: true },
+  { key: QUESTION_STATUS.PENDING_REVIEW, label: '待审核', value: currentQuestionStats.value.pendingReview, iconSrc: '/static/admin-icons/pending-review.svg', tone: 'orange', interactive: canManageQuestions.value },
   { key: QUESTION_STATUS.ACTIVE, label: '已发布', value: currentQuestionStats.value.active, iconSrc: '/static/admin-icons/publish.svg', tone: 'mint', interactive: false },
   { key: QUESTION_STATUS.ARCHIVED, label: '已下架', value: currentQuestionStats.value.archived, iconSrc: '/static/admin-icons/unpublish.svg', tone: 'slate', interactive: false }
 ])
@@ -2584,11 +2606,45 @@ const editorSubjectIndex = computed(() => Math.max(0, editorSubjects.value.index
 const editorModuleIndex = computed(() => Math.max(0, editorModules.value.indexOf(form.module)))
 const editorSubmoduleIndex = computed(() => Math.max(0, editorSubmodules.value.indexOf(form.submodule)))
 const drawerKicker = computed(() => (
-  drawerMode.value === 'create' ? 'NEW QUESTION' : drawerMode.value === 'review' ? 'REVIEW QUEUE' : 'QUESTION DETAIL'
+  drawerMode.value === 'create' ? 'NEW QUESTION' : drawerMode.value === 'review' ? 'REVIEW QUEUE' : canManageQuestions.value ? 'QUESTION DETAIL' : 'READ ONLY'
 ))
 const drawerTitle = computed(() => (
-  drawerMode.value === 'create' ? '新增题目' : drawerMode.value === 'review' ? '审核题目' : '编辑题目'
+  drawerMode.value === 'create' ? '新增题目' : drawerMode.value === 'review' ? '审核题目' : canManageQuestions.value ? '编辑题目' : '查看题目'
 ))
+
+function applyPortalPermissions(rawPermissions) {
+  const permissions = rawPermissions && typeof rawPermissions === 'object'
+    ? rawPermissions
+    : {
+        scope: 'full',
+        allowed_question_bank_ids: [],
+        can_access_full_portal: true,
+        can_view_questions: true,
+        can_import_questions: true,
+        can_manage_questions: true
+      }
+  portalPermissions.scope = String(permissions.scope || 'none')
+  portalPermissions.allowed_question_bank_ids = Array.isArray(permissions.allowed_question_bank_ids)
+    ? permissions.allowed_question_bank_ids.map((value) => String(value || '')).filter(Boolean)
+    : []
+  portalPermissions.can_access_full_portal = Boolean(permissions.can_access_full_portal)
+  portalPermissions.can_view_questions = Boolean(permissions.can_view_questions)
+  portalPermissions.can_import_questions = Boolean(permissions.can_import_questions)
+  portalPermissions.can_manage_questions = Boolean(permissions.can_manage_questions)
+}
+
+function canAccessSection(section) {
+  if (canAccessFullPortal.value) return true
+  if (section === 'questions') return canViewQuestions.value
+  if (section === 'import') return canImportQuestions.value
+  return false
+}
+
+function requireQuestionManagementAccess() {
+  if (canManageQuestions.value) return true
+  uni.showToast({ title: '当前账号仅支持查看和批量导入', icon: 'none' })
+  return false
+}
 
 onLoad(async (options = {}) => {
   homeContentClockTimer = setInterval(() => {
@@ -2642,10 +2698,16 @@ async function bootstrap() {
   portalBootstrapError.value = null
   try {
     const me = await fetchQuestionAdminPortalMe()
+    applyPortalPermissions(me?.permissions)
     if (me?.profile) {
       authUser.value = updateAuthUser(me.profile) || me.profile
     }
-    await Promise.all([loadDashboard(), loadQuestionStats()])
+    if (!canAccessSection(activeSection.value)) {
+      activeSection.value = canViewQuestions.value ? 'questions' : 'import'
+    }
+    if (canAccessFullPortal.value) {
+      await Promise.all([loadDashboard(), loadQuestionStats()])
+    }
     if (activeSection.value === 'community') {
       await refreshContentManagementTab()
     } else if (activeSection.value === 'users') {
@@ -2790,6 +2852,12 @@ async function loadCommunityData() {
 
 async function loadQuestionStats(questionBankId = '') {
   const target = questionBankId ? questionStats : globalQuestionStats
+  if (!questionBankId && !canAccessFullPortal.value) {
+    target.active = 0
+    target.archived = 0
+    target.pendingReview = 0
+    return
+  }
   if (devPreviewMode.value) {
     target.active = questionBankId ? 2846 : 11321
     target.archived = questionBankId ? 126 : 326
@@ -2884,6 +2952,10 @@ async function loadQuestions() {
 }
 
 async function switchSection(section) {
+  if (!canAccessSection(section)) {
+    uni.showToast({ title: '当前账号无此栏目权限', icon: 'none' })
+    return
+  }
   if (section === 'review') return
   if (activeSection.value === section) {
     if (section === 'questions' && (activeQuestionBank.value || showGlobalQuestionList.value)) {
@@ -3015,7 +3087,7 @@ async function refreshQuestionData() {
       ? reviewQuestionBank.value?.id || ''
       : ''
   const tasks = [loadQuestionStats(questionBankId), loadQuestions()]
-  if (questionBankId) tasks.push(loadQuestionStats())
+  if (questionBankId && canAccessFullPortal.value) tasks.push(loadQuestionStats())
   await Promise.all(tasks)
 }
 
@@ -3157,6 +3229,7 @@ async function handleDashboardTimeRangeChange(event) {
 async function applySummaryFilter(status) {
   if (status === QUESTION_STATUS.ACTIVE || status === QUESTION_STATUS.ARCHIVED) return
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
+    if (!requireQuestionManagementAccess()) return
     resetReturnedReviewExportBatch()
     reviewQuestionBank.value = activeQuestionBank.value || null
     activeSection.value = 'review'
@@ -3184,6 +3257,7 @@ function handleSummaryCardTap(item) {
 }
 
 async function startReviewQueue() {
+  if (!requireQuestionManagementAccess()) return
   if (questionsLoading.value || drawerLoading.value) return
   const firstPendingQuestion = questions.value.find((item) => (
     questionDisplayStatus(item) === QUESTION_STATUS.PENDING_REVIEW
@@ -3202,6 +3276,7 @@ function navItemActive(key) {
 }
 
 async function openMockExamManagement() {
+  if (!requireQuestionManagementAccess()) return
   activeSection.value = 'mockExams'
   activeQuestionBank.value = null
   reviewQuestionBank.value = null
@@ -3212,6 +3287,7 @@ async function openMockExamManagement() {
 }
 
 function openQuestionBankDialog(mode, bank = null) {
+  if (!requireQuestionManagementAccess()) return
   questionBankDialogMode.value = mode
   questionBankTarget.value = bank
   questionBankNameDraft.value = mode === 'rename' ? String(bank?.name || '') : ''
@@ -3226,6 +3302,7 @@ function closeQuestionBankDialog(force = false) {
 }
 
 async function saveQuestionBankDialog() {
+  if (!requireQuestionManagementAccess()) return
   if (questionBankSaving.value) return
   const name = String(questionBankNameDraft.value || '').trim()
   if (!name) {
@@ -3584,17 +3661,20 @@ function isSelected(id) {
 }
 
 function toggleSelection(id) {
+  if (!canManageQuestions.value) return
   selectedIds.value = isSelected(id)
     ? selectedIds.value.filter((item) => item !== id)
     : [...selectedIds.value, id]
 }
 
 function toggleCurrentQuestionSelection() {
+  if (!canManageQuestions.value) return
   if (!form.id) return
   toggleSelection(form.id)
 }
 
 function toggleSelectPage() {
+  if (!canManageQuestions.value) return
   if (allPageSelected.value) {
     const visibleIds = new Set(questions.value.map((item) => item.id))
     selectedIds.value = selectedIds.value.filter((id) => !visibleIds.has(id))
@@ -3607,6 +3687,7 @@ function toggleSelectPage() {
 }
 
 async function bulkChangeStatus(status) {
+  if (!requireQuestionManagementAccess()) return
   if (!selectedIds.value.length) return
   const actionText = status === QUESTION_STATUS.ACTIVE ? '发布' : '下架'
   const isBulk = selectedIds.value.length > 1
@@ -3630,6 +3711,7 @@ async function bulkChangeStatus(status) {
 }
 
 async function deleteSelectedQuestions() {
+  if (!requireQuestionManagementAccess()) return
   if (!selectedIds.value.length) return
   const confirmed = await confirmAction(
     '确认删除题目？',
@@ -3648,6 +3730,7 @@ async function deleteSelectedQuestions() {
 }
 
 async function openPublishQuestionBankDialog() {
+  if (!requireQuestionManagementAccess()) return
   if (publishingQuestions.value) return
   publishQuestionBankId.value = ''
   publishPendingPreview.value = null
@@ -3657,6 +3740,7 @@ async function openPublishQuestionBankDialog() {
 }
 
 async function confirmPublishReviewQueue() {
+  if (!requireQuestionManagementAccess()) return
   if (publishingQuestions.value || activeSection.value !== 'review') return
 
   const targetBank = reviewQuestionBank.value
@@ -3767,6 +3851,7 @@ async function loadPublishPendingPreview() {
 }
 
 async function publishPendingQuestionsToBank() {
+  if (!requireQuestionManagementAccess()) return
   if (publishingQuestions.value || !publishQuestionBankId.value || !publishPendingPreview.value) return
   const targetBank = questionBanks.value.find((bank) => bank.id === publishQuestionBankId.value)
   if (!targetBank) {
@@ -3807,6 +3892,7 @@ async function publishPendingQuestionsToBank() {
 }
 
 function openCreateDrawer() {
+  if (!requireQuestionManagementAccess()) return
   resetForm({
     subject: filters.subject || '英语运用',
     module: filters.module || '',
@@ -3817,6 +3903,7 @@ function openCreateDrawer() {
 }
 
 async function openEditDrawer(item, review = false) {
+  if (review && !requireQuestionManagementAccess()) return
   drawerVisible.value = true
   drawerLoading.value = true
   drawerMode.value = review ? 'review' : 'edit'
@@ -3937,6 +4024,7 @@ function buildEditablePayload() {
 }
 
 async function createQuestion(target) {
+  if (!requireQuestionManagementAccess()) return
   if (saving.value) return
   const editable = buildEditablePayload()
   if (!editable) return
@@ -3967,6 +4055,7 @@ async function createQuestion(target) {
 }
 
 async function saveQuestionEdits(showSuccess = true) {
+  if (!requireQuestionManagementAccess()) return false
   if (saving.value || !form.id) return false
   const payload = buildEditablePayload()
   if (!payload) return false
@@ -3986,6 +4075,7 @@ async function saveQuestionEdits(showSuccess = true) {
 }
 
 async function approveAndPublish() {
+  if (!requireQuestionManagementAccess()) return
   if (!form.id || saving.value) return
   const saved = await saveQuestionEdits(false)
   if (!saved) return
@@ -4007,6 +4097,7 @@ async function approveAndPublish() {
 }
 
 async function markNeedsChanges() {
+  if (!requireQuestionManagementAccess()) return
   if (!form.id || saving.value) return
   if (!String(form.review_note || '').trim()) {
     uni.showToast({ title: '请填写需要修改的原因', icon: 'none' })
@@ -4112,6 +4203,7 @@ function formatExportDateTime(value) {
 }
 
 async function toggleCurrentQuestionStatus() {
+  if (!requireQuestionManagementAccess()) return
   if (!form.id || saving.value) return
   const next = questionDisplayStatus(form) === QUESTION_STATUS.ACTIVE
     ? QUESTION_STATUS.ARCHIVED
@@ -4144,6 +4236,10 @@ function requestCloseDrawer() {
 }
 
 function openImportWorkspace() {
+  if (!canImportQuestions.value) {
+    uni.showToast({ title: '当前账号无批量导入权限', icon: 'none' })
+    return
+  }
   importQuestionBankId.value = activeSection.value === 'questions' ? activeQuestionBank.value?.id || '' : ''
   importQuestionBankName.value = activeSection.value === 'questions' ? activeQuestionBank.value?.name || '' : ''
   importPreviewVisible.value = false
@@ -4174,6 +4270,7 @@ function goToPortalLogin() {
 }
 
 function loadDevPreview() {
+  applyPortalPermissions()
   authUser.value = {
     id: 'preview-user',
     email: 'editor@ganguantong.local',
