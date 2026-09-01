@@ -48,16 +48,17 @@ def _is_visible_message(row: dict, current: datetime) -> bool:
     return True
 
 
-def _fetch_visible_messages(supabase) -> list[dict]:
+def _fetch_visible_messages(supabase, *, limit: int | None = 50) -> list[dict]:
     response = (
         supabase.table("official_messages")
         .select("*")
         .neq("status", "archived")
         .order("published_at", desc=True)
         .order("created_at", desc=True)
-        .limit(50)
-        .execute()
     )
+    if limit is not None:
+        response = response.limit(limit)
+    response = response.execute()
     current = _now()
     return [row for row in (response.data or []) if _is_visible_message(row, current)]
 

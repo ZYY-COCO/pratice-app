@@ -955,7 +955,14 @@
                   <view class="question-category-cell">科目 / 模块</view>
                   <view class="difficulty-cell">难度</view>
                   <view class="status-cell">状态</view>
-                  <view class="date-cell">创建时间</view>
+                  <button
+                    class="date-cell question-date-sort-button"
+                    :aria-label="questionSortDirection === 'desc' ? '创建时间，当前倒序，点击切换为正序' : '创建时间，当前正序，点击切换为倒序'"
+                    @tap="toggleQuestionDateSort"
+                  >
+                    <text>创建时间</text>
+                    <text class="question-date-sort-icon">{{ questionSortDirection === 'asc' ? '▲' : '▼' }}</text>
+                  </button>
                   <view class="action-cell">操作</view>
                 </view>
 
@@ -1151,7 +1158,7 @@
       <view class="portal-user-detail-modal" @tap.stop>
         <view class="drawer-header"><view><view class="drawer-kicker">USER PROFILE</view><view class="drawer-title">用户详情</view></view><button class="drawer-close admin-modal-close" :disabled="portalUserSaving" @tap="closePortalUserDetail">×</button></view>
         <view v-if="portalUserDetailLoading" class="drawer-state">正在读取用户详情…</view>
-        <scroll-view v-else-if="portalUserDetail" scroll-y class="portal-user-detail-scroll"><view class="portal-user-detail-content"><view class="portal-user-profile-card"><view class="portal-user-avatar large">{{ portalUserDetail.profile?.nickname?.slice(0, 1) || portalUserDetail.profile?.email?.slice(0, 1) || '研' }}</view><view><view class="portal-user-profile-name">{{ portalUserDetail.profile?.nickname || '未设置昵称' }}</view><view class="portal-user-profile-contact">{{ portalUserDetail.profile?.email || portalUserDetail.profile?.phone || shortId(portalUserDetail.profile?.id) }}</view><view class="portal-user-profile-meta">注册于 {{ formatDateTime(portalUserDetail.profile?.created_at) }}</view></view><text class="status-pill" :class="portalUserDetail.profile?.disabled_at ? 'archived' : 'published'">{{ portalUserDetail.profile?.disabled_at ? '已停用' : '正常' }}</text></view><view class="portal-user-detail-stats"><view><text>累计作答</text><strong>{{ formatCount(portalUserDetail.answer_summary?.total) }}</strong></view><view><text>答对</text><strong>{{ formatCount(portalUserDetail.answer_summary?.correct) }}</strong></view><view><text>正确率</text><strong>{{ formatAccuracy(portalUserDetail.answer_summary?.accuracy) }}</strong></view><view><text>错题</text><strong>{{ formatCount(portalUserDetail.answer_summary?.wrong_question_count || portalUserDetail.answer_summary?.wrong) }}</strong></view></view><view class="portal-user-detail-heading">各科正确率</view><view v-if="portalUserDetail.subject_accuracy?.length" class="portal-subject-accuracy-list"><view v-for="item in portalUserDetail.subject_accuracy" :key="item.subject" class="portal-subject-accuracy-row"><view><strong>{{ item.subject }}</strong><text>{{ formatCount(item.total) }} 题</text></view><view class="portal-subject-accuracy-value" :class="accuracyTone(item.accuracy)">{{ formatAccuracy(item.accuracy) }}</view></view></view><view v-else class="portal-detail-empty">尚无可统计的学科作答数据</view><view class="portal-user-detail-heading">最近作答</view><view v-if="portalUserDetail.recent_answers?.length" class="portal-answer-list"><view v-for="item in portalUserDetail.recent_answers.slice(0, 8)" :key="item.id" class="portal-answer-row"><text :class="item.is_correct ? 'is-correct' : 'is-wrong'">{{ item.is_correct ? '正确' : '错误' }}</text><view><strong>{{ item.subject || '题目' }}</strong><text>{{ item.stem || item.questions?.stem || '—' }}</text></view><time>{{ formatDateTime(item.created_at) }}</time></view></view><view v-else class="portal-detail-empty">暂无作答记录</view></view></scroll-view>
+        <scroll-view v-else-if="portalUserDetail" scroll-y class="portal-user-detail-scroll"><view class="portal-user-detail-content"><view class="portal-user-profile-card"><view class="portal-user-avatar large">{{ portalUserDetail.profile?.nickname?.slice(0, 1) || portalUserDetail.profile?.email?.slice(0, 1) || '研' }}</view><view><view class="portal-user-profile-name">{{ portalUserDetail.profile?.nickname || '未设置昵称' }}</view><view class="portal-user-profile-contact">{{ portalUserDetail.profile?.email || portalUserDetail.profile?.phone || shortId(portalUserDetail.profile?.id) }}</view><view class="portal-user-profile-meta">注册于 {{ formatDateTime(portalUserDetail.profile?.created_at) }}</view></view><text class="status-pill" :class="portalUserDetail.profile?.disabled_at ? 'archived' : 'published'">{{ portalUserDetail.profile?.disabled_at ? '已停用' : '正常' }}</text></view><view class="portal-user-detail-stats"><view><text>累计作答</text><strong>{{ formatCount(portalUserDetail.answer_summary?.total) }}</strong></view><view><text>答对</text><strong>{{ formatCount(portalUserDetail.answer_summary?.correct) }}</strong></view><view><text>正确率</text><strong>{{ formatAccuracy(portalUserDetail.answer_summary?.accuracy) }}</strong></view><view><text>错题</text><strong>{{ formatCount(portalUserDetail.answer_summary?.wrong_question_count || portalUserDetail.answer_summary?.wrong) }}</strong></view></view><view class="portal-user-detail-heading">各科正确率</view><view v-if="portalUserDetail.subject_accuracy?.length" class="portal-subject-accuracy-list"><view v-for="item in portalUserDetail.subject_accuracy" :key="item.subject" class="portal-subject-accuracy-row"><view><strong>{{ item.subject }}</strong><text>{{ formatCount(item.total) }} 题</text></view><view class="portal-subject-accuracy-value" :class="accuracyTone(item.accuracy)">{{ formatAccuracy(item.accuracy) }}</view></view></view><view v-else class="portal-detail-empty">尚无可统计的学科作答数据</view><view class="portal-user-detail-heading">最近作答</view><view v-if="portalUserDetail.recent_answers?.length" class="portal-answer-list"><view v-for="item in portalUserDetail.recent_answers.slice(0, 8)" :key="item.id" class="portal-answer-row"><text :class="item.is_correct ? 'is-correct' : 'is-wrong'">{{ item.is_correct ? '正确' : '错误' }}</text><view><strong>{{ item.subject || '题目' }}</strong><text>{{ formatMathText(item.stem || item.questions?.stem || '—') }}</text></view><time>{{ formatDateTime(item.created_at) }}</time></view></view><view v-else class="portal-detail-empty">暂无作答记录</view></view></scroll-view>
         <view class="drawer-footer"><button class="footer-button secondary" :disabled="portalUserSaving" @tap="closePortalUserDetail">关闭</button><button v-if="portalUserDetail?.profile" class="footer-button" :class="portalUserDetail.profile.disabled_at ? 'primary' : 'danger'" :disabled="portalUserSaving" @tap="togglePortalUserDisabled(portalUserDetail.profile)">{{ portalUserDetail.profile.disabled_at ? '恢复账号' : '停用账号' }}</button></view>
       </view>
     </view>
@@ -1606,6 +1613,7 @@ import MathQuestionPaperPreview from '../../components/MathQuestionPaperPreview.
 import QuestionImageImport from './question-image-import.vue'
 import { historicalScoreLineRecords as legacyHistoricalScoreLineRecords } from '../../data/historicalScoreLines'
 import { clearAuthSession, getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
+import { formatMathText } from '../../utils/mathText'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
 import { downloadReturnedQuestionsWorkbook } from '../../utils/xlsxQuestionExport.mjs'
 import {
@@ -1923,6 +1931,7 @@ const questions = ref([])
 const questionCount = ref(0)
 const currentPage = ref(1)
 const pageSize = 20
+const questionSortDirection = ref('desc')
 const selectedIds = ref([])
 const drawerVisible = ref(false)
 const drawerLoading = ref(false)
@@ -2924,7 +2933,11 @@ async function loadQuestions() {
       if (status && questionDisplayStatus(item) !== status) return false
       return true
     })
-    questions.value = filtered
+    questions.value = [...filtered].sort((left, right) => {
+      const createdAtComparison = String(left.created_at || '').localeCompare(String(right.created_at || ''))
+      const stableComparison = createdAtComparison || String(left.id || '').localeCompare(String(right.id || ''))
+      return questionSortDirection.value === 'asc' ? stableComparison : -stableComparison
+    })
     questionCount.value = status ? filtered.length : 3010
     questionsLoading.value = false
     questionLoadError.value = false
@@ -3102,6 +3115,7 @@ function buildQuestionParams() {
   if (filters.module) params.module = filters.module
   if (filters.difficulty) params.difficulty = filters.difficulty
   if (filters.search) params.search = filters.search
+  params.sort_direction = questionSortDirection.value
   const status = activeSection.value === 'review' ? QUESTION_STATUS.PENDING_REVIEW : filters.status
   if (status === QUESTION_STATUS.PENDING_REVIEW) {
     params.status = QUESTION_STATUS.ARCHIVED
@@ -3400,6 +3414,8 @@ async function returnFromReviewSection() {
 }
 
 async function returnFromMockExamSection() {
+  const editorClosed = await mockExamManagementRef.value?.closeEditor?.()
+  if (editorClosed) return
   activeSection.value = 'questions'
   await returnToQuestionBanks()
 }
@@ -3432,6 +3448,12 @@ function changePage(page) {
   const next = Math.max(1, Math.min(totalPages.value, Number(page || 1)))
   if (next === currentPage.value) return
   currentPage.value = next
+  loadQuestions()
+}
+
+function toggleQuestionDateSort() {
+  questionSortDirection.value = questionSortDirection.value === 'desc' ? 'asc' : 'desc'
+  currentPage.value = 1
   loadQuestions()
 }
 
@@ -8632,6 +8654,47 @@ button {
 .date-cell {
   color: #8793a2;
   font-size: 10px;
+}
+
+.question-date-sort-button {
+  width: 100%;
+  min-height: 41px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 4px;
+  border: 0;
+  border-radius: 0;
+  box-sizing: border-box;
+  color: #718195;
+  background: transparent;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.question-date-sort-button::after {
+  border: 0;
+}
+
+.question-date-sort-button:hover,
+.question-date-sort-button:focus-visible {
+  color: #287f70;
+}
+
+.question-date-sort-button:focus-visible {
+  outline: 2px solid rgba(79, 205, 177, 0.55);
+  outline-offset: -3px;
+}
+
+.question-date-sort-icon {
+  flex: 0 0 auto;
+  color: #2a8a76;
+  font-size: 8px;
+  line-height: 1;
 }
 
 .row-action {

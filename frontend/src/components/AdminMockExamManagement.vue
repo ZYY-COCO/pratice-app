@@ -2,22 +2,17 @@
   <view class="mock-admin-shell">
     <template v-if="!editor">
       <view class="mock-admin-toolbar">
-        <view>
-          <view class="mock-admin-title">固定模拟卷</view>
-          <view class="mock-admin-subtitle">人工选题、校验卷面规格，再发布到学生端。</view>
+        <view class="mock-status-tabs">
+          <button
+            v-for="item in paperStatusOptions"
+            :key="item.value"
+            :class="{ active: paperStatus === item.value }"
+            @tap="changePaperStatus(item.value)"
+          >{{ item.label }}</button>
         </view>
         <button class="mock-primary-button" :disabled="creating" @tap="createPaper">
           {{ creating ? '创建中…' : '＋ 新建模拟卷' }}
         </button>
-      </view>
-
-      <view class="mock-status-tabs">
-        <button
-          v-for="item in paperStatusOptions"
-          :key="item.value"
-          :class="{ active: paperStatus === item.value }"
-          @tap="changePaperStatus(item.value)"
-        >{{ item.label }}</button>
       </view>
 
       <view v-if="listLoading" class="mock-admin-state">正在加载模拟卷…</view>
@@ -51,14 +46,20 @@
 
     <template v-else>
       <view class="mock-editor-toolbar">
-        <button class="mock-back-button" :disabled="busy" @tap="closeEditor">← 返回列表</button>
-        <view class="mock-editor-title-copy">
-          <input v-model.trim="editor.paper.title" class="mock-title-input" maxlength="80" placeholder="模拟卷名称" />
-          <view class="mock-editor-meta">
-            <text class="mock-paper-status" :class="editor.paper.status">{{ paperStatusText(editor.paper.status) }}</text>
-            <text>V{{ editor.paper.version || 1 }}</text>
-            <text>{{ editor.items.length }}/55 题</text>
-            <text>{{ currentTotalScore }}/105 分</text>
+        <view class="mock-validation-strip" :class="{ ready: localPublishReady }">
+          <view class="mock-validation-heading">
+            <strong>{{ localPublishReady ? '卷面规格已满足，可发布' : '卷面规格校验中' }}</strong>
+            <text>发布前后端还会再次强校验</text>
+          </view>
+          <view class="mock-validation-metrics">
+            <view v-for="item in sectionProgress" :key="item.key" :class="{ complete: item.selected === item.required }">
+              <text>{{ item.label }}</text>
+              <strong>{{ item.selected }}/{{ item.required }}</strong>
+            </view>
+            <view v-for="item in difficultyProgress" :key="item.key" :class="{ complete: item.selected === item.required }">
+              <text>{{ item.label }}</text>
+              <strong>{{ item.selected }}/{{ item.required }}</strong>
+            </view>
           </view>
         </view>
         <view class="mock-editor-actions">
@@ -86,31 +87,14 @@
             >{{ code }}</button>
           </view>
         </view>
-        <view class="mock-setting-field mock-description-field">
-          <text>试卷说明</text>
-          <input v-model.trim="editor.paper.description" maxlength="500" placeholder="选填：向学生说明本卷侧重点" />
+        <view class="mock-setting-field mock-title-field">
+          <text>试卷名称</text>
+          <input v-model.trim="editor.paper.title" class="mock-title-input" maxlength="80" placeholder="请输入模拟卷名称" />
         </view>
         <view class="mock-setting-field mock-duration-field">
           <text>建议时长</text>
           <input v-model.number="editor.paper.duration_minutes" type="number" min="30" max="360" />
           <small>分钟</small>
-        </view>
-      </view>
-
-      <view class="mock-validation-strip" :class="{ ready: localPublishReady }">
-        <view class="mock-validation-heading">
-          <strong>{{ localPublishReady ? '卷面规格已满足，可发布' : '卷面规格校验中' }}</strong>
-          <text>发布前后端还会再次强校验</text>
-        </view>
-        <view class="mock-validation-metrics">
-          <view v-for="item in sectionProgress" :key="item.key" :class="{ complete: item.selected === item.required }">
-            <text>{{ item.label }}</text>
-            <strong>{{ item.selected }}/{{ item.required }}</strong>
-          </view>
-          <view v-for="item in difficultyProgress" :key="item.key" :class="{ complete: item.selected === item.required }">
-            <text>{{ item.label }}</text>
-            <strong>{{ item.selected }}/{{ item.required }}</strong>
-          </view>
         </view>
       </view>
 
@@ -153,17 +137,40 @@
               <input v-model.trim="optionFilters.search" placeholder="搜索题干" @input="scheduleQuestionSearch" @confirm="applyQuestionFilters" />
               <button v-if="optionFilters.search" @tap="clearQuestionSearch">×</button>
             </view>
-            <view class="mock-filter-pills">
-              <button
-                v-for="item in publicationOptions"
-                :key="item.value"
-                :class="{ active: optionFilters.publication === item.value }"
-                @tap="setPublicationFilter(item.value)"
-              >{{ item.label }}</button>
-            </view>
-            <view class="mock-filter-pills difficulty">
-              <button :class="{ active: !optionFilters.difficulty }" @tap="setDifficultyFilter('')">全部难度</button>
-              <button v-for="level in 5" :key="level" :class="{ active: Number(optionFilters.difficulty) === level }" @tap="setDifficultyFilter(level)">{{ level }}</button>
+            <view class="mock-filter-row">
+              <view class="mock-filter-pill-groups">
+                <view class="mock-filter-pills">
+                  <button
+                    v-for="item in publicationOptions"
+                    :key="item.value"
+                    :class="{ active: optionFilters.publication === item.value }"
+                    @tap="setPublicationFilter(item.value)"
+                  >{{ item.label }}</button>
+                </view>
+                <view class="mock-filter-pills difficulty">
+                  <button :class="{ active: !optionFilters.difficulty }" @tap="setDifficultyFilter('')">全部难度</button>
+                  <button v-for="level in 5" :key="level" :class="{ active: Number(optionFilters.difficulty) === level }" @tap="setDifficultyFilter(level)">{{ level }}</button>
+                </view>
+              </view>
+              <view class="mock-classification-filters">
+                <AdminSelect
+                  class="mock-classification-select"
+                  :options="moduleFilterOptions"
+                  :value-index="selectedModuleFilterIndex"
+                  prefix="分类："
+                  aria-label="题目一级分类筛选"
+                  @change="setModuleFilter"
+                />
+                <AdminSelect
+                  class="mock-classification-select"
+                  :options="submoduleFilterOptions"
+                  :value-index="selectedSubmoduleFilterIndex"
+                  :disabled="submoduleFilterDisabled"
+                  prefix="考点："
+                  aria-label="题目二级考点筛选"
+                  @change="setSubmoduleFilter"
+                />
+              </view>
             </view>
           </view>
 
@@ -176,10 +183,11 @@
                 <view class="mock-question-option-tags">
                   <text>{{ question.subject }}</text>
                   <text>{{ question.module }}</text>
+                  <text v-if="question.submodule">{{ question.submodule }}</text>
                   <text>难度 {{ question.difficulty }}</text>
                   <text :class="question.status === 'active' ? 'published' : 'unpublished'">{{ questionStatusText(question) }}</text>
                 </view>
-                <text class="mock-question-stem">{{ question.stem }}</text>
+                <MathText class="mock-question-stem" :value="question.stem" />
               </view>
               <button
                 :class="{ selected: isQuestionSelected(question.id) }"
@@ -211,7 +219,7 @@
             <view v-for="(item, index) in selectedSectionItems" :key="item.question_id" class="mock-selected-row">
               <view class="mock-selected-number">{{ index + 1 }}</view>
               <view class="mock-selected-copy">
-                <text>{{ item.stem }}</text>
+                <MathText :value="item.stem" />
                 <small>难度 {{ item.difficulty }} · {{ questionStatusText(item) }}</small>
               </view>
               <view class="mock-selected-actions">
@@ -238,6 +246,9 @@ import {
   publishAdminMockExamPaper,
   updateAdminMockExamPaper
 } from '../api/admin'
+import { QUESTION_CATALOG } from '../pages-sub-admin/admin/question-admin-catalog'
+import AdminSelect from './AdminSelect.vue'
+import MathText from './MathText.vue'
 
 const papers = ref([])
 const paperStatus = ref('all')
@@ -255,7 +266,13 @@ const optionPage = ref(1)
 const optionPageSize = 30
 const optionsLoading = ref(false)
 const optionsError = ref('')
-const optionFilters = reactive({ search: '', publication: 'all', difficulty: '' })
+const optionFilters = reactive({
+  search: '',
+  publication: 'all',
+  difficulty: '',
+  module: '',
+  submodule: ''
+})
 let searchTimer = null
 
 const paperStatusOptions = [
@@ -277,16 +294,40 @@ const difficultyTargets = [
 
 const busy = computed(() => saving.value || publishing.value || archiving.value)
 const sectionRules = computed(() => ({
-  culture: { key: 'culture', label: '中华文化常识', count: 20, pointValue: 2 },
-  english: { key: 'english', label: '英语语言知识', count: 20, pointValue: 1 },
+  culture: { key: 'culture', label: '中华文化常识', subject: '中华文化', count: 20, pointValue: 2 },
+  english: { key: 'english', label: '英语语言知识', subject: '英语运用', count: 20, pointValue: 1 },
   third: {
     key: 'third',
     label: editor.value?.paper?.exam_code === 'Z002' ? '数学基础' : '逻辑推理',
+    subject: editor.value?.paper?.exam_code === 'Z002' ? '数学基础' : '逻辑推理',
     count: 15,
     pointValue: 3
   }
 }))
 const activeSectionRule = computed(() => sectionRules.value[activeSection.value])
+const activeSubjectCatalog = computed(() => QUESTION_CATALOG[activeSectionRule.value?.subject] || { modules: {} })
+const activeModuleNames = computed(() => Object.keys(activeSubjectCatalog.value.modules || {}))
+const moduleFilterOptions = computed(() => [
+  { label: '全部分类', value: '' },
+  ...activeModuleNames.value.map((value) => ({ label: value, value }))
+])
+const selectedModuleFilterIndex = computed(() => Math.max(
+  0,
+  moduleFilterOptions.value.findIndex((item) => item.value === optionFilters.module)
+))
+const submoduleSourceModule = computed(() => (
+  optionFilters.module || (activeModuleNames.value.length === 1 ? activeModuleNames.value[0] : '')
+))
+const submoduleFilterOptions = computed(() => [
+  { label: '全部考点', value: '' },
+  ...((activeSubjectCatalog.value.modules || {})[submoduleSourceModule.value] || [])
+    .map((value) => ({ label: value, value }))
+])
+const selectedSubmoduleFilterIndex = computed(() => Math.max(
+  0,
+  submoduleFilterOptions.value.findIndex((item) => item.value === optionFilters.submodule)
+))
+const submoduleFilterDisabled = computed(() => !submoduleSourceModule.value)
 const selectedSectionItems = computed(() => (
   editor.value?.items?.filter((item) => item.section_key === activeSection.value) || []
 ))
@@ -319,6 +360,7 @@ onBeforeUnmount(() => {
 
 defineExpose({
   isBusy: () => busy.value,
+  closeEditor,
   refresh: async () => {
     if (editor.value?.paper?.id) {
       await openPaper(editor.value.paper.id)
@@ -396,14 +438,16 @@ function assignEditor(response, { preserveSection = false } = {}) {
   activeSection.value = preserveSection && sectionRules.value[previousSection]
     ? previousSection
     : 'culture'
+  if (!preserveSection) resetOptionClassificationFilters()
   optionPage.value = 1
 }
 
 async function closeEditor() {
-  if (busy.value) return
+  if (busy.value || !editor.value) return false
   editor.value = null
   questionOptions.value = []
   await loadPapers()
+  return true
 }
 
 async function saveDraft(silent = false) {
@@ -509,6 +553,7 @@ function applyExamCode(code) {
   editor.value.paper.exam_code = code
   editor.value.items = []
   activeSection.value = 'culture'
+  resetOptionClassificationFilters()
   optionPage.value = 1
   loadQuestionOptions()
 }
@@ -516,6 +561,7 @@ function applyExamCode(code) {
 async function selectSection(key) {
   if (activeSection.value === key) return
   activeSection.value = key
+  resetOptionClassificationFilters()
   optionPage.value = 1
   await loadQuestionOptions()
 }
@@ -529,8 +575,10 @@ async function loadQuestionOptions() {
       exam_code: editor.value.paper.exam_code,
       section_key: activeSection.value,
       publication: optionFilters.publication,
-      search: optionFilters.search,
-      difficulty: optionFilters.difficulty,
+      search: optionFilters.search || undefined,
+      difficulty: optionFilters.difficulty || undefined,
+      module: optionFilters.module || undefined,
+      submodule: optionFilters.submodule || undefined,
       limit: optionPageSize,
       offset: (optionPage.value - 1) * optionPageSize
     })
@@ -570,6 +618,26 @@ function setDifficultyFilter(value) {
   if (String(optionFilters.difficulty) === String(value)) return
   optionFilters.difficulty = value
   applyQuestionFilters()
+}
+
+function setModuleFilter(event) {
+  const value = moduleFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  if (optionFilters.module === value) return
+  optionFilters.module = value
+  optionFilters.submodule = ''
+  applyQuestionFilters()
+}
+
+function setSubmoduleFilter(event) {
+  const value = submoduleFilterOptions.value[Number(event?.detail?.value || 0)]?.value || ''
+  if (optionFilters.submodule === value) return
+  optionFilters.submodule = value
+  applyQuestionFilters()
+}
+
+function resetOptionClassificationFilters() {
+  optionFilters.module = ''
+  optionFilters.submodule = ''
 }
 
 function changeOptionPage(page) {
@@ -682,7 +750,6 @@ button::after { border: 0; }
 .mock-paper-admin-head,
 .mock-paper-admin-footer,
 .mock-editor-actions,
-.mock-editor-meta,
 .mock-validation-heading,
 .mock-validation-metrics,
 .mock-exam-code-tabs,
@@ -696,7 +763,6 @@ button::after { border: 0; }
 }
 
 .mock-admin-toolbar,
-.mock-editor-toolbar,
 .mock-panel-heading-row,
 .mock-paper-admin-head,
 .mock-paper-admin-footer,
@@ -705,13 +771,6 @@ button::after { border: 0; }
   justify-content: space-between;
 }
 
-.mock-admin-title {
-  color: #1c3049;
-  font-size: 23px;
-  font-weight: 850;
-}
-
-.mock-admin-subtitle,
 .mock-panel-subtitle {
   margin-top: 5px;
   color: #8794a6;
@@ -721,7 +780,6 @@ button::after { border: 0; }
 .mock-primary-button,
 .mock-secondary-button,
 .mock-archive-button,
-.mock-back-button,
 .mock-refresh-options {
   width: auto;
   min-height: 38px;
@@ -737,13 +795,17 @@ button::after { border: 0; }
 .mock-primary-button { background: #2f9f8d; color: #fff; }
 .mock-secondary-button { background: #edf8f5; color: #237c6e; }
 .mock-archive-button { background: #fff0ef; color: #c95a55; }
-.mock-back-button,
 .mock-refresh-options { background: #f1f5f7; color: #607187; }
 button[disabled] { opacity: .48; }
 
+.mock-admin-toolbar {
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
 .mock-status-tabs {
-  margin: 24px 0 18px;
   display: flex;
+  flex-wrap: wrap;
   gap: 8px;
 }
 
@@ -849,26 +911,12 @@ button[disabled] { opacity: .48; }
 .mock-paper-enter { color: #278775; font-weight: 750; }
 
 .mock-editor-toolbar {
+  justify-content: space-between;
   gap: 18px;
   padding-bottom: 18px;
   border-bottom: 1px solid #e5ebee;
 }
-.mock-editor-title-copy { min-width: 220px; flex: 1 1 auto; }
-.mock-title-input {
-  box-sizing: border-box;
-  width: 100%;
-  max-width: 430px;
-  height: 42px;
-  padding: 0 12px;
-  border: 1px solid #d9e4e7;
-  border-radius: 9px;
-  background: #fff;
-  color: #26384f;
-  font-size: 18px;
-  font-weight: 800;
-}
-.mock-editor-meta { gap: 9px; margin-top: 7px; color: #8692a3; font-size: 10px; }
-.mock-editor-actions { gap: 8px; }
+.mock-editor-actions { flex: 0 0 auto; gap: 8px; }
 
 .mock-paper-settings {
   gap: 18px;
@@ -880,7 +928,7 @@ button[disabled] { opacity: .48; }
 }
 .mock-setting-field { position: relative; min-width: 160px; }
 .mock-setting-field > text { display: block; margin-bottom: 7px; color: #7a889b; font-size: 10px; font-weight: 700; }
-.mock-description-field { flex: 1 1 auto; }
+.mock-title-field { flex: 1 1 auto; }
 .mock-setting-field input {
   box-sizing: border-box;
   width: 100%;
@@ -892,12 +940,18 @@ button[disabled] { opacity: .48; }
   color: #405168;
   font-size: 11px;
 }
+.mock-setting-field .mock-title-input {
+  color: #26384f;
+  font-size: 14px;
+  font-weight: 800;
+}
 .mock-duration-field { width: 112px; min-width: 112px; }
 .mock-duration-field input { padding-right: 42px; }
 .mock-duration-field small { position: absolute; right: 10px; bottom: 10px; color: #929ead; font-size: 10px; }
 
 .mock-validation-strip {
-  margin-top: 16px;
+  min-width: 0;
+  flex: 1 1 auto;
   padding: 16px 18px;
   border: 1px solid #f0dca5;
   border-radius: 12px;
@@ -967,9 +1021,13 @@ button[disabled] { opacity: .48; }
 .mock-question-search > text { color: #6f8093; font-size: 18px; }
 .mock-question-search input { min-width: 0; flex: 1 1 auto; color: #43556b; font-size: 11px; }
 .mock-question-search button { width: 24px; height: 24px; margin: 0; padding: 0; border: 0; border-radius: 50%; background: #eef3f5; color: #728194; font-size: 12px; line-height: 24px; }
+.mock-filter-row { display: grid; grid-template-columns: max-content minmax(260px, 1fr); gap: 12px; align-items: start; }
+.mock-filter-pill-groups { display: flex; flex-direction: column; gap: 9px; }
 .mock-filter-pills { flex-wrap: wrap; gap: 6px; }
 .mock-filter-pills button { min-height: 28px; padding: 0 10px; line-height: 26px; font-size: 9px; }
 .mock-filter-pills.difficulty { padding-top: 1px; }
+.mock-classification-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px; }
+.mock-classification-select { --admin-select-height: 32px; --admin-select-font-size: 10px; --admin-select-padding-x: 10px; }
 
 .mock-picker-state { min-height: 330px; margin-top: 12px; }
 .mock-question-option-list { height: 430px; margin-top: 12px; overflow-y: auto; padding-right: 4px; }
@@ -1009,9 +1067,11 @@ button[disabled] { opacity: .48; }
   .mock-admin-toolbar,
   .mock-editor-toolbar,
   .mock-paper-settings { align-items: stretch; flex-direction: column; }
-  .mock-editor-actions { flex-wrap: wrap; }
+  .mock-editor-actions { flex-wrap: wrap; justify-content: flex-end; }
   .mock-paper-admin-grid,
   .mock-builder-grid { grid-template-columns: 1fr; }
+  .mock-filter-row,
+  .mock-classification-filters { grid-template-columns: 1fr; }
   .mock-selected-panel { grid-column: auto; }
 }
 </style>

@@ -117,6 +117,7 @@ const themeKey = ref(getStoredThemeKey())
 const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
 const recordCountText = computed(() => orders.value.length ? `共 ${orders.value.length} 条` : '暂无记录')
 let latestLoadToken = 0
+let latestUnreadLoadToken = 0
 
 onShow(() => {
   themeKey.value = getStoredThemeKey()
@@ -129,8 +130,10 @@ onShow(() => {
 })
 
 async function loadUnreadOrderTargets() {
+  const loadToken = ++latestUnreadLoadToken
   try {
     const summary = await fetchUserNotificationUnreadSummary()
+    if (loadToken !== latestUnreadLoadToken) return
     const targets = summary?.consultation_order_targets?.applicant
     unreadOrderTargets.value = targets && typeof targets === 'object' && !Array.isArray(targets)
       ? Object.fromEntries(
@@ -151,6 +154,8 @@ function isOrderUnread(order = {}) {
 function markOrderNotificationsRead(order = {}) {
   const orderId = String(order.id || '').trim()
   if (!orderId) return
+  // 已读写入开始后，忽略此前启动的旧摘要响应。
+  latestUnreadLoadToken += 1
   const nextTargets = { ...unreadOrderTargets.value }
   delete nextTargets[orderId]
   unreadOrderTargets.value = nextTargets

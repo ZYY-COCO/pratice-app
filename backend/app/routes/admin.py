@@ -106,7 +106,7 @@ from app.services.admin_operations_imports import (
     parse_operations_xlsx,
 )
 from app.services.major_catalog import get_major_catalog, list_published_catalog_records
-from app.services.question_catalog import validate_question_classification
+from app.services.question_catalog import normalize_and_validate_question_classification
 from app.services.question_file_recognition import FileRecognitionError, recognize_question_file
 from app.services.school_announcements import get_bundled_announcement_index, list_published_announcement_records
 from app.services.supabase_resilience import (
@@ -1279,9 +1279,9 @@ def _build_question_update_data(payload: AdminQuestionUpdateRequest) -> dict:
     return data
 
 
-def _validate_question_classification_data(data: dict) -> None:
+def _normalize_question_classification_data(data: dict) -> dict[str, str]:
     try:
-        validate_question_classification(
+        return normalize_and_validate_question_classification(
             exam_code=str(data.get("exam_code") or ""),
             subject=str(data.get("subject") or ""),
             module=str(data.get("module") or ""),
@@ -1329,7 +1329,7 @@ def _build_question_create_data(payload: AdminQuestionCreateRequest, admin_profi
         if not data.get(field):
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=f"{field} cannot be empty")
     data["answer"] = str(data["answer"]).upper()
-    _validate_question_classification_data(data)
+    data.update(_normalize_question_classification_data(data))
     if is_ai_generated_question(data):
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
@@ -5201,14 +5201,21 @@ def admin_questions(
     exclude_review_status: str | None = Query(default=None, max_length=20),
     search: str | None = Query(default=None, max_length=80),
     difficulty: str | None = Query(default=None, max_length=8),
+    sort_direction: str = Query(default="desc", max_length=4),
     limit: int = Query(default=20, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     admin_profile: dict = Depends(require_question_admin_reader),
 ) -> AdminQuestionListResponse:
     require_question_admin_bank_access(admin_profile, question_bank_id, capability="view")
+    normalized_sort_direction = (sort_direction or "desc").strip().lower()
+    if normalized_sort_direction not in {"asc", "desc"}:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="sort_direction must be asc or desc",
+        )
     supabase = get_supabase_admin()
     query = exclude_ai_generated_questions(
-        supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
+        supabase.table("questions").select("*", count="exact")
     )
     query = _apply_admin_question_filters(
         query,
@@ -5222,6 +5229,8 @@ def admin_questions(
         search=search,
         difficulty=_parse_question_difficulty(difficulty),
     )
+    descending = normalized_sort_direction == "desc"
+    query = query.order("created_at", desc=descending).order("id", desc=descending)
     response = query.range(offset, offset + limit - 1).execute()
     return AdminQuestionListResponse(items=response.data or [], count=int(response.count or 0))
 
@@ -5425,7 +5434,9 @@ def admin_update_question(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="No question fields to update")
     classification_fields = {"exam_code", "subject", "module", "submodule"}
     if classification_fields.intersection(update_data):
-        _validate_question_classification_data({**existing_question, **update_data})
+        update_data.update(
+            _normalize_question_classification_data({**existing_question, **update_data})
+        )
     response = supabase.table("questions").update(update_data).eq("id", question_id).execute()
     if not response.data:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Question update failed")

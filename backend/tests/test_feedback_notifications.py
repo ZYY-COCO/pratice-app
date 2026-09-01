@@ -42,6 +42,62 @@ class _FeedbackClient:
         return self.query
 
 
+class _NotificationReadQuery:
+    def __init__(self, client):
+        self.client = client
+        self.operation = "select"
+        self.update_values: dict = {}
+        self.filters: list[tuple[str, str, object]] = []
+
+    def select(self, *_args, **_kwargs):
+        self.operation = "select"
+        return self
+
+    def update(self, values: dict):
+        self.operation = "update"
+        self.update_values = dict(values)
+        return self
+
+    def eq(self, field: str, value: object):
+        self.filters.append(("eq", field, value))
+        return self
+
+    def is_(self, field: str, value: object):
+        self.filters.append(("is", field, value))
+        return self
+
+    def in_(self, field: str, values: list[str]):
+        self.filters.append(("in", field, list(values)))
+        return self
+
+    def execute(self):
+        def matches(row: dict) -> bool:
+            for kind, field, value in self.filters:
+                if kind == "eq" and row.get(field) != value:
+                    return False
+                if kind == "is" and value == "null" and row.get(field) is not None:
+                    return False
+                if kind == "in" and row.get(field) not in value:
+                    return False
+            return True
+
+        rows = [row for row in self.client.rows if matches(row)]
+        if self.operation == "update":
+            for row in rows:
+                row.update(self.update_values)
+        return _Response(rows)
+
+
+class _NotificationReadClient:
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+
+    def table(self, table_name: str):
+        if table_name != "user_notifications":
+            raise AssertionError(f"unexpected table: {table_name}")
+        return _NotificationReadQuery(self)
+
+
 class FeedbackNotificationTests(unittest.TestCase):
     def test_unread_summary_points_to_circle_tabs_and_concrete_targets(self):
         rows = [
@@ -119,6 +175,85 @@ class FeedbackNotificationTests(unittest.TestCase):
             "notification_type": "mentor_report_status",
             "delivery_payload": {"order_id": "order-1"},
         }, order_target))
+
+    def test_legacy_community_notification_uses_related_id_as_post_target(self):
+        target = UserNotificationReadTargetRequest(target_type="community_post", target_id="post-legacy")
+
+        self.assertEqual(
+            notifications._notification_target_id({
+                "related_type": "community_post",
+                "related_id": "post-legacy:comment:comment-1",
+                "delivery_payload": {},
+            }, "community_post"),
+            "post-legacy",
+        )
+        self.assertTrue(notifications._notification_matches_target({
+            "notification_type": "community_post_comment",
+            "related_type": "community_post",
+            "related_id": "post-legacy:comment:comment-1",
+            "delivery_payload": {},
+        }, target))
+
+    def test_post_target_summary_aggregates_like_and_comment_notifications(self):
+        summary = notifications._summarize_unread_rows([
+            {
+                "category": "community",
+                "notification_type": "community_post_like",
+                "related_type": "community_post",
+                "related_id": "post-1:like:user-1",
+                "delivery_payload": {},
+            },
+            {
+                "category": "community",
+                "notification_type": "community_post_comment",
+                "related_type": "community_post",
+                "related_id": "post-1:comment:comment-1",
+                "delivery_payload": {},
+            },
+        ])
+
+        self.assertEqual(summary.community_post_targets["chat"], {"post-1": 2})
+
+    def test_read_target_marks_all_interactions_for_one_post_only(self):
+        rows = [
+            {
+                "id": "like-1",
+                "recipient_user_id": "user-1",
+                "notification_type": "community_post_like",
+                "related_type": "community_post",
+                "related_id": "post-1:like:user-2",
+                "delivery_payload": {},
+                "read_at": None,
+            },
+            {
+                "id": "comment-1",
+                "recipient_user_id": "user-1",
+                "notification_type": "community_post_comment",
+                "related_type": "community_post",
+                "related_id": "post-1:comment:comment-1",
+                "delivery_payload": {},
+                "read_at": None,
+            },
+            {
+                "id": "comment-2",
+                "recipient_user_id": "user-1",
+                "notification_type": "community_post_comment",
+                "related_type": "community_post",
+                "related_id": "post-2:comment:comment-2",
+                "delivery_payload": {},
+                "read_at": None,
+            },
+        ]
+        client = _NotificationReadClient(rows)
+        payload = UserNotificationReadTargetRequest(target_type="community_post", target_id="post-1")
+
+        with patch.object(notifications, "get_supabase_admin", return_value=client):
+            response = notifications.mark_user_notification_target_read(payload, user_id="user-1")
+
+        self.assertEqual(response.updated_count, 2)
+        self.assertTrue(rows[0]["read_at"])
+        self.assertTrue(rows[1]["read_at"])
+        self.assertIsNone(rows[2]["read_at"])
 
     def test_legacy_consultation_notification_route_keeps_query_parameters(self):
         self.assertEqual(

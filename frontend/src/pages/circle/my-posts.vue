@@ -140,6 +140,7 @@ const loadingMore = ref(false)
 const nextCursor = ref('')
 const hasMore = ref(false)
 const unreadPostTargets = ref({ chat: {}, experience: {} })
+let latestUnreadLoadToken = 0
 onLoad((options) => {
   const requestedType = String(options?.type || '')
   if (postTypeOptions.some((item) => item.value === requestedType)) {
@@ -167,8 +168,10 @@ function normalizeUnreadTargets(value) {
 }
 
 async function loadUnreadPostTargets() {
+  const loadToken = ++latestUnreadLoadToken
   try {
     const summary = await fetchUserNotificationUnreadSummary()
+    if (loadToken !== latestUnreadLoadToken) return
     const targets = summary?.community_post_targets || {}
     unreadPostTargets.value = {
       chat: normalizeUnreadTargets(targets.chat),
@@ -204,9 +207,13 @@ function markPostNotificationsRead(post = {}) {
   const postId = String(post.id || '').trim()
   const postType = post.postType === 'experience' ? 'experience' : 'chat'
   if (!postId) return
+  // 让已经发出的旧摘要请求失效，避免它在已读写入完成前把红点写回页面。
+  latestUnreadLoadToken += 1
   const nextTargets = { ...(unreadPostTargets.value?.[postType] || {}) }
   delete nextTargets[postId]
   unreadPostTargets.value = { ...unreadPostTargets.value, [postType]: nextTargets }
+  // 先即时移除当前卡片上的红点，再由统一的已读请求协调器完成服务端写入；
+  // 写入完成后回读权威摘要，失败时也会把真实未读状态恢复到页面。
   void markUserNotificationReadTarget('community_post', postId)
     .then(() => loadUnreadPostTargets())
     .catch(() => loadUnreadPostTargets())

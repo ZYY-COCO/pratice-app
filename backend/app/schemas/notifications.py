@@ -53,3 +53,12 @@ class UserNotificationReadTargetRequest(BaseModel):
 class UserNotificationReadResponse(BaseModel):
     ok: bool = True
     updated_count: int = 0
+
+
+class UserNotificationReadAllResponse(BaseModel):
+    """The result of clearing every unread message visible to one user."""
+
+    ok: bool = True
+    updated_count: int = 0
+    personal_updated_count: int = 0
+    official_updated_count: int = 0

@@ -138,6 +138,37 @@ class MockExamValidationTests(unittest.TestCase):
         self.assertEqual(mock_exams._next_publish_version({"status": "archived", "version": 2}), 3)
         self.assertEqual(mock_exams._next_publish_version({"status": "draft", "version": 3}), 3)
 
+    def test_question_option_classification_accepts_module_and_submodule(self):
+        module, submodule = mock_exams._normalize_question_option_classification(
+            "Z001",
+            "culture",
+            "中国哲学常识",
+            "儒家",
+        )
+
+        self.assertEqual(module, "中国哲学常识")
+        self.assertEqual(submodule, "儒家")
+
+    def test_question_option_classification_infers_single_english_module(self):
+        module, submodule = mock_exams._normalize_question_option_classification(
+            "Z001",
+            "english",
+            None,
+            "语法",
+        )
+
+        self.assertEqual(module, "语言知识")
+        self.assertEqual(submodule, "语法")
+
+    def test_question_option_classification_rejects_mismatched_submodule(self):
+        with self.assertRaisesRegex(ValueError, "不支持考点"):
+            mock_exams._normalize_question_option_classification(
+                "Z001",
+                "culture",
+                "中国哲学常识",
+                "书法",
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

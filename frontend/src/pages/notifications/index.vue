@@ -1,7 +1,17 @@
 <template>
   <view class="notifications-page" :style="themeInlineStyle">
     <AppPageHeader title="消息中心" @back="goBack">
-      <template #right><button class="notifications-refresh" :disabled="loading" aria-label="刷新消息" @tap="load"><AppRefreshIcon /></button></template>
+      <template #right>
+        <view class="notifications-header-actions">
+          <button
+            class="notifications-read-all"
+            :disabled="loading || markAllLoading || unreadMessageCount === 0"
+            hover-class="none"
+            @tap="markAllAsRead"
+          >全部已读</button>
+          <button class="notifications-refresh" :disabled="loading || markAllLoading" aria-label="刷新消息" @tap="load"><AppRefreshIcon /></button>
+        </view>
+      </template>
     </AppPageHeader>
 
     <scroll-view scroll-y class="notifications-scroll">
@@ -53,7 +63,11 @@
 <script setup>
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
-import { fetchUserNotifications, markUserNotificationRead } from '../../api/notifications'
+import {
+  fetchUserNotifications,
+  markAllUserNotificationsRead,
+  markUserNotificationRead
+} from '../../api/notifications'
 import { fetchOfficialMessages, markOfficialMessageRead } from '../../api/officialMessages'
 import { isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
@@ -66,9 +80,12 @@ import AppRefreshIcon from '../../components/ui/AppRefreshIcon.vue'
 const personalMessages = ref([])
 const officialMessages = ref([])
 const loading = ref(false)
+const markAllLoading = ref(false)
 const entryLoading = ref(true)
 const loadError = ref('')
 const expandedMessageKey = ref('')
+const personalUnreadCount = ref(0)
+const officialUnreadCount = ref(0)
 const themeKey = ref(getStoredThemeKey())
 const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
 const allMessages = computed(() => {
@@ -101,6 +118,12 @@ const allMessages = computed(() => {
     String(right.createdAt || '').localeCompare(String(left.createdAt || ''))
   ))
 })
+const unreadMessageCount = computed(() => {
+  const serverCount = personalUnreadCount.value + officialUnreadCount.value
+  return serverCount > 0
+    ? serverCount
+    : allMessages.value.filter((item) => !item.read).length
+})
 onShow(() => {
   themeKey.value = getStoredThemeKey()
   if (!isLoggedIn()) {
@@ -127,6 +150,12 @@ async function load() {
     officialMessages.value = officialLoaded && Array.isArray(officialResult.value?.items)
       ? officialResult.value.items
       : []
+    personalUnreadCount.value = personalLoaded && Number.isFinite(Number(personalResult.value?.unread_count))
+      ? Math.max(0, Number(personalResult.value.unread_count))
+      : personalMessages.value.filter((item) => !item.read).length
+    officialUnreadCount.value = officialLoaded && Number.isFinite(Number(officialResult.value?.unread_count))
+      ? Math.max(0, Number(officialResult.value.unread_count))
+      : officialMessages.value.filter((item) => !item.read).length
     if (!personalLoaded && !officialLoaded) {
       loadError.value = personalResult.reason?.detail || officialResult.reason?.detail || '消息读取失败，请稍后重试'
     }
@@ -135,6 +164,27 @@ async function load() {
   } finally {
     loading.value = false
     entryLoading.value = false
+  }
+}
+
+async function markAllAsRead() {
+  if (loading.value || markAllLoading.value || unreadMessageCount.value === 0) return
+  markAllLoading.value = true
+  loadError.value = ''
+  // Give the interface immediate feedback while the server mutation settles.
+  personalMessages.value = personalMessages.value.map((item) => ({ ...item, read: true }))
+  officialMessages.value = officialMessages.value.map((item) => ({ ...item, read: true }))
+  personalUnreadCount.value = 0
+  officialUnreadCount.value = 0
+  try {
+    await markAllUserNotificationsRead()
+    uni.showToast({ title: '已全部标记为已读', icon: 'success' })
+    await load()
+  } catch (error) {
+    await load()
+    uni.showToast({ title: error?.detail || '全部已读失败，请稍后重试', icon: 'none' })
+  } finally {
+    markAllLoading.value = false
   }
 }
 
@@ -193,11 +243,13 @@ function updateLocalReadState(item) {
     officialMessages.value = officialMessages.value.map((message) => (
       message.id === item.id ? { ...message, read: true } : message
     ))
+    officialUnreadCount.value = Math.max(0, officialUnreadCount.value - 1)
     return
   }
   personalMessages.value = personalMessages.value.map((message) => (
     message.id === item.id ? { ...message, read: true } : message
   ))
+  personalUnreadCount.value = Math.max(0, personalUnreadCount.value - 1)
 }
 
 function formatRelativeTime(value) {
@@ -228,7 +280,12 @@ function goBack() {
 
 <style scoped>
 .notifications-page{height:100vh;height:100dvh;display:flex;flex-direction:column;background:var(--gyt-page-bg,#f8faff);color:#111827}
-.notifications-refresh{width:72rpx;height:72rpx;margin:0;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.82);color:var(--gyt-primary,#3478f6);display:flex;align-items:center;justify-content:center;box-shadow:0 8rpx 22rpx rgba(29,45,86,.055)}
+.notifications-header-actions{position:absolute;top:calc(var(--status-bar-height, env(safe-area-inset-top)) + 14rpx);right:28rpx;width:184rpx;height:82rpx;display:flex;align-items:center;justify-content:flex-end;gap:10rpx;white-space:nowrap}
+.notifications-read-all{box-sizing:border-box;width:96rpx;min-width:96rpx;height:64rpx;flex:0 0 96rpx;margin:0;padding:0;border:0;border-radius:18rpx;background:transparent;color:var(--gyt-primary,#3478f6);font-size:21rpx;line-height:1;font-weight:750;display:flex;align-items:center;justify-content:center;white-space:nowrap}
+.notifications-read-all::after{border:0}
+.notifications-read-all:active{background:var(--gyt-primary-soft,#edf4ff)}
+.notifications-read-all[disabled]{color:#aeb8c7;opacity:.72}
+.notifications-refresh{width:72rpx;height:72rpx;flex:0 0 72rpx;margin:0;padding:0;border:0;border-radius:50%;background:rgba(255,255,255,.82);color:var(--gyt-primary,#3478f6);display:flex;align-items:center;justify-content:center;box-shadow:0 8rpx 22rpx rgba(29,45,86,.055)}
 .notifications-refresh::after,.notifications-state button::after{border:0}
 .notifications-refresh:active{background:var(--gyt-primary-soft,#edf4ff);transform:scale(.97)}
 .notifications-scroll{min-height:0;flex:1}.notifications-content{width:100%;max-width:760rpx;margin:0 auto;padding:30rpx 30rpx calc(48rpx + env(safe-area-inset-bottom));box-sizing:border-box}
@@ -239,4 +296,8 @@ function goBack() {
 .notification-preview{display:-webkit-box;margin-top:10rpx;overflow:hidden;color:#222a37;font-size:23rpx;line-height:1.55;-webkit-box-orient:vertical;-webkit-line-clamp:2}.notification-row.expanded .notification-preview{-webkit-line-clamp:unset}.notification-title{font-weight:var(--gyt-font-weight-bold,700)}.notification-content{font-weight:var(--gyt-font-weight-regular,400)}.notification-time{margin-top:10rpx;color:#9ca3af;font-size:21rpx;line-height:1.35}
 .notification-unread-dot{width:18rpx;height:18rpx;flex:none;margin:14rpx 2rpx 0 6rpx;border-radius:50%;background:#ff1738;box-shadow:0 0 0 4rpx rgba(255,23,56,.08)}
 @media (min-width:760px){.notifications-content{padding-right:42rpx;padding-left:42rpx}.notification-row{padding-top:26rpx;padding-bottom:32rpx}}
+@media (max-width:350px){.notifications-header-actions{width:170rpx;gap:4rpx}.notifications-read-all{width:92rpx;min-width:92rpx;flex-basis:92rpx;font-size:20rpx}.notifications-refresh{width:66rpx;height:66rpx;flex-basis:66rpx}}
+/* #ifdef MP-WEIXIN */
+.notifications-header-actions{top:var(--mp-page-content-top,96px)}
+/* #endif */
 </style>

@@ -507,7 +507,9 @@
               class="review-textarea stem"
               placeholder="题干"
             />
-            <view v-else class="review-stem">{{ activeReviewQuestion.stem || '未填写题干' }}</view>
+            <view v-else class="review-stem">
+              <MathText :value="activeReviewQuestion.stem || '未填写题干'" />
+            </view>
             <view class="question-chip-row review-chips">
               <text class="question-chip">{{ reviewEditing ? reviewForm.subject : (activeReviewQuestion.subject || '未分类') }}</text>
               <text class="question-chip">{{ reviewEditing ? reviewForm.submodule : (activeReviewQuestion.submodule || activeReviewQuestion.module || '未分模块') }}</text>
@@ -524,25 +526,25 @@
               <text class="review-radio">{{ reviewCurrentAnswer() === 'A' ? '●' : '○' }}</text>
               <text v-if="reviewEditing" class="review-option-label">A.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_a" class="review-option-input" placeholder="A 选项" />
-              <text v-else class="review-option-text">A. {{ activeReviewQuestion.option_a }}</text>
+              <MathText v-else class="review-option-text" :value="`A. ${activeReviewQuestion.option_a || ''}`" />
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'B' }" @tap="setReviewAnswer('B')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'B' ? '●' : '○' }}</text>
               <text v-if="reviewEditing" class="review-option-label">B.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_b" class="review-option-input" placeholder="B 选项" />
-              <text v-else class="review-option-text">B. {{ activeReviewQuestion.option_b }}</text>
+              <MathText v-else class="review-option-text" :value="`B. ${activeReviewQuestion.option_b || ''}`" />
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'C' }" @tap="setReviewAnswer('C')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'C' ? '●' : '○' }}</text>
               <text v-if="reviewEditing" class="review-option-label">C.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_c" class="review-option-input" placeholder="C 选项" />
-              <text v-else class="review-option-text">C. {{ activeReviewQuestion.option_c }}</text>
+              <MathText v-else class="review-option-text" :value="`C. ${activeReviewQuestion.option_c || ''}`" />
             </view>
             <view class="review-option-row" :class="{ selected: reviewCurrentAnswer() === 'D' }" @tap="setReviewAnswer('D')">
               <text class="review-radio">{{ reviewCurrentAnswer() === 'D' ? '●' : '○' }}</text>
               <text v-if="reviewEditing" class="review-option-label">D.</text>
               <input v-if="reviewEditing" v-model.trim="reviewForm.option_d" class="review-option-input" placeholder="D 选项" />
-              <text v-else class="review-option-text">D. {{ activeReviewQuestion.option_d }}</text>
+              <MathText v-else class="review-option-text" :value="`D. ${activeReviewQuestion.option_d || ''}`" />
             </view>
           </view>
 
@@ -556,7 +558,7 @@
             placeholder="解析"
           />
           <view v-else class="review-explanation-box">
-            {{ activeReviewQuestion.explanation || '暂无解析' }}
+            <MathText :value="activeReviewQuestion.explanation || '暂无解析'" />
           </view>
 
           <view class="review-section-head compact">
@@ -620,7 +622,9 @@ import {
 } from '../../api/admin'
 import { getAuthUser, isLoggedIn, updateAuthUser } from '../../utils/auth'
 import { isAiGeneratedQuestion } from '../../utils/questionSource'
+import { formatMathText } from '../../utils/mathText'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import MathText from '../../components/MathText.vue'
 
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const loading = ref(true)
@@ -697,7 +701,7 @@ const questionModuleMap = {
   中华文化: ['中国哲学常识', '文学常识', '历史文化', '艺术民俗', '宗教思想'],
   英语运用: ['语言知识', '词汇', '语法', '语用'],
   数学基础: ['一元函数微分学', '一元函数积分学', '多元函数微分学'],
-  逻辑推理: ['论证', '概念判断', '削弱加强', '推理规则']
+  逻辑推理: ['概念', '判断', '推理', '论证']
 }
 
 const fallbackQuestionModules = ['中国哲学常识', '词汇', '论证', '一元函数微分学']
@@ -730,10 +734,10 @@ const createQuestionCatalog = {
   逻辑推理: {
     exam_code: 'Z001',
     modules: {
-      概念判断: ['概念种类', '概念关系', '定义', '划分'],
-      论证: ['加强', '削弱', '解释', '谬误识别'],
-      削弱加强: ['加强', '削弱'],
-      推理规则: ['演绎推理', '归纳推理', '类比推理', '综合推理']
+      概念: ['概念种类', '概念关系', '定义', '划分'],
+      判断: ['判断种类', '判断关系'],
+      推理: ['演绎推理', '归纳推理', '类比推理', '综合推理'],
+      论证: ['加强', '削弱', '假设', '解释', '推论', '论证结构', '谬误识别']
     }
   }
 }
@@ -1737,7 +1741,7 @@ async function goReviewNext() {
 }
 
 function previewQuestionStem(stem) {
-  const text = String(stem || '未填写题干').replace(/\s+/g, ' ').trim()
+  const text = formatMathText(stem || '未填写题干').replace(/\s+/g, ' ').trim()
   if (text.length <= 58) return text
   return `${text.slice(0, 58)}...`
 }

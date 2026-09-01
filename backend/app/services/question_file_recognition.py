@@ -14,6 +14,7 @@ from xml.etree import ElementTree
 from pypdf import PdfReader
 
 from app.config import get_settings
+from app.services.logic_question_quality import LOGIC_SUBJECT, normalize_logic_classification
 
 
 MAX_UPLOAD_BYTES = 20 * 1024 * 1024
@@ -81,20 +82,21 @@ SUBJECT_ALIASES = {
     "英语": "英语运用",
 }
 MODULE_ALIASES = {
-    "概念": "概念判断",
-    "判断": "概念判断",
+    "概念": "概念",
+    "判断": "判断",
     "概念判断": "概念判断",
-    "推理": "推理规则",
-    "推理规则": "推理规则",
+    "推理": "推理",
+    "推理规则": "推理",
     "论证": "论证",
-    "削弱加强": "削弱加强",
-    "加强削弱": "削弱加强",
+    "削弱加强": "论证",
+    "加强削弱": "论证",
 }
 SUBMODULE_ALIASES = {
     "概念": "概念种类",
     "概念种类": "概念种类",
     "概念关系": "概念关系",
-    "判断关系": "概念关系",
+    "判断种类": "判断种类",
+    "判断关系": "判断关系",
     "定义": "定义",
     "划分": "划分",
     "加强": "加强",
@@ -103,7 +105,16 @@ SUBMODULE_ALIASES = {
     "削弱": "削弱",
     "削弱论证": "削弱",
     "质疑": "削弱",
+    "反驳": "削弱",
+    "假设": "假设",
+    "前提": "假设",
+    "隐含前提": "假设",
+    "必要假设": "假设",
     "解释": "解释",
+    "推论": "推论",
+    "结论": "推论",
+    "论证结构": "论证结构",
+    "形式相似": "论证结构",
     "谬误": "谬误识别",
     "谬误识别": "谬误识别",
     "演绎": "演绎推理",
@@ -366,6 +377,10 @@ def _normalize_excel_question(raw_question: dict[str, str]) -> dict:
     question["subject"] = _normalize_catalog_value(question["subject"], SUBJECT_ALIASES)
     question["module"] = _normalize_catalog_value(question["module"], MODULE_ALIASES)
     question["submodule"] = _normalize_catalog_value(question["submodule"], SUBMODULE_ALIASES)
+    if question["subject"] == LOGIC_SUBJECT:
+        question["module"], question["submodule"] = normalize_logic_classification(
+            question["module"], question["submodule"]
+        )
     question["option_a"] = _normalize_option(question["option_a"], "A")
     question["option_b"] = _normalize_option(question["option_b"], "B")
     question["option_c"] = _normalize_option(question["option_c"], "C")

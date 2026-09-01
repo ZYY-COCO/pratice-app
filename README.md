@@ -56,6 +56,8 @@ npm run build:mp-weixin
 - [docs/project_context.md](docs/project_context.md)：当前项目状态、部署、题库重建方向和接手顺序。
 - [docs/question_bank_generation_rules.md](docs/question_bank_generation_rules.md)：英语运用、Z002 数学基础题库生成硬规则。
 - [docs/ai_question_generation_spec.md](docs/ai_question_generation_spec.md)：通用 AI 题库 JSON 格式和导入工作流。
+- [docs/culture_explanation_model_v3.md](docs/culture_explanation_model_v3.md)：中华文化教学型解析 V3 字段契约、题型路由和质量门。
+- [docs/logic_question_model_v2.md](docs/logic_question_model_v2.md)：逻辑推理 V2 分类、2025 真题校准、形式化验证和审计分级。
 - [docs/wechat_miniprogram_architecture.md](docs/wechat_miniprogram_architecture.md)：微信小程序技术预检说明。
 - [docs/wechat_miniprogram_regression_checklist.md](docs/wechat_miniprogram_regression_checklist.md)：小程序发布前回归清单。
 - [deploy/tencent-cloud/README.md](deploy/tencent-cloud/README.md)：腾讯云部署说明。

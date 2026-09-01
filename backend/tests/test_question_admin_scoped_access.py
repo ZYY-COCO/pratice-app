@@ -1,5 +1,6 @@
 import json
 import unittest
+from types import SimpleNamespace
 from unittest.mock import ANY, patch
 
 from fastapi import HTTPException
@@ -41,6 +42,46 @@ def scoped_profile(*bank_ids: str) -> dict:
         {"id": "internal-user", "role": "user"},
         permissions,
     )
+
+
+class QuestionListQuery:
+    def __init__(self):
+        self.orders = []
+
+    def select(self, *_args, **_kwargs):
+        return self
+
+    def or_(self, *_args, **_kwargs):
+        return self
+
+    def eq(self, *_args, **_kwargs):
+        return self
+
+    def neq(self, *_args, **_kwargs):
+        return self
+
+    def ilike(self, *_args, **_kwargs):
+        return self
+
+    def order(self, field, *, desc=False):
+        self.orders.append((field, desc))
+        return self
+
+    def range(self, *_args):
+        return self
+
+    def execute(self):
+        return SimpleNamespace(data=[], count=0)
+
+
+class QuestionListSupabase:
+    def __init__(self):
+        self.query = QuestionListQuery()
+
+    def table(self, table_name):
+        if table_name != "questions":
+            raise AssertionError(f"Unexpected table: {table_name}")
+        return self.query
 
 
 class QuestionAdminScopedAccessTests(unittest.TestCase):
@@ -159,6 +200,52 @@ class QuestionAdminScopedAccessTests(unittest.TestCase):
 
         self.assertEqual(response, expected)
         count_statuses.assert_called_once_with(ANY, Z_BANK_ID)
+
+    def test_question_list_applies_created_at_ascending_before_pagination(self):
+        profile = scoped_profile(Z_BANK_ID)
+        supabase = QuestionListSupabase()
+
+        with patch.object(admin, "get_supabase_admin", return_value=supabase):
+            response = admin.admin_questions(
+                question_bank_id=Z_BANK_ID,
+                exam_code=None,
+                subject=None,
+                module=None,
+                question_status=None,
+                review_status=None,
+                exclude_review_status=None,
+                search=None,
+                difficulty=None,
+                sort_direction="asc",
+                limit=20,
+                offset=0,
+                admin_profile=profile,
+            )
+
+        self.assertEqual(response.count, 0)
+        self.assertEqual(supabase.query.orders, [("created_at", False), ("id", False)])
+
+    def test_question_list_rejects_unknown_sort_direction(self):
+        profile = scoped_profile(Z_BANK_ID)
+
+        with self.assertRaises(HTTPException) as context:
+            admin.admin_questions(
+                question_bank_id=Z_BANK_ID,
+                exam_code=None,
+                subject=None,
+                module=None,
+                question_status=None,
+                review_status=None,
+                exclude_review_status=None,
+                search=None,
+                difficulty=None,
+                sort_direction="newest",
+                limit=20,
+                offset=0,
+                admin_profile=profile,
+            )
+
+        self.assertEqual(context.exception.status_code, 422)
 
     def test_question_detail_rejects_a_question_from_another_bank(self):
         profile = scoped_profile(Z_BANK_ID)

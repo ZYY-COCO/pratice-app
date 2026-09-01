@@ -10,6 +10,10 @@ from uuid import UUID
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 BACKEND_DIR = PROJECT_ROOT / "backend"
+if str(BACKEND_DIR) not in sys.path:
+    sys.path.insert(0, str(BACKEND_DIR))
+
+from app.services.logic_question_quality import LOGIC_SUBJECT, normalize_logic_classification
 
 
 KNOWLEDGE_TREE = {
@@ -36,7 +40,7 @@ KNOWLEDGE_TREE = {
         "概念": ["概念种类", "概念关系", "定义", "划分"],
         "判断": ["判断种类", "判断关系"],
         "推理": ["演绎推理", "归纳推理", "类比推理", "综合推理"],
-        "论证": ["加强", "削弱", "解释", "谬误识别"],
+        "论证": ["加强", "削弱", "假设", "解释", "推论", "论证结构", "谬误识别"],
     },
     "数学基础": {
         "一元函数微分学": [
@@ -68,7 +72,13 @@ KNOWLEDGE_TREE = {
 
 ALLOWED_EXAM_CODES = {"Z001", "Z002", "COMMON"}
 ALLOWED_ANSWERS = {"A", "B", "C", "D"}
-ALLOWED_SOURCE_TYPES = {"real_exam", "ai_generated", "manual", "source_extracted"}
+ALLOWED_SOURCE_TYPES = {
+    "real_exam",
+    "ai_generated",
+    "ai_deepseek",
+    "manual",
+    "source_extracted",
+}
 ALLOWED_STATUSES = {"active", "archived"}
 ALLOWED_REVIEW_STATUSES = {"pending", "needs_changes", "approved", "rejected"}
 REQUIRED_FIELDS = [
@@ -198,6 +208,8 @@ def validate_question(question: dict, index: int) -> dict:
     subject = str(question["subject"]).strip()
     module = str(question["module"]).strip()
     submodule = str(question["submodule"]).strip()
+    if subject == LOGIC_SUBJECT:
+        module, submodule = normalize_logic_classification(module, submodule)
 
     if subject not in KNOWLEDGE_TREE:
         raise ValueError(f"Question #{index} has unknown subject: {subject}")
@@ -205,6 +217,14 @@ def validate_question(question: dict, index: int) -> dict:
         raise ValueError(f"Question #{index} has unknown module for {subject}: {module}")
     if submodule not in KNOWLEDGE_TREE[subject][module]:
         raise ValueError(f"Question #{index} has unknown submodule for {subject}/{module}: {submodule}")
+
+    question_type = str(question["question_type"]).strip()
+    if question_type != "single_choice":
+        raise ValueError(f"Question #{index} has invalid question_type: {question_type}")
+
+    normalized_options = [str(question[field]).strip() for field in ("option_a", "option_b", "option_c", "option_d")]
+    if len(set(normalized_options)) != 4:
+        raise ValueError(f"Question #{index} has duplicate options")
 
     difficulty = question["difficulty"]
     if not isinstance(difficulty, int) or difficulty < 1 or difficulty > 5:
@@ -242,7 +262,7 @@ def validate_question(question: dict, index: int) -> dict:
     normalized["subject"] = subject
     normalized["module"] = module
     normalized["submodule"] = submodule
-    normalized["question_type"] = str(question["question_type"]).strip()
+    normalized["question_type"] = question_type
     normalized["stem"] = str(question["stem"]).strip()
     normalized["option_a"] = str(question["option_a"]).strip()
     normalized["option_b"] = str(question["option_b"]).strip()

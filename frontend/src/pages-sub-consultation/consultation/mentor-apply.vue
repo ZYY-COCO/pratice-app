@@ -314,6 +314,7 @@ const mentorCenterAvatarUrl = computed(() => getUserAvatarUrl(ownerUser.value) |
 const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
 const themePrimary = computed(() => getThemePreset(themeKey.value).primary)
 const decisionSubmitting = computed(() => Boolean(decisionOrder.value?.id) && centerActionId.value === decisionOrder.value.id)
+let latestUnreadLoadToken = 0
 
 onLoad((options) => {
   entryFromProfile.value = options?.from === 'profile-consultations'
@@ -333,8 +334,10 @@ onShow(() => {
 })
 
 async function loadUnreadMentorOrderTargets() {
+  const loadToken = ++latestUnreadLoadToken
   try {
     const summary = await fetchUserNotificationUnreadSummary()
+    if (loadToken !== latestUnreadLoadToken) return
     const targets = summary?.consultation_order_targets?.mentor
     unreadMentorOrderTargets.value = targets && typeof targets === 'object' && !Array.isArray(targets)
       ? Object.fromEntries(
@@ -355,6 +358,8 @@ function isMentorOrderUnread(order = {}) {
 function markMentorOrderNotificationsRead(order = {}) {
   const orderId = String(order.id || '').trim()
   if (!orderId) return
+  // 已读写入开始后，忽略此前启动的旧摘要响应。
+  latestUnreadLoadToken += 1
   const nextTargets = { ...unreadMentorOrderTargets.value }
   delete nextTargets[orderId]
   unreadMentorOrderTargets.value = nextTargets

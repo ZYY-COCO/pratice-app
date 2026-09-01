@@ -2,7 +2,7 @@
   <view
     class="page home-page"
     :class="{
-      'no-tab-page': !showBottomTab,
+      'no-tab-page': !renderBottomTab,
       'circle-glass-page': activeTab === 'circle' || isCircleGlassTheme,
       'circle-themed-page': activeTab === 'circle' && !isCircleGlassTheme,
       'landing-glass-page': activeTab === 'landing' && isCircleGlassTheme,
@@ -11,9 +11,13 @@
       'profile-reference-page': activeTab === 'profile',
       'profile-function-page': activeTab === 'mistakes' || activeTab === 'report',
       'scoreline-browser-page': isScoreLineBrowser,
+      'circle-detail-active': isCircleDetail,
       'glass-theme-page': isCircleGlassTheme
     }"
     :style="pageInlineStyle"
+    @mousemove="moveCircleEdgeSwipe"
+    @mouseup="finishCircleEdgeSwipe"
+    @mouseleave="cancelCircleEdgeSwipe"
   >
     <template v-if="activeTab === 'landing'">
         <view key="landing" class="landing-dashboard">
@@ -369,11 +373,14 @@
       <view key="circle" class="circle-dashboard">
         <view class="circle-view-stage">
         <view
-          v-if="!circleDetailVisible"
+          v-if="circleOverviewVisible"
           key="circle-overview"
           class="circle-overview circle-view-panel"
+          :class="{ 'is-app-route-underlay': circleAppRouteUnderlay }"
+          :style="circleOverviewRouteStyle"
         >
           <swiper
+            v-if="!circleAppRouteUnderlay"
             class="circle-insight-swiper"
             :current="circleInsightIndex"
             :autoplay="!isCircleScoreSwiperPaused"
@@ -506,6 +513,84 @@
               </view>
             </swiper-item>
           </swiper>
+          <view
+            v-else
+            class="circle-insight-swiper circle-insight-route-mirror"
+            aria-hidden="true"
+          >
+            <view v-if="circleInsightIndex === 0" class="circle-trend-card circle-glass-surface">
+              <view class="circle-trend-heading">
+                <view class="circle-trend-title">刷题人数</view>
+                <view class="circle-trend-peak">
+                  <text>峰值 </text>
+                  <text class="circle-trend-peak-value">{{ circleTrendPeakLabel }}</text>
+                  <text> 人</text>
+                </view>
+              </view>
+              <view class="circle-trend-chart" aria-hidden="true">
+                <view class="circle-trend-grid">
+                  <view v-for="label in circleTrendAxis" :key="label" class="circle-trend-grid-line"></view>
+                </view>
+                <view class="circle-trend-axis">
+                  <text v-for="label in circleTrendAxis" :key="label">{{ label }}</text>
+                </view>
+                <view class="circle-trend-bars">
+                  <view v-for="item in circlePracticeTrend" :key="item.day" class="circle-trend-column">
+                    <view class="circle-trend-bar-space">
+                      <view
+                        class="circle-trend-bar"
+                        :class="{ latest: item.latest, empty: item.count <= 0 }"
+                        :style="{ height: getCircleTrendHeight(item.count) }"
+                      >
+                        <text class="circle-trend-value">{{ item.count }}</text>
+                      </view>
+                    </view>
+                    <text class="circle-trend-day">{{ item.day }}</text>
+                  </view>
+                </view>
+              </view>
+            </view>
+
+            <view v-else class="circle-score-card circle-glass-surface">
+              <view class="circle-score-heading">
+                <view class="circle-score-copy">
+                  <view class="circle-score-title">{{ getScoreLineSchoolName(activeCircleScoreSchool) }}</view>
+                  <view v-if="activeCircleScoreSchool?.unitName" class="circle-score-subtitle">
+                    {{ activeCircleScoreSchool.unitName }}
+                  </view>
+                </view>
+                <view class="circle-score-total">总分 <text>150</text></view>
+              </view>
+              <view class="circle-score-chart">
+                <view class="circle-score-axis">
+                  <text v-for="label in activeCircleScoreChart.axis" :key="label">{{ label }}</text>
+                </view>
+                <view class="circle-score-mirror-plot">
+                  <view
+                    v-for="(line, index) in circleScoreMirrorGridLines"
+                    :key="`grid-${index}`"
+                    class="circle-score-mirror-grid-line"
+                    :style="line"
+                  ></view>
+                  <view
+                    v-for="(segment, index) in circleScoreMirrorSegments"
+                    :key="`segment-${index}`"
+                    class="circle-score-mirror-segment"
+                    :style="segment"
+                  ></view>
+                  <view
+                    v-for="(point, index) in circleScoreMirrorPoints"
+                    :key="`point-${index}`"
+                    class="circle-score-mirror-point"
+                    :style="point"
+                  ></view>
+                </view>
+                <view class="circle-score-years">
+                  <text v-for="year in circleScoreYears" :key="year">{{ year }}</text>
+                </view>
+              </view>
+            </view>
+          </view>
           <view class="circle-insight-pagination" aria-label="数据卡片轮播">
             <button
               v-for="index in 2"
@@ -543,12 +628,24 @@
         </view>
 
         <view
-          v-if="circleDetailVisible"
+          v-if="circleDetailMounted"
           key="circle-detail"
           class="circle-detail-route-layer"
-          :class="{ 'is-scoreline-browser': isScoreLineBrowser }"
+          :class="{
+            'is-scoreline-browser': isScoreLineBrowser,
+            'is-route-compositor-safe': selectedCircleSection !== 'scores',
+            'is-route-moving': circleDetailRouteMotion !== 'idle' && circleDetailRouteMotion !== 'dragging',
+            'is-route-dragging': circleDetailRouteMotion === 'dragging',
+            'is-route-settling': circleDetailRouteMotion === 'drag-cancelling' || circleDetailRouteMotion === 'drag-leaving',
+            'is-route-offscreen': circleDetailRouteMotion === 'enter-from' || circleDetailRouteMotion === 'leaving'
+          }"
+          :style="circleDetailRouteStyle"
           @touchstart="beginCircleEdgeSwipe"
+          @touchmove.stop="moveCircleEdgeSwipe"
           @touchend="finishCircleEdgeSwipe"
+          @touchcancel="cancelCircleEdgeSwipe"
+          @mousedown="beginCircleEdgeSwipe"
+          @transitionend="handleCircleDetailRouteTransitionEnd"
         >
           <view class="circle-detail-header circle-detail-route-header" :style="circleCommunityHeaderStyle">
             <button
@@ -820,9 +917,10 @@
                   <view class="community-post-footer">
                     <button
                       class="community-post-action"
-                      :class="{ active: post.liked, pending: communityLikePostId === post.id }"
+                      :class="{ active: post.liked, pending: isCommunityPostLikePending(post.id) }"
                       :aria-label="post.liked ? '取消点赞' : '点赞'"
                       :aria-pressed="post.liked"
+                      :aria-busy="isCommunityPostLikePending(post.id)"
                       @tap.stop="toggleCommunityLike(post)"
                     >
                       <image
@@ -2089,12 +2187,19 @@
     <view
       v-if="selectedCommunityPost"
       class="community-reader"
+      :class="{ 'is-closing': communityReaderClosing }"
+      @tap.stop
       @touchstart="beginCommunityReaderEdgeSwipe"
       @touchend="finishCommunityReaderEdgeSwipe"
     >
       <view class="community-reader-surface">
         <view class="community-reader-topbar">
-          <button class="community-reader-back" aria-label="返回社区" @tap="closeCommunityPost">
+          <button
+            class="community-reader-back"
+            aria-label="返回社区"
+            :disabled="communityReaderClosing"
+            @tap.stop="closeCommunityPostWithTapGuard"
+          >
             <image src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
           </button>
           <view class="community-reader-author">
@@ -2206,20 +2311,15 @@
                     </view>
                     <button
                       class="community-reader-comment-like"
-                      :class="{ active: comment.liked, pending: communityCommentLikeId === comment.id }"
+                      :class="{ active: comment.liked, pending: isCommunityCommentLikePending(selectedCommunityCommentsPost.id, comment.id) }"
                       :aria-label="comment.liked ? '取消评论点赞' : '点赞评论'"
                       :aria-pressed="comment.liked"
-                      :aria-busy="communityCommentLikeId === comment.id"
+                      :aria-busy="isCommunityCommentLikePending(selectedCommunityCommentsPost.id, comment.id)"
                       @tap.stop="toggleCommunityCommentLike(comment)"
                     >
                       <image
                         class="community-reader-comment-like-icon-image"
-                        :src="getToneIconSrc(
-                          comment.liked
-                            ? '/static/ui-icons/png/original/community-comment-heart-filled.png'
-                            : '/static/ui-icons/png/original/community-comment-heart.png',
-                          comment.liked ? 'danger' : 'neutral'
-                        )"
+                        :src="comment.liked ? communityLikeFilledIconSrc : communityLikeIconSrc"
                         mode="aspectFit"
                         aria-hidden="true"
                       />
@@ -2273,12 +2373,12 @@
               class="community-reader-action"
               :class="{
                 active: selectedCommunityPost.liked,
-                pending: communityLikePostId === selectedCommunityPost.id,
+                pending: isCommunityPostLikePending(selectedCommunityPost.id),
                 'is-bursting': communityLikeBurstPostId === selectedCommunityPost.id
               }"
               :aria-label="selectedCommunityPost.liked ? '取消点赞' : '点赞'"
               :aria-pressed="selectedCommunityPost.liked"
-              :aria-busy="communityLikePostId === selectedCommunityPost.id"
+              :aria-busy="isCommunityPostLikePending(selectedCommunityPost.id)"
               @tap="toggleCommunityLike(selectedCommunityPost)"
             >
               <view class="community-reader-like-icon-wrap">
@@ -2350,7 +2450,7 @@
           <view class="community-detail-stats">
             <button
               class="community-detail-like"
-              :class="{ active: selectedCommunityPost.liked, pending: communityLikePostId === selectedCommunityPost.id }"
+              :class="{ active: selectedCommunityPost.liked, pending: isCommunityPostLikePending(selectedCommunityPost.id) }"
               @tap="toggleCommunityLike(selectedCommunityPost)"
             >
               <image src="/static/ui-icons/png/original/circle-like.png" mode="aspectFit" />
@@ -2627,10 +2727,6 @@
         <text>{{ mentorEntryLabel }}</text>
       </view>
       <image v-else src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
-      <text
-        v-if="mentorEntryStatus === 'verified' && mentorConsultationUnreadCount"
-        class="mentor-entry-unread-badge"
-      >{{ formatUnreadBadge(mentorConsultationUnreadCount) }}</text>
     </button>
     <button
       v-else-if="showCommunityPublishButton && selectedCircleCommunityTab === 'experience'"
@@ -2653,11 +2749,12 @@
       <image src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
     </button>
     <BottomTabBar
-      v-if="showBottomTab"
+      v-if="renderBottomTab"
+      :class="{ 'is-circle-route-underlay-tab': isCircleDetail }"
       v-model="activeTab"
       :items="tabs"
       :glass="true"
-      :collapsed="isCircleTabbarCollapsed"
+      :collapsed="isCircleDetail ? false : isCircleTabbarCollapsed"
       :theme-key="selectedThemeKey"
       @expand="expandCircleTabbar"
     />
@@ -2666,7 +2763,7 @@
 
 <script setup>
 import { computed, nextTick, onBeforeUnmount, reactive, ref, watch } from 'vue'
-import { onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
+import { onBackPress, onHide, onLoad, onPageScroll, onReachBottom, onShow } from '@dcloudio/uni-app'
 import BottomTabBar from '../../components/BottomTabBar.vue'
 import CanvasLineChart from '../../components/CanvasLineChart.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
@@ -2764,6 +2861,17 @@ import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../u
 
 const examOptions = EXAM_OPTIONS
 const ENABLE_CIRCLE = true
+const CIRCLE_DETAIL_ROUTE_DURATION = 380
+const CIRCLE_DETAIL_ROUTE_FRAME_DELAY = 32
+const CIRCLE_DETAIL_ROUTE_FALLBACK_DELAY = 80
+const CIRCLE_EDGE_SWIPE_START_WIDTH = 28
+const CIRCLE_EDGE_SWIPE_LOCK_DISTANCE = 8
+const CIRCLE_EDGE_SWIPE_FINISH_PROGRESS = 0.3
+const CIRCLE_EDGE_SWIPE_FINISH_VELOCITY = 0.45
+const CIRCLE_EDGE_SWIPE_MIN_FLING_DISTANCE = 42
+const CIRCLE_SCORE_MIRROR_WIDTH = 300
+const CIRCLE_SCORE_MIRROR_HEIGHT = 112
+const COMMUNITY_READER_TAP_GUARD_DELAY = 160
 const historicalScoreLineYears = reactive([...fallbackHistoricalScoreLineYears])
 const historicalScoreLineRecords = reactive(fallbackHistoricalScoreLineRecords.map((record) => ({
   ...record,
@@ -2874,16 +2982,27 @@ const applicantConsultationUnreadCount = ref(0)
 const mentorConsultationUnreadCount = ref(0)
 const communityPostUnreadTargets = ref({ chat: {}, experience: {} })
 const messageUnreadCount = computed(() => officialUnreadCount.value + notificationUnreadCount.value)
+let latestUnreadRefreshToken = 0
 const selectedThemeKey = ref(getStoredThemeKey())
 const generatingTraining = ref(false)
 const recommendationLoading = ref(false)
 const selectedCircleSection = ref('overview')
 const selectedCirclePost = ref(null)
 const circleDetailVisible = ref(false)
+const circleDetailMounted = ref(false)
+const circleOverviewVisible = ref(true)
+const circleAppRouteUnderlay = ref(false)
+const circleDetailRouteMotion = ref('idle')
 const circleDetailScrollTop = ref(0)
 const circleOverviewScrollTop = ref(0)
 let circleOverviewRestoreTimer = null
+let circleDetailRouteFrameTimer = null
+let circleDetailRouteFinishTimer = null
+let circleDetailReturnScrollTop = 0
 const circleEdgeSwipeStart = ref(null)
+const circleEdgeSwipeOffset = ref(0)
+const circleEdgeSwipeViewportWidth = ref(375)
+const circleEdgeSwipeSettleDuration = ref(CIRCLE_DETAIL_ROUTE_DURATION)
 const communityReaderEdgeSwipeStart = ref(null)
 const circleInsightIndex = ref(0)
 const circleScoreSchoolIndex = ref(
@@ -2928,6 +3047,8 @@ let mentorFilterCloseTimer = null
 const mentorFavoriteIds = ref(getMentorFavoriteIds())
 const mentorFavoritePendingIds = ref([])
 const selectedCommunityPost = ref(null)
+const communityReaderClosing = ref(false)
+let communityReaderCloseTimer = null
 const selectedCommunityCommentsPost = ref(null)
 const communityReaderScrollTarget = ref('')
 const communityReaderMediaIndex = ref(0)
@@ -2940,14 +3061,16 @@ const communityCommentSort = ref('default')
 const communityPostsLoading = ref(false)
 const communityFeedNextCursors = reactive({})
 const communityFeedHasMore = reactive({})
-const communityLikePostId = ref('')
 const communityLikeIconSrc = '/static/ui-icons/png/original/circle-like.png'
 const communityLikeFilledIconSrc = '/static/ui-icons/png/original/circle-like-filled.png'
 const communityLikeBurstPostId = ref('')
 const communityLikeBurstBubbles = Object.freeze([1, 2, 3])
-const communityCommentLikeId = ref('')
 const communityCommentDraft = ref('')
 const communityCommentSubmitting = ref(false)
+const communityPostLikePendingIds = reactive({})
+const communityCommentLikePendingIds = reactive({})
+const communityPostLikeQueues = new Map()
+const communityCommentLikeQueues = new Map()
 const circleTabCollapsed = ref(false)
 const circleLastScrollTop = ref(0)
 const homeFocusIndex = ref(0)
@@ -3088,12 +3211,62 @@ const showBottomTab = computed(() =>
   && !['mistakes', 'report'].includes(activeTab.value)
   && !isCircleDetail.value
 )
+const renderBottomTab = computed(() => (
+  !retestMode.value && (showBottomTab.value || isCircleDetail.value)
+))
 const isScoreLineBrowser = computed(() => (
   isCircleDetail.value &&
   selectedCircleSection.value === 'scores' &&
   !selectedScoreLineRecord.value
 ))
 const isCircleTabbarCollapsed = computed(() => isCircleDetail.value && circleTabCollapsed.value)
+const circleEdgeSwipeProgress = computed(() => {
+  const width = Math.max(1, Number(circleEdgeSwipeViewportWidth.value) || 1)
+  return Math.min(1, Math.max(0, circleEdgeSwipeOffset.value / width))
+})
+const circleDetailRouteStyle = computed(() => {
+  const motion = circleDetailRouteMotion.value
+  if (!['dragging', 'drag-cancelling', 'drag-leaving'].includes(motion)) return {}
+
+  const offset = Math.max(0, Number(circleEdgeSwipeOffset.value) || 0)
+  const duration = Math.max(0, Number(circleEdgeSwipeSettleDuration.value) || 0)
+  const settling = motion !== 'dragging'
+  const style = {
+    transition: settling
+      ? `transform ${duration}ms cubic-bezier(0.22, 0.82, 0.24, 1)`
+      : 'none',
+    transform: `translate3d(${offset}px, 0, 0)`,
+    willChange: 'transform'
+  }
+
+  // #ifdef APP-PLUS
+  if (selectedCircleSection.value === 'scores') {
+    style.right = 'auto'
+    style.left = `${offset}px`
+    style.transform = 'none'
+    style.transition = settling
+      ? `left ${duration}ms cubic-bezier(0.22, 0.82, 0.24, 1)`
+      : 'none'
+    style.willChange = 'left'
+  }
+  // #endif
+
+  return style
+})
+const circleOverviewRouteStyle = computed(() => {
+  const motion = circleDetailRouteMotion.value
+  if (!['dragging', 'drag-cancelling', 'drag-leaving'].includes(motion)) return {}
+
+  const progress = circleEdgeSwipeProgress.value
+  const duration = Math.max(0, Number(circleEdgeSwipeSettleDuration.value) || 0)
+  return {
+    opacity: String(0.94 + progress * 0.06),
+    transform: `translate3d(${-18 + progress * 18}px, 0, 0)`,
+    transition: motion === 'dragging'
+      ? 'none'
+      : `transform ${duration}ms cubic-bezier(0.22, 0.82, 0.24, 1), opacity ${duration}ms ease`
+  }
+})
 const difficultyOptions = ['基础巩固', '标准提升', '强化突破', '冲刺挑战']
 const circleSections = [
   {
@@ -3145,6 +3318,30 @@ const activeCircleScoreCanvasPoints = computed(() => (
   activeCircleScoreValues.value.map((score, index) => ({
     x: circleScoreX[index],
     y: getCircleScoreY(score, activeCircleScoreChart.value)
+  }))
+))
+const circleScoreMirrorGridLines = computed(() => (
+  activeCircleScoreChart.value.gridY.map((y) => ({
+    top: `${(Number(y) / CIRCLE_SCORE_MIRROR_HEIGHT) * 100}%`
+  }))
+))
+const circleScoreMirrorSegments = computed(() => (
+  activeCircleScoreCanvasPoints.value.slice(0, -1).map((point, index) => {
+    const nextPoint = activeCircleScoreCanvasPoints.value[index + 1]
+    const deltaX = Number(nextPoint.x) - Number(point.x)
+    const deltaY = Number(nextPoint.y) - Number(point.y)
+    return {
+      left: `${(Number(point.x) / CIRCLE_SCORE_MIRROR_WIDTH) * 100}%`,
+      top: `${(Number(point.y) / CIRCLE_SCORE_MIRROR_HEIGHT) * 100}%`,
+      width: `${(Math.hypot(deltaX, deltaY) / CIRCLE_SCORE_MIRROR_WIDTH) * 100}%`,
+      transform: `rotate(${Math.atan2(deltaY, deltaX) * 180 / Math.PI}deg)`
+    }
+  })
+))
+const circleScoreMirrorPoints = computed(() => (
+  activeCircleScoreCanvasPoints.value.map((point) => ({
+    left: `${(Number(point.x) / CIRCLE_SCORE_MIRROR_WIDTH) * 100}%`,
+    top: `${(Number(point.y) / CIRCLE_SCORE_MIRROR_HEIGHT) * 100}%`
   }))
 ))
 const scoreLineYearFilterOptions = computed(() => ['全部', ...historicalScoreLineDisplayYears.value])
@@ -3426,6 +3623,7 @@ const mentorEntryAriaLabel = computed(() => {
 const showCommunityPublishButton = computed(() => (
   activeTab.value === 'circle'
   && circleDetailVisible.value
+  && circleDetailRouteMotion.value === 'idle'
   && selectedCircleSection.value === 'community'
   && Boolean(selectedCircleCommunityTab.value)
   && !selectedCommunityPost.value
@@ -4413,8 +4611,8 @@ watch(activeTab, (value) => {
   }
   if (value === 'circle') {
     clearCircleOverviewRestoreTimer()
+    resetCircleDetailRouteState()
     selectedCircleSection.value = 'overview'
-    circleDetailVisible.value = false
     circleDetailScrollTop.value = 0
     circleOverviewScrollTop.value = 0
     circleCommunityHeaderScrollTop.value = 0
@@ -4434,7 +4632,7 @@ watch(activeTab, (value) => {
   }
   if (value !== 'circle') {
     clearCircleOverviewRestoreTimer()
-    circleDetailVisible.value = false
+    resetCircleDetailRouteState()
     selectedCirclePost.value = null
     closeCommunityPost()
   }
@@ -4467,7 +4665,7 @@ onLoad((options) => {
       const requestedCommunityPostId = String(launchOptions?.postId || '').trim()
       const restoreCommunityDeepLink = () => {
         selectedCircleSection.value = 'community'
-        circleDetailVisible.value = true
+        showCircleDetailImmediately()
         circleDetailScrollTop.value = 0
         if (circleCommunityTabs.some((item) => item.key === requestedCommunityTab)) {
           selectedCircleCommunityTab.value = requestedCommunityTab
@@ -4721,6 +4919,7 @@ onShow(() => {
 })
 
 onHide(() => {
+  interruptCircleEdgeSwipe()
   cancelPracticeStatsAnimation()
   stopDailyLeaderboardRefresh()
   clearCommunityViewTimer()
@@ -4732,12 +4931,36 @@ onHide(() => {
   closePhoneBindingModal(true)
 })
 
+onBackPress(() => {
+  if (activeTab.value !== 'circle') return false
+  if (selectedCommunityCommentsPost.value) {
+    closeCommunityComments()
+    return true
+  }
+  if (selectedCommunityPost.value) {
+    closeCommunityPost()
+    return true
+  }
+  if (selectedCirclePost.value) {
+    closeCirclePost()
+    return true
+  }
+  if (circleDetailVisible.value) {
+    handleCircleDetailBack()
+    return true
+  }
+  return false
+})
+
 onBeforeUnmount(() => {
   cancelPracticeStatsAnimation()
   stopDailyLeaderboardRefresh()
   clearCommunityLikeBurst()
   clearCircleScoreTooltip()
   clearCircleOverviewRestoreTimer()
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  clearCommunityReaderCloseTimer()
   clearMentorFilterMotionTimers()
   flushScheduledCircleCommunityFeedPersist()
   if (subscriptionSheetOpenTimer) clearTimeout(subscriptionSheetOpenTimer)
@@ -5746,6 +5969,8 @@ function applyCommunityPostReadLocally(post = {}) {
 function markCommunityPostNotificationsRead(post = {}) {
   const postId = String(post.id || '').trim()
   if (!postId || !isAuthed.value) return
+  // 立即作废已发出的旧全局摘要，避免旧响应覆盖本地已清除的红点。
+  latestUnreadRefreshToken += 1
   applyCommunityPostReadLocally(post)
   void markUserNotificationReadTarget('community_post', postId)
     .then(() => refreshMessageUnreadCounts())
@@ -5753,7 +5978,9 @@ function markCommunityPostNotificationsRead(post = {}) {
 }
 
 async function refreshMessageUnreadCounts() {
+  const refreshToken = ++latestUnreadRefreshToken
   if (!isAuthed.value) {
+    if (refreshToken !== latestUnreadRefreshToken) return
     officialUnreadCount.value = 0
     notificationUnreadCount.value = 0
     communityUnreadCount.value = 0
@@ -5771,6 +5998,7 @@ async function refreshMessageUnreadCounts() {
     fetchOfficialMessages(),
     fetchUserNotificationUnreadSummary()
   ])
+  if (refreshToken !== latestUnreadRefreshToken) return
   officialUnreadCount.value = officialResult.status === 'fulfilled'
     ? Number(officialResult.value?.unread_count || 0)
     : 0
@@ -5799,10 +6027,13 @@ async function refreshMessageUnreadCounts() {
   // 旧后端尚未重启到新接口时，仍让全局消息铃铛保持可用。
   try {
     const fallback = await fetchUserNotifications({ limit: 1 })
+    if (refreshToken !== latestUnreadRefreshToken) return
     notificationUnreadCount.value = Number(fallback?.unread_count || 0)
   } catch (error) {
+    if (refreshToken !== latestUnreadRefreshToken) return
     notificationUnreadCount.value = 0
   }
+  if (refreshToken !== latestUnreadRefreshToken) return
   communityUnreadCount.value = 0
   postInteractionUnreadCount.value = 0
   communityReportUnreadCount.value = 0
@@ -5841,6 +6072,185 @@ function clearCircleOverviewRestoreTimer() {
   circleOverviewRestoreTimer = null
 }
 
+function prefersReducedCircleRouteMotion() {
+  let reduced = false
+  // #ifdef H5
+  reduced = typeof window !== 'undefined'
+    && typeof window.matchMedia === 'function'
+    && window.matchMedia('(prefers-reduced-motion: reduce)').matches
+  // #endif
+  return reduced
+}
+
+function clearCircleDetailRouteTimers() {
+  if (circleDetailRouteFrameTimer) {
+    clearTimeout(circleDetailRouteFrameTimer)
+    circleDetailRouteFrameTimer = null
+  }
+  if (circleDetailRouteFinishTimer) {
+    clearTimeout(circleDetailRouteFinishTimer)
+    circleDetailRouteFinishTimer = null
+  }
+}
+
+function resetCircleEdgeSwipeState() {
+  circleEdgeSwipeStart.value = null
+  circleEdgeSwipeOffset.value = 0
+  circleEdgeSwipeSettleDuration.value = CIRCLE_DETAIL_ROUTE_DURATION
+}
+
+function getCircleRouteViewportWidth() {
+  let width = 0
+  try {
+    const systemInfo = uni.getSystemInfoSync?.() || {}
+    width = Number(systemInfo.windowWidth || systemInfo.screenWidth || 0)
+  } catch (error) {
+    width = 0
+  }
+  // #ifdef H5
+  if (!width && typeof window !== 'undefined') width = Number(window.innerWidth || 0)
+  // #endif
+  return Math.max(1, width || 375)
+}
+
+function prepareCircleRouteUnderlay() {
+  circleOverviewVisible.value = true
+  // 详情页下方始终使用真实数据静态镜像，避免返回首帧重新挂载 swiper/canvas。
+  circleAppRouteUnderlay.value = true
+}
+
+function parkCircleRouteUnderlay() {
+  if (!circleDetailVisible.value) return
+  circleOverviewVisible.value = true
+  circleAppRouteUnderlay.value = true
+}
+
+function resetCircleDetailRouteState() {
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleDetailRouteMotion.value = 'idle'
+  circleDetailMounted.value = false
+  circleDetailVisible.value = false
+  circleOverviewVisible.value = true
+  circleAppRouteUnderlay.value = false
+  circleDetailReturnScrollTop = 0
+}
+
+function showCircleDetailImmediately() {
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleDetailRouteMotion.value = 'idle'
+  circleOverviewVisible.value = true
+  circleAppRouteUnderlay.value = true
+  circleDetailVisible.value = true
+  circleDetailMounted.value = true
+}
+
+function scheduleCircleDetailRouteFinish(expectedMotion, duration = CIRCLE_DETAIL_ROUTE_DURATION) {
+  if (circleDetailRouteFinishTimer) clearTimeout(circleDetailRouteFinishTimer)
+  const delay = prefersReducedCircleRouteMotion()
+    ? 0
+    : Math.max(0, Number(duration) || 0) + CIRCLE_DETAIL_ROUTE_FALLBACK_DELAY
+  circleDetailRouteFinishTimer = setTimeout(() => {
+    circleDetailRouteFinishTimer = null
+    if (circleDetailRouteMotion.value !== expectedMotion) return
+    if (expectedMotion === 'entering') {
+      finishCircleDetailRouteEnter()
+    } else if (expectedMotion === 'leaving' || expectedMotion === 'drag-leaving') {
+      finishCircleDetailRouteLeave()
+    } else if (expectedMotion === 'drag-cancelling') {
+      finishCircleEdgeSwipeCancel()
+    }
+  }, delay)
+}
+
+function showCircleDetailWithTransition() {
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleAppRouteUnderlay.value = false
+  circleDetailVisible.value = true
+  circleDetailMounted.value = true
+
+  if (prefersReducedCircleRouteMotion()) {
+    circleOverviewVisible.value = false
+    circleDetailRouteMotion.value = 'idle'
+    return
+  }
+
+  circleDetailRouteMotion.value = 'enter-from'
+  circleOverviewVisible.value = false
+  // H5 保留真实总览；App 使用不含原生 swiper/canvas 的静态底层，避免叠层和空白首帧。
+  // #ifdef H5
+  circleOverviewVisible.value = true
+  // #endif
+
+  // #ifdef APP-PLUS
+  circleAppRouteUnderlay.value = true
+  circleOverviewVisible.value = true
+  // #endif
+
+  nextTick(() => {
+    circleDetailRouteFrameTimer = setTimeout(() => {
+      circleDetailRouteFrameTimer = null
+      if (!circleDetailMounted.value || circleDetailRouteMotion.value !== 'enter-from') return
+      circleDetailRouteMotion.value = 'entering'
+      scheduleCircleDetailRouteFinish('entering')
+    }, CIRCLE_DETAIL_ROUTE_FRAME_DELAY)
+  })
+}
+
+function finishCircleDetailRouteEnter() {
+  if (circleDetailRouteMotion.value !== 'entering') return
+  if (circleDetailRouteFinishTimer) {
+    clearTimeout(circleDetailRouteFinishTimer)
+    circleDetailRouteFinishTimer = null
+  }
+  resetCircleEdgeSwipeState()
+  circleDetailRouteMotion.value = 'idle'
+  circleOverviewVisible.value = true
+  circleAppRouteUnderlay.value = true
+}
+
+function finishCircleDetailRouteLeave() {
+  if (!['leaving', 'drag-leaving'].includes(circleDetailRouteMotion.value)) return
+  const returnScrollTop = circleDetailReturnScrollTop
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleDetailMounted.value = false
+  circleDetailVisible.value = false
+  circleOverviewVisible.value = true
+  circleAppRouteUnderlay.value = true
+  circleDetailRouteMotion.value = 'idle'
+  selectedCircleSection.value = 'overview'
+  selectedScoreLineRecord.value = null
+  selectedScoreLineRecordEntry.value = 'list'
+  selectedCirclePost.value = null
+  closeCommunityPost()
+  circleCommunityHeaderScrollTop.value = 0
+  circleDetailReturnScrollTop = 0
+  nextTick(() => {
+    circleDetailRouteFrameTimer = setTimeout(() => {
+      circleDetailRouteFrameTimer = null
+      if (circleDetailVisible.value) return
+      circleAppRouteUnderlay.value = false
+      if (activeTab.value === 'circle') restoreCircleOverviewScrollPosition(returnScrollTop)
+    }, CIRCLE_DETAIL_ROUTE_FRAME_DELAY)
+  })
+}
+
+function handleCircleDetailRouteTransitionEnd(event) {
+  if (event?.target && event?.currentTarget && event.target !== event.currentTarget) return
+  const propertyName = event?.propertyName || event?.detail?.propertyName || ''
+  if (propertyName && propertyName !== 'transform' && propertyName !== 'left') return
+  if (circleDetailRouteMotion.value === 'entering') {
+    finishCircleDetailRouteEnter()
+  } else if (circleDetailRouteMotion.value === 'leaving' || circleDetailRouteMotion.value === 'drag-leaving') {
+    finishCircleDetailRouteLeave()
+  } else if (circleDetailRouteMotion.value === 'drag-cancelling') {
+    finishCircleEdgeSwipeCancel()
+  }
+}
+
 function restoreCircleOverviewScrollPosition(scrollTop) {
   const targetScrollTop = Math.max(0, Number(scrollTop) || 0)
   const restore = () => {
@@ -5868,14 +6278,17 @@ function openCircleSection(key) {
   closeCommunityPost()
   circleDetailScrollTop.value = 0
   circleCommunityHeaderScrollTop.value = 0
-  circleDetailVisible.value = true
+  showCircleDetailWithTransition()
   if (key === 'community') {
     selectedCircleCommunityTab.value = 'chat'
     selectedCommunityCategory.value = '全部'
     communitySearchKeyword.value = ''
     selectedExperienceCategory.value = '全部'
     experienceSearchKeyword.value = ''
-    // 先完成详情首帧，再加载社区内容，避免 iOS 点击后被同步任务阻塞。
+    // 先完成详情滑入，再回填社区内容，避免 iOS 首帧与缓存处理抢占同一帧。
+    const communityLoadDelay = circleDetailRouteMotion.value === 'idle'
+      ? 0
+      : CIRCLE_DETAIL_ROUTE_DURATION + CIRCLE_DETAIL_ROUTE_FRAME_DELAY
     nextTick(() => {
       setTimeout(() => {
         if (!circleDetailVisible.value || selectedCircleSection.value !== 'community') return
@@ -5889,24 +6302,54 @@ function openCircleSection(key) {
           featuredOnly,
           sortBy
         })
-      }, 0)
+      }, communityLoadDelay)
     })
   }
 }
 
+function prepareCircleDetailRouteLeave() {
+  prepareCircleRouteUnderlay()
+  circleDetailRouteMotion.value = 'leave-preparing'
+  nextTick(() => {
+    circleDetailRouteFrameTimer = setTimeout(() => {
+      circleDetailRouteFrameTimer = null
+      if (!circleDetailVisible.value || circleDetailRouteMotion.value !== 'leave-preparing') return
+      circleDetailRouteMotion.value = 'leaving'
+      scheduleCircleDetailRouteFinish('leaving')
+    }, CIRCLE_DETAIL_ROUTE_FRAME_DELAY)
+  })
+}
+
 function returnToCircleOverview() {
-  if (!circleDetailVisible.value) return
-  const overviewScrollTop = circleOverviewScrollTop.value
+  if (circleDetailRouteMotion.value === 'dragging') {
+    circleDetailReturnScrollTop = circleOverviewScrollTop.value
+    resetCircleTabbar()
+    clearCircleScoreTooltip()
+    startCircleEdgeSwipeSettle('drag-leaving', circleEdgeSwipeViewportWidth.value)
+    return
+  }
+  if (
+    !circleDetailVisible.value
+    || circleDetailRouteMotion.value === 'leave-preparing'
+    || circleDetailRouteMotion.value === 'leaving'
+    || circleDetailRouteMotion.value === 'drag-cancelling'
+    || circleDetailRouteMotion.value === 'drag-leaving'
+  ) return
+  circleDetailReturnScrollTop = circleOverviewScrollTop.value
   resetCircleTabbar()
   clearCircleScoreTooltip()
-  circleDetailVisible.value = false
-  selectedCircleSection.value = 'overview'
-  selectedScoreLineRecord.value = null
-  selectedScoreLineRecordEntry.value = 'list'
-  selectedCirclePost.value = null
-  closeCommunityPost()
-  circleCommunityHeaderScrollTop.value = 0
-  restoreCircleOverviewScrollPosition(overviewScrollTop)
+  clearCircleDetailRouteTimers()
+
+  if (prefersReducedCircleRouteMotion()) {
+    circleDetailRouteMotion.value = 'leaving'
+    finishCircleDetailRouteLeave()
+    return
+  }
+
+  // 底层静态镜像已常驻；这里只启动详情离场，避免返回首帧重新挂载整页。
+  // 镜像层不挂载原生 swiper/canvas，返回过程中不会被原生层覆盖。
+  prepareCircleDetailRouteLeave()
+  return
 }
 
 function handleCircleDetailBack() {
@@ -5929,7 +6372,7 @@ function openCircleScoreLineRecord(record) {
   closeCommunityPost()
   circleDetailScrollTop.value = 0
   circleCommunityHeaderScrollTop.value = 0
-  circleDetailVisible.value = true
+  showCircleDetailWithTransition()
 }
 
 function openScoreLineRecord(record) {
@@ -6017,39 +6460,177 @@ function scrollCircleContentToTop() {
 }
 
 function getCircleTouchPoint(event) {
-  return event?.touches?.[0] || event?.changedTouches?.[0] || null
+  return event?.touches?.[0]
+    || event?.changedTouches?.[0]
+    || (Number.isFinite(Number(event?.clientX)) ? event : null)
+}
+
+function canStartCircleEdgeSwipe() {
+  if (!circleDetailVisible.value || circleDetailRouteMotion.value !== 'idle') return false
+  if (selectedCommunityCommentsPost.value || selectedCommunityPost.value || selectedCirclePost.value) return false
+  if (
+    selectedCircleSection.value === 'scores'
+    && selectedScoreLineRecord.value
+    && selectedScoreLineRecordEntry.value === 'list'
+  ) return false
+  return true
+}
+
+function abandonCircleEdgeSwipeTracking() {
+  const wasDragging = circleDetailRouteMotion.value === 'dragging'
+  resetCircleEdgeSwipeState()
+  if (wasDragging) circleDetailRouteMotion.value = 'idle'
+  parkCircleRouteUnderlay()
+}
+
+function getCircleEdgeSwipeSettleDuration(targetOffset) {
+  const width = Math.max(1, Number(circleEdgeSwipeViewportWidth.value) || 1)
+  const distance = Math.abs(Number(targetOffset) - Number(circleEdgeSwipeOffset.value))
+  return Math.round(Math.min(300, Math.max(140, 115 + (distance / width) * 185)))
+}
+
+function startCircleEdgeSwipeSettle(motion, targetOffset) {
+  const width = Math.max(1, Number(circleEdgeSwipeViewportWidth.value) || 1)
+  const normalizedTarget = Math.min(width, Math.max(0, Number(targetOffset) || 0))
+  const duration = prefersReducedCircleRouteMotion()
+    ? 0
+    : getCircleEdgeSwipeSettleDuration(normalizedTarget)
+
+  circleEdgeSwipeStart.value = null
+  circleEdgeSwipeSettleDuration.value = duration
+  circleDetailRouteMotion.value = motion
+
+  nextTick(() => {
+    if (circleDetailRouteMotion.value !== motion) return
+    circleEdgeSwipeOffset.value = normalizedTarget
+    if (duration <= 0) {
+      if (motion === 'drag-leaving') finishCircleDetailRouteLeave()
+      else finishCircleEdgeSwipeCancel()
+      return
+    }
+    scheduleCircleDetailRouteFinish(motion, duration)
+  })
+}
+
+function finishCircleEdgeSwipeCancel() {
+  if (circleDetailRouteMotion.value !== 'drag-cancelling') return
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleDetailRouteMotion.value = 'idle'
+  parkCircleRouteUnderlay()
 }
 
 function beginCircleEdgeSwipe(event) {
-  if (!circleDetailVisible.value || selectedCommunityPost.value || selectedCirclePost.value) {
-    circleEdgeSwipeStart.value = null
-    return
-  }
+  if (!canStartCircleEdgeSwipe()) return abandonCircleEdgeSwipeTracking()
+  if (Number.isFinite(Number(event?.button)) && Number(event.button) !== 0) return
 
   const touch = getCircleTouchPoint(event)
   if (!touch) return
+  const startX = Number(touch.clientX ?? touch.pageX ?? 0)
+  const startY = Number(touch.clientY ?? touch.pageY ?? 0)
+  if (startX > CIRCLE_EDGE_SWIPE_START_WIDTH) return
+
+  clearCircleDetailRouteTimers()
+  circleDetailReturnScrollTop = circleOverviewScrollTop.value
+  circleEdgeSwipeViewportWidth.value = getCircleRouteViewportWidth()
+  circleEdgeSwipeOffset.value = 0
+  circleEdgeSwipeSettleDuration.value = 0
   circleEdgeSwipeStart.value = {
-    x: Number(touch.clientX ?? touch.pageX ?? 0),
-    y: Number(touch.clientY ?? touch.pageY ?? 0)
+    x: startX,
+    y: startY,
+    lastX: startX,
+    lastAt: Date.now(),
+    velocityX: 0,
+    axis: 'pending'
   }
+  prepareCircleRouteUnderlay()
+}
+
+function moveCircleEdgeSwipe(event) {
+  const start = circleEdgeSwipeStart.value
+  if (!start || !circleDetailVisible.value) return
+  if (!['idle', 'dragging'].includes(circleDetailRouteMotion.value)) return
+
+  const touch = getCircleTouchPoint(event)
+  if (!touch) return
+  const currentX = Number(touch.clientX ?? touch.pageX ?? 0)
+  const currentY = Number(touch.clientY ?? touch.pageY ?? 0)
+  const deltaX = currentX - start.x
+  const deltaY = currentY - start.y
+
+  if (start.axis === 'pending') {
+    if (Math.max(Math.abs(deltaX), Math.abs(deltaY)) < CIRCLE_EDGE_SWIPE_LOCK_DISTANCE) return
+    if (deltaX <= 0 || Math.abs(deltaY) > Math.abs(deltaX)) {
+      abandonCircleEdgeSwipeTracking()
+      return
+    }
+    if (Math.abs(deltaX) < Math.abs(deltaY) * 1.15) return
+    start.axis = 'horizontal'
+    circleDetailRouteMotion.value = 'dragging'
+  }
+
+  if (start.axis !== 'horizontal') return
+  event?.preventDefault?.()
+
+  const width = Math.max(1, Number(circleEdgeSwipeViewportWidth.value) || 1)
+  const nextOffset = Math.min(width, Math.max(0, deltaX))
+  const now = Date.now()
+  const elapsed = Math.max(1, now - Number(start.lastAt ?? now))
+  const instantaneousVelocity = (currentX - Number(start.lastX ?? currentX)) / elapsed
+  start.velocityX = Number.isFinite(instantaneousVelocity)
+    ? start.velocityX * 0.45 + instantaneousVelocity * 0.55
+    : start.velocityX
+  start.lastX = currentX
+  start.lastAt = now
+  circleEdgeSwipeOffset.value = nextOffset
 }
 
 function finishCircleEdgeSwipe(event) {
   const start = circleEdgeSwipeStart.value
-  circleEdgeSwipeStart.value = null
   if (!start || !circleDetailVisible.value) return
 
-  const touch = getCircleTouchPoint(event)
-  if (!touch) return
-  const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
-  const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
-  if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
-    if (selectedCircleSection.value === 'scores' && selectedScoreLineRecord.value) {
-      closeScoreLineRecord()
-      return
-    }
-    returnToCircleOverview()
+  if (start.axis !== 'horizontal' || circleDetailRouteMotion.value !== 'dragging') {
+    abandonCircleEdgeSwipeTracking()
+    return
   }
+
+  const touch = getCircleTouchPoint(event)
+  if (touch) moveCircleEdgeSwipe(event)
+
+  const width = Math.max(1, Number(circleEdgeSwipeViewportWidth.value) || 1)
+  const offset = Math.max(0, Number(circleEdgeSwipeOffset.value) || 0)
+  const velocityX = Math.max(0, Number(start.velocityX) || 0)
+  const shouldFinish = offset / width >= CIRCLE_EDGE_SWIPE_FINISH_PROGRESS
+    || (offset >= CIRCLE_EDGE_SWIPE_MIN_FLING_DISTANCE && velocityX >= CIRCLE_EDGE_SWIPE_FINISH_VELOCITY)
+
+  if (shouldFinish) {
+    circleDetailReturnScrollTop = circleOverviewScrollTop.value
+    resetCircleTabbar()
+    clearCircleScoreTooltip()
+    startCircleEdgeSwipeSettle('drag-leaving', width)
+    return
+  }
+  startCircleEdgeSwipeSettle('drag-cancelling', 0)
+}
+
+function cancelCircleEdgeSwipe() {
+  if (circleDetailRouteMotion.value === 'dragging') {
+    startCircleEdgeSwipeSettle('drag-cancelling', 0)
+    return
+  }
+  if (circleEdgeSwipeStart.value) abandonCircleEdgeSwipeTracking()
+}
+
+function interruptCircleEdgeSwipe() {
+  if (circleDetailRouteMotion.value === 'drag-leaving') {
+    finishCircleDetailRouteLeave()
+    return
+  }
+  if (!['dragging', 'drag-cancelling'].includes(circleDetailRouteMotion.value)) return
+  clearCircleDetailRouteTimers()
+  resetCircleEdgeSwipeState()
+  circleDetailRouteMotion.value = 'idle'
+  parkCircleRouteUnderlay()
 }
 
 function resetCircleTabbar() {
@@ -6956,6 +7537,8 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
 async function openCommunityPost(post, options = {}) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
+  clearCommunityReaderCloseTimer()
+  communityReaderClosing.value = false
   markCommunityPostNotificationsRead(initialPost)
   clearCommunityViewTimer()
   clearCommunityLikeBurst()
@@ -7126,13 +7709,41 @@ async function deleteOwnCommunityComment(post, comment) {
   }
 }
 
-function closeCommunityPost() {
+function clearCommunityReaderCloseTimer() {
+  if (!communityReaderCloseTimer) return
+  clearTimeout(communityReaderCloseTimer)
+  communityReaderCloseTimer = null
+}
+
+function finishCommunityPostClose() {
+  communityReaderCloseTimer = null
+  communityReaderClosing.value = false
+  selectedCommunityPost.value = null
+}
+
+function closeCommunityPost(options = {}) {
+  const keepTapGuard = options?.keepTapGuard === true && Boolean(selectedCommunityPost.value)
+  clearCommunityReaderCloseTimer()
   clearCommunityViewTimer()
   clearCommunityLikeBurst()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
+  communityReaderEdgeSwipeStart.value = null
+
+  if (keepTapGuard) {
+    communityReaderClosing.value = true
+    communityReaderCloseTimer = setTimeout(finishCommunityPostClose, COMMUNITY_READER_TAP_GUARD_DELAY)
+    return
+  }
+
+  communityReaderClosing.value = false
   selectedCommunityPost.value = null
+}
+
+function closeCommunityPostWithTapGuard() {
+  if (communityReaderClosing.value) return
+  closeCommunityPost({ keepTapGuard: true })
 }
 
 function beginCommunityReaderEdgeSwipe(event) {
@@ -7154,7 +7765,7 @@ function finishCommunityReaderEdgeSwipe(event) {
   const deltaX = Number(touch.clientX ?? touch.pageX ?? 0) - start.x
   const deltaY = Number(touch.clientY ?? touch.pageY ?? 0) - start.y
   if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
-    closeCommunityPost()
+    closeCommunityPostWithTapGuard()
   }
 }
 
@@ -7248,7 +7859,6 @@ function closeCommunityComments() {
   communityLikes.value = []
   communityLikesLoading.value = false
   communityCommentSort.value = 'default'
-  communityCommentLikeId.value = ''
   communityCommentDraft.value = ''
 }
 
@@ -7321,94 +7931,240 @@ async function registerEffectiveCommunityView(postId) {
   }
 }
 
-async function toggleCommunityLike(post) {
-  if (!post?.id || communityLikePostId.value === post.id) return
-  if (!isAuthed.value) {
-    goLogin()
-    return
-  }
+function normalizeCommunityLikeCount(value, fallback = 0) {
+  const count = Number(value)
+  if (!Number.isFinite(count)) return Math.max(0, Number(fallback) || 0)
+  return Math.max(0, Math.round(count))
+}
 
-  const previousLiked = Boolean(post.liked)
-  const previousLikeCount = Math.max(0, Number(post.stats?.likes) || 0)
-  const nextLiked = !previousLiked
-  const nextLikeCount = Math.max(0, previousLikeCount + (nextLiked ? 1 : -1))
+function isCommunityPostLikePending(postId) {
+  const normalizedPostId = String(postId || '').trim()
+  return Boolean(normalizedPostId && communityPostLikePendingIds[normalizedPostId])
+}
 
-  communityLikePostId.value = post.id
-  patchCommunityPost(post.id, {
-    liked: nextLiked,
-    stats: { likes: nextLikeCount }
-  }, { persist: false })
-  if (nextLiked) {
-    triggerCommunityLikeBurst(post.id)
-  } else if (communityLikeBurstPostId.value === String(post.id)) {
-    clearCommunityLikeBurst()
+function setCommunityPostLikePending(postId, pending) {
+  const normalizedPostId = String(postId || '').trim()
+  if (!normalizedPostId) return
+  if (pending) {
+    communityPostLikePendingIds[normalizedPostId] = true
+  } else {
+    delete communityPostLikePendingIds[normalizedPostId]
   }
+}
+
+function getCommunityCommentLikeQueueKey(postId, commentId) {
+  const normalizedPostId = String(postId || '').trim()
+  const normalizedCommentId = String(commentId || '').trim()
+  return normalizedPostId && normalizedCommentId
+    ? `${normalizedPostId}:${normalizedCommentId}`
+    : ''
+}
+
+function isCommunityCommentLikePending(postId, commentId) {
+  const key = getCommunityCommentLikeQueueKey(postId, commentId)
+  return Boolean(key && communityCommentLikePendingIds[key])
+}
+
+function setCommunityCommentLikePending(postId, commentId, pending) {
+  const key = getCommunityCommentLikeQueueKey(postId, commentId)
+  if (!key) return
+  if (pending) {
+    communityCommentLikePendingIds[key] = true
+  } else {
+    delete communityCommentLikePendingIds[key]
+  }
+}
+
+function getCommunityPostLikeQueue(post) {
+  const postId = String(post?.id || '').trim()
+  if (!postId) return null
+  let queue = communityPostLikeQueues.get(postId)
+  if (!queue) {
+    const liked = Boolean(post.liked)
+    const likeCount = normalizeCommunityLikeCount(post.stats?.likes)
+    queue = {
+      confirmedLiked: liked,
+      confirmedCount: likeCount,
+      desiredLiked: liked,
+      optimisticCount: likeCount,
+      running: false
+    }
+    communityPostLikeQueues.set(postId, queue)
+  }
+  return { postId, queue }
+}
+
+async function flushCommunityPostLikeQueue(postId, queue) {
+  if (!postId || !queue || queue.running) return
+  queue.running = true
+  setCommunityPostLikePending(postId, true)
 
   try {
-    const response = await toggleCommunityPostLike(post.id)
-    const confirmedLiked = Boolean(response?.is_liked)
-    patchCommunityPost(post.id, {
-      liked: confirmedLiked,
-      stats: { likes: Number(response?.like_count || 0) }
-    })
-    if (!confirmedLiked && communityLikeBurstPostId.value === String(post.id)) {
-      clearCommunityLikeBurst()
-    }
-    if (
-      selectedCommunityCommentsPost.value?.id === post.id
-      && communityInteractionTab.value === 'likes'
-    ) {
-      void loadCommunityPostLikes(post.id)
+    let requestCount = 0
+    while (queue.desiredLiked !== queue.confirmedLiked) {
+      if (requestCount >= 4) {
+        throw { detail: '点赞状态同步失败，请稍后重试' }
+      }
+      requestCount += 1
+
+      const response = await toggleCommunityPostLike(postId)
+      const confirmedLiked = Boolean(response?.is_liked)
+      const confirmedCount = normalizeCommunityLikeCount(response?.like_count, queue.confirmedCount)
+      queue.confirmedLiked = confirmedLiked
+      queue.confirmedCount = confirmedCount
+
+      // 连点时先保持用户最后一次点击的视觉状态，队列清空后再用服务端数量校正。
+      if (queue.desiredLiked === confirmedLiked) {
+        queue.optimisticCount = confirmedCount
+        patchCommunityPost(postId, {
+          liked: confirmedLiked,
+          stats: { likes: confirmedCount }
+        })
+        if (!confirmedLiked && communityLikeBurstPostId.value === postId) {
+          clearCommunityLikeBurst()
+        }
+        if (
+          selectedCommunityCommentsPost.value?.id === postId
+          && communityInteractionTab.value === 'likes'
+        ) {
+          void loadCommunityPostLikes(postId)
+        }
+      }
     }
   } catch (error) {
-    patchCommunityPost(post.id, {
-      liked: previousLiked,
-      stats: { likes: previousLikeCount }
+    queue.desiredLiked = queue.confirmedLiked
+    queue.optimisticCount = queue.confirmedCount
+    patchCommunityPost(postId, {
+      liked: queue.confirmedLiked,
+      stats: { likes: queue.confirmedCount }
     })
-    if (!previousLiked && communityLikeBurstPostId.value === String(post.id)) {
+    if (!queue.confirmedLiked && communityLikeBurstPostId.value === postId) {
       clearCommunityLikeBurst()
     }
     uni.showToast({ title: getSafeError(error, '点赞失败，请稍后重试'), icon: 'none' })
   } finally {
-    communityLikePostId.value = ''
+    queue.running = false
+    setCommunityPostLikePending(postId, false)
+    if (communityPostLikeQueues.get(postId) === queue) {
+      communityPostLikeQueues.delete(postId)
+    }
   }
 }
 
-async function toggleCommunityCommentLike(comment) {
-  const post = selectedCommunityCommentsPost.value
-  if (!post?.id || !comment?.id || communityCommentLikeId.value === comment.id) return
+function toggleCommunityLike(post) {
+  if (!post?.id) return
   if (!isAuthed.value) {
     goLogin()
     return
   }
 
-  const currentComment = communityComments.value.find((item) => item.id === comment.id) || comment
-  const previousLiked = Boolean(currentComment.liked)
-  const previousLikeCount = Math.max(0, Number(currentComment.likeCount) || 0)
-  const nextLiked = !previousLiked
-  const nextLikeCount = Math.max(0, previousLikeCount + (nextLiked ? 1 : -1))
+  const entry = getCommunityPostLikeQueue(post)
+  if (!entry) return
+  const { postId, queue } = entry
+  const nextLiked = !queue.desiredLiked
+  queue.desiredLiked = nextLiked
+  queue.optimisticCount = Math.max(0, queue.optimisticCount + (nextLiked ? 1 : -1))
 
-  communityCommentLikeId.value = comment.id
-  patchCommunityCommentLike(comment.id, {
+  patchCommunityPost(postId, {
     liked: nextLiked,
-    likeCount: nextLikeCount
-  })
+    stats: { likes: queue.optimisticCount }
+  }, { persist: false })
+  if (nextLiked) {
+    triggerCommunityLikeBurst(postId)
+  } else if (communityLikeBurstPostId.value === postId) {
+    clearCommunityLikeBurst()
+  }
+
+  void flushCommunityPostLikeQueue(postId, queue)
+}
+
+function getCommunityCommentLikeQueue(post, comment) {
+  const postId = String(post?.id || '').trim()
+  const commentId = String(comment?.id || '').trim()
+  const key = getCommunityCommentLikeQueueKey(postId, commentId)
+  if (!key) return null
+  let queue = communityCommentLikeQueues.get(key)
+  if (!queue) {
+    const currentComment = communityComments.value.find((item) => item.id === commentId) || comment
+    const liked = Boolean(currentComment.liked)
+    const likeCount = normalizeCommunityLikeCount(currentComment.likeCount)
+    queue = {
+      confirmedLiked: liked,
+      confirmedCount: likeCount,
+      desiredLiked: liked,
+      optimisticCount: likeCount,
+      running: false
+    }
+    communityCommentLikeQueues.set(key, queue)
+  }
+  return { postId, commentId, key, queue }
+}
+
+async function flushCommunityCommentLikeQueue(postId, commentId, key, queue) {
+  if (!postId || !commentId || !key || !queue || queue.running) return
+  queue.running = true
+  setCommunityCommentLikePending(postId, commentId, true)
 
   try {
-    const response = await toggleCommunityCommentLikeRequest(post.id, comment.id)
-    patchCommunityCommentLike(comment.id, {
-      liked: Boolean(response?.is_liked),
-      likeCount: Number(response?.like_count || 0)
-    })
+    let requestCount = 0
+    while (queue.desiredLiked !== queue.confirmedLiked) {
+      if (requestCount >= 4) {
+        throw { detail: '评论点赞状态同步失败，请稍后重试' }
+      }
+      requestCount += 1
+
+      const response = await toggleCommunityCommentLikeRequest(postId, commentId)
+      const confirmedLiked = Boolean(response?.is_liked)
+      const confirmedCount = normalizeCommunityLikeCount(response?.like_count, queue.confirmedCount)
+      queue.confirmedLiked = confirmedLiked
+      queue.confirmedCount = confirmedCount
+
+      if (queue.desiredLiked === confirmedLiked) {
+        queue.optimisticCount = confirmedCount
+        patchCommunityCommentLike(commentId, {
+          liked: confirmedLiked,
+          likeCount: confirmedCount
+        })
+      }
+    }
   } catch (error) {
-    patchCommunityCommentLike(comment.id, {
-      liked: previousLiked,
-      likeCount: previousLikeCount
+    queue.desiredLiked = queue.confirmedLiked
+    queue.optimisticCount = queue.confirmedCount
+    patchCommunityCommentLike(commentId, {
+      liked: queue.confirmedLiked,
+      likeCount: queue.confirmedCount
     })
     uni.showToast({ title: getSafeError(error, '评论点赞失败，请稍后重试'), icon: 'none' })
   } finally {
-    communityCommentLikeId.value = ''
+    queue.running = false
+    setCommunityCommentLikePending(postId, commentId, false)
+    if (communityCommentLikeQueues.get(key) === queue) {
+      communityCommentLikeQueues.delete(key)
+    }
   }
+}
+
+function toggleCommunityCommentLike(comment) {
+  const post = selectedCommunityCommentsPost.value
+  if (!post?.id || !comment?.id) return
+  if (!isAuthed.value) {
+    goLogin()
+    return
+  }
+
+  const entry = getCommunityCommentLikeQueue(post, comment)
+  if (!entry) return
+  const { postId, commentId, key, queue } = entry
+  const nextLiked = !queue.desiredLiked
+  queue.desiredLiked = nextLiked
+  queue.optimisticCount = Math.max(0, queue.optimisticCount + (nextLiked ? 1 : -1))
+
+  patchCommunityCommentLike(commentId, {
+    liked: nextLiked,
+    likeCount: queue.optimisticCount
+  })
+
+  void flushCommunityCommentLikeQueue(postId, commentId, key, queue)
 }
 
 async function submitCommunityComment() {
@@ -7591,8 +8347,7 @@ function openProfileTab() {
 }
 
 function openMistakes() {
-  if (activeTab.value === 'mistakes') return
-  activeTab.value = 'mistakes'
+  uni.navigateTo({ url: '/pages/mistakes/index' })
 }
 
 function openReport() {
@@ -9379,6 +10134,60 @@ function formatDateTime(value) {
     url('/static/circle-study-sky.jpg') center center / cover no-repeat;
 }
 
+.circle-detail-route-layer.is-route-moving {
+  pointer-events: none;
+  transform: translate3d(0, 0, 0);
+  transition: transform var(--gyt-route-duration, 380ms) var(--gyt-route-ease, cubic-bezier(0.25, 0.8, 0.25, 1));
+  will-change: transform;
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.circle-detail-route-layer.is-route-moving.is-route-offscreen {
+  transform: translate3d(100%, 0, 0);
+}
+
+.circle-detail-route-layer.is-route-dragging,
+.circle-detail-route-layer.is-route-settling {
+  box-shadow: -18rpx 0 42rpx rgba(17, 31, 47, 0.2);
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.circle-detail-route-layer.is-route-dragging {
+  touch-action: none;
+}
+
+/* #ifdef APP-PLUS */
+/* App 端使用位置动画，避免 transform 祖先影响详情内的 scroll-view/canvas 原生层。 */
+.circle-detail-route-layer.is-route-moving {
+  right: auto;
+  left: 0;
+  transform: none;
+  transition: left var(--gyt-route-duration, 380ms) var(--gyt-route-ease, cubic-bezier(0.25, 0.8, 0.25, 1));
+  will-change: left;
+}
+
+.circle-detail-route-layer.is-route-moving.is-route-offscreen {
+  left: 100vw;
+  transform: none;
+}
+
+/* 考研圈等纯 DOM 详情使用合成层位移动画，避免 left 动画逐帧触发布局与重绘。 */
+.circle-detail-route-layer.is-route-moving.is-route-compositor-safe {
+  right: 0;
+  left: 0;
+  transform: translate3d(0, 0, 0);
+  transition: transform var(--gyt-route-duration, 380ms) var(--gyt-route-ease, cubic-bezier(0.25, 0.8, 0.25, 1));
+  will-change: transform;
+}
+
+.circle-detail-route-layer.is-route-moving.is-route-compositor-safe.is-route-offscreen {
+  left: 0;
+  transform: translate3d(100%, 0, 0);
+}
+/* #endif */
+
 .circle-themed-page .circle-detail-route-layer {
   background: var(--gyt-page-bg, #f4f8ff);
 }
@@ -9416,6 +10225,35 @@ function formatDateTime(value) {
 .circle-overview {
   min-height: calc(100vh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 124px);
   min-height: calc(100dvh - env(safe-area-inset-top) - env(safe-area-inset-bottom) - 124px);
+}
+
+.circle-overview.is-app-route-underlay {
+  pointer-events: none;
+  contain: layout paint;
+  will-change: transform, opacity;
+}
+
+.circle-overview.is-app-route-underlay .circle-glass-surface,
+.circle-overview.is-app-route-underlay .circle-entry {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
+
+.home-page :deep(.tabbar.is-circle-route-underlay-tab) {
+  background: rgba(255, 255, 255, 0.72);
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
+  transition: none;
+}
+
+/* 详情层必须与根导航处于同一堆叠上下文：静止时盖住导航，离场时从下方自然露出。 */
+.home-page.circle-detail-active > .circle-dashboard {
+  z-index: auto !important;
+}
+
+.home-page.circle-detail-active .circle-view-stage {
+  isolation: auto;
+  contain: none;
 }
 
 .circle-trend-card {
@@ -9797,40 +10635,45 @@ function formatDateTime(value) {
   margin-left: calc(0px - var(--circle-insight-slide-offset));
 }
 
-.circle-insight-route-placeholder {
-  padding: 0 var(--circle-insight-slide-offset);
+.circle-insight-route-mirror {
+  pointer-events: none;
 }
 
-.circle-insight-placeholder-card {
-  box-sizing: border-box;
-  width: calc(100% - var(--circle-insight-slide-gap));
-  height: 100%;
-  padding: 24px 22px 20px;
-  border-radius: 30px;
-  background: rgba(255, 255, 255, 0.94);
+.circle-score-mirror-plot {
+  position: absolute;
+  top: 0;
+  right: 0;
+  bottom: 17px;
+  left: 25px;
+  overflow: visible;
 }
 
-.circle-insight-placeholder-line {
-  width: 42%;
-  height: 14px;
+.circle-score-mirror-grid-line {
+  position: absolute;
+  left: 10%;
+  width: 87.333%;
+  height: 1px;
+  background: rgba(49, 76, 84, 0.12);
+}
+
+.circle-score-mirror-segment {
+  position: absolute;
+  height: 3px;
+  margin-top: -1.5px;
   border-radius: 999px;
-  background: rgba(105, 124, 142, 0.14);
+  background: #16786f;
+  transform-origin: 0 50%;
 }
 
-.circle-insight-placeholder-chart {
-  height: 124px;
-  margin-top: 24px;
-  display: flex;
-  align-items: flex-end;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.circle-insight-placeholder-chart view {
-  width: 100%;
-  min-height: 28%;
-  border-radius: 8px 8px 3px 3px;
-  background: var(--gyt-primary-soft, rgba(52, 120, 246, 0.12));
+.circle-score-mirror-point {
+  position: absolute;
+  box-sizing: border-box;
+  width: 9px;
+  height: 9px;
+  border: 3px solid #16786f;
+  border-radius: 50%;
+  background: #ffffff;
+  transform: translate(-50%, -50%);
 }
 
 .circle-insight-swiper swiper-item,
@@ -12036,10 +12879,6 @@ function formatDateTime(value) {
   color: #eb5964;
 }
 
-.community-post-action.pending {
-  pointer-events: none;
-}
-
 .community-post-action:active {
   transform: scale(0.96);
 }
@@ -12376,6 +13215,10 @@ function formatDateTime(value) {
     url('/static/circle-study-sky.jpg') center / cover;
   display: flex;
   flex-direction: column;
+}
+
+.community-reader.is-closing .community-reader-surface {
+  pointer-events: none;
 }
 
 .community-reader-topbar {
@@ -12828,24 +13671,8 @@ function formatDateTime(value) {
 
 .community-reader-comment-like.active .community-reader-comment-like-icon-image {
   opacity: 1;
-  animation: community-comment-like-pop 220ms ease-out;
-  transform: scale(1.06);
-}
-
-.community-reader-comment-like.pending {
-  pointer-events: none;
-}
-
-@keyframes community-comment-like-pop {
-  0% {
-    transform: scale(0.88);
-  }
-  68% {
-    transform: scale(1.16);
-  }
-  100% {
-    transform: scale(1.06);
-  }
+  animation: community-reader-like-pop 260ms cubic-bezier(0.2, 0.9, 0.3, 1.22);
+  transform: scale(1);
 }
 
 .community-reader-actions {
@@ -13032,11 +13859,8 @@ function formatDateTime(value) {
   }
 }
 
-.community-reader-action.pending {
-  pointer-events: none;
-}
-
 @media (prefers-reduced-motion: reduce) {
+  .community-reader-comment-like.active .community-reader-comment-like-icon-image,
   .community-reader-action.is-bursting .community-reader-like-icon {
     animation-duration: 1ms;
   }
@@ -18754,6 +19578,14 @@ function formatDateTime(value) {
   stroke: var(--gyt-primary, #3478f6);
 }
 
+.home-page.circle-glass-page.circle-themed-page .circle-score-mirror-segment {
+  background: var(--gyt-primary, #3478f6);
+}
+
+.home-page.circle-glass-page.circle-themed-page .circle-score-mirror-point {
+  border-color: var(--gyt-primary, #3478f6);
+}
+
 .home-page.circle-glass-page.circle-themed-page .circle-entry:nth-child(n) {
   --circle-entry-bg: var(--gyt-panel-bg, #ffffff);
   --circle-entry-icon-bg: var(--gyt-primary-soft, #edf4ff);
@@ -19733,8 +20565,7 @@ function formatDateTime(value) {
 }
 
 .circle-entry-unread-count,
-.circle-community-tab-unread,
-.mentor-entry-unread-badge {
+.circle-community-tab-unread {
   box-sizing: border-box;
   min-width: 30rpx;
   height: 30rpx;
@@ -19891,12 +20722,6 @@ function formatDateTime(value) {
   position: fixed;
 }
 
-.mentor-entry-unread-badge {
-  position: absolute;
-  top: -7rpx;
-  right: -7rpx;
-}
-
 @media (max-height: 760px) {
   .home-page.circle-glass-page .circle-overview .circle-entry-list {
     grid-template-rows: repeat(4, minmax(0, 1fr));
@@ -20006,6 +20831,7 @@ function formatDateTime(value) {
 /* #endif */
 
 @media (prefers-reduced-motion: reduce) {
+  .circle-detail-route-layer.is-route-moving,
   .subscription-sheet-mask,
   .subscription-sheet {
     transition-duration: 1ms !important;

@@ -7,6 +7,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from app.services.logic_question_quality import LOGIC_SUBJECT, normalize_logic_classification
+
 
 _CATALOG_PATH = Path(__file__).resolve().parents[1] / "question_catalog.json"
 
@@ -24,6 +26,28 @@ def validate_question_classification(
     module: str,
     submodule: str,
 ) -> None:
+    normalize_and_validate_question_classification(
+        exam_code=exam_code,
+        subject=subject,
+        module=module,
+        submodule=submodule,
+    )
+
+
+def normalize_and_validate_question_classification(
+    *,
+    exam_code: str,
+    subject: str,
+    module: str,
+    submodule: str,
+) -> dict[str, str]:
+    exam_code = exam_code.strip()
+    subject = subject.strip()
+    module = module.strip()
+    submodule = submodule.strip()
+    if subject == LOGIC_SUBJECT:
+        module, submodule = normalize_logic_classification(module, submodule)
+
     catalog = get_question_catalog()
     subject_config = catalog.get(subject)
     if not subject_config:
@@ -39,3 +63,10 @@ def validate_question_classification(
         raise ValueError(f"{subject} 不支持模块：{module}")
     if submodule not in allowed_submodules:
         raise ValueError(f"{subject} / {module} 不支持考点：{submodule}")
+
+    return {
+        "exam_code": exam_code,
+        "subject": subject,
+        "module": module,
+        "submodule": submodule,
+    }

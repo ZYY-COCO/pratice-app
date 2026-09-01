@@ -5,9 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
+from app.routes.official_messages import _fetch_read_message_ids, _fetch_visible_messages
 from app.schemas.notifications import (
     UserNotificationItem,
     UserNotificationListResponse,
+    UserNotificationReadAllResponse,
     UserNotificationReadResponse,
     UserNotificationReadScopeRequest,
     UserNotificationReadTargetRequest,
@@ -120,7 +122,14 @@ def _consultation_notification_audience(row: dict) -> str:
 def _notification_target_id(row: dict, target_type: str) -> str:
     payload = _notification_payload(row)
     if target_type == "community_post":
-        return str(payload.get("post_id") or "").strip() or _notification_route_query_value(row, "postId")
+        post_id = str(payload.get("post_id") or "").strip() or _notification_route_query_value(row, "postId")
+        if post_id:
+            return post_id
+        # 兼容早期写入的互动通知：当时部分记录只有 related_id，
+        # 可能是“帖子 ID:互动类型:用户 ID”或直接使用帖子 ID。
+        if str(row.get("related_type") or "").strip() == "community_post":
+            return str(row.get("related_id") or "").split(":", 1)[0].strip()
+        return ""
     order_id = str(payload.get("order_id") or "").strip() or _notification_route_query_value(row, "orderId")
     if order_id:
         return order_id
@@ -218,6 +227,45 @@ def _apply_read_scope(query, scope: str):
     return query.eq("category", "community")
 
 
+def _mark_visible_official_messages_read(supabase, user_id: str, read_at: str) -> int:
+    """Mark currently visible official messages as read for this user.
+
+    Official messages keep read state in a separate per-user table, so only
+    messages returned by the same visibility rules as the message centre are
+    eligible here.  Existing read rows are left untouched and an empty batch
+    avoids an unnecessary upsert request.
+    """
+
+    visible_rows = _fetch_visible_messages(supabase, limit=None)
+    message_ids = []
+    seen_ids: set[str] = set()
+    for row in visible_rows:
+        message_id = str(row.get("id") or "").strip()
+        if message_id and message_id not in seen_ids:
+            seen_ids.add(message_id)
+            message_ids.append(message_id)
+    if not message_ids:
+        return 0
+
+    read_ids = _fetch_read_message_ids(supabase, user_id, message_ids)
+    unread_ids = [message_id for message_id in message_ids if message_id not in read_ids]
+    if not unread_ids:
+        return 0
+
+    rows = [
+        {"user_id": user_id, "message_id": message_id, "read_at": read_at}
+        for message_id in unread_ids
+    ]
+    response = supabase.table("user_official_message_reads").upsert(
+        rows,
+        on_conflict="user_id,message_id",
+    ).execute()
+    # Supabase returns the upserted representation by default.  Falling back
+    # to the request size keeps the count useful with deployments configured
+    # to use a minimal mutation response.
+    return len(response.data) if response.data else len(rows)
+
+
 @router.get("", response_model=UserNotificationListResponse)
 def list_user_notifications(
     limit: int = Query(default=100, ge=1, le=200),
@@ -263,6 +311,30 @@ def get_user_notification_unread_summary(
         .execute()
     )
     return _summarize_unread_rows(response.data or [])
+
+
+@router.post("/read-all", response_model=UserNotificationReadAllResponse)
+def mark_all_user_notifications_read(
+    user_id: str = Depends(get_current_user_id),
+) -> UserNotificationReadAllResponse:
+    """Mark all personal and currently visible official messages as read."""
+
+    supabase = get_supabase_admin()
+    read_at = datetime.now(timezone.utc).isoformat()
+    personal_response = (
+        supabase.table("user_notifications")
+        .update({"read_at": read_at})
+        .eq("recipient_user_id", user_id)
+        .is_("read_at", "null")
+        .execute()
+    )
+    personal_count = len(personal_response.data or [])
+    official_count = _mark_visible_official_messages_read(supabase, user_id, read_at)
+    return UserNotificationReadAllResponse(
+        updated_count=personal_count + official_count,
+        personal_updated_count=personal_count,
+        official_updated_count=official_count,
+    )
 
 
 @router.post("/read-scope", response_model=UserNotificationReadResponse)

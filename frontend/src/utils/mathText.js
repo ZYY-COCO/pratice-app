@@ -50,11 +50,12 @@ function toSubscript(value) {
     .join('')
 }
 
+function stripMathDelimiterTokens(value) {
+  return String(value).replace(/\\(?:\(|\)|\[|\])/g, '')
+}
+
 function stripMathDelimiters(value) {
-  return String(value)
-    .replace(/\\\((.*?)\\\)/g, '$1')
-    .replace(/\\\[(.*?)\\\]/g, '$1')
-    .replace(/\$(.*?)\$/g, '$1')
+  return stripMathDelimiterTokens(value).replace(/\$(.*?)\$/g, '$1')
 }
 
 function normalizeStructuralLatexSource(value) {
@@ -65,7 +66,9 @@ function normalizeStructuralLatexSource(value) {
 }
 
 function normalizeLatexCommands(value) {
-  return String(value)
+  return stripLatexTextCommands(String(value)
+    .replace(/\\(?:qquad|quad|enspace|space)\s*/g, ' ')
+    .replace(/\\(?=\s)/g, '')
     .replace(/\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*/g, '')
     .replace(/\\(?:limits|nolimits)/g, '')
     .replace(/\\[dt]frac/g, '\\frac')
@@ -93,7 +96,7 @@ function normalizeLatexCommands(value) {
     .replace(/\\partial/g, '∂')
     .replace(/\\int/g, '∫')
     .replace(/\\(arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min)\b/g, '$1')
-    .replace(/\b(arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min)(?=[0-9A-Za-z])/g, '$1 ')
+    .replace(/\b(arcsin|arccos|arctan|sin|cos|tan|ln|log|sec|max|min)(?=[0-9A-Za-z])/g, '$1 '))
 }
 
 function replacePowers(value) {
@@ -147,6 +150,28 @@ function parseBraceGroup(value, start) {
   }
 
   return null
+}
+
+function stripLatexTextCommands(value) {
+  const raw = String(value || '')
+  let result = ''
+  let cursor = 0
+
+  while (cursor < raw.length) {
+    if (raw.startsWith('\\text', cursor)) {
+      const group = parseBraceGroup(raw, cursor + '\\text'.length)
+      if (group) {
+        result += group.content
+        cursor = group.end
+        continue
+      }
+    }
+
+    result += raw[cursor]
+    cursor += 1
+  }
+
+  return result
 }
 
 function parseBracketGroup(value, start) {
@@ -409,7 +434,7 @@ function wrapFractionPart(value) {
 }
 
 function formatForPlain(value) {
-  const raw = stripMathDelimiters(value || '')
+  const raw = stripLatexTextCommands(stripMathDelimiters(value || ''))
   const parts = parseStructuredLatex(raw)
   const text = parts
     .map((part) => {
@@ -609,7 +634,7 @@ function normalizePlainMathFunctions(value) {
 }
 
 function normalizeKatexLatex(value) {
-  return normalizePlainMathFunctions(normalizePlainFractions(value))
+  return normalizePlainMathFunctions(normalizePlainFractions(stripMathDelimiterTokens(value)))
     .replace(/\u222b/g, '\\int')
     .replace(/\u03c0/g, '\\pi')
     .replace(/\u2264/g, '\\le')
@@ -657,6 +682,44 @@ function findNextDelimiter(text, start) {
   return candidates[0] || null
 }
 
+function isEscapedCharacter(text, index) {
+  let slashCount = 0
+  for (let cursor = index - 1; cursor >= 0 && text[cursor] === '\\'; cursor -= 1) {
+    slashCount += 1
+  }
+  return slashCount % 2 === 1
+}
+
+function findMatchingDelimiter(text, delimiter, start) {
+  if (delimiter.open === '$') {
+    for (let index = start; index < text.length; index += 1) {
+      if (text[index] === '$' && !isEscapedCharacter(text, index)) {
+        return index
+      }
+    }
+    return -1
+  }
+
+  let depth = 1
+  let index = start
+  while (index < text.length) {
+    if (text.startsWith(delimiter.open, index) && !isEscapedCharacter(text, index)) {
+      depth += 1
+      index += delimiter.open.length
+      continue
+    }
+    if (text.startsWith(delimiter.close, index) && !isEscapedCharacter(text, index)) {
+      depth -= 1
+      if (depth === 0) return index
+      index += delimiter.close.length
+      continue
+    }
+    index += 1
+  }
+
+  return -1
+}
+
 function splitExplicitMath(text) {
   const parts = []
   let cursor = 0
@@ -672,7 +735,7 @@ function splitExplicitMath(text) {
     }
 
     const contentStart = delimiter.index + delimiter.open.length
-    const closeIndex = text.indexOf(delimiter.close, contentStart)
+    const closeIndex = findMatchingDelimiter(text, delimiter, contentStart)
     if (closeIndex < 0) break
 
     pushTextWithImplicitMath(parts, text.slice(cursor, delimiter.index))

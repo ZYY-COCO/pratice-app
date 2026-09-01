@@ -47,16 +47,25 @@ const props = defineProps({
 // #ifdef H5 || APP-PLUS
 function renderKatex(latex) {
   try {
-    return katex.renderToString(latex, {
+    const rendered = katex.renderToString(latex, {
       displayMode: false,
       throwOnError: false,
       strict: 'ignore',
       trust: false,
       output: 'html'
     })
+    if (!rendered.includes('katex-error')) {
+      return rendered
+    }
+    return renderMathFallback(latex)
   } catch (error) {
-    return escapeMathTextHtml(latex)
+    return renderMathFallback(latex)
   }
+}
+
+function renderMathFallback(latex) {
+  const text = formatMathText(latex)
+  return `<span class="math-fallback">${escapeMathTextHtml(text || latex)}</span>`
 }
 
 const renderedHtml = computed(() =>

@@ -161,6 +161,14 @@
         "navigationBarTitleText": "收藏夹",
         "navigationStyle": "custom"
       }
+    },
+    {
+      "path": "pages/mistakes/index",
+      "style": {
+        "navigationBarTitleText": "错题本",
+        "navigationStyle": "custom",
+        "backgroundColor": "#f5f3f7"
+      }
     }
   ],
   "globalStyle": {

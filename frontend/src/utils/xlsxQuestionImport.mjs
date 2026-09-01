@@ -68,30 +68,42 @@ const SUBJECT_ALIASES = new Map([
 ])
 
 const MODULE_ALIASES = new Map([
-  ['概念', '概念判断'],
-  ['判断', '概念判断'],
+  ['概念', '概念'],
+  ['判断', '判断'],
   ['概念判断', '概念判断'],
-  ['推理', '推理规则'],
-  ['推理规则', '推理规则'],
+  ['推理', '推理'],
+  ['推理规则', '推理'],
   ['论证', '论证'],
-  ['削弱加强', '削弱加强'],
-  ['加强削弱', '削弱加强'],
+  ['削弱加强', '论证'],
+  ['加强削弱', '论证'],
 ])
 
 const SUBMODULE_ALIASES = new Map([
   ['概念', '概念种类'],
   ['概念种类', '概念种类'],
   ['概念关系', '概念关系'],
-  ['判断关系', '概念关系'],
   ['定义', '定义'],
   ['划分', '划分'],
+  ['判断', '判断种类'],
+  ['判断种类', '判断种类'],
+  ['判断关系', '判断关系'],
   ['加强', '加强'],
   ['加强论证', '加强'],
   ['支持', '加强'],
+  ['支持论证', '加强'],
   ['削弱', '削弱'],
   ['削弱论证', '削弱'],
   ['质疑', '削弱'],
+  ['反驳', '削弱'],
+  ['假设', '假设'],
+  ['前提', '假设'],
+  ['隐含前提', '假设'],
+  ['必要假设', '假设'],
   ['解释', '解释'],
+  ['推论', '推论'],
+  ['结论', '推论'],
+  ['论证结构', '论证结构'],
+  ['形式相似', '论证结构'],
   ['谬误', '谬误识别'],
   ['谬误识别', '谬误识别'],
   ['演绎', '演绎推理'],
@@ -252,11 +264,17 @@ function mapHeaders(values) {
 
 function normalizeQuestion(rawQuestion) {
   const answer = normalizeAnswer(rawQuestion.answer)
+  const subject = normalizeCatalogValue(rawQuestion.subject, SUBJECT_ALIASES)
+  let module = normalizeCatalogValue(rawQuestion.module, MODULE_ALIASES)
+  const submodule = normalizeCatalogValue(rawQuestion.submodule, SUBMODULE_ALIASES)
+  if (subject === '逻辑推理' && module === '概念判断') {
+    module = ['判断种类', '判断关系'].includes(submodule) ? '判断' : '概念'
+  }
   const question = {
     exam_code: cleanCell(rawQuestion.exam_code).toUpperCase(),
-    subject: normalizeCatalogValue(rawQuestion.subject, SUBJECT_ALIASES),
-    module: normalizeCatalogValue(rawQuestion.module, MODULE_ALIASES),
-    submodule: normalizeCatalogValue(rawQuestion.submodule, SUBMODULE_ALIASES),
+    subject,
+    module,
+    submodule,
     stem: cleanCell(rawQuestion.stem),
     option_a: normalizeOption(rawQuestion.option_a, 'A'),
     option_b: normalizeOption(rawQuestion.option_b, 'B'),

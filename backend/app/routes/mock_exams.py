@@ -22,6 +22,7 @@ from app.schemas.mock_exams import (
     MockExamValidationResult,
 )
 from app.services.answers import warm_submission_questions
+from app.services.question_catalog import get_question_catalog
 from app.services.question_sources import AI_QUESTION_SOURCE_TYPE, exclude_ai_generated_questions
 
 
@@ -156,6 +157,36 @@ def _compatible_exam_codes(exam_code: str, section_key: str) -> set[str]:
     if section_key == "english":
         return {"COMMON", exam_code}
     return {exam_code}
+
+
+def _normalize_question_option_classification(
+    exam_code: str,
+    section_key: str,
+    module: str | None,
+    submodule: str | None,
+) -> tuple[str, str]:
+    subject = _section_rules(exam_code)[section_key]["subject"]
+    modules = (get_question_catalog().get(subject) or {}).get("modules") or {}
+    normalized_module = str(module or "").strip()
+    normalized_submodule = str(submodule or "").strip()
+
+    if normalized_module and normalized_module not in modules:
+        raise ValueError(f"{subject} 不支持分类：{normalized_module}")
+
+    if normalized_submodule and not normalized_module:
+        matching_modules = [
+            name
+            for name, submodules in modules.items()
+            if normalized_submodule in (submodules or [])
+        ]
+        if len(matching_modules) != 1:
+            raise ValueError("请先选择题目分类，再选择具体考点")
+        normalized_module = matching_modules[0]
+
+    if normalized_submodule and normalized_submodule not in (modules.get(normalized_module) or []):
+        raise ValueError(f"{subject} / {normalized_module} 不支持考点：{normalized_submodule}")
+
+    return normalized_module, normalized_submodule
 
 
 def _question_section_error(question: dict, exam_code: str, section_key: str) -> str | None:
@@ -367,11 +398,25 @@ def list_mock_exam_question_options(
     publication: str = Query(default="all", pattern="^(all|published|unpublished)$"),
     search: str | None = Query(default=None, max_length=80),
     difficulty: int | None = Query(default=None, ge=1, le=5),
+    module: str | None = Query(default=None, max_length=80),
+    submodule: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=40, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
     _: dict = Depends(require_question_admin_user),
 ) -> AdminMockExamQuestionListResponse:
     rule = _section_rules(exam_code)[section_key]
+    try:
+        normalized_module, normalized_submodule = _normalize_question_option_classification(
+            exam_code,
+            section_key,
+            module,
+            submodule,
+        )
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=str(exc),
+        ) from exc
     supabase = get_supabase_admin()
     query = exclude_ai_generated_questions(
         supabase.table("questions").select("*", count="exact").order("created_at", desc=True)
@@ -381,6 +426,10 @@ def list_mock_exam_question_options(
     query = query.in_("exam_code", compatible_codes)
     if section_key == "english":
         query = query.eq("module", "语言知识")
+    if normalized_module:
+        query = query.eq("module", normalized_module)
+    if normalized_submodule:
+        query = query.eq("submodule", normalized_submodule)
     if publication == "published":
         query = query.eq("status", "active")
     elif publication == "unpublished":
