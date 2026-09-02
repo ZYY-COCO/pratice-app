@@ -1,5 +1,5 @@
 <template>
-  <view class="page my-posts-page" :class="{ 'has-delete-bar': selectionMode && selectedPostIds.length }" :style="pageInlineStyle">
+  <view class="page my-posts-page" :class="{ 'has-delete-bar': selectionMode }" :style="pageInlineStyle">
     <AppPageHeader title="我的帖子" @back="goBack">
       <template #right>
         <button
@@ -41,7 +41,15 @@
         v-for="post in posts"
         :key="post.id"
         class="my-post-selectable"
-        :class="{ 'is-selecting': selectionMode, selected: isPostSelected(post.id) }"
+        :class="{
+          'is-selecting': selectionMode,
+          'is-swiping': swipingPostId === post.id,
+          selected: isPostSelected(post.id)
+        }"
+        @touchstart="beginPostSwipe($event, post)"
+        @touchmove="movePostSwipe($event, post)"
+        @touchend="finishPostSwipe($event, post)"
+        @touchcancel="cancelPostSwipe(post)"
       >
         <button
           class="my-post-selector"
@@ -50,7 +58,12 @@
           @tap.stop="togglePostSelection(post.id)"
         ><text v-if="isPostSelected(post.id)">✓</text></button>
 
-        <view class="my-post-card" :class="{ 'has-unread-interaction': isPostUnread(post) }" @tap="handlePostTap(post)">
+        <view
+          class="my-post-card"
+          :class="{ 'has-unread-interaction': isPostUnread(post) }"
+          :style="postSwipeStyle(post.id)"
+          @tap="handlePostTap(post)"
+        >
           <view class="my-post-card-header">
             <view class="my-post-avatar" :class="`tone-${post.tone}`">
               <image v-if="post.avatarUrl" :src="post.avatarUrl" mode="aspectFill" />
@@ -65,10 +78,9 @@
           </view>
 
           <view
-            v-if="post.postType === 'experience'"
             class="my-post-review-status"
-            :class="post.reviewStatus"
-          >{{ reviewStatusText(post.reviewStatus) }}</view>
+            :class="postDisplayStatus(post)"
+          >{{ postDisplayStatusText(post) }}</view>
 
           <view class="my-post-card-body" :class="{ 'has-cover': post.coverUrl }">
             <view class="my-post-copy">
@@ -89,16 +101,17 @@
               <view><image src="/static/ui-icons/png/neutral/circle-comment.png" mode="aspectFit" /><text>{{ post.stats.comments }}</text></view>
               <view><image src="/static/ui-icons/png/neutral/circle-view.png" mode="aspectFit" /><text>{{ post.stats.views }}</text></view>
             </view>
-            <view v-if="!selectionMode" class="my-post-card-actions">
+            <view
+              v-if="!selectionMode && (post.reviewStatus === 'rejected' || postDisplayStatus(post) === 'approved')"
+              class="my-post-card-actions"
+            >
               <button
                 v-if="post.postType === 'experience' && post.reviewStatus === 'rejected'"
                 class="my-post-edit-button"
                 hover-class="none"
                 @tap.stop="editRejectedPost(post)"
               >修改并重提</button>
-              <text class="my-post-detail-link">
-                {{ post.postType === 'experience' && (post.reviewStatus !== 'approved' || !post.isPublished) ? '审核记录 ›' : '查看详情 ›' }}
-              </text>
+              <text v-if="postDisplayStatus(post) === 'approved'" class="my-post-detail-link">查看详情 ›</text>
             </view>
           </view>
         </view>
@@ -110,10 +123,19 @@
     </scroll-view>
 
     <transition name="my-posts-delete-bar">
-      <view v-if="selectionMode && selectedPostIds.length" class="my-posts-delete-bar">
-        <text>已选择 {{ selectedPostIds.length }} 篇</text>
-        <button :loading="deletingPosts" hover-class="none" @tap="confirmBatchDelete">
-          {{ deletingPosts ? '删除中…' : `删除 ${selectedPostIds.length} 篇` }}
+      <view v-if="selectionMode" class="my-posts-delete-bar">
+        <button class="my-posts-select-all" hover-class="none" @tap="toggleSelectAllLoadedPosts">
+          {{ allLoadedPostsSelected ? '取消全选' : '全选' }}
+        </button>
+        <text class="my-posts-delete-summary">已选 {{ selectedPostIds.length }} 条</text>
+        <button
+          class="my-posts-delete-action"
+          :disabled="deletingPosts || !selectedPostIds.length"
+          :loading="deletingPosts"
+          hover-class="none"
+          @tap="confirmBatchDelete"
+        >
+          {{ deletingPosts ? '删除中…' : '删除' }}
         </button>
       </view>
     </transition>
@@ -207,6 +229,12 @@ const postTypeOptions = [
   { value: 'experience', label: '经验贴' }
 ]
 
+const POST_SWIPE_EDGE_GUARD_PX = 30
+const POST_SWIPE_DIRECTION_LOCK_PX = 10
+const POST_SWIPE_TRIGGER_PX = 52
+const POST_SWIPE_MAX_OFFSET_PX = 68
+const POST_SWIPE_HORIZONTAL_RATIO = 1.2
+
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
@@ -217,6 +245,8 @@ const entryLoading = ref(true)
 const error = ref('')
 const selectionMode = ref(false)
 const selectedPostIds = ref([])
+const swipingPostId = ref('')
+const swipeOffsetPx = ref(0)
 const deletingPosts = ref(false)
 const loadingMore = ref(false)
 const nextCursor = ref('')
@@ -228,7 +258,14 @@ const reviewDetailError = ref('')
 const reviewDetail = ref(null)
 const reviewDetailPostId = ref('')
 const requestedReviewPostId = ref('')
+const allLoadedPostsSelected = computed(() => (
+  posts.value.length > 0
+  && posts.value.every((post) => selectedPostIds.value.includes(post.id))
+))
 let latestUnreadLoadToken = 0
+let postSwipeGesture = null
+let suppressedPostTapId = ''
+let suppressPostTapUntil = 0
 onLoad((options) => {
   const requestedType = String(options?.type || '')
   if (postTypeOptions.some((item) => item.value === requestedType)) {
@@ -412,6 +449,7 @@ function toggleSelectionMode() {
 function exitSelectionMode() {
   selectionMode.value = false
   selectedPostIds.value = []
+  resetPostSwipe()
 }
 
 function isPostSelected(postId) {
@@ -425,13 +463,127 @@ function togglePostSelection(postId) {
     : [...selectedPostIds.value, postId]
 }
 
+function toggleSelectAllLoadedPosts() {
+  if (!selectionMode.value || deletingPosts.value) return
+  selectedPostIds.value = allLoadedPostsSelected.value
+    ? []
+    : posts.value.map((post) => post.id).filter(Boolean)
+}
+
+function postTouchPoint(event, preferChangedTouches = false) {
+  const touchLists = preferChangedTouches
+    ? [event?.changedTouches, event?.touches]
+    : [event?.touches, event?.changedTouches]
+  const touch = touchLists.find((items) => items?.length)?.[0]
+  if (!touch) return null
+  const x = Number(touch.clientX ?? touch.pageX ?? touch.x)
+  const y = Number(touch.clientY ?? touch.pageY ?? touch.y)
+  return Number.isFinite(x) && Number.isFinite(y) ? { x, y } : null
+}
+
+function beginPostSwipe(event, post) {
+  const postId = String(post?.id || '')
+  if (selectionMode.value || deletingPosts.value || !postId || event?.touches?.length > 1) return
+  const point = postTouchPoint(event)
+  if (!point || point.x <= POST_SWIPE_EDGE_GUARD_PX) return
+  postSwipeGesture = {
+    postId,
+    startX: point.x,
+    startY: point.y,
+    axis: '',
+    deltaX: 0
+  }
+}
+
+function movePostSwipe(event, post) {
+  const postId = String(post?.id || '')
+  if (!postSwipeGesture || postSwipeGesture.postId !== postId) return
+  const point = postTouchPoint(event)
+  if (!point) return
+  const deltaX = point.x - postSwipeGesture.startX
+  const deltaY = point.y - postSwipeGesture.startY
+  const absX = Math.abs(deltaX)
+  const absY = Math.abs(deltaY)
+
+  if (!postSwipeGesture.axis) {
+    if (Math.max(absX, absY) < POST_SWIPE_DIRECTION_LOCK_PX) return
+    postSwipeGesture.axis = (
+      deltaX > 0
+      && absX >= absY * POST_SWIPE_HORIZONTAL_RATIO
+    ) ? 'horizontal' : 'vertical'
+  }
+  if (postSwipeGesture.axis !== 'horizontal') return
+
+  postSwipeGesture.deltaX = Math.max(0, deltaX)
+  swipingPostId.value = postId
+  swipeOffsetPx.value = Math.min(postSwipeGesture.deltaX, POST_SWIPE_MAX_OFFSET_PX)
+  if (typeof event?.preventDefault === 'function') event.preventDefault()
+  if (typeof event?.stopPropagation === 'function') event.stopPropagation()
+}
+
+function finishPostSwipe(event, post) {
+  const postId = String(post?.id || '')
+  const gesture = postSwipeGesture
+  if (!gesture || gesture.postId !== postId) return
+
+  const point = postTouchPoint(event, true)
+  const finalDeltaX = point ? Math.max(0, point.x - gesture.startX) : gesture.deltaX
+  const finalDeltaY = point ? Math.abs(point.y - gesture.startY) : 0
+  const horizontalSwipe = gesture.axis === 'horizontal'
+    || (
+      !gesture.axis
+      && finalDeltaX >= POST_SWIPE_DIRECTION_LOCK_PX
+      && finalDeltaX >= finalDeltaY * POST_SWIPE_HORIZONTAL_RATIO
+    )
+  const shouldSelect = horizontalSwipe && Math.max(gesture.deltaX, finalDeltaX) >= POST_SWIPE_TRIGGER_PX
+
+  if (horizontalSwipe && Math.max(gesture.deltaX, finalDeltaX) >= POST_SWIPE_DIRECTION_LOCK_PX) {
+    suppressedPostTapId = postId
+    suppressPostTapUntil = Date.now() + 600
+  }
+
+  if (shouldSelect) {
+    selectionMode.value = true
+    if (!selectedPostIds.value.includes(postId)) {
+      selectedPostIds.value = [...selectedPostIds.value, postId]
+    }
+  }
+  resetPostSwipe()
+}
+
+function cancelPostSwipe(post) {
+  const postId = String(post?.id || '')
+  if (!postSwipeGesture || postSwipeGesture.postId !== postId) return
+  resetPostSwipe()
+}
+
+function resetPostSwipe() {
+  postSwipeGesture = null
+  swipingPostId.value = ''
+  swipeOffsetPx.value = 0
+}
+
+function postSwipeStyle(postId) {
+  if (swipingPostId.value !== String(postId || '') || swipeOffsetPx.value <= 0) return ''
+  return `transform: translate3d(${swipeOffsetPx.value}px, 0, 0);`
+}
+
 function handlePostTap(post) {
+  if (suppressedPostTapId === post?.id && Date.now() < suppressPostTapUntil) {
+    suppressedPostTapId = ''
+    suppressPostTapUntil = 0
+    return
+  }
   if (selectionMode.value) {
     togglePostSelection(post?.id)
     return
   }
   if (post?.postType === 'experience' && (post.reviewStatus !== 'approved' || !post.isPublished)) {
     void openReviewRecord(post)
+    return
+  }
+  if (!post?.isPublished) {
+    uni.showToast({ title: '该帖子已下架', icon: 'none' })
     return
   }
   openPost(post)
@@ -516,10 +668,24 @@ function editRejectedPost(post) {
 
 function reviewStatusText(value) {
   return {
-    pending: '审核中',
+    pending: '待审核',
     approved: '已通过',
-    rejected: '未通过'
+    rejected: '已下架'
   }[value] || '已通过'
+}
+
+function postDisplayStatus(post = {}) {
+  if (String(post.reviewStatus || '') === 'pending') return 'pending'
+  if (String(post.reviewStatus || '') === 'rejected' || post.isPublished === false) return 'archived'
+  return 'approved'
+}
+
+function postDisplayStatusText(post = {}) {
+  return {
+    pending: '待审核',
+    approved: '已通过',
+    archived: '已下架'
+  }[postDisplayStatus(post)]
 }
 
 function reviewReasonText(value) {
@@ -773,6 +939,11 @@ function goBack() {
   transform: translateY(-50%) scale(1);
 }
 
+.my-post-selectable.is-swiping .my-post-selector {
+  opacity: .72;
+  transform: translateY(-50%) scale(.9);
+}
+
 .my-post-selectable.selected .my-post-selector {
   border-color: var(--gyt-primary, #3478f6);
   background: var(--gyt-primary, #3478f6);
@@ -786,7 +957,11 @@ function goBack() {
   background: #ffffff;
   box-shadow: 0 14rpx 38rpx rgba(25, 48, 89, 0.07);
   box-sizing: border-box;
-  transition: background-color 140ms ease, border-color 160ms ease;
+  transition: background-color 140ms ease, border-color 160ms ease, transform 180ms cubic-bezier(.22,.8,.28,1);
+}
+
+.my-post-selectable.is-swiping .my-post-card {
+  transition: none;
 }
 
 .my-post-card.has-unread-interaction {
@@ -886,7 +1061,7 @@ function goBack() {
 }
 
 .my-post-review-status.pending { background: #fff4df; color: #a86f1c; }
-.my-post-review-status.rejected { background: #fff0ed; color: #c45e52; }
+.my-post-review-status.archived { background: #fff0ed; color: #c45e52; }
 
 .my-post-card-body { margin-top: 20rpx; }
 
@@ -1161,40 +1336,54 @@ function goBack() {
   display: flex;
   align-items: center;
   justify-content: space-between;
-  gap: 18rpx;
+  gap: 14rpx;
   box-sizing: border-box;
   -webkit-backdrop-filter: blur(18rpx);
   backdrop-filter: blur(18rpx);
 }
 
-.my-posts-delete-bar > text {
+.my-posts-delete-summary {
   min-width: 0;
+  flex: 1;
   color: #566b88;
   font-size: 22rpx;
   line-height: 1.35;
-  font-weight: 750;
+  font-weight: 800;
+  text-align: center;
+  white-space: nowrap;
 }
 
-.my-posts-delete-bar button {
-  min-width: 196rpx;
+.my-posts-delete-bar .my-posts-select-all,
+.my-posts-delete-bar .my-posts-delete-action {
   min-height: 72rpx;
   margin: 0;
-  padding: 0 22rpx;
+  padding: 0 20rpx;
   border: 0;
-  border-radius: 22rpx;
-  background: #e7786c;
-  color: #ffffff;
+  border-radius: 20rpx;
   display: flex;
   align-items: center;
   justify-content: center;
   font-size: 23rpx;
   line-height: 1.2;
   font-weight: 900;
+}
+
+.my-posts-delete-bar .my-posts-select-all {
+  min-width: 142rpx;
+  background: var(--gyt-primary-soft, #eef5ff);
+  color: var(--gyt-primary, #3478f6);
+}
+
+.my-posts-delete-bar .my-posts-delete-action {
+  min-width: 150rpx;
+  background: #e7786c;
+  color: #ffffff;
   box-shadow: 0 10rpx 22rpx rgba(215, 96, 86, .2);
 }
 
-.my-posts-delete-bar button[disabled] {
-  opacity: .72;
+.my-posts-delete-bar .my-posts-delete-action[disabled] {
+  opacity: .46;
+  box-shadow: none;
 }
 
 .my-posts-delete-bar-enter-active,
