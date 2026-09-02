@@ -83,20 +83,46 @@ jobs:
           cp deploy/tencent-cloud/nginx.conf /tmp/gangyantong-nginx.conf
 
           export RSYNC_RSH="ssh -i ~/.ssh/tencent_cloud_key -o BatchMode=yes -o ConnectTimeout=20 -o ServerAliveInterval=15 -o ServerAliveCountMax=4 -p ${TENCENT_PORT}"
+          REMOTE_STAGE="/tmp/gangyantong-deploy-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          case "${REMOTE_STAGE}" in
+            /tmp/gangyantong-deploy-*) ;;
+            *) exit 1 ;;
+          esac
+          timeout 60 ssh -i ~/.ssh/tencent_cloud_key \
+            -o BatchMode=yes \
+            -o ConnectTimeout=20 \
+            -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
+            "rm -rf '${REMOTE_STAGE}' && mkdir -p '${REMOTE_STAGE}'"
+
+          upload_verified=0
           for attempt in 1 2; do
             echo "Uploading deployment archives (attempt ${attempt}/2)..."
-            if timeout 480 rsync -az --partial --append-verify --timeout=60 --info=NAME,STATS2 \
+            if timeout 600 rsync -az --partial --timeout=60 --info=NAME,STATS2 \
               /tmp/gangyantong-h5.tgz \
               /tmp/gangyantong-backend.tgz \
               /tmp/gangyantong-nginx.conf \
-              "${TENCENT_USER}@${TENCENT_HOST}:/tmp/"; then
-              break
+              "${TENCENT_USER}@${TENCENT_HOST}:${REMOTE_STAGE}/"; then
+              if timeout 90 ssh -i ~/.ssh/tencent_cloud_key \
+                -o BatchMode=yes \
+                -o ConnectTimeout=20 \
+                -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
+                "gzip -t '${REMOTE_STAGE}/gangyantong-h5.tgz' '${REMOTE_STAGE}/gangyantong-backend.tgz' && test -s '${REMOTE_STAGE}/gangyantong-nginx.conf'"; then
+                upload_verified=1
+                break
+              fi
+              echo "Uploaded archives failed integrity verification; restarting the upload." >&2
+              timeout 60 ssh -i ~/.ssh/tencent_cloud_key \
+                -o BatchMode=yes \
+                -o ConnectTimeout=20 \
+                -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
+                "rm -f '${REMOTE_STAGE}/gangyantong-h5.tgz' '${REMOTE_STAGE}/gangyantong-backend.tgz' '${REMOTE_STAGE}/gangyantong-nginx.conf'"
             fi
             if [ "${attempt}" = "2" ]; then
               exit 1
             fi
             sleep 5
           done
+          test "${upload_verified}" = "1"
 
           timeout 480 ssh -i ~/.ssh/tencent_cloud_key \
             -o BatchMode=yes \
@@ -104,34 +130,43 @@ jobs:
             -o ServerAliveInterval=15 \
             -o ServerAliveCountMax=4 \
             -p "${TENCENT_PORT}" "${TENCENT_USER}@${TENCENT_HOST}" \
-            'set -euxo pipefail
-            tmp_dir="$(mktemp -d)"
-            backend_tmp="$(mktemp -d)"
-            tar -xzf /tmp/gangyantong-h5.tgz -C "${tmp_dir}"
-            tar -xzf /tmp/gangyantong-backend.tgz -C "${backend_tmp}"
-            sudo -n mkdir -p /var/www/gangyantong
-            timeout 120 sudo -n rsync -a --delete "${tmp_dir}/" /var/www/gangyantong/
-            sudo -n mkdir -p /opt/gangyantong/app/backend
-            timeout 180 sudo -n rsync -a --delete --exclude ".venv" --exclude "__pycache__" "${backend_tmp}/" /opt/gangyantong/app/backend/
-            sudo -n find /opt/gangyantong/app/backend -path /opt/gangyantong/app/backend/.venv -prune -o -exec chown ubuntu:ubuntu {} +
-            if [ ! -x /opt/gangyantong/app/backend/.venv/bin/python ]; then
-              sudo -n -u ubuntu python3 -m venv /opt/gangyantong/app/backend/.venv
+            "REMOTE_STAGE='${REMOTE_STAGE}' bash -s" <<'REMOTE_DEPLOY'
+          set -euxo pipefail
+          case "${REMOTE_STAGE}" in
+            /tmp/gangyantong-deploy-*) ;;
+            *) exit 1 ;;
+          esac
+          tmp_dir="$(mktemp -d)"
+          backend_tmp="$(mktemp -d)"
+          cleanup() {
+            rm -rf "${tmp_dir}" "${backend_tmp}" "${REMOTE_STAGE}"
+          }
+          trap cleanup EXIT
+          tar -xzf "${REMOTE_STAGE}/gangyantong-h5.tgz" -C "${tmp_dir}"
+          tar -xzf "${REMOTE_STAGE}/gangyantong-backend.tgz" -C "${backend_tmp}"
+          sudo -n mkdir -p /var/www/gangyantong
+          timeout 120 sudo -n rsync -a --delete "${tmp_dir}/" /var/www/gangyantong/
+          sudo -n mkdir -p /opt/gangyantong/app/backend
+          timeout 180 sudo -n rsync -a --delete --exclude ".venv" --exclude "__pycache__" "${backend_tmp}/" /opt/gangyantong/app/backend/
+          sudo -n find /opt/gangyantong/app/backend -path /opt/gangyantong/app/backend/.venv -prune -o -exec chown ubuntu:ubuntu {} +
+          if [ ! -x /opt/gangyantong/app/backend/.venv/bin/python ]; then
+            sudo -n -u ubuntu python3 -m venv /opt/gangyantong/app/backend/.venv
+          fi
+          timeout 60 sudo -n -u ubuntu /opt/gangyantong/app/backend/.venv/bin/python -m pip install --disable-pip-version-check --no-input --upgrade pip
+          timeout 180 sudo -n -u ubuntu /opt/gangyantong/app/backend/.venv/bin/pip install --disable-pip-version-check --no-input --timeout 20 --retries 2 -r /opt/gangyantong/app/backend/requirements.txt
+          sudo -n cp "${REMOTE_STAGE}/gangyantong-nginx.conf" /etc/nginx/sites-available/gangyantong
+          sudo -n ln -sfn /etc/nginx/sites-available/gangyantong /etc/nginx/sites-enabled/gangyantong
+          sudo -n rm -f /etc/nginx/sites-enabled/default
+          sudo -n nginx -t
+          timeout 60 sudo -n systemctl restart gangyantong-backend
+          sudo -n systemctl reload nginx
+          curl -fsS http://127.0.0.1/static/support.html >/dev/null
+          for attempt in {1..20}; do
+            if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
+              exit 0
             fi
-            timeout 60 sudo -n -u ubuntu /opt/gangyantong/app/backend/.venv/bin/python -m pip install --disable-pip-version-check --no-input --upgrade pip
-            timeout 180 sudo -n -u ubuntu /opt/gangyantong/app/backend/.venv/bin/pip install --disable-pip-version-check --no-input --timeout 20 --retries 2 -r /opt/gangyantong/app/backend/requirements.txt
-            sudo -n cp /tmp/gangyantong-nginx.conf /etc/nginx/sites-available/gangyantong
-            sudo -n ln -sfn /etc/nginx/sites-available/gangyantong /etc/nginx/sites-enabled/gangyantong
-            sudo -n rm -f /etc/nginx/sites-enabled/default
-            sudo -n nginx -t
-            timeout 60 sudo -n systemctl restart gangyantong-backend
-            sudo -n systemctl reload nginx
-            rm -rf "${tmp_dir}" "${backend_tmp}" /tmp/gangyantong-h5.tgz /tmp/gangyantong-backend.tgz /tmp/gangyantong-nginx.conf
-            curl -fsS http://127.0.0.1/static/support.html >/dev/null
-            for attempt in {1..20}; do
-              if curl -fsS http://127.0.0.1:8000/health >/dev/null; then
-                exit 0
-              fi
-              sleep 2
-            done
-            sudo systemctl status gangyantong-backend --no-pager
-            exit 1'
+            sleep 2
+          done
+          sudo systemctl status gangyantong-backend --no-pager
+          exit 1
+          REMOTE_DEPLOY
