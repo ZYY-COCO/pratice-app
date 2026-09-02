@@ -366,6 +366,7 @@ const skillOptions = MENTOR_SKILL_OPTIONS
 const examOptions = ['Z001', 'Z002', '申请制']
 const MENTOR_YEAR_MIN = 2000
 const MENTOR_ADMISSION_YEAR_MAX = 2026
+const MENTOR_GRADUATION_YEAR_FORWARD_YEARS = 3
 const MENTOR_SCORE_MAX = 150
 const MENTOR_PHONE_LENGTH = 11
 const MENTOR_LEGAL_NAME_MIN_LENGTH = 2
@@ -567,7 +568,7 @@ function buildYearOptions(maxYear) {
 
 function getGraduationYearMaximum(date = new Date()) {
   const currentDate = date instanceof Date ? date : new Date(date)
-  return currentDate.getFullYear() - (currentDate.getMonth() >= 6 ? 0 : 1)
+  return currentDate.getFullYear() + MENTOR_GRADUATION_YEAR_FORWARD_YEARS
 }
 
 function getYearOptionIndex(options, value) {
