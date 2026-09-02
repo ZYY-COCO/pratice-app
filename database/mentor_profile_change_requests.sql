@@ -10,7 +10,7 @@ create table if not exists public.mentor_profile_change_requests (
   school text not null check (char_length(btrim(school)) between 1 and 120),
   major text not null check (char_length(btrim(major)) between 1 and 120),
   exam_type text not null check (exam_type in ('Z001', 'Z002', 'application')),
-  score smallint not null check (score between 0 and 150),
+  score smallint,
   skills jsonb not null default '[]'::jsonb check (jsonb_typeof(skills) = 'array'),
   bio text not null default '' check (char_length(bio) <= 500),
   price_cents integer not null check (price_cents between 0 and 100000),
@@ -20,7 +20,11 @@ create table if not exists public.mentor_profile_change_requests (
   reviewed_by uuid references public.users(id) on delete set null,
   reviewed_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint mentor_profile_change_requests_exam_score_check check (
+    (exam_type = 'application' and score is null)
+    or (exam_type in ('Z001', 'Z002') and score is not null and score between 0 and 150)
+  )
 );
 
 create index if not exists idx_mentor_profile_change_requests_owner_created

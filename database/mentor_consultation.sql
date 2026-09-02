@@ -20,7 +20,7 @@ create table if not exists public.mentor_profiles (
   graduation_year smallint check (graduation_year between 2000 and 2100),
   exam_type text not null
     check (exam_type in ('Z001', 'Z002', 'application')),
-  score smallint not null check (score between 0 and 150),
+  score smallint,
   bio text not null default '' check (char_length(bio) <= 500),
   story text not null default '' check (char_length(story) <= 2000),
   price_cents integer not null default 3900 check (price_cents between 0 and 100000),
@@ -40,7 +40,11 @@ create table if not exists public.mentor_profiles (
   consult_count integer not null default 0 check (consult_count >= 0),
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (graduation_year is null or graduation_year >= admission_year)
+  check (graduation_year is null or graduation_year >= admission_year),
+  constraint mentor_profiles_exam_score_check check (
+    (exam_type = 'application' and score is null)
+    or (exam_type in ('Z001', 'Z002') and score is not null and score between 0 and 150)
+  )
 );
 
 create table if not exists public.mentor_profile_skills (
@@ -131,7 +135,7 @@ create table if not exists public.mentor_verification_applications (
   admission_year smallint not null check (admission_year between 2000 and 2100),
   graduation_year smallint check (graduation_year between 2000 and 2100),
   exam_type text not null check (exam_type in ('Z001', 'Z002', 'application')),
-  score smallint not null check (score between 0 and 150),
+  score smallint,
   skills jsonb not null default '[]'::jsonb check (jsonb_typeof(skills) = 'array'),
   bio text not null default '' check (char_length(bio) <= 500),
   price_cents integer not null default 3900 check (price_cents between 0 and 100000),
@@ -143,7 +147,11 @@ create table if not exists public.mentor_verification_applications (
   reviewed_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
-  check (graduation_year is null or graduation_year >= admission_year)
+  check (graduation_year is null or graduation_year >= admission_year),
+  constraint mentor_verification_applications_exam_score_check check (
+    (exam_type = 'application' and score is null)
+    or (exam_type in ('Z001', 'Z002') and score is not null and score between 0 and 150)
+  )
 );
 
 create table if not exists public.mentor_verification_documents (

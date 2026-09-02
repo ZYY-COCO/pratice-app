@@ -2,7 +2,7 @@ from datetime import datetime
 from typing import Literal
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 MentorExamType = Literal["Z001", "Z002", "application"]
@@ -44,6 +44,16 @@ MentorConsultationReportResolution = Literal[
 ]
 
 
+def validate_mentor_exam_score(exam_type: MentorExamType, score: int | None) -> None:
+    """Keep application-based admissions free of synthetic entrance-exam scores."""
+    if exam_type == "application":
+        if score is not None:
+            raise ValueError("申请制无需填写初试成绩")
+        return
+    if score is None:
+        raise ValueError("Z001、Z002 必须填写初试成绩")
+
+
 class MentorAvailabilitySlotItem(BaseModel):
     id: str
     starts_at: str | None = None
@@ -71,7 +81,7 @@ class MentorPublicItem(BaseModel):
     admission_year: int
     graduation_year: int | None = None
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     rating: float = Field(default=0, ge=0, le=5)
     rating_count: int = Field(default=0, ge=0)
     consult_count: int = Field(default=0, ge=0)
@@ -117,10 +127,15 @@ class MentorProfileChangeRequestCreateRequest(BaseModel):
     school: str = Field(min_length=1, max_length=120)
     major: str = Field(min_length=1, max_length=120)
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     skills: list[str] = Field(default_factory=list, max_length=4)
     bio: str = Field(default="", max_length=500)
     price_cents: int = Field(ge=0, le=100000)
+
+    @model_validator(mode="after")
+    def validate_exam_score(self) -> "MentorProfileChangeRequestCreateRequest":
+        validate_mentor_exam_score(self.exam_type, self.score)
+        return self
 
 
 class MentorProfileChangeRequestItem(BaseModel):
@@ -130,7 +145,7 @@ class MentorProfileChangeRequestItem(BaseModel):
     school: str
     major: str
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     skills: list[str] = Field(default_factory=list)
     bio: str = ""
     price: float | int = Field(ge=0)
@@ -210,11 +225,16 @@ class MentorVerificationApplicationCreateRequest(BaseModel):
     admission_year: int = Field(ge=2000, le=2100)
     graduation_year: int | None = Field(default=None, ge=2000, le=2100)
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     skills: list[str] = Field(default_factory=list, max_length=4)
     bio: str = Field(default="", max_length=500)
     price_cents: int = Field(default=3900, ge=0, le=100000)
     consultation_enabled: bool = True
+
+    @model_validator(mode="after")
+    def validate_exam_score(self) -> "MentorVerificationApplicationCreateRequest":
+        validate_mentor_exam_score(self.exam_type, self.score)
+        return self
 
 
 class MentorVerificationApplicationItem(BaseModel):
@@ -226,7 +246,7 @@ class MentorVerificationApplicationItem(BaseModel):
     admission_year: int
     graduation_year: int | None = None
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     skills: list[str] = Field(default_factory=list)
     bio: str = ""
     price: float | int = Field(ge=0)
@@ -286,7 +306,7 @@ class AdminMentorProfileCreateRequest(BaseModel):
     admission_year: int = Field(ge=2000, le=2100)
     graduation_year: int | None = Field(default=None, ge=2000, le=2100)
     exam_type: MentorExamType
-    score: int = Field(ge=0, le=150)
+    score: int | None = Field(default=None, ge=0, le=150)
     bio: str = Field(default="", max_length=500)
     story: str = Field(default="", max_length=2000)
     price_cents: int = Field(default=3900, ge=0, le=100000)
@@ -302,6 +322,11 @@ class AdminMentorProfileCreateRequest(BaseModel):
     rating_count: int = Field(default=0, ge=0)
     consult_count: int = Field(default=0, ge=0)
     skills: list[str] = Field(default_factory=list, max_length=12)
+
+    @model_validator(mode="after")
+    def validate_exam_score(self) -> "AdminMentorProfileCreateRequest":
+        validate_mentor_exam_score(self.exam_type, self.score)
+        return self
 
 
 class AdminMentorProfileUpdateRequest(BaseModel):

@@ -391,7 +391,7 @@ function normalizeMentorRecord(rawMentor = {}, related = {}) {
     admissionYear: String(rawMentor.admissionYear ?? rawMentor.admission_year ?? ''),
     graduationYear: rawMentor.graduationYear ?? rawMentor.graduation_year ?? null,
     examType: String(rawMentor.examType || rawMentor.exam_type || 'Z001'),
-    score: toNumber(rawMentor.score),
+    score: toNullableNumber(rawMentor.score),
     rating: toNumber(rawMentor.rating),
     ratingCount: toNumber(rawMentor.ratingCount ?? rawMentor.rating_count),
     consultCount: toNumber(rawMentor.consultCount ?? rawMentor.consult_count),
@@ -513,6 +513,12 @@ function isMentorBookable(mentor = {}) {
 function toNumber(value, fallback = 0) {
   const number = Number(value)
   return Number.isFinite(number) ? number : fallback
+}
+
+function toNullableNumber(value) {
+  if (value === null || value === undefined || String(value).trim() === '') return null
+  const number = Number(value)
+  return Number.isFinite(number) ? number : null
 }
 
 function normalize(value) {

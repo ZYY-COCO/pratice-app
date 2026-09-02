@@ -147,7 +147,7 @@ def serialize_mentor_public(
         "admission_year": int(row.get("admission_year") or 0),
         "graduation_year": int(row["graduation_year"]) if row.get("graduation_year") is not None else None,
         "exam_type": str(row.get("exam_type") or "Z001"),
-        "score": int(row.get("score") or 0),
+        "score": int(row["score"]) if row.get("score") is not None else None,
         "rating": float(metrics.get("rating") or 0),
         "rating_count": int(metrics.get("rating_count") or 0),
         "consult_count": int(metrics.get("consult_count") or 0),

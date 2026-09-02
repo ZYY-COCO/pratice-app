@@ -56,7 +56,8 @@
             </view>
             <view :class="{ 'is-editable': isProfileEditing }">
               <text>初试成绩</text>
-              <input v-if="isProfileEditing" v-model="profileEditDraft.score" class="mentor-info-edit-input" type="number" maxlength="3" @input="handleProfileEditScore" />
+              <strong v-if="isProfileEditing && isProfileEditApplication">无需填写</strong>
+              <input v-else-if="isProfileEditing" v-model="profileEditDraft.score" class="mentor-info-edit-input" type="number" maxlength="3" @input="handleProfileEditScore" />
               <strong v-else>{{ scoreLabel }}</strong>
             </view>
             <view :class="{ 'is-editable': isProfileEditing }">
@@ -181,9 +182,16 @@ const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
 const pendingOrderCount = computed(() => mentorOrders.value.filter((order) => order.orderStatus === 'pending_accept').length)
 const activeOrderCount = computed(() => mentorOrders.value.filter((order) => ['accepted', 'in_progress'].includes(order.orderStatus)).length)
 const examTypeLabel = computed(() => mentor.value?.examType === 'application' ? '申请制' : (mentor.value?.examType || '未填写'))
-const scoreLabel = computed(() => Number.isFinite(Number(mentor.value?.score)) ? `${mentor.value.score} 分` : '未填写')
+const scoreLabel = computed(() => {
+  if (mentor.value?.examType === 'application') return '无需填写'
+  const score = mentor.value?.score
+  return score !== null && score !== undefined && score !== '' && Number.isFinite(Number(score))
+    ? `${score} 分`
+    : '未填写'
+})
 const profileEditExamIndex = computed(() => Math.max(0, profileEditExamOptions.findIndex((item) => item.value === profileEditDraft.value.examType)))
 const profileEditExamLabel = computed(() => profileEditExamOptions[profileEditExamIndex.value]?.label || 'Z001')
+const isProfileEditApplication = computed(() => profileEditDraft.value.examType === 'application')
 
 onLoad(() => {
   void loadMentorInfo()
@@ -254,9 +262,13 @@ function normalizeProfileEditExamType(value) {
 }
 
 function createProfileEditDraft(profile = {}) {
+  const examType = normalizeProfileEditExamType(profile.examType)
+  const score = profile.score
   return {
-    examType: normalizeProfileEditExamType(profile.examType),
-    score: Number.isFinite(Number(profile.score)) ? String(profile.score) : '',
+    examType,
+    score: examType === 'application' || score === null || score === undefined || score === ''
+      ? ''
+      : (Number.isFinite(Number(score)) ? String(score) : ''),
     school: String(profile.school || ''),
     major: String(profile.major || ''),
     skills: Array.isArray(profile.skills) ? profile.skills.map(String).filter(Boolean).slice(0, 4) : [],
@@ -267,10 +279,11 @@ function createProfileEditDraft(profile = {}) {
 
 function normalizeProfileEditDraft(draft = {}, profile = mentor.value || {}) {
   const fallback = createProfileEditDraft(profile)
+  const examType = normalizeProfileEditExamType(draft.examType || fallback.examType)
   return {
     ...fallback,
-    examType: normalizeProfileEditExamType(draft.examType || fallback.examType),
-    score: String(draft.score ?? fallback.score),
+    examType,
+    score: examType === 'application' ? '' : String(draft.score ?? fallback.score),
     school: String(draft.school ?? fallback.school),
     major: String(draft.major ?? fallback.major),
     skills: Array.isArray(draft.skills) ? draft.skills.map(String).filter(Boolean).slice(0, 4) : fallback.skills,
@@ -293,6 +306,7 @@ function cancelProfileEdit() {
 function selectProfileEditExamType(event) {
   const index = Number(event?.detail?.value)
   profileEditDraft.value.examType = profileEditExamOptions[index]?.value || profileEditExamOptions[0].value
+  if (profileEditDraft.value.examType === 'application') profileEditDraft.value.score = ''
 }
 
 function handleProfileEditScore(event) {
@@ -324,12 +338,17 @@ function toggleProfileEditSkill(skill) {
 async function submitProfileEdit() {
   if (profileEditSubmitting.value || !mentor.value) return
   const draft = normalizeProfileEditDraft(profileEditDraft.value)
-  if (!draft.school.trim() || !draft.major.trim() || !draft.score.trim()) {
-    uni.showToast({ title: '请补充录取院校、专业和初试成绩', icon: 'none' })
+  if (!draft.school.trim() || !draft.major.trim()) {
+    uni.showToast({ title: '请补充录取院校和专业', icon: 'none' })
     return
   }
-  const score = Number(draft.score)
-  if (!Number.isInteger(score) || score < 0 || score > 150) {
+  const applicationExam = draft.examType === 'application'
+  if (!applicationExam && !draft.score.trim()) {
+    uni.showToast({ title: '请填写初试成绩', icon: 'none' })
+    return
+  }
+  const score = applicationExam ? null : Number(draft.score)
+  if (!applicationExam && (!Number.isInteger(score) || score < 0 || score > 150)) {
     uni.showToast({ title: '初试成绩请填写 0–150 分', icon: 'none' })
     return
   }
@@ -341,7 +360,7 @@ async function submitProfileEdit() {
 
   profileEditSubmitting.value = true
   try {
-    profileEditDraft.value = { ...draft, score: String(score), price: String(price) }
+    profileEditDraft.value = { ...draft, score: applicationExam ? '' : String(score), price: String(price) }
     const request = await createMyMentorProfileChangeRequest({
       school: profileEditDraft.value.school.trim(),
       major: profileEditDraft.value.major.trim(),

@@ -35,7 +35,7 @@
 
     <view class="mentor-major-row">
       <text>{{ mentor.major }} · {{ mentor.admissionYear }}级</text>
-      <text class="mentor-score">初试 {{ mentor.score }} 分</text>
+      <text class="mentor-score">{{ mentorExamScoreLabel(mentor) }}</text>
     </view>
 
     <view class="mentor-bio">{{ mentor.bio }}</view>
@@ -90,6 +90,13 @@ defineProps({
 })
 
 const emit = defineEmits(['open', 'consult', 'toggle-favorite'])
+
+function mentorExamScoreLabel(mentor = {}) {
+  if (mentor.examType === 'application') return '申请制'
+  return mentor.score === null || mentor.score === undefined || mentor.score === ''
+    ? '初试未填写'
+    : `初试 ${mentor.score} 分`
+}
 </script>
 
 <style scoped>

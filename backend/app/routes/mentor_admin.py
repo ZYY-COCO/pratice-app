@@ -432,7 +432,7 @@ def _serialize_mentor_application(row: dict, *, document_count: int = 0) -> dict
         "admission_year": int(row.get("admission_year") or 0),
         "graduation_year": int(row["graduation_year"]) if row.get("graduation_year") is not None else None,
         "exam_type": str(row.get("exam_type") or "Z001"),
-        "score": int(row.get("score") or 0),
+        "score": int(row["score"]) if row.get("score") is not None else None,
         "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else []),
         "bio": str(row.get("bio") or ""),
         "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
@@ -466,7 +466,7 @@ def _serialize_mentor_profile_change_request(row: dict) -> dict:
         "school": str(row.get("school") or ""),
         "major": str(row.get("major") or ""),
         "exam_type": str(row.get("exam_type") or "Z001"),
-        "score": int(row.get("score") or 0),
+        "score": int(row["score"]) if row.get("score") is not None else None,
         "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else [])[:4],
         "bio": str(row.get("bio") or ""),
         "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
@@ -1747,7 +1747,7 @@ def decide_admin_mentor_verification_application(
                     "admission_year": int(application.get("admission_year") or 0),
                     "graduation_year": application.get("graduation_year"),
                     "exam_type": application.get("exam_type"),
-                    "score": int(application.get("score") or 0),
+                    "score": int(application["score"]) if application.get("score") is not None else None,
                     "bio": str(application.get("bio") or ""),
                     "story": "",
                     "price_cents": int(application.get("price_cents") or 0),
@@ -2162,6 +2162,13 @@ def update_admin_mentor(
         graduation_year = update_data.get("graduation_year", current.get("graduation_year"))
         if graduation_year is not None and int(graduation_year) < admission_year:
             raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="毕业年份不能早于入学年份")
+        if "exam_type" in update_data or "score" in update_data:
+            exam_type = str(update_data.get("exam_type", current.get("exam_type") or "Z001"))
+            score = update_data["score"] if "score" in update_data else current.get("score")
+            if exam_type == "application" and score is not None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="申请制无需填写初试成绩")
+            if exam_type in {"Z001", "Z002"} and score is None:
+                raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="Z001、Z002 必须填写初试成绩")
         if update_data:
             response = call_supabase(
                 lambda: supabase.table("mentor_profiles").update(update_data).eq("id", mentor_id).execute(),

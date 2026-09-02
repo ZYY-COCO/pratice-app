@@ -656,7 +656,15 @@
               <image src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
             </button>
             <view class="circle-detail-heading">{{ selectedCircleSectionLabel }}</view>
-            <view class="circle-detail-header-spacer"></view>
+            <button
+              v-if="selectedCircleSection === 'community'"
+              class="circle-my-verification-entry"
+              aria-label="查看我的前辈认证"
+              @tap.stop="openMentorVerificationEntry()"
+            >
+              我的认证
+            </button>
+            <view v-else class="circle-detail-header-spacer"></view>
           </view>
 
           <scroll-view
@@ -950,8 +958,8 @@
                   v-else-if="filteredActiveCommunityPosts.length === 0"
                   class="community-feed-state"
                   :label="selectedCircleCommunityTab === 'experience' ? '暂无经验贴' : '暂无交流内容'"
-                  :title="selectedCircleCommunityTab === 'experience' ? '当前暂无已认证前辈经验贴' : '暂无匹配的交流内容'"
-                  :description="selectedCircleCommunityTab === 'experience' ? '经验贴仅展示已认证前辈的公开分享，可先浏览研友聊中的讨论。' : '换个关键词或分类试试。'"
+                  :title="selectedCircleCommunityTab === 'experience' ? '' : '暂无匹配的交流内容'"
+                  :description="selectedCircleCommunityTab === 'experience' ? '' : '换个关键词或分类试试。'"
                 />
                 <view
                   v-if="(communityPostsLoading && filteredActiveCommunityPosts.length > 0) || activeCommunityHasMore"
@@ -7137,7 +7145,7 @@ async function openMentorVerificationEntry(options = {}) {
   openingMentorVerificationEntry = true
 
   try {
-    await loadMentorEntryStatus()
+    await loadMentorEntryStatus({ force: !isMentorEntryStatusFresh() })
     const verificationStatus = mentorEntryStatus.value
     const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
     const from = options?.from === 'experience-publish' ? '&from=experience-publish' : ''
@@ -11831,10 +11839,47 @@ function formatDateTime(value) {
 }
 
 .circle-detail-heading {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
   color: #172033;
   font-size: 32rpx;
   line-height: 1.2;
   font-weight: 900;
+  white-space: nowrap;
+  pointer-events: none;
+}
+
+.circle-my-verification-entry {
+  position: relative;
+  z-index: 1;
+  box-sizing: border-box;
+  min-width: 124rpx;
+  height: 76rpx;
+  min-height: 76rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  color: var(--gyt-primary, #3478f6);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  font-size: 27rpx;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: 1rpx;
+  white-space: nowrap;
+  box-shadow: none;
+}
+
+.circle-my-verification-entry::after {
+  border: 0;
+}
+
+.circle-my-verification-entry:active {
+  opacity: 0.58;
 }
 
 .circle-section {

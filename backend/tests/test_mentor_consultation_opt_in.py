@@ -7,13 +7,17 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from fastapi import HTTPException
+from pydantic import ValidationError
 
 from app.routes import community, mentor_admin, mentor_consultation
 from app.schemas.mentor_consultation import (
+    AdminMentorProfileCreateRequest,
     AdminMentorProfileUpdateRequest,
     MentorOwnerAvailabilitySlotCreateRequest,
     MentorOwnerAvailabilitySlotStatusUpdateRequest,
     MentorOwnerAvailabilityUpdateRequest,
+    MentorProfileChangeRequestCreateRequest,
+    MentorPublicItem,
     MentorVerificationApplicationCreateRequest,
 )
 
@@ -172,6 +176,69 @@ def _mentor_row(*, consultation_enabled: bool) -> dict:
 
 
 class MentorConsultationOptInTests(unittest.TestCase):
+    def test_application_exam_accepts_null_score_across_write_schemas(self):
+        application_payload = {
+            "legal_name": "张同学",
+            "school": "示例大学",
+            "major": "经济学",
+            "admission_year": 2025,
+            "graduation_year": 2027,
+            "exam_type": "application",
+            "score": None,
+        }
+        self.assertIsNone(MentorVerificationApplicationCreateRequest(**application_payload).score)
+        self.assertIsNone(AdminMentorProfileCreateRequest(**application_payload).score)
+        self.assertIsNone(MentorProfileChangeRequestCreateRequest(
+            school="示例大学",
+            major="经济学",
+            exam_type="application",
+            score=None,
+            price_cents=3900,
+        ).score)
+
+    def test_exam_score_schema_rejects_mismatched_combinations(self):
+        base = {
+            "legal_name": "张同学",
+            "school": "示例大学",
+            "major": "经济学",
+            "admission_year": 2025,
+            "graduation_year": 2027,
+        }
+        with self.assertRaises(ValidationError):
+            MentorVerificationApplicationCreateRequest(**base, exam_type="application", score=0)
+        with self.assertRaises(ValidationError):
+            MentorVerificationApplicationCreateRequest(**base, exam_type="Z001", score=None)
+        self.assertEqual(
+            MentorVerificationApplicationCreateRequest(**base, exam_type="Z002", score=110).score,
+            110,
+        )
+
+    def test_application_create_and_serializers_preserve_null_score(self):
+        user_id = str(uuid4())
+        client = _Client({"mentor_profiles": [], "mentor_verification_applications": []})
+        payload = MentorVerificationApplicationCreateRequest(
+            legal_name="张同学",
+            school="示例大学",
+            major="经济学",
+            admission_year=2025,
+            graduation_year=2027,
+            exam_type="application",
+            score=None,
+        )
+        with patch.object(mentor_consultation, "get_supabase_admin", return_value=client):
+            result = mentor_consultation.create_mentor_verification_application(payload, user_id)
+        inserted = client.rows["mentor_verification_applications"][0]
+        self.assertIsNone(inserted["score"])
+        self.assertIsNone(result.score)
+        self.assertIsNone(mentor_consultation._serialize_mentor_verification_application(inserted)["score"])
+        self.assertIsNone(mentor_admin._serialize_mentor_application(inserted)["score"])
+
+        public_row = _mentor_row(consultation_enabled=True)
+        public_row.update({"exam_type": "application", "score": None})
+        public_payload = mentor_consultation._serialize_mentor_public_profile(public_row)
+        self.assertIsNone(public_payload["score"])
+        self.assertIsNone(MentorPublicItem(**public_payload).score)
+
     def test_application_schema_keeps_legacy_default_and_accepts_opt_out(self):
         base = {
             "legal_name": "张同学",

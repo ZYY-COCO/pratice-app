@@ -47,12 +47,13 @@
           <view class="mentor-apply-two-column">
             <view class="mentor-apply-field">
               <view class="mentor-apply-label">初试成绩</view>
-              <input :value="form.score" type="number" min="0" :max="MENTOR_SCORE_MAX" maxlength="3" placeholder="例如 110" placeholder-class="mentor-apply-placeholder" @input="handleScoreInput" />
+              <view v-if="isApplicationExam" class="mentor-apply-score-na">申请制无需填写</view>
+              <input v-else :value="form.score" type="number" min="0" :max="MENTOR_SCORE_MAX" maxlength="3" placeholder="例如 110" placeholder-class="mentor-apply-placeholder" @input="handleScoreInput" />
             </view>
             <view class="mentor-apply-field">
               <view class="mentor-apply-label">考试类别</view>
               <view class="mentor-apply-exam-row">
-                <button v-for="item in examOptions" :key="item" :class="{ active: form.examType === item }" @tap="form.examType = item">{{ item }}</button>
+                <button v-for="item in examOptions" :key="item" :class="{ active: form.examType === item }" @tap="selectExamType(item)">{{ item }}</button>
               </view>
             </view>
           </view>
@@ -134,8 +135,10 @@
         <view class="mentor-apply-status-title">认证审核中</view>
         <view class="mentor-apply-status-copy">认证资料已提交，平台将在审核后通知结果。审核期间你可以继续使用考研圈的其他功能。</view>
         <view class="mentor-apply-status-card">
+          <view><text>申请人</text><strong>{{ maskedApplicationName }}</strong></view>
           <view><text>申请院校</text><strong>{{ form.school || '待审核院校' }}</strong></view>
           <view><text>申请专业</text><strong>{{ form.major || '待审核专业' }}</strong></view>
+          <view><text>考试类别</text><strong>{{ form.examType || '待审核类别' }}</strong></view>
           <view><text>提交状态</text><strong class="green">资料已提交</strong></view>
         </view>
       </view>
@@ -384,6 +387,7 @@ const pageTitle = computed(() => pageMode.value === 'pending' ? '认证审核中
 const schoolResults = computed(() => searchMentorSchools(schoolKeyword.value))
 const admissionYearIndex = computed(() => getYearOptionIndex(admissionYearOptions, form.value.admissionYear))
 const graduationYearIndex = computed(() => getYearOptionIndex(graduationYearOptions.value, form.value.graduationYear))
+const isApplicationExam = computed(() => form.value.examType === '申请制')
 const maskedApplicationName = computed(() => maskMentorName(form.value.realName || '前辈'))
 const mentorCenterAvatarUrl = computed(() => getUserAvatarUrl(ownerUser.value) || mentorProfile.value?.avatarUrl || '')
 const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
@@ -455,7 +459,7 @@ async function initializePage(options) {
   if (saved) {
     form.value = { ...defaultApplication, ...saved }
     normalizeApplicationYears()
-    form.value.score = normalizeScoreInput(form.value.score)
+    normalizeApplicationScore()
     proofImages.value = normalizeProofImages(saved.proofImages)
   } else {
     form.value = defaultApplication
@@ -591,6 +595,16 @@ function handleScoreInput(event) {
   form.value.score = normalizeScoreInput(event?.detail?.value)
 }
 
+function normalizeApplicationScore() {
+  if (form.value.examType === 'application') form.value.examType = '申请制'
+  form.value.score = form.value.examType === '申请制' ? '' : normalizeScoreInput(form.value.score)
+}
+
+function selectExamType(examType) {
+  form.value.examType = examType
+  if (examType === '申请制') form.value.score = ''
+}
+
 function toggleSkill(skill) {
   if (!form.value.consultationEnabled) return
   if (form.value.skills.includes(skill)) {
@@ -643,8 +657,8 @@ async function submitApplication() {
     return
   }
   const legalName = form.value.realName.trim()
-  if (!legalName || !form.value.school.trim() || !form.value.major.trim() || !String(form.value.score).trim()) {
-    uni.showToast({ title: '请补充真实姓名、录取院校、专业和初试成绩', icon: 'none' })
+  if (!legalName || !form.value.school.trim() || !form.value.major.trim()) {
+    uni.showToast({ title: '请补充真实姓名、录取院校和专业', icon: 'none' })
     return
   }
   const legalNameLength = Array.from(legalName).length
@@ -652,8 +666,13 @@ async function submitApplication() {
     uni.showToast({ title: '真实姓名请填写 2–40 个字', icon: 'none' })
     return
   }
-  const score = Number(form.value.score)
-  if (!Number.isInteger(score) || score < 0 || score > MENTOR_SCORE_MAX) {
+  const applicationExam = isApplicationExam.value
+  if (!applicationExam && !String(form.value.score).trim()) {
+    uni.showToast({ title: '请填写初试成绩', icon: 'none' })
+    return
+  }
+  const score = applicationExam ? null : Number(form.value.score)
+  if (!applicationExam && (!Number.isInteger(score) || score < 0 || score > MENTOR_SCORE_MAX)) {
     uni.showToast({ title: '初试成绩请填写 0–150 分', icon: 'none' })
     return
   }
@@ -676,7 +695,7 @@ async function submitApplication() {
       major: form.value.major.trim(),
       admission_year: Number(form.value.admissionYear),
       graduation_year: form.value.graduationYear ? Number(form.value.graduationYear) : null,
-      exam_type: form.value.examType === '申请制' ? 'application' : form.value.examType,
+      exam_type: applicationExam ? 'application' : form.value.examType,
       score,
       skills: consultationEnabled ? form.value.skills : [],
       bio: consultationEnabled ? form.value.bio.trim() : '',
@@ -751,7 +770,7 @@ function applyServerApplication(application) {
     consultationEnabled: resolvedConsultationEnabled
   }
   normalizeApplicationYears()
-  form.value.score = normalizeScoreInput(form.value.score)
+  normalizeApplicationScore()
   schoolKeyword.value = form.value.school
   const status = application.application_status === 'approved' ? 'verified' : application.application_status === 'pending' ? 'pending' : 'rejected'
   const adminNote = String(application.admin_note || '').trim()
@@ -777,7 +796,7 @@ function syncFormFromMentorProfile(profile) {
     price: String(profile.price ?? form.value.price)
   }
   normalizeApplicationYears()
-  form.value.score = normalizeScoreInput(form.value.score)
+  normalizeApplicationScore()
   schoolKeyword.value = form.value.school
 }
 
@@ -1605,6 +1624,22 @@ function goBack() {
     padding-right: 26rpx;
     padding-left: 26rpx;
   }
+}
+
+.mentor-apply-score-na {
+  box-sizing: border-box;
+  width: 100%;
+  height: 72rpx;
+  padding: 0 18rpx;
+  border: 2rpx solid var(--gyt-primary-border, #e0eafa);
+  border-radius: 18rpx;
+  background: var(--gyt-primary-tint, #fbfdff);
+  color: #8b99ad;
+  display: flex;
+  align-items: center;
+  font-size: 23rpx;
+  line-height: 1.2;
+  font-weight: 650;
 }
 
 @media (prefers-reduced-motion: reduce) {

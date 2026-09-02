@@ -25,8 +25,8 @@
           <view class="mentor-detail-school">{{ mentor.school }}</view>
           <view class="mentor-detail-major">{{ mentor.major }} · {{ mentor.admissionYear }}级</view>
           <view class="mentor-detail-facts">
-            <view><text>初试成绩</text><strong>{{ mentor.score }} 分</strong></view>
-            <view><text>考试类别</text><strong>{{ mentor.examType }}</strong></view>
+            <view v-if="mentor.examType !== 'application'"><text>初试成绩</text><strong>{{ mentor.score == null ? '未填写' : `${mentor.score} 分` }}</strong></view>
+            <view><text>考试类别</text><strong>{{ mentorExamTypeLabel(mentor.examType) }}</strong></view>
             <view>
               <text>用户评分</text>
               <strong class="rating">
@@ -178,6 +178,10 @@ onShow(() => {
 
 function detailSkillLabel(skill) {
   return skill === '初试备考' ? '初试规划' : skill
+}
+
+function mentorExamTypeLabel(examType) {
+  return examType === 'application' ? '申请制' : (examType || '未填写')
 }
 
 async function loadMentorDetail(mentorId) {
