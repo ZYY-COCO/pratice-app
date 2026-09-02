@@ -88,7 +88,7 @@
           >
             <view class="experience-review-post">
               <strong>{{ item.title || '未填写标题' }}</strong>
-              <text>{{ item.content || '未填写正文' }}</text>
+              <view class="experience-review-excerpt">{{ tableExcerpt(item.content) }}</view>
             </view>
             <view class="experience-review-author">
               <view>{{ initial(item.author_name) }}</view>
@@ -211,6 +211,31 @@
         </view>
       </view>
     </view>
+
+    <view
+      v-if="decisionConfirmationVisible"
+      class="experience-review-confirm-backdrop"
+      @tap="closeDecisionConfirmation"
+    >
+      <view
+        class="experience-review-confirm-dialog"
+        role="dialog"
+        aria-modal="true"
+        :aria-label="decisionConfirmationAction === 'approved' ? '确认通过经验贴' : '确认驳回经验贴'"
+        @tap.stop
+      >
+        <strong>{{ decisionConfirmationAction === 'approved' ? '通过这篇经验贴？' : '驳回这篇经验贴？' }}</strong>
+        <text>{{ decisionConfirmationAction === 'approved' ? '通过后内容会立即公开，并向作者发送审核通知。' : '官方理由和处理说明会发送给作者，作者可修改后重新提交。' }}</text>
+        <view class="experience-review-confirm-actions">
+          <button class="cancel" :disabled="saving" @tap="closeDecisionConfirmation">取消</button>
+          <button
+            :class="{ reject: decisionConfirmationAction === 'rejected' }"
+            :disabled="saving"
+            @tap="confirmDecisionSubmission"
+          >{{ saving ? '处理中…' : decisionConfirmationAction === 'approved' ? '确认通过' : '确认驳回' }}</button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -284,6 +309,8 @@ const decision = ref('approved')
 const reasonCode = ref('')
 const reviewNote = ref('')
 const saving = ref(false)
+const decisionConfirmationVisible = ref(false)
+const decisionConfirmationAction = ref('approved')
 let searchTimer = null
 
 const summaryCards = computed(() => [
@@ -422,6 +449,7 @@ async function loadDetail(postId) {
 
 function closeDetail() {
   if (saving.value) return
+  closeDecisionConfirmation()
   detailVisible.value = false
   detail.value = null
   activeReview.value = null
@@ -430,30 +458,34 @@ function closeDetail() {
   reasonCode.value = ''
 }
 
-async function submitDecision() {
+function submitDecision() {
   const post = detail.value?.post
   if (!post?.id || post.review_status !== 'pending' || saving.value) return
   if (decision.value === 'rejected' && (!reasonCode.value || !reviewNote.value.trim())) {
     uni.showToast({ title: '驳回时请选择官方理由并填写处理说明', icon: 'none' })
     return
   }
-  const confirmed = await new Promise((resolve) => uni.showModal({
-    title: decision.value === 'approved' ? '通过这篇经验贴？' : '驳回这篇经验贴？',
-    content: decision.value === 'approved'
-      ? '通过后内容会立即公开，并向作者发送审核通知。'
-      : '官方理由和处理说明会发送给作者，作者可修改后重新提交。',
-    confirmText: decision.value === 'approved' ? '确认通过' : '确认驳回',
-    confirmColor: decision.value === 'approved' ? '#2da58b' : '#d96c60',
-    success: (result) => resolve(Boolean(result.confirm))
-  }))
-  if (!confirmed) return
+  decisionConfirmationAction.value = decision.value
+  decisionConfirmationVisible.value = true
+}
+
+function closeDecisionConfirmation() {
+  if (saving.value) return
+  decisionConfirmationVisible.value = false
+}
+
+async function confirmDecisionSubmission() {
+  const post = detail.value?.post
+  const confirmedDecision = decisionConfirmationAction.value
+  if (!post?.id || post.review_status !== 'pending' || saving.value) return
+  decisionConfirmationVisible.value = false
   saving.value = true
   try {
     const updated = props.preview
-      ? { ...post, review_status: decision.value, review_reason_code: decision.value === 'rejected' ? reasonCode.value : null, review_note: reviewNote.value.trim() || null, reviewed_at: new Date().toISOString(), is_published: decision.value === 'approved' }
+      ? { ...post, review_status: confirmedDecision, review_reason_code: confirmedDecision === 'rejected' ? reasonCode.value : null, review_note: reviewNote.value.trim() || null, reviewed_at: new Date().toISOString(), is_published: confirmedDecision === 'approved' }
       : await reviewQuestionAdminCommunityExperiencePost(post.id, {
-          decision: decision.value,
-          reason_code: decision.value === 'rejected' ? reasonCode.value : null,
+          decision: confirmedDecision,
+          reason_code: confirmedDecision === 'rejected' ? reasonCode.value : null,
           review_note: reviewNote.value.trim() || null
         })
     reviews.value = reviews.value.map((item) => item.id === updated.id ? { ...item, ...updated } : item)
@@ -475,7 +507,7 @@ async function submitDecision() {
       ]
     }
     await fetchAndApplySummary()
-    uni.showToast({ title: decision.value === 'approved' ? '经验贴已通过并公开' : '已驳回并通知作者', icon: 'success' })
+    uni.showToast({ title: confirmedDecision === 'approved' ? '经验贴已通过并公开' : '已驳回并通知作者', icon: 'success' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '审核结果保存失败', icon: 'none' })
   } finally {
@@ -538,6 +570,11 @@ function initial(value) { return String(value || '前').slice(0, 1) || '前' }
 function shortId(value) { const id = String(value || ''); return id ? `${id.slice(0, 8)}…${id.slice(-4)}` : '—' }
 function formatCount(value) { return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0)) }
 function formatStages(value) { return Array.isArray(value) && value.length ? value.join(' / ') : '阶段未填写' }
+function tableExcerpt(value) {
+  const normalized = String(value || '').replace(/\s+/g, ' ').trim()
+  if (!normalized) return '未填写正文'
+  return normalized.length > 140 ? `${normalized.slice(0, 140)}…` : normalized
+}
 function statusText(value) { return { pending: '待审核', approved: '已通过', rejected: '未通过' }[value] || '待审核' }
 function historyActionText(value) { return { submitted: '提交审核', approved: '审核通过', rejected: '审核未通过' }[value] || '状态更新' }
 function reasonText(value) { return reasonOptions.find((item) => item.value === value)?.label || '平台审核说明' }
@@ -549,5 +586,113 @@ function formatDateTime(value) {
 </script>
 
 <style scoped>
-.experience-review-page{min-height:calc(100vh - 158px);display:flex;flex-direction:column;color:#31465d}.experience-review-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.experience-summary-card{min-height:104px;padding:17px 19px;border:1px solid #e0e8ec;border-top:3px solid #8c9ba9;border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(39,62,79,.04)}.experience-summary-card text,.experience-summary-card strong,.experience-summary-card small{display:block}.experience-summary-card text{color:#7d8d9e;font-size:11px;font-weight:750}.experience-summary-card strong{margin-top:9px;color:#314a65;font-size:27px}.experience-summary-card small{margin-top:6px;color:#9aa7b4;font-size:10px}.experience-summary-card.pending{border-top-color:#d9aa4c}.experience-summary-card.approved{border-top-color:#4fc4aa}.experience-summary-card.rejected{border-top-color:#dd786d}.experience-review-workspace{min-height:0;flex:1;margin-top:18px;overflow:hidden;border:1px solid #e0e8ec;border-radius:8px;background:#fff;box-shadow:0 10px 30px rgba(38,59,77,.04);display:flex;flex-direction:column}.experience-review-toolbar{padding:13px 16px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-bottom:1px solid #edf1f3;background:#fbfcfd}.experience-review-search{width:min(310px,34vw);height:38px;padding:0 10px;display:flex;align-items:center;gap:8px;flex:1 1 280px;border:1px solid #dae4e8;border-radius:7px;background:#fff;box-sizing:border-box}.experience-review-search image{width:15px;height:15px;flex:0 0 15px}.experience-review-search input{min-width:0;height:36px;flex:1;font-size:11px}.experience-review-search button{width:24px;height:24px;margin:0;padding:0;border:0;background:transparent;color:#91a0af;font-size:15px}.experience-review-select{width:142px;flex:0 0 142px}.experience-review-select.compact{width:112px;flex-basis:112px}.experience-review-select.sort{width:156px;flex-basis:156px}.experience-review-date-range{height:38px;padding:0 8px;display:flex;align-items:center;gap:6px;border:1px solid #dae4e8;border-radius:7px;background:#fff;box-sizing:border-box}.experience-review-date-range input{width:105px;height:34px;color:#5d7186;font-size:10px}.experience-review-date-range text{color:#9aa6b3;font-size:9px}.experience-review-clear,.experience-review-refresh{height:36px;margin:0;padding:0 13px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;font-size:10px;line-height:1;font-weight:800}.experience-review-clear{border:0;background:#f1f5f7;color:#718194}.experience-review-refresh{border:1px solid #d7e3e6;background:#fff;color:#5c6e82}.experience-review-search button::after,.experience-review-clear::after,.experience-review-refresh::after,.experience-review-open::after,.experience-review-pagination button::after,.experience-review-dialog button::after{border:0}.experience-review-table-wrap{min-height:0;flex:1;overflow-x:auto}.experience-review-table{min-width:1140px;min-height:100%}.experience-review-grid{display:grid;grid-template-columns:2.2fr 1.15fr 1fr .72fr .9fr .64fr 60px;align-items:center;gap:13px;padding:0 17px}.experience-review-head{min-height:42px;color:#8796a4;background:#f7f9fa;font-size:10px;font-weight:800}.experience-review-row{min-height:78px;border-top:1px solid #edf1f3;cursor:pointer;font-size:11px}.experience-review-row:hover{background:#fbfefd}.experience-review-post,.experience-review-tags{min-width:0}.experience-review-post strong,.experience-review-post text,.experience-review-tags strong,.experience-review-tags text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-post strong{color:#3a5066;font-size:11px}.experience-review-post text{margin-top:5px;color:#8795a4;font-size:9px}.experience-review-author{min-width:0;display:flex;align-items:center;gap:9px}.experience-review-author>view{width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex:0 0 34px;border-radius:50%;background:#e9f6f2;color:#248c77;font-size:12px;font-weight:900}.experience-review-author>text{min-width:0}.experience-review-author strong,.experience-review-author small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-author strong{color:#40566c;font-size:10px}.experience-review-author small{margin-top:4px;color:#9aa6b2;font-size:8px}.experience-review-tags strong{color:#465e75;font-size:10px}.experience-review-tags text{margin-top:4px;color:#8796a5;font-size:9px}.experience-review-status{display:inline-flex;padding:5px 8px;border-radius:99px;background:#fff4df;color:#a77423;font-size:9px;font-weight:850}.experience-review-status.approved{background:#e8f7f2;color:#238b75}.experience-review-status.rejected{background:#fff0ed;color:#bd5f55}.experience-review-time,.experience-review-version{color:#77889a;font-size:10px}.experience-review-open{height:30px;margin:0;padding:0 11px;border:0;border-radius:6px;background:#eaf7f4;color:#278b78;font-size:10px;font-weight:850}.experience-review-state{padding:58px 20px;color:#91a0ae;text-align:center;font-size:12px}.experience-review-state.error{color:#ba6962}.experience-review-state text{display:block}.experience-review-state button{min-width:88px;height:34px;margin:13px auto 0;border:0;border-radius:7px;background:#eef7f5;color:#278b78;font-size:10px}.experience-review-pagination{min-height:58px;padding:0 17px;border-top:1px solid #eaf0f2;display:flex;align-items:center;justify-content:space-between;gap:14px;color:#90a0af;background:#fff;font-size:10px}.experience-review-pagination>view{display:flex;align-items:center;gap:8px}.experience-review-pagination button,.experience-review-pagination strong{width:34px;height:34px;margin:0;padding:0;border:1px solid #dfe8eb;border-radius:7px;background:#fff;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;color:#718295;font-size:16px}.experience-review-pagination strong{border-color:#d6eee8;color:#268b78;background:#eaf8f4;font-size:11px}.experience-review-pagination button:disabled{color:#c4cdd5;background:#f8fafb}.experience-review-backdrop{position:fixed;z-index:6500;inset:0;padding:24px;display:flex;align-items:center;justify-content:center;background:rgba(24,39,55,.4);backdrop-filter:blur(4px)}.experience-review-dialog{width:min(900px,calc(100vw - 48px));height:min(820px,calc(100vh - 48px));overflow:hidden;border:1px solid #dfe8eb;border-radius:10px;background:#fff;box-shadow:0 30px 90px rgba(26,42,58,.24);display:flex;flex-direction:column}.experience-review-dialog-header{padding:17px 21px;border-bottom:1px solid #e9eef1;display:flex;align-items:center;justify-content:space-between;gap:18px}.experience-review-dialog-header>view{min-width:0}.experience-review-dialog-header text,.experience-review-dialog-header strong{display:block}.experience-review-dialog-header text{color:#2b967f;font-size:9px;font-weight:850;letter-spacing:.12em}.experience-review-dialog-header strong{margin-top:5px;overflow:hidden;color:#30465d;font-size:17px;text-overflow:ellipsis;white-space:nowrap}.experience-review-dialog-header button{width:34px;height:34px;margin:0;padding:0;border:0;border-radius:50%;background:#f2f5f7;display:flex;align-items:center;justify-content:center;flex:0 0 34px}.experience-review-dialog-header :deep(.close-icon-image){width:16px;height:16px}.experience-review-dialog-scroll{min-height:0;flex:1}.experience-review-dialog-content{padding:21px}.experience-review-detail-state{padding:80px 24px;color:#91a0ae;text-align:center;font-size:12px}.experience-review-detail-state.error{color:#ba6962}.experience-review-detail-state text{display:block}.experience-review-detail-state button{height:34px;margin:14px auto 0;border:0;border-radius:7px;background:#eef7f5;color:#278b78;font-size:10px}.experience-review-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden;border:1px solid #e3eaed;border-radius:8px}.experience-review-meta>view{min-width:0;min-height:76px;padding:13px 14px;display:flex;flex-direction:column;justify-content:center}.experience-review-meta>view+view{border-left:1px solid #e7edf0}.experience-review-meta text,.experience-review-meta small{color:#98a7b6;font-size:9px}.experience-review-meta strong{margin-top:5px;overflow:hidden;color:#40566c;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.experience-review-meta small{margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-meta .status-pending{color:#a77423}.experience-review-meta .status-approved{color:#238b75}.experience-review-meta .status-rejected{color:#bd5f55}.experience-review-heading{margin:20px 0 9px;color:#40566c;font-size:12px;font-weight:850}.experience-review-content-block{padding:15px;border:1px solid #e3ebee;border-radius:8px;background:#fbfcfd}.experience-review-content-block strong,.experience-review-content-block text{display:block}.experience-review-content-block strong{color:#344a60;font-size:13px}.experience-review-content-block text{margin-top:9px;color:#52677b;font-size:12px;line-height:1.75;white-space:pre-wrap}.experience-review-media{margin-top:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.experience-review-media image{width:100%;aspect-ratio:1;border-radius:7px;background:#edf2f4;cursor:pointer}.experience-review-history-empty{padding:24px;border-radius:7px;background:#f7f9fa;color:#98a6b3;font-size:10px;text-align:center}.experience-review-history-item{position:relative;padding:0 0 18px 27px}.experience-review-history-item:not(:last-child)::before{width:1px;content:'';position:absolute;top:11px;bottom:-2px;left:7px;background:#dce6e9}.experience-review-history-dot{width:12px;height:12px;position:absolute;top:4px;left:1px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #d7e3e7;background:#55bda6}.experience-review-history-dot.submitted{background:#d7a94f}.experience-review-history-dot.rejected{background:#dc766a}.experience-review-history-item>view>view{display:flex;align-items:center;justify-content:space-between;gap:12px}.experience-review-history-item strong{color:#40566c;font-size:11px}.experience-review-history-item>view>view text{color:#93a1ae;font-size:9px}.experience-review-history-item small{display:block;margin-top:4px;color:#9aa6b2;font-size:9px}.experience-review-history-note{display:block;margin-top:6px;color:#65778a;font-size:10px;line-height:1.55}.experience-review-decision{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.experience-review-decision button{height:38px;margin:0;border:1px solid #dbe6e8;border-radius:7px;background:#fff;color:#65778b;font-size:11px;font-weight:800}.experience-review-decision button.active{border-color:#75cfba;background:#eaf8f4;color:#248b76}.experience-review-decision button.reject.active{border-color:#e6a099;background:#fff1ee;color:#bb5e54}.experience-review-form-field{margin-top:15px}.experience-review-form-field>text{display:block;color:#7f8f9f;font-size:10px;font-weight:750}.experience-review-reason-select{width:100%;margin-top:8px}.experience-review-form-field textarea{width:100%;min-height:92px;margin-top:8px;padding:11px 12px;box-sizing:border-box;border:1px dashed #a8bad3;border-radius:7px;color:#40566d;background:#fbfcff;font-size:11px;line-height:1.55}.experience-review-previous-result{margin-top:18px;padding:13px 14px;border:1px solid #e4eaed;border-radius:8px;background:#fbfcfd}.experience-review-previous-result text,.experience-review-previous-result strong{display:block}.experience-review-previous-result text{color:#8b9aa8;font-size:9px}.experience-review-previous-result strong{margin-top:6px;color:#53687b;font-size:11px;line-height:1.55}.experience-review-dialog-actions{padding:14px 21px;border-top:1px solid #e9eef1;background:#fff;display:flex;justify-content:flex-end;gap:10px}.experience-review-dialog-actions button{min-width:112px;height:36px;margin:0;border:0;border-radius:7px;background:#2da58b;color:#fff;font-size:10px;font-weight:850}.experience-review-dialog-actions button.reject{background:#d96c60}.experience-review-dialog-actions button.cancel{border:1px solid #dfe7ea;background:#fff;color:#718194}@media(max-width:1180px){.experience-review-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-search{width:100%;flex-basis:100%}}@media(max-width:820px){.experience-review-page{min-height:auto}.experience-review-dialog{width:100%;height:calc(100vh - 28px)}.experience-review-backdrop{padding:14px}.experience-review-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-meta>view:nth-child(3){border-left:0;border-top:1px solid #e7edf0}.experience-review-meta>view:nth-child(4){border-top:1px solid #e7edf0}.experience-review-media{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-dialog-actions{padding-bottom:calc(env(safe-area-inset-bottom) + 14px)}}
+.experience-review-page{min-height:calc(100vh - 158px);display:flex;flex-direction:column;color:#31465d}.experience-review-summary{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:14px}.experience-summary-card{min-height:104px;padding:17px 19px;border:1px solid #e0e8ec;border-top:3px solid #8c9ba9;border-radius:8px;background:#fff;box-shadow:0 8px 24px rgba(39,62,79,.04)}.experience-summary-card text,.experience-summary-card strong,.experience-summary-card small{display:block}.experience-summary-card text{color:#7d8d9e;font-size:11px;font-weight:750}.experience-summary-card strong{margin-top:9px;color:#314a65;font-size:27px}.experience-summary-card small{margin-top:6px;color:#9aa7b4;font-size:10px}.experience-summary-card.pending{border-top-color:#d9aa4c}.experience-summary-card.approved{border-top-color:#4fc4aa}.experience-summary-card.rejected{border-top-color:#dd786d}.experience-review-workspace{min-height:0;flex:1;margin-top:18px;overflow:hidden;border:1px solid #e0e8ec;border-radius:8px;background:#fff;box-shadow:0 10px 30px rgba(38,59,77,.04);display:flex;flex-direction:column}.experience-review-toolbar{padding:13px 16px;display:flex;align-items:center;gap:9px;flex-wrap:wrap;border-bottom:1px solid #edf1f3;background:#fbfcfd}.experience-review-search{width:min(310px,34vw);height:38px;padding:0 10px;display:flex;align-items:center;gap:8px;flex:1 1 280px;border:1px solid #dae4e8;border-radius:7px;background:#fff;box-sizing:border-box}.experience-review-search image{width:15px;height:15px;flex:0 0 15px}.experience-review-search input{min-width:0;height:36px;flex:1;font-size:11px}.experience-review-search button{width:24px;height:24px;margin:0;padding:0;border:0;background:transparent;color:#91a0af;font-size:15px}.experience-review-select{width:142px;flex:0 0 142px}.experience-review-select.compact{width:112px;flex-basis:112px}.experience-review-select.sort{width:156px;flex-basis:156px}.experience-review-date-range{height:38px;padding:0 8px;display:flex;align-items:center;gap:6px;border:1px solid #dae4e8;border-radius:7px;background:#fff;box-sizing:border-box}.experience-review-date-range input{width:105px;height:34px;color:#5d7186;font-size:10px}.experience-review-date-range text{color:#9aa6b3;font-size:9px}.experience-review-clear,.experience-review-refresh{height:36px;margin:0;padding:0 13px;border-radius:7px;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;font-size:10px;line-height:1;font-weight:800}.experience-review-clear{border:0;background:#f1f5f7;color:#718194}.experience-review-refresh{border:1px solid #d7e3e6;background:#fff;color:#5c6e82}.experience-review-search button::after,.experience-review-clear::after,.experience-review-refresh::after,.experience-review-open::after,.experience-review-pagination button::after,.experience-review-dialog button::after{border:0}.experience-review-table-wrap{min-height:0;flex:1;overflow-x:auto}.experience-review-table{min-width:1140px;min-height:100%}.experience-review-grid{display:grid;grid-template-columns:2.2fr 1.15fr 1fr .72fr .9fr .64fr 60px;align-items:center;gap:13px;padding:0 17px}.experience-review-grid>view{min-width:0}.experience-review-head{min-height:42px;color:#8796a4;background:#f7f9fa;font-size:10px;font-weight:800}.experience-review-row{height:82px;min-height:82px;overflow:hidden;box-sizing:border-box;border-top:1px solid #edf1f3;cursor:pointer;font-size:11px}.experience-review-row:hover{background:#fbfefd}.experience-review-post,.experience-review-tags{min-width:0;overflow:hidden}.experience-review-post strong,.experience-review-tags strong,.experience-review-tags text{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-post strong{color:#3a5066;font-size:11px}.experience-review-excerpt{display:-webkit-box;max-height:29px;margin-top:5px;overflow:hidden;color:#8795a4;font-size:9px;line-height:14px;overflow-wrap:anywhere;word-break:break-word;white-space:normal;-webkit-box-orient:vertical;-webkit-line-clamp:2}.experience-review-author{min-width:0;display:flex;align-items:center;gap:9px}.experience-review-author>view{width:34px;height:34px;display:flex;align-items:center;justify-content:center;flex:0 0 34px;border-radius:50%;background:#e9f6f2;color:#248c77;font-size:12px;font-weight:900}.experience-review-author>text{min-width:0}.experience-review-author strong,.experience-review-author small{display:block;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-author strong{color:#40566c;font-size:10px}.experience-review-author small{margin-top:4px;color:#9aa6b2;font-size:8px}.experience-review-tags strong{color:#465e75;font-size:10px}.experience-review-tags text{margin-top:4px;color:#8796a5;font-size:9px}.experience-review-status{display:inline-flex;padding:5px 8px;border-radius:99px;background:#fff4df;color:#a77423;font-size:9px;font-weight:850}.experience-review-status.approved{background:#e8f7f2;color:#238b75}.experience-review-status.rejected{background:#fff0ed;color:#bd5f55}.experience-review-time,.experience-review-version{color:#77889a;font-size:10px}.experience-review-open{height:30px;margin:0;padding:0 11px;border:0;border-radius:6px;background:#eaf7f4;color:#278b78;font-size:10px;font-weight:850}.experience-review-state{padding:58px 20px;color:#91a0ae;text-align:center;font-size:12px}.experience-review-state.error{color:#ba6962}.experience-review-state text{display:block}.experience-review-state button{min-width:88px;height:34px;margin:13px auto 0;border:0;border-radius:7px;background:#eef7f5;color:#278b78;font-size:10px}.experience-review-pagination{min-height:58px;padding:0 17px;border-top:1px solid #eaf0f2;display:flex;align-items:center;justify-content:space-between;gap:14px;color:#90a0af;background:#fff;font-size:10px}.experience-review-pagination>view{display:flex;align-items:center;gap:8px}.experience-review-pagination button,.experience-review-pagination strong{width:34px;height:34px;margin:0;padding:0;border:1px solid #dfe8eb;border-radius:7px;background:#fff;display:inline-flex;align-items:center;justify-content:center;box-sizing:border-box;color:#718295;font-size:16px}.experience-review-pagination strong{border-color:#d6eee8;color:#268b78;background:#eaf8f4;font-size:11px}.experience-review-pagination button:disabled{color:#c4cdd5;background:#f8fafb}.experience-review-backdrop{position:fixed;z-index:6500;inset:0;padding:24px;display:flex;align-items:center;justify-content:center;background:rgba(24,39,55,.4);backdrop-filter:blur(4px)}.experience-review-dialog{width:min(900px,calc(100vw - 48px));height:min(820px,calc(100vh - 48px));overflow:hidden;border:1px solid #dfe8eb;border-radius:10px;background:#fff;box-shadow:0 30px 90px rgba(26,42,58,.24);display:flex;flex-direction:column}.experience-review-dialog-header{padding:17px 21px;border-bottom:1px solid #e9eef1;display:flex;align-items:center;justify-content:space-between;gap:18px}.experience-review-dialog-header>view{min-width:0}.experience-review-dialog-header text,.experience-review-dialog-header strong{display:block}.experience-review-dialog-header text{color:#2b967f;font-size:9px;font-weight:850;letter-spacing:.12em}.experience-review-dialog-header strong{margin-top:5px;overflow:hidden;color:#30465d;font-size:17px;text-overflow:ellipsis;white-space:nowrap}.experience-review-dialog-header button{width:34px;height:34px;margin:0;padding:0;border:0;border-radius:50%;background:#f2f5f7;display:flex;align-items:center;justify-content:center;flex:0 0 34px}.experience-review-dialog-header :deep(.close-icon-image){width:16px;height:16px}.experience-review-dialog-scroll{min-height:0;flex:1}.experience-review-dialog-content{padding:21px}.experience-review-detail-state{padding:80px 24px;color:#91a0ae;text-align:center;font-size:12px}.experience-review-detail-state.error{color:#ba6962}.experience-review-detail-state text{display:block}.experience-review-detail-state button{height:34px;margin:14px auto 0;border:0;border-radius:7px;background:#eef7f5;color:#278b78;font-size:10px}.experience-review-meta{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));overflow:hidden;border:1px solid #e3eaed;border-radius:8px}.experience-review-meta>view{min-width:0;min-height:76px;padding:13px 14px;display:flex;flex-direction:column;justify-content:center}.experience-review-meta>view+view{border-left:1px solid #e7edf0}.experience-review-meta text,.experience-review-meta small{color:#98a7b6;font-size:9px}.experience-review-meta strong{margin-top:5px;overflow:hidden;color:#40566c;font-size:11px;text-overflow:ellipsis;white-space:nowrap}.experience-review-meta small{margin-top:4px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.experience-review-meta .status-pending{color:#a77423}.experience-review-meta .status-approved{color:#238b75}.experience-review-meta .status-rejected{color:#bd5f55}.experience-review-heading{margin:20px 0 9px;color:#40566c;font-size:12px;font-weight:850}.experience-review-content-block{padding:15px;border:1px solid #e3ebee;border-radius:8px;background:#fbfcfd}.experience-review-content-block strong,.experience-review-content-block text{display:block}.experience-review-content-block strong{color:#344a60;font-size:13px}.experience-review-content-block text{margin-top:9px;color:#52677b;font-size:12px;line-height:1.75;white-space:pre-wrap}.experience-review-media{margin-top:12px;display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:9px}.experience-review-media image{width:100%;aspect-ratio:1;border-radius:7px;background:#edf2f4;cursor:pointer}.experience-review-history-empty{padding:24px;border-radius:7px;background:#f7f9fa;color:#98a6b3;font-size:10px;text-align:center}.experience-review-history-item{position:relative;padding:0 0 18px 27px}.experience-review-history-item:not(:last-child)::before{width:1px;content:'';position:absolute;top:11px;bottom:-2px;left:7px;background:#dce6e9}.experience-review-history-dot{width:12px;height:12px;position:absolute;top:4px;left:1px;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 1px #d7e3e7;background:#55bda6}.experience-review-history-dot.submitted{background:#d7a94f}.experience-review-history-dot.rejected{background:#dc766a}.experience-review-history-item>view>view{display:flex;align-items:center;justify-content:space-between;gap:12px}.experience-review-history-item strong{color:#40566c;font-size:11px}.experience-review-history-item>view>view text{color:#93a1ae;font-size:9px}.experience-review-history-item small{display:block;margin-top:4px;color:#9aa6b2;font-size:9px}.experience-review-history-note{display:block;margin-top:6px;color:#65778a;font-size:10px;line-height:1.55}.experience-review-decision{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.experience-review-decision button{height:38px;margin:0;border:1px solid #dbe6e8;border-radius:7px;background:#fff;color:#65778b;font-size:11px;font-weight:800}.experience-review-decision button.active{border-color:#75cfba;background:#eaf8f4;color:#248b76}.experience-review-decision button.reject.active{border-color:#e6a099;background:#fff1ee;color:#bb5e54}.experience-review-form-field{margin-top:15px}.experience-review-form-field>text{display:block;color:#7f8f9f;font-size:10px;font-weight:750}.experience-review-reason-select{width:100%;margin-top:8px}.experience-review-form-field textarea{width:100%;min-height:92px;margin-top:8px;padding:11px 12px;box-sizing:border-box;border:1px dashed #a8bad3;border-radius:7px;color:#40566d;background:#fbfcff;font-size:11px;line-height:1.55}.experience-review-previous-result{margin-top:18px;padding:13px 14px;border:1px solid #e4eaed;border-radius:8px;background:#fbfcfd}.experience-review-previous-result text,.experience-review-previous-result strong{display:block}.experience-review-previous-result text{color:#8b9aa8;font-size:9px}.experience-review-previous-result strong{margin-top:6px;color:#53687b;font-size:11px;line-height:1.55}.experience-review-dialog-actions{padding:14px 21px;border-top:1px solid #e9eef1;background:#fff;display:flex;justify-content:flex-end;gap:10px}.experience-review-dialog-actions button{min-width:112px;height:36px;margin:0;border:0;border-radius:7px;background:#2da58b;color:#fff;font-size:10px;font-weight:850}.experience-review-dialog-actions button.reject{background:#d96c60}.experience-review-dialog-actions button.cancel{border:1px solid #dfe7ea;background:#fff;color:#718194}@media(max-width:1180px){.experience-review-summary{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-search{width:100%;flex-basis:100%}}@media(max-width:820px){.experience-review-page{min-height:auto}.experience-review-dialog{width:100%;height:calc(100vh - 28px)}.experience-review-backdrop{padding:14px}.experience-review-meta{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-meta>view:nth-child(3){border-left:0;border-top:1px solid #e7edf0}.experience-review-meta>view:nth-child(4){border-top:1px solid #e7edf0}.experience-review-media{grid-template-columns:repeat(2,minmax(0,1fr))}.experience-review-dialog-actions{padding-bottom:calc(env(safe-area-inset-bottom) + 14px)}}
+.experience-review-dialog-actions button {
+  box-sizing: border-box;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 36px;
+  padding: 0 18px;
+  line-height: 1;
+  text-align: center;
+}
+
+.experience-review-confirm-backdrop {
+  position: fixed;
+  z-index: 7200;
+  inset: 0;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: rgba(24, 39, 55, 0.48);
+  backdrop-filter: blur(4px);
+}
+
+.experience-review-confirm-dialog {
+  width: min(420px, calc(100vw - 48px));
+  padding: 24px;
+  box-sizing: border-box;
+  border: 1px solid #dfe8eb;
+  border-radius: 8px;
+  background: #fff;
+  box-shadow: 0 28px 80px rgba(26, 42, 58, 0.28);
+  text-align: center;
+}
+
+.experience-review-confirm-dialog > strong,
+.experience-review-confirm-dialog > text {
+  display: block;
+}
+
+.experience-review-confirm-dialog > strong {
+  color: #30465d;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.experience-review-confirm-dialog > text {
+  margin-top: 12px;
+  color: #7d8d9e;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.experience-review-confirm-actions {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.experience-review-confirm-actions button {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 7px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: #2da58b;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+}
+
+.experience-review-confirm-actions button.cancel {
+  border: 1px solid #dfe7ea;
+  background: #fff;
+  color: #718194;
+}
+
+.experience-review-confirm-actions button.reject {
+  background: #d96c60;
+}
+
+.experience-review-confirm-actions button:disabled {
+  opacity: 0.6;
+}
+
+.experience-review-confirm-actions button::after {
+  border: 0;
+}
+
+@media (max-width: 820px) {
+  .experience-review-confirm-backdrop {
+    padding: 16px;
+  }
+
+  .experience-review-confirm-dialog {
+    width: min(420px, calc(100vw - 32px));
+    padding: 21px 18px 18px;
+  }
+}
 </style>
