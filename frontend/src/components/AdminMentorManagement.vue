@@ -50,7 +50,7 @@
       <view v-if="detailLoading" class="table-state">正在读取申请详情…</view>
       <scroll-view v-else-if="detail?.application" scroll-y class="detail-scroll"><view class="detail-content">
         <view class="applicant-card"><view class="avatar large">{{ detail.application.legal_name?.slice(0, 1) || '前' }}</view><view><strong>{{ detail.applicant?.nickname || detail.application.legal_name }}</strong><text>{{ detail.applicant?.email || detail.applicant?.phone || shortId(detail.application.applicant_user_id) }}</text></view><text class="status" :class="detail.application.application_status">{{ statusText(detail.application.application_status) }}</text></view>
-        <view class="application-fields"><view><text>真实姓名</text><strong>{{ detail.application.legal_name }}</strong></view><view><text>录取院校</text><strong>{{ detail.application.school }}</strong></view><view><text>录取专业</text><strong>{{ detail.application.major }}</strong></view><view><text>入学年份</text><strong>{{ detail.application.admission_year }} 年</strong></view><view><text>毕业年份</text><strong>{{ detail.application.graduation_year ? `${detail.application.graduation_year} 年` : '未填写' }}</strong></view><view><text>考试类别</text><strong>{{ examTypeText(detail.application.exam_type) }}</strong></view><view><text>初试成绩</text><strong>{{ applicationScoreText(detail.application) }}</strong></view><view><text>咨询服务</text><strong>{{ consultationServiceText(detail.application) }}</strong></view><view><text>咨询价格</text><strong>{{ isConsultationEnabled(detail.application) ? `¥${formatPrice(detail.application.price)} / 次` : '未申请开通' }}</strong></view></view>
+        <view class="application-fields"><view><text>真实姓名</text><strong>{{ detail.application.legal_name }}</strong></view><view><text>录取院校</text><strong>{{ detail.application.school }}</strong></view><view><text>录取专业</text><strong>{{ detail.application.major }}</strong></view><view><text>电话号码</text><strong>{{ detail.application.phone || '历史申请未填写' }}</strong></view><view><text>入学年份</text><strong>{{ detail.application.admission_year }} 年</strong></view><view><text>毕业年份</text><strong>{{ detail.application.graduation_year ? `${detail.application.graduation_year} 年` : '未填写' }}</strong></view><view><text>考试类别</text><strong>{{ examTypeText(detail.application.exam_type) }}</strong></view><view><text>初试成绩</text><strong>{{ applicationScoreText(detail.application) }}</strong></view><view><text>咨询服务</text><strong>{{ consultationServiceText(detail.application) }}</strong></view><view><text>咨询价格</text><strong>{{ isConsultationEnabled(detail.application) ? `¥${formatPrice(detail.application.price)} / 次` : '未申请开通' }}</strong></view></view>
         <view class="detail-heading">擅长领域</view><view v-if="detail.application.skills?.length" class="skill-list"><text v-for="skill in detail.application.skills" :key="skill">{{ skill }}</text></view><view v-else class="empty">{{ isConsultationEnabled(detail.application) ? '申请人未填写咨询擅长领域' : '本次仅申请前辈认证，未申请开通咨询服务' }}</view>
         <view class="detail-heading">申请留言</view><view class="bio">{{ detail.application.bio || (isConsultationEnabled(detail.application) ? '申请人未填写申请留言。' : '本次仅申请前辈认证，未填写咨询服务说明。') }}</view>
         <view class="detail-heading">证明材料</view><view v-if="detail.documents?.length" class="documents"><view v-for="document in detail.documents" :key="document.id" class="document"><view class="document-preview" role="button" tabindex="0" :aria-label="`查看大图：${document.file_name || '证明材料'}`" @tap.stop="previewDocuments(document, detail.documents)" @keyup.enter.stop="previewDocuments(document, detail.documents)"><image :src="document.file_url" mode="aspectFill" /><view class="document-preview-cue" aria-hidden="true"><image src="/static/admin-icons/admin-search.svg" mode="aspectFit" /></view></view><view><strong>{{ document.file_name }}</strong><text>{{ documentTypeText(document.document_type) }} · {{ formatDateTime(document.created_at) }}</text></view></view></view><view v-else class="empty">该申请暂未上传证明材料</view>
@@ -58,6 +58,18 @@
         <view v-else-if="detail.application.admin_note" class="admin-note"><text>审核备注</text><strong>{{ detail.application.admin_note }}</strong></view>
       </view></scroll-view>
     </view></view>
+
+    <view v-if="approvalDialogVisible" class="approval-dialog-backdrop" @tap="closeApprovalDialog">
+      <view class="approval-dialog" role="dialog" aria-modal="true" aria-label="确认通过前辈申请" @tap.stop>
+        <strong>通过这份前辈申请？</strong>
+        <text>通过后将建立前辈档案，并按申请内容开放对应的用户端能力。</text>
+        <view v-if="approvalDecisionError" class="approval-dialog-error" role="alert">{{ approvalDecisionError }}</view>
+        <view class="approval-dialog-actions">
+          <button class="approval-dialog-cancel" :disabled="saving" @tap="closeApprovalDialog">取消</button>
+          <button class="approval-dialog-confirm" :disabled="saving" @tap="submitApprovalDecision">{{ saving && pendingDecision === 'approve' ? '处理中…' : '确认通过' }}</button>
+        </view>
+      </view>
+    </view>
 
     <view v-if="rejectDialogVisible" class="reject-dialog-backdrop" @tap="closeRejectDialog">
       <view class="reject-dialog" role="dialog" aria-modal="true" aria-label="填写驳回理由" @tap.stop>
@@ -202,6 +214,8 @@ const detail = ref(null)
 const saving = ref(false)
 const pendingDecision = ref('')
 const reviewNote = ref('')
+const approvalDialogVisible = ref(false)
+const approvalDecisionError = ref('')
 const rejectDialogVisible = ref(false)
 const rejectReason = ref('')
 const rejectReasonError = ref('')
@@ -349,7 +363,7 @@ function normalizeMailbox(value) {
 
 async function openApplication(item) {
   if (!item?.id || detailLoading.value) return
-  detailVisible.value = true; detailLoading.value = true; detail.value = null; reviewNote.value = ''; resetRejectDialog()
+  detailVisible.value = true; detailLoading.value = true; detail.value = null; reviewNote.value = ''; resetApprovalDialog(); resetRejectDialog()
   try {
     detail.value = props.preview ? previewApplicationDetail(item) : await fetchAdminMentorVerificationApplication(item.id)
     reviewNote.value = detail.value?.application?.admin_note || ''
@@ -364,20 +378,43 @@ function closeApplication() {
   detailVisible.value = false
   detail.value = null
   reviewNote.value = ''
+  resetApprovalDialog()
   resetRejectDialog()
 }
 
-async function decideApplication(decision) {
+function decideApplication(decision) {
   const application = detail.value?.application
   if (!application?.id || saving.value) return
-  const approving = decision === 'approve'
-  if (!approving) {
+  if (decision !== 'approve') {
     openRejectDialog()
     return
   }
-  const confirmed = await confirmDecision('通过这份前辈申请？', '通过后将建立前辈档案并向用户端公开。', '确认通过')
-  if (!confirmed) return
-  await persistApplicationDecision(decision, reviewNote.value)
+  openApprovalDialog()
+}
+
+function openApprovalDialog() {
+  const application = detail.value?.application
+  if (!application?.id || application.application_status !== 'pending' || saving.value) return
+  approvalDecisionError.value = ''
+  approvalDialogVisible.value = true
+}
+
+function closeApprovalDialog() {
+  if (saving.value) return
+  resetApprovalDialog()
+}
+
+function resetApprovalDialog() {
+  approvalDialogVisible.value = false
+  approvalDecisionError.value = ''
+}
+
+async function submitApprovalDecision() {
+  const application = detail.value?.application
+  if (!application?.id || application.application_status !== 'pending' || saving.value) return
+  approvalDecisionError.value = ''
+  const saved = await persistApplicationDecision('approve', reviewNote.value)
+  if (saved) resetApprovalDialog()
 }
 
 function openRejectDialog() {
@@ -431,7 +468,9 @@ async function persistApplicationDecision(decision, adminNote) {
     uni.showToast({ title: approving ? '申请已通过' : '申请已驳回', icon: 'success' })
     return true
   } catch (error) {
-    uni.showToast({ title: error?.detail || '审核处理失败', icon: 'none' })
+    const errorMessage = String(error?.detail || error?.message || '审核处理失败')
+    if (approving && approvalDialogVisible.value) approvalDecisionError.value = errorMessage
+    else uni.showToast({ title: errorMessage, icon: 'none' })
     return false
   } finally {
     saving.value = false
@@ -791,6 +830,104 @@ function formatDateTime(value) { const date = new Date(value); return Number.isN
 
 :global(#u-a-p > div) {
   z-index: 7000 !important;
+}
+
+.approval-dialog-backdrop {
+  position: fixed;
+  z-index: 7200;
+  inset: 0;
+  padding: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  background: rgba(24, 39, 55, .48);
+  backdrop-filter: blur(4px);
+}
+
+.approval-dialog {
+  width: min(420px, calc(100vw - 48px));
+  padding: 24px;
+  box-sizing: border-box;
+  border: 1px solid #dfe8eb;
+  border-radius: 8px;
+  background: #ffffff;
+  box-shadow: 0 28px 80px rgba(26, 42, 58, .28);
+  text-align: center;
+}
+
+.approval-dialog > strong,
+.approval-dialog > text {
+  display: block;
+}
+
+.approval-dialog > strong {
+  color: #30465d;
+  font-size: 17px;
+  line-height: 1.45;
+}
+
+.approval-dialog > text {
+  margin-top: 12px;
+  color: #7d8d9e;
+  font-size: 12px;
+  line-height: 1.65;
+}
+
+.approval-dialog-error {
+  margin-top: 14px;
+  padding: 9px 11px;
+  border: 1px solid #efd4d0;
+  border-radius: 7px;
+  color: #b45f59;
+  background: #fff8f7;
+  font-size: 11px;
+  line-height: 1.55;
+  overflow-wrap: anywhere;
+}
+
+.approval-dialog-actions {
+  margin-top: 22px;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+}
+
+.approval-dialog-actions button {
+  width: 100%;
+  height: 38px;
+  min-height: 38px;
+  margin: 0;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  box-sizing: border-box;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1;
+  text-align: center;
+}
+
+.approval-dialog-cancel {
+  border: 1px solid #dfe7ea;
+  color: #718194;
+  background: #ffffff;
+}
+
+.approval-dialog-confirm {
+  border: 1px solid #2da58b;
+  color: #ffffff;
+  background: #2da58b;
+}
+
+.approval-dialog-actions button:disabled {
+  opacity: .6;
+}
+
+.approval-dialog-actions button::after {
+  border: 0;
 }
 
 .reject-dialog-backdrop {

@@ -164,7 +164,7 @@ MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS = (
     "first_response_due_at,first_response_at,priority,escalation_level,escalated_at,created_at,updated_at"
 )
 MENTOR_VERIFICATION_APPLICATION_FIELDS = (
-    "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
+    "id,applicant_user_id,legal_name,school,major,phone,admission_year,graduation_year,"
     "exam_type,score,skills,bio,price_cents,consultation_enabled,application_status,admin_note,reviewed_at,"
     "revocation_reason,revoked_at,created_at,updated_at"
 )
@@ -334,6 +334,7 @@ def _serialize_mentor_verification_application(row: dict, *, document_count: int
         "legal_name": str(row.get("legal_name") or ""),
         "school": str(row.get("school") or ""),
         "major": str(row.get("major") or ""),
+        "phone": str(row.get("phone") or "").strip() or None,
         "admission_year": int(row.get("admission_year") or 0),
         "graduation_year": int(row["graduation_year"]) if row.get("graduation_year") is not None else None,
         "exam_type": str(row.get("exam_type") or "Z001"),
@@ -1461,14 +1462,19 @@ def create_mentor_verification_application(
         profile_response = call_supabase(
             lambda: (
                 supabase.table("mentor_profiles")
-                .select("id")
+                .select("id,verification_status")
                 .eq("owner_user_id", user_id)
                 .limit(1)
                 .execute()
             ),
             operation_name="mentor verification profile lookup",
         )
-        if profile_response.data:
+        existing_profile_status = (
+            str(profile_response.data[0].get("verification_status") or "").strip().lower()
+            if profile_response.data
+            else ""
+        )
+        if profile_response.data and existing_profile_status != "revoked":
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="你已拥有前辈档案，无需重复申请")
 
         pending_response = call_supabase(
@@ -1492,15 +1498,25 @@ def create_mentor_verification_application(
                 "legal_name": payload.legal_name.strip(),
                 "school": payload.school.strip(),
                 "major": payload.major.strip(),
+                "phone": payload.phone,
                 "bio": payload.bio.strip(),
                 "skills": normalize_skills(payload.skills),
                 "application_status": "pending",
             }
         )
-        response = call_supabase(
-            lambda: supabase.table("mentor_verification_applications").insert(data).execute(),
-            operation_name="mentor verification application create",
-        )
+        try:
+            response = call_supabase(
+                lambda: supabase.table("mentor_verification_applications").insert(data).execute(),
+                operation_name="mentor verification application create",
+            )
+        except Exception as exc:
+            duplicate_message = str(exc).lower()
+            if "23505" in duplicate_message or "duplicate key" in duplicate_message or "unique constraint" in duplicate_message:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="你已有正在审核的前辈申请",
+                ) from exc
+            raise
         if not response.data:
             raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请提交失败")
         return MentorVerificationApplicationItem(**_serialize_mentor_verification_application(response.data[0]))

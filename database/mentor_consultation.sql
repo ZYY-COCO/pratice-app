@@ -31,7 +31,7 @@ create table if not exists public.mentor_profiles (
     check (online_status in ('online', 'offline', 'busy')),
   accepts_booking boolean not null default true,
   verification_status text not null default 'pending'
-    check (verification_status in ('unverified', 'pending', 'verified', 'rejected')),
+    check (verification_status in ('unverified', 'pending', 'verified', 'rejected', 'revoked')),
   is_published boolean not null default false,
   is_featured boolean not null default false,
   recommend_score integer not null default 0 check (recommend_score between 0 and 100),
@@ -132,6 +132,7 @@ create table if not exists public.mentor_verification_applications (
   legal_name text not null check (char_length(btrim(legal_name)) between 2 and 40),
   school text not null check (char_length(btrim(school)) between 1 and 120),
   major text not null check (char_length(btrim(major)) between 1 and 120),
+  phone text not null check (phone ~ '^[0-9]{11}$'),
   admission_year smallint not null check (admission_year between 2000 and 2100),
   graduation_year smallint check (graduation_year between 2000 and 2100),
   exam_type text not null check (exam_type in ('Z001', 'Z002', 'application')),
@@ -141,13 +142,23 @@ create table if not exists public.mentor_verification_applications (
   price_cents integer not null default 3900 check (price_cents between 0 and 100000),
   consultation_enabled boolean not null default true,
   application_status text not null default 'pending'
-    check (application_status in ('pending', 'approved', 'rejected')),
+    check (application_status in ('pending', 'approved', 'rejected', 'revoked')),
   admin_note text check (char_length(admin_note) <= 1000),
   reviewed_by uuid references public.users(id) on delete set null,
   reviewed_at timestamptz,
+  revocation_reason text,
+  revoked_by uuid references public.users(id) on delete set null,
+  revoked_at timestamptz,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   check (graduation_year is null or graduation_year >= admission_year),
+  constraint mentor_verification_applications_revocation_reason_check
+    check (revocation_reason is null or char_length(btrim(revocation_reason)) between 5 and 1000),
+  constraint mentor_verification_applications_revocation_state_check
+    check (
+      application_status <> 'revoked'
+      or (revoked_at is not null and char_length(btrim(coalesce(revocation_reason, ''))) >= 5)
+    ),
   constraint mentor_verification_applications_exam_score_check check (
     (exam_type = 'application' and score is null)
     or (exam_type in ('Z001', 'Z002') and score is not null and score between 0 and 150)
@@ -208,6 +219,10 @@ create index if not exists idx_mentor_reviews_mentor_created
 
 create index if not exists idx_mentor_applications_status_created
   on public.mentor_verification_applications (application_status, created_at desc);
+
+create unique index if not exists uq_mentor_applications_one_pending_per_user
+  on public.mentor_verification_applications (applicant_user_id)
+  where application_status = 'pending';
 
 drop trigger if exists set_mentor_profiles_updated_at on public.mentor_profiles;
 create trigger set_mentor_profiles_updated_at

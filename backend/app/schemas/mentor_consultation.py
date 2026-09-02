@@ -222,6 +222,7 @@ class MentorVerificationApplicationCreateRequest(BaseModel):
     legal_name: str = Field(min_length=2, max_length=40)
     school: str = Field(min_length=1, max_length=120)
     major: str = Field(min_length=1, max_length=120)
+    phone: str = Field(min_length=11, max_length=11, pattern=r"^[0-9]{11}$")
     admission_year: int = Field(ge=2000, le=2100)
     graduation_year: int | None = Field(default=None, ge=2000, le=2100)
     exam_type: MentorExamType
@@ -243,6 +244,7 @@ class MentorVerificationApplicationItem(BaseModel):
     legal_name: str
     school: str
     major: str
+    phone: str | None = Field(default=None, min_length=11, max_length=11, pattern=r"^[0-9]{11}$")
     admission_year: int
     graduation_year: int | None = None
     exam_type: MentorExamType

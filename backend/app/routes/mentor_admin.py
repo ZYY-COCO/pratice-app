@@ -75,7 +75,7 @@ MENTOR_VERIFICATION_DOCUMENT_BUCKET = "mentor-verification-documents"
 MENTOR_APPLICATION_MAX_LIMIT = 100
 MENTOR_PROFILE_CHANGE_REQUEST_MAX_LIMIT = 100
 MENTOR_APPLICATION_FIELDS = (
-    "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
+    "id,applicant_user_id,legal_name,school,major,phone,admission_year,graduation_year,"
     "exam_type,score,skills,bio,price_cents,consultation_enabled,application_status,admin_note,reviewed_by,"
     "reviewed_at,revocation_reason,revoked_by,revoked_at,created_at,updated_at"
 )
@@ -429,6 +429,7 @@ def _serialize_mentor_application(row: dict, *, document_count: int = 0) -> dict
         "legal_name": str(row.get("legal_name") or ""),
         "school": str(row.get("school") or ""),
         "major": str(row.get("major") or ""),
+        "phone": str(row.get("phone") or "").strip() or None,
         "admission_year": int(row.get("admission_year") or 0),
         "graduation_year": int(row["graduation_year"]) if row.get("graduation_year") is not None else None,
         "exam_type": str(row.get("exam_type") or "Z001"),
@@ -1634,6 +1635,7 @@ def list_admin_mentor_verification_applications(
                         row.get("legal_name"),
                         row.get("school"),
                         row.get("major"),
+                        row.get("phone"),
                         users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("nickname"),
                         users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("email"),
                         users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("phone"),
@@ -1721,12 +1723,13 @@ def decide_admin_mentor_verification_application(
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
         mentor_id = None
+        restored_existing_profile = False
         if decision == "approve":
             owner_user_id = str(application.get("applicant_user_id") or "")
             profile_response = call_supabase(
                 lambda: (
                     supabase.table("mentor_profiles")
-                    .select("id")
+                    .select("id,verification_status")
                     .eq("owner_user_id", owner_user_id)
                     .limit(1)
                     .execute()
@@ -1734,8 +1737,54 @@ def decide_admin_mentor_verification_application(
                 operation_name="approved mentor profile lookup",
             )
             if profile_response.data:
-                mentor_id = str(profile_response.data[0].get("id") or "")
+                existing_profile = profile_response.data[0]
+                mentor_id = str(existing_profile.get("id") or "")
+                existing_status = str(existing_profile.get("verification_status") or "").strip().lower()
+                if existing_status != "revoked":
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="该账号当前已有有效前辈档案，请刷新后重试",
+                    )
+
+                consultation_enabled = bool(application.get("consultation_enabled", True))
+                restored_profile_data = {
+                    "legal_name": str(application.get("legal_name") or "").strip(),
+                    "display_name": mask_mentor_name(application.get("legal_name")),
+                    "avatar_label": str(application.get("legal_name") or "前")[:1],
+                    "school": str(application.get("school") or "").strip(),
+                    "major": str(application.get("major") or "").strip(),
+                    "admission_year": int(application.get("admission_year") or 0),
+                    "graduation_year": application.get("graduation_year"),
+                    "exam_type": application.get("exam_type"),
+                    "score": int(application["score"]) if application.get("score") is not None else None,
+                    "bio": str(application.get("bio") or ""),
+                    "price_cents": int(application.get("price_cents") or 0),
+                    "online_status": "offline",
+                    "accepts_booking": consultation_enabled,
+                    "consultation_enabled": consultation_enabled,
+                    "verification_status": "verified",
+                    "is_published": True,
+                    "is_featured": False,
+                }
+                restored_response = call_supabase(
+                    lambda: (
+                        supabase.table("mentor_profiles")
+                        .update(restored_profile_data)
+                        .eq("id", mentor_id)
+                        .eq("owner_user_id", owner_user_id)
+                        .eq("verification_status", "revoked")
+                        .execute()
+                    ),
+                    operation_name="revoked mentor profile restore",
+                )
+                if not restored_response.data:
+                    raise HTTPException(
+                        status_code=status.HTTP_409_CONFLICT,
+                        detail="前辈档案状态已变化，请刷新后重试",
+                    )
+                restored_existing_profile = True
             else:
+                consultation_enabled = bool(application.get("consultation_enabled", True))
                 profile_data = {
                     "owner_user_id": owner_user_id,
                     "legal_name": str(application.get("legal_name") or "").strip(),
@@ -1753,8 +1802,8 @@ def decide_admin_mentor_verification_application(
                     "price_cents": int(application.get("price_cents") or 0),
                     "consultation_window_minutes": 60,
                     "online_status": "offline",
-                    "accepts_booking": bool(application.get("consultation_enabled", True)),
-                    "consultation_enabled": bool(application.get("consultation_enabled", True)),
+                    "accepts_booking": consultation_enabled,
+                    "consultation_enabled": consultation_enabled,
                     "verification_status": "verified",
                     "is_published": True,
                     "is_featured": False,
@@ -1770,7 +1819,7 @@ def decide_admin_mentor_verification_application(
                 if not profile_response.data:
                     raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈档案创建失败")
                 mentor_id = str(profile_response.data[0].get("id") or "")
-                _replace_mentor_skills(supabase, mentor_id, application.get("skills") or [])
+            _replace_mentor_skills(supabase, mentor_id, application.get("skills") or [])
 
         response = call_supabase(
             lambda: (
@@ -1789,7 +1838,11 @@ def decide_admin_mentor_verification_application(
             admin_profile,
             "approve_mentor_application" if decision == "approve" else "reject_mentor_application",
             application_id,
-            {"mentor_id": mentor_id, "admin_note": update_data["admin_note"]},
+            {
+                "mentor_id": mentor_id,
+                "admin_note": update_data["admin_note"],
+                "restored_existing_profile": restored_existing_profile,
+            },
         )
         _notify_mentor_verification_decision(
             supabase,

@@ -22,6 +22,9 @@ from app.schemas.mentor_consultation import (
 )
 
 
+TEST_APPLICATION_PHONE = "12345678901"
+
+
 class _Response:
     def __init__(self, data, *, count=None):
         self.data = data
@@ -126,6 +129,7 @@ def _application_row(*, consultation_enabled: bool | None = None) -> dict:
         "legal_name": "张同学",
         "school": "示例大学",
         "major": "经济学",
+        "phone": TEST_APPLICATION_PHONE,
         "admission_year": 2025,
         "graduation_year": 2027,
         "exam_type": "Z001",
@@ -186,7 +190,12 @@ class MentorConsultationOptInTests(unittest.TestCase):
             "exam_type": "application",
             "score": None,
         }
-        self.assertIsNone(MentorVerificationApplicationCreateRequest(**application_payload).score)
+        self.assertIsNone(
+            MentorVerificationApplicationCreateRequest(
+                **application_payload,
+                phone=TEST_APPLICATION_PHONE,
+            ).score
+        )
         self.assertIsNone(AdminMentorProfileCreateRequest(**application_payload).score)
         self.assertIsNone(MentorProfileChangeRequestCreateRequest(
             school="示例大学",
@@ -201,6 +210,7 @@ class MentorConsultationOptInTests(unittest.TestCase):
             "legal_name": "张同学",
             "school": "示例大学",
             "major": "经济学",
+            "phone": TEST_APPLICATION_PHONE,
             "admission_year": 2025,
             "graduation_year": 2027,
         }
@@ -213,6 +223,24 @@ class MentorConsultationOptInTests(unittest.TestCase):
             110,
         )
 
+    def test_application_phone_requires_exactly_eleven_digits(self):
+        base = {
+            "legal_name": "张同学",
+            "school": "示例大学",
+            "major": "经济学",
+            "admission_year": 2025,
+            "graduation_year": 2027,
+            "exam_type": "Z001",
+            "score": 110,
+        }
+        self.assertEqual(
+            MentorVerificationApplicationCreateRequest(**base, phone=TEST_APPLICATION_PHONE).phone,
+            TEST_APPLICATION_PHONE,
+        )
+        for invalid_phone in ("1234567890", "123456789012", "1234567890a", "１２３４５６７８９０１"):
+            with self.subTest(phone=invalid_phone), self.assertRaises(ValidationError):
+                MentorVerificationApplicationCreateRequest(**base, phone=invalid_phone)
+
     def test_application_create_and_serializers_preserve_null_score(self):
         user_id = str(uuid4())
         client = _Client({"mentor_profiles": [], "mentor_verification_applications": []})
@@ -220,6 +248,7 @@ class MentorConsultationOptInTests(unittest.TestCase):
             legal_name="张同学",
             school="示例大学",
             major="经济学",
+            phone=TEST_APPLICATION_PHONE,
             admission_year=2025,
             graduation_year=2027,
             exam_type="application",
@@ -229,9 +258,19 @@ class MentorConsultationOptInTests(unittest.TestCase):
             result = mentor_consultation.create_mentor_verification_application(payload, user_id)
         inserted = client.rows["mentor_verification_applications"][0]
         self.assertIsNone(inserted["score"])
+        self.assertEqual(inserted["phone"], TEST_APPLICATION_PHONE)
         self.assertIsNone(result.score)
+        self.assertEqual(result.phone, TEST_APPLICATION_PHONE)
         self.assertIsNone(mentor_consultation._serialize_mentor_verification_application(inserted)["score"])
         self.assertIsNone(mentor_admin._serialize_mentor_application(inserted)["score"])
+        self.assertEqual(
+            mentor_consultation._serialize_mentor_verification_application(inserted)["phone"],
+            TEST_APPLICATION_PHONE,
+        )
+        self.assertEqual(
+            mentor_admin._serialize_mentor_application(inserted)["phone"],
+            TEST_APPLICATION_PHONE,
+        )
 
         public_row = _mentor_row(consultation_enabled=True)
         public_row.update({"exam_type": "application", "score": None})
@@ -244,6 +283,7 @@ class MentorConsultationOptInTests(unittest.TestCase):
             "legal_name": "张同学",
             "school": "示例大学",
             "major": "经济学",
+            "phone": TEST_APPLICATION_PHONE,
             "admission_year": 2025,
             "graduation_year": 2027,
             "exam_type": "Z001",
@@ -273,6 +313,7 @@ class MentorConsultationOptInTests(unittest.TestCase):
             legal_name="张同学",
             school="示例大学",
             major="经济学",
+            phone=TEST_APPLICATION_PHONE,
             admission_year=2025,
             graduation_year=2027,
             exam_type="Z001",
@@ -283,6 +324,137 @@ class MentorConsultationOptInTests(unittest.TestCase):
             result = mentor_consultation.create_mentor_verification_application(payload, user_id)
         self.assertFalse(result.consultation_enabled)
         self.assertFalse(client.rows["mentor_verification_applications"][0]["consultation_enabled"])
+        self.assertEqual(client.rows["mentor_verification_applications"][0]["phone"], TEST_APPLICATION_PHONE)
+
+    def test_revoked_profile_can_submit_a_new_verification_application(self):
+        user_id = str(uuid4())
+        revoked_profile = _mentor_row(consultation_enabled=False)
+        revoked_profile.update({
+            "owner_user_id": user_id,
+            "verification_status": "revoked",
+            "is_published": False,
+            "accepts_booking": False,
+        })
+        previous_application = _application_row(consultation_enabled=True)
+        previous_application.update({
+            "applicant_user_id": user_id,
+            "application_status": "revoked",
+            "revocation_reason": "认证信息已发生变化，请重新提交审核",
+            "revoked_at": "2026-09-02T08:00:00+00:00",
+        })
+        client = _Client({
+            "mentor_profiles": [revoked_profile],
+            "mentor_verification_applications": [previous_application],
+        })
+        payload = MentorVerificationApplicationCreateRequest(
+            legal_name="张同学",
+            school="新示例大学",
+            major="金融学",
+            phone=TEST_APPLICATION_PHONE,
+            admission_year=2026,
+            graduation_year=2028,
+            exam_type="Z001",
+            score=115,
+        )
+
+        with patch.object(mentor_consultation, "get_supabase_admin", return_value=client):
+            result = mentor_consultation.create_mentor_verification_application(payload, user_id)
+
+        applications = client.rows["mentor_verification_applications"]
+        self.assertEqual(len(applications), 2)
+        self.assertEqual(applications[0]["application_status"], "revoked")
+        self.assertEqual(applications[1]["application_status"], "pending")
+        self.assertEqual(result.application_status, "pending")
+        self.assertEqual(revoked_profile["verification_status"], "revoked")
+
+    def test_verified_profile_still_blocks_duplicate_verification_application(self):
+        user_id = str(uuid4())
+        verified_profile = _mentor_row(consultation_enabled=True)
+        verified_profile["owner_user_id"] = user_id
+        client = _Client({"mentor_profiles": [verified_profile], "mentor_verification_applications": []})
+        payload = MentorVerificationApplicationCreateRequest(
+            legal_name="张同学",
+            school="示例大学",
+            major="经济学",
+            phone=TEST_APPLICATION_PHONE,
+            admission_year=2025,
+            graduation_year=2027,
+            exam_type="Z001",
+            score=110,
+        )
+
+        with (
+            patch.object(mentor_consultation, "get_supabase_admin", return_value=client),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            mentor_consultation.create_mentor_verification_application(payload, user_id)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "你已拥有前辈档案，无需重复申请")
+        self.assertEqual(client.rows["mentor_verification_applications"], [])
+
+    def test_revoked_profile_with_pending_reapplication_blocks_duplicate_submit(self):
+        user_id = str(uuid4())
+        revoked_profile = _mentor_row(consultation_enabled=False)
+        revoked_profile.update({"owner_user_id": user_id, "verification_status": "revoked", "is_published": False})
+        pending_application = _application_row(consultation_enabled=True)
+        pending_application["applicant_user_id"] = user_id
+        client = _Client({
+            "mentor_profiles": [revoked_profile],
+            "mentor_verification_applications": [pending_application],
+        })
+        payload = MentorVerificationApplicationCreateRequest(
+            legal_name="张同学",
+            school="示例大学",
+            major="经济学",
+            phone=TEST_APPLICATION_PHONE,
+            admission_year=2025,
+            graduation_year=2027,
+            exam_type="Z001",
+            score=110,
+        )
+
+        with (
+            patch.object(mentor_consultation, "get_supabase_admin", return_value=client),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            mentor_consultation.create_mentor_verification_application(payload, user_id)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "你已有正在审核的前辈申请")
+        self.assertEqual(len(client.rows["mentor_verification_applications"]), 1)
+
+    def test_concurrent_reapplication_unique_conflict_returns_pending_message(self):
+        user_id = str(uuid4())
+        payload = MentorVerificationApplicationCreateRequest(
+            legal_name="张同学",
+            school="示例大学",
+            major="经济学",
+            phone=TEST_APPLICATION_PHONE,
+            admission_year=2025,
+            graduation_year=2027,
+            exam_type="Z001",
+            score=110,
+        )
+
+        def fake_call_supabase(_operation, *, operation_name: str):
+            if operation_name == "mentor verification profile lookup":
+                return _Response([{"id": str(uuid4()), "verification_status": "revoked"}])
+            if operation_name == "mentor verification pending lookup":
+                return _Response([])
+            if operation_name == "mentor verification application create":
+                raise RuntimeError("duplicate key value violates unique constraint (23505)")
+            self.fail(f"unexpected operation: {operation_name}")
+
+        with (
+            patch.object(mentor_consultation, "get_supabase_admin", return_value=object()),
+            patch.object(mentor_consultation, "call_supabase", side_effect=fake_call_supabase),
+            self.assertRaises(HTTPException) as raised,
+        ):
+            mentor_consultation.create_mentor_verification_application(payload, user_id)
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "你已有正在审核的前辈申请")
 
     def test_approval_keeps_identity_published_but_disables_consultation(self):
         application = _application_row(consultation_enabled=False)
@@ -308,6 +480,120 @@ class MentorConsultationOptInTests(unittest.TestCase):
         self.assertFalse(profile["consultation_enabled"])
         self.assertFalse(profile["accepts_booking"])
         self.assertEqual(profile["online_status"], "offline")
+        self.assertNotIn("phone", profile)
+
+    def test_reapplication_approval_restores_original_profile_without_clearing_history(self):
+        user_id = str(uuid4())
+        mentor_id = str(uuid4())
+        application = _application_row(consultation_enabled=True)
+        application.update({
+            "applicant_user_id": user_id,
+            "legal_name": "李同学",
+            "school": "更新大学",
+            "major": "金融学",
+            "admission_year": 2026,
+            "graduation_year": 2028,
+            "exam_type": "Z002",
+            "score": 118,
+            "skills": ["专业选择", "复试经验"],
+            "bio": "更新后的认证简介",
+            "price_cents": 4900,
+        })
+        revoked_profile = _mentor_row(consultation_enabled=False)
+        revoked_profile.update({
+            "id": mentor_id,
+            "owner_user_id": user_id,
+            "legal_name": "张同学",
+            "display_name": "张*学",
+            "avatar_url": "https://example.invalid/avatar.png",
+            "avatar_tone": "violet",
+            "story": "原有完整上岸经历",
+            "verification_status": "revoked",
+            "is_published": False,
+            "is_featured": False,
+            "recommend_score": 88,
+            "rating": 4.9,
+            "rating_count": 12,
+            "consult_count": 28,
+        })
+        closed_slot = {
+            "id": str(uuid4()),
+            "mentor_id": mentor_id,
+            "status": "closed",
+        }
+        client = _Client({
+            "mentor_verification_applications": [application],
+            "mentor_profiles": [revoked_profile],
+            "mentor_profile_skills": [{"mentor_id": mentor_id, "skill": "旧领域", "sort_order": 1}],
+            "mentor_availability_slots": [closed_slot],
+        })
+        payload = SimpleNamespace(decision="approve", admin_note="重新核验通过")
+
+        with (
+            patch.object(mentor_admin, "get_supabase_admin", return_value=client),
+            patch.object(mentor_admin, "_log_application_action"),
+            patch.object(mentor_admin, "_notify_mentor_verification_decision"),
+            patch.object(mentor_admin, "_fetch_application_document_counts", return_value={}),
+        ):
+            result = mentor_admin.decide_admin_mentor_verification_application(
+                application["id"],
+                payload,
+                {"id": str(uuid4())},
+            )
+
+        self.assertEqual(result.application_status, "approved")
+        self.assertEqual(len(client.rows["mentor_profiles"]), 1)
+        restored = client.rows["mentor_profiles"][0]
+        self.assertEqual(restored["id"], mentor_id)
+        self.assertEqual(restored["verification_status"], "verified")
+        self.assertTrue(restored["is_published"])
+        self.assertTrue(restored["consultation_enabled"])
+        self.assertEqual(restored["online_status"], "offline")
+        self.assertEqual(restored["school"], "更新大学")
+        self.assertEqual(restored["major"], "金融学")
+        self.assertEqual(restored["avatar_url"], "https://example.invalid/avatar.png")
+        self.assertEqual(restored["avatar_tone"], "violet")
+        self.assertEqual(restored["story"], "原有完整上岸经历")
+        self.assertEqual(restored["recommend_score"], 88)
+        self.assertEqual(restored["rating"], 4.9)
+        self.assertEqual(restored["rating_count"], 12)
+        self.assertEqual(restored["consult_count"], 28)
+        self.assertEqual(client.rows["mentor_availability_slots"][0]["status"], "closed")
+        self.assertEqual(
+            [row["skill"] for row in client.rows["mentor_profile_skills"]],
+            ["专业选择", "复试经验"],
+        )
+
+    def test_reapplication_rejection_keeps_original_profile_revoked(self):
+        user_id = str(uuid4())
+        application = _application_row(consultation_enabled=True)
+        application["applicant_user_id"] = user_id
+        revoked_profile = _mentor_row(consultation_enabled=False)
+        revoked_profile.update({
+            "owner_user_id": user_id,
+            "verification_status": "revoked",
+            "is_published": False,
+        })
+        client = _Client({
+            "mentor_verification_applications": [application],
+            "mentor_profiles": [revoked_profile],
+        })
+
+        with (
+            patch.object(mentor_admin, "get_supabase_admin", return_value=client),
+            patch.object(mentor_admin, "_log_application_action"),
+            patch.object(mentor_admin, "_notify_mentor_verification_decision"),
+            patch.object(mentor_admin, "_fetch_application_document_counts", return_value={}),
+        ):
+            result = mentor_admin.decide_admin_mentor_verification_application(
+                application["id"],
+                SimpleNamespace(decision="reject", admin_note="证明材料仍需补充"),
+                {"id": str(uuid4())},
+            )
+
+        self.assertEqual(result.application_status, "rejected")
+        self.assertEqual(revoked_profile["verification_status"], "revoked")
+        self.assertFalse(revoked_profile["is_published"])
 
     def test_public_mentor_queries_exclude_opted_out_profiles(self):
         disabled = _mentor_row(consultation_enabled=False)

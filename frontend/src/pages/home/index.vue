@@ -7000,6 +7000,7 @@ function loadMentorEntryStatus({ force = false } = {}) {
       if (applicationStatus === 'pending') return setMentorEntryStatus('pending')
       if (applicationStatus === 'approved') return setMentorEntryStatus('verified')
       if (applicationStatus === 'rejected') return setMentorEntryStatus('rejected')
+      if (applicationStatus === 'revoked') return setMentorEntryStatus('revoked')
       return setMentorEntryStatus('unverified')
     } catch (error) {
       // 接口暂时不可用时保留已知状态，避免入口在页面回显时反复跳变。
@@ -8296,10 +8297,13 @@ function formatCommunityCommentTime(value) {
 
 function showExperiencePublishVerificationModal() {
   let confirmationInProgress = false
+  const qualificationRevoked = mentorEntryStatus.value === 'revoked'
   uni.showModal({
-    title: '发布经验帖需完成前辈认证',
-    content: '完成前辈认证后，即可发布经验帖；内容将展示认证标识，便于同学识别和参考。',
-    confirmText: '去认证',
+    title: qualificationRevoked ? '前辈资格已取消' : '发布经验帖需先完成前辈认证',
+    content: qualificationRevoked
+      ? '你可以核对资料后重新提交认证。再次审核通过后，原前辈档案和历史咨询记录会继续保留并恢复使用。'
+      : '认证通过后，即可发布带有认证标识的经验帖。审核期间，平台将严格保护你填写的个人信息及证明材料；相关资料仅用于认证审核，不会向其他用户公开。',
+    confirmText: qualificationRevoked ? '重新认证' : '去认证',
     success(result) {
       if (!result.confirm) return
       confirmationInProgress = true
@@ -8328,7 +8332,7 @@ async function openExperiencePublishPage() {
   const knownStatus = getMentorVerificationStatus()
   mentorEntryStatus.value = knownStatus
   if (knownStatus !== 'verified') {
-    // 未认证、审核中或被驳回都属于失败关闭分支，可以立即给出认证入口；
+    // 未认证、审核中、被驳回或资格已取消都先给出明确认证入口；
     // 服务端状态在后台刷新，不再阻塞弹窗反馈。
     showExperiencePublishVerificationModal()
     void loadMentorEntryStatus({ force: true })

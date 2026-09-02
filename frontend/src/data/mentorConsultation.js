@@ -17,7 +17,7 @@ export const MENTOR_GRADE_OPTIONS = ['大一', '大二', '大三', '大四', '�
 export const MENTOR_SKILL_OPTIONS = ['院校选择', '专业选择', 'Z001备考', 'Z002备考', '英语备考', '复试经验', '学习规划', '其他']
 
 export const CONSULT_ORDER_STATUSES = ['draft', 'pending_payment', 'pending_accept', 'accepted', 'in_progress', 'completed', 'rejected', 'timeout', 'refunded', 'cancelled', 'booked']
-export const MENTOR_VERIFICATION_STATUSES = ['unverified', 'pending', 'verified', 'rejected']
+export const MENTOR_VERIFICATION_STATUSES = ['unverified', 'pending', 'verified', 'rejected', 'revoked']
 
 const FAVORITE_STORAGE_KEY = 'circle-mentor-favorite-ids-v1'
 const CONSULT_DRAFT_STORAGE_KEY = 'circle-mentor-consult-draft-v1'

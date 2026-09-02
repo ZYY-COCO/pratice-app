@@ -7,9 +7,9 @@
         <view v-if="lastRejectionNote" class="mentor-rejection-notice">
           <view class="mentor-rejection-notice-icon" aria-hidden="true">!</view>
           <view class="mentor-rejection-notice-copy">
-            <strong>上次认证未通过</strong>
+            <strong>{{ applicationNoticeTitle }}</strong>
             <text>{{ lastRejectionNote }}</text>
-            <small>请根据审核说明修改信息或补充材料后重新提交。</small>
+            <small>{{ applicationNoticeHint }}</small>
           </view>
         </view>
         <view class="mentor-apply-card">
@@ -26,9 +26,23 @@
               <button v-for="school in schoolResults" :key="school" @tap="selectSchool(school)">{{ school }}</button>
             </view>
           </view>
-          <view class="mentor-apply-field">
-            <view class="mentor-apply-label">录取专业</view>
-            <input v-model="form.major" placeholder="支持搜索或直接输入专业" placeholder-class="mentor-apply-placeholder" />
+          <view class="mentor-apply-two-column">
+            <view class="mentor-apply-field">
+              <view class="mentor-apply-label">录取专业</view>
+              <input v-model="form.major" placeholder="请输入录取专业" placeholder-class="mentor-apply-placeholder" />
+            </view>
+            <view class="mentor-apply-field">
+              <view class="mentor-apply-label">电话号码</view>
+              <input
+                :value="form.phone"
+                type="number"
+                inputmode="numeric"
+                maxlength="11"
+                placeholder="请输入11位电话号码"
+                placeholder-class="mentor-apply-placeholder"
+                @input="handlePhoneInput"
+              />
+            </view>
           </view>
           <view class="mentor-apply-two-column">
             <view class="mentor-apply-field">
@@ -138,6 +152,7 @@
           <view><text>申请人</text><strong>{{ maskedApplicationName }}</strong></view>
           <view><text>申请院校</text><strong>{{ form.school || '待审核院校' }}</strong></view>
           <view><text>申请专业</text><strong>{{ form.major || '待审核专业' }}</strong></view>
+          <view><text>电话号码</text><strong>{{ form.phone || '待补充' }}</strong></view>
           <view><text>考试类别</text><strong>{{ form.examType || '待审核类别' }}</strong></view>
           <view><text>提交状态</text><strong class="green">资料已提交</strong></view>
         </view>
@@ -346,11 +361,13 @@ const schoolKeyword = ref('')
 const proofImages = ref([])
 const submitting = ref(false)
 const lastRejectionNote = ref('')
+const applicationOutcomeStatus = ref('')
 const skillOptions = MENTOR_SKILL_OPTIONS
 const examOptions = ['Z001', 'Z002', '申请制']
 const MENTOR_YEAR_MIN = 2000
 const MENTOR_ADMISSION_YEAR_MAX = 2026
 const MENTOR_SCORE_MAX = 150
+const MENTOR_PHONE_LENGTH = 11
 const MENTOR_LEGAL_NAME_MIN_LENGTH = 2
 const MENTOR_LEGAL_NAME_MAX_LENGTH = 40
 const yearOptionsReferenceDate = ref(new Date())
@@ -384,6 +401,10 @@ const MENTOR_CENTER_PROFILE_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
 let decisionCountdownTimer = null
 
 const pageTitle = computed(() => pageMode.value === 'pending' ? '认证审核中' : pageMode.value === 'center' ? '我的咨询主页' : '申请成为前辈')
+const applicationNoticeTitle = computed(() => applicationOutcomeStatus.value === 'revoked' ? '前辈资格已取消' : '上次认证未通过')
+const applicationNoticeHint = computed(() => applicationOutcomeStatus.value === 'revoked'
+  ? '请核对并更新认证信息和证明材料后重新提交；再次审核通过后会恢复原前辈档案和历史咨询记录。'
+  : '请根据审核说明修改信息或补充材料后重新提交。')
 const schoolResults = computed(() => searchMentorSchools(schoolKeyword.value))
 const admissionYearIndex = computed(() => getYearOptionIndex(admissionYearOptions, form.value.admissionYear))
 const graduationYearIndex = computed(() => getYearOptionIndex(graduationYearOptions.value, form.value.graduationYear))
@@ -454,6 +475,7 @@ onBeforeUnmount(stopDecisionCountdown)
 async function initializePage(options) {
   ownerUser.value = getAuthUser() || {}
   lastRejectionNote.value = ''
+  applicationOutcomeStatus.value = ''
   const defaultApplication = createDefaultApplication({ consultationEnabled: !entryFromExperiencePublish.value })
   const saved = getMentorApplication()
   if (saved) {
@@ -524,7 +546,7 @@ function createDefaultApplication({ consultationEnabled = true } = {}) {
   const graduationYear = getGraduationYearMaximum(new Date())
   const admissionYear = Math.min(2025, graduationYear)
   return {
-    realName: '', school: '', major: '', admissionYear: String(admissionYear), graduationYear: String(graduationYear), score: '', examType: 'Z001', skills: [], bio: '', price: '39', consultationEnabled: Boolean(consultationEnabled)
+    realName: '', school: '', major: '', phone: '', admissionYear: String(admissionYear), graduationYear: String(graduationYear), score: '', examType: 'Z001', skills: [], bio: '', price: '39', consultationEnabled: Boolean(consultationEnabled)
   }
 }
 
@@ -593,6 +615,16 @@ function normalizeScoreInput(value) {
 
 function handleScoreInput(event) {
   form.value.score = normalizeScoreInput(event?.detail?.value)
+}
+
+function normalizePhoneInput(value) {
+  return String(value ?? '').replace(/[^0-9]/g, '').slice(0, MENTOR_PHONE_LENGTH)
+}
+
+function handlePhoneInput(event) {
+  const phone = normalizePhoneInput(event?.detail?.value)
+  form.value.phone = phone
+  return phone
 }
 
 function normalizeApplicationScore() {
@@ -666,6 +698,12 @@ async function submitApplication() {
     uni.showToast({ title: '真实姓名请填写 2–40 个字', icon: 'none' })
     return
   }
+  const phone = normalizePhoneInput(form.value.phone)
+  form.value.phone = phone
+  if (!/^[0-9]{11}$/.test(phone)) {
+    uni.showToast({ title: '请输入11位电话号码', icon: 'none' })
+    return
+  }
   const applicationExam = isApplicationExam.value
   if (!applicationExam && !String(form.value.score).trim()) {
     uni.showToast({ title: '请填写初试成绩', icon: 'none' })
@@ -693,6 +731,7 @@ async function submitApplication() {
       legal_name: legalName,
       school: form.value.school.trim(),
       major: form.value.major.trim(),
+      phone,
       admission_year: Number(form.value.admissionYear),
       graduation_year: form.value.graduationYear ? Number(form.value.graduationYear) : null,
       exam_type: applicationExam ? 'application' : form.value.examType,
@@ -712,6 +751,7 @@ async function submitApplication() {
     saveMentorApplication({ ...form.value, proofImages: proofImages.value.map((item) => item.path) })
     setMentorVerificationStatus('pending')
     lastRejectionNote.value = ''
+    applicationOutcomeStatus.value = ''
     pageMode.value = 'pending'
 
     const uploadFailures = []
@@ -760,6 +800,7 @@ function applyServerApplication(application) {
     realName: application.legal_name || '',
     school: application.school || '',
     major: application.major || '',
+    phone: application.phone || '',
     admissionYear: String(application.admission_year || ''),
     graduationYear: application.graduation_year ? String(application.graduation_year) : '',
     score: String(application.score ?? ''),
@@ -772,11 +813,22 @@ function applyServerApplication(application) {
   normalizeApplicationYears()
   normalizeApplicationScore()
   schoolKeyword.value = form.value.school
-  const status = application.application_status === 'approved' ? 'verified' : application.application_status === 'pending' ? 'pending' : 'rejected'
+  const applicationStatus = String(application.application_status || '').trim().toLowerCase()
+  const status = applicationStatus === 'approved'
+    ? 'verified'
+    : applicationStatus === 'pending'
+      ? 'pending'
+      : applicationStatus === 'revoked'
+        ? 'revoked'
+        : 'rejected'
   const adminNote = String(application.admin_note || '').trim()
-  lastRejectionNote.value = status === 'rejected'
-    ? (adminNote || '原审核记录未填写具体理由，请核对认证信息和证明材料后重新提交。')
-    : ''
+  const revocationReason = String(application.revocation_reason || '').trim()
+  applicationOutcomeStatus.value = ['rejected', 'revoked'].includes(status) ? status : ''
+  lastRejectionNote.value = status === 'revoked'
+    ? (revocationReason || adminNote || '平台已取消当前前辈资格，请核对认证信息后重新提交。')
+    : status === 'rejected'
+      ? (adminNote || '原审核记录未填写具体理由，请核对认证信息和证明材料后重新提交。')
+      : ''
   setMentorVerificationStatus(status)
   pageMode.value = status === 'verified' ? 'center' : status === 'pending' ? 'pending' : 'apply'
 }
