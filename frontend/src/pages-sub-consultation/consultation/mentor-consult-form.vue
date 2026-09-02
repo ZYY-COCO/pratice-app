@@ -373,17 +373,20 @@ function goLogin(mentorId = '') {
 .mentor-order-lines .mentor-order-price strong { color: #1f2e44; font-size: 28rpx; font-weight: 900; }
 .mentor-form-bottom-space { height: calc(154rpx + env(safe-area-inset-bottom)); }
 .mentor-form-missing { padding: 150rpx 40rpx; color: #75869d; text-align: center; font-size: 25rpx; font-weight: 700; }
+.mentor-form-missing button { box-sizing: border-box; min-height: 60rpx; margin: 24rpx auto 0; padding: 0 24rpx; border: 0; border-radius: 18rpx; background: var(--gyt-primary-gradient, #3478f6); color: #fff; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 21rpx; line-height: 1; font-weight: 850; }
+.mentor-form-missing button::after { border: 0; }
 .mentor-form-footer { padding: 16rpx 24rpx calc(24rpx + env(safe-area-inset-bottom)); border-top: 2rpx solid #dbe7f8; background: rgba(255,255,255,.97); display: flex; align-items: center; gap: 18rpx; }
 .mentor-form-footer > view { min-width: 0; flex: 1; }
 .mentor-form-footer text, .mentor-form-footer strong { display: block; }
 .mentor-form-footer text { color: #8290a5; font-size: 19rpx; font-weight: 650; }
 .mentor-form-footer strong { margin-top: 4rpx; color: #203048; font-size: 28rpx; line-height: 1.2; font-weight: 900; }
-.mentor-form-footer button { box-sizing: border-box; min-width: 250rpx; height: 74rpx; min-height: 74rpx; margin: 0; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 16rpx; text-align: center; font-size: 23rpx; line-height: 1; font-weight: 900; white-space: nowrap; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
+.mentor-form-footer button { position: relative; box-sizing: border-box; flex: 0 1 360rpx; min-width: 250rpx; height: 74rpx; min-height: 74rpx; margin: 0; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; display: flex; align-items: center; justify-content: center; padding: 0 16rpx; text-align: center; font-size: 23rpx; line-height: 1.2; font-weight: 900; white-space: normal; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
 .mentor-form-footer button::after { border: 0; }
+.mentor-form-footer button[loading]::before { position: absolute; top: 0; bottom: 0; left: 14rpx; width: 24rpx; height: 24rpx; margin: auto 0; }
 .mentor-local-rehearsal-note{margin-top:14rpx;padding:14rpx 16rpx;border-radius:16rpx;color:#2e806d;background:#edf9f5;font-size:19rpx;line-height:1.55;font-weight:750}
 .mentor-local-rehearsal-note.disabled{color:#9a7445;background:#fff7e9}
-.mentor-rules-card{padding-bottom:24rpx}.mentor-rules-copy{color:#70829a;font-size:20rpx;line-height:1.65}.mentor-rules-link{margin-top:14rpx;color:var(--gyt-primary,#3478f6);font-size:20rpx;font-weight:800}.mentor-rules-agreement{display:flex;align-items:center;gap:12rpx;margin-top:20rpx;color:#718299;font-size:20rpx;line-height:1.4}.mentor-rules-agreement>text{width:30rpx;height:30rpx;box-sizing:border-box;border:2rpx solid #a8b9cf;border-radius:8rpx;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20rpx;font-weight:900}.mentor-rules-agreement.accepted{color:#326cae}.mentor-rules-agreement.accepted>text{border-color:var(--gyt-primary,#3478f6);background:var(--gyt-primary,#3478f6)}.mentor-form-footer button[disabled]{opacity:.46;box-shadow:none}
-@media (max-width:350px){.mentor-form-footer{gap:12rpx;padding-right:18rpx;padding-left:18rpx}.mentor-form-footer button{min-width:220rpx;font-size:21rpx}.mentor-form-card{padding:24rpx}}
+.mentor-rules-card{padding-bottom:24rpx}.mentor-rules-copy{color:#70829a;font-size:20rpx;line-height:1.65}.mentor-rules-link{margin-top:14rpx;color:var(--gyt-primary,#3478f6);font-size:20rpx;font-weight:800}.mentor-rules-agreement{display:flex;align-items:center;gap:12rpx;margin-top:20rpx;color:#718299;font-size:20rpx;line-height:1.4}.mentor-rules-agreement>text{width:30rpx;height:30rpx;box-sizing:border-box;border:2rpx solid #a8b9cf;border-radius:8rpx;display:flex;align-items:center;justify-content:center;color:#fff;font-size:20rpx;font-weight:900}.mentor-rules-agreement.accepted{color:#326cae}.mentor-rules-agreement.accepted>text{border-color:var(--gyt-primary,#3478f6);background:var(--gyt-primary,#3478f6)}.mentor-form-footer button[disabled]{height:74rpx;min-height:74rpx;padding-top:0;padding-bottom:0;opacity:.46;box-shadow:none}
+@media (max-width:350px){.mentor-form-footer{gap:12rpx;padding-right:18rpx;padding-left:18rpx}.mentor-form-footer button{flex-basis:310rpx;min-width:220rpx;font-size:21rpx}.mentor-form-card{padding:24rpx}}
 
 /* Keep this payment form in step with the global appearance themes. */
 .mentor-form-page { background: var(--gyt-page-bg); }

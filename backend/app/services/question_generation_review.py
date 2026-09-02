@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Mapping
 
 from fastapi import HTTPException, status
@@ -43,6 +44,8 @@ def _subject_review_rules(subject: str) -> str:
     if subject == CULTURE_SUBJECT:
         return (
             "逐题独立核对人物、时代、作品、制度、典籍、概念或器物的对应事实。"
+            "先检查题干所问的语义类型是否与 A-D 一致：题干若问主张，四项都应是主张；"
+            "不能把传入时间、历史作用、组织名称和思想特征混成同一组选项。"
             "遇到冷僻、争议、时代错置、人物作品错配、设问正反方向不清或干扰项不同域时拒收。"
         )
     if subject == ENGLISH_SUBJECT:
@@ -64,9 +67,6 @@ def build_quality_review_messages(rows: list[dict], subject: str) -> list[dict[s
         candidates.append(
             {
                 "index": index,
-                "subject": _text(row.get("subject"), 40),
-                "module": _text(row.get("module"), 80),
-                "submodule": _text(row.get("submodule"), 80),
                 "stem": _text(row.get("stem")),
                 "option_a": _text(row.get("option_a"), 800),
                 "option_b": _text(row.get("option_b"), 800),
@@ -115,6 +115,9 @@ def build_culture_explanation_review_messages(rows: list[dict]) -> list[dict[str
                 "option_d": _text(row.get("option_d"), 800),
                 "answer": _text(row.get("answer"), 8),
                 "explanation": _text(row.get("explanation"), 1800),
+                "culture_v3": row.get("_culture_v3_review")
+                if isinstance(row.get("_culture_v3_review"), Mapping)
+                else None,
             }
         )
 
@@ -131,11 +134,14 @@ def build_culture_explanation_review_messages(rows: list[dict]) -> list[dict[str
             "role": "user",
             "content": (
                 "逐题检查以下标准：\n"
-                "1. 解题思路必须包含题干线索、中间文化事实、答案结论；中间事实不能只是题干和答案的换写。\n"
-                "2. 选项解析必须覆盖 A-D；每个错项要先说明真实知识，再说明与本题的错配，不接受‘不符合题干’‘属于共同范围’等空话。\n"
-                "3. 知识点必须是可复习的独立文化事实，不能重复解题思路，也不能写通用做题步骤。\n"
-                "4. 记忆方法允许省略；如果出现，必须是有用的关键词、对比组或知识链。\n"
-                "5. 解析应短而完整，不堆百科背景，不含机械模板、事实错误或模块重复。\n"
+                "1. 解题思路必须包含题干线索、中间文化事实、答案结论；中间事实要直接点名题干对象并补出关系依据，不能只是‘典型特征是’‘创作时期是’‘X对应Y’等答案换写。\n"
+                "2. 检查桥接事实是否完整、可核对：不得以‘他’‘该书’‘这句诗’无指代开头，不得粘连两条资料、保留问句或截断句，也不得用宣传性绝对表述代替稳定事实。\n"
+                "3. 同时检查 culture_v3 原始字段：fact_anchor.object 必须等于正确选项原文；evidence_excerpt 必须真正支持 bridge，不能只复述答案或用无关同主题事实；difficulty_features 必须是本题真实难点。不要把 verification_status=cross_checked 当成事实正确证明。\n"
+                "4. 逆向题必须在 clue 中保留设问方向；evidence_excerpt 要明确写出纠正后的对象和不属于/不在/并非/不同等边界，不能把错误选项原句或双重否定当证据。\n"
+                "5. 选项解析必须覆盖 A-D；每项 fact 要明确包含本选项对象及其真实知识，不能拿无关轶事充数；fit 要说明具体错配维度，不能三个错项重复同一句模板。\n"
+                "6. 知识点必须继续围绕题干对象或正确知识扩展独立事实，不能重复解题思路、复制错项 fact 或写通用做题步骤。\n"
+                "7. 记忆方法允许省略；如果出现，必须是完整、有用的关键词、对比组或知识链。\n"
+                "8. 逐条核对人物、作品、时代、地点、引语和最高级表述；引语须区分原文与后人概括。解析应短而完整，不堆百科背景，不含机械模板、事实错误或模块重复。\n"
                 "全部满足且文化事实准确时 accept=true；否则 accept=false，并在 issues 中逐条写明具体缺陷。\n"
                 "固定输出结构："
                 '{"reviews":[{"index":1,"accept":true,"issues":[]}]}\n'
@@ -145,22 +151,41 @@ def build_culture_explanation_review_messages(rows: list[dict]) -> list[dict[str
     ]
 
 
-def parse_quality_reviews(content: str, rows: list[dict]) -> tuple[list[dict], list[str], dict]:
-    payload = _extract_json_object(content)
-    raw_reviews = payload.get("reviews")
+def _strict_review_map(
+    raw_reviews: object,
+    row_count: int,
+    *,
+    label: str,
+) -> dict[int, Mapping[str, object]]:
     if not isinstance(raw_reviews, list):
-        raise ValueError("review response is missing reviews array")
+        raise ValueError(f"{label} response is missing reviews array")
 
     review_map: dict[int, Mapping[str, object]] = {}
-    for item in raw_reviews:
-        if not isinstance(item, dict):
-            continue
-        try:
-            index = int(item.get("index"))
-        except (TypeError, ValueError):
-            continue
-        if 1 <= index <= len(rows) and index not in review_map:
-            review_map[index] = item
+    for position, item in enumerate(raw_reviews, start=1):
+        if not isinstance(item, Mapping):
+            raise ValueError(f"{label} review {position} must be an object")
+        raw_index = item.get("index")
+        if isinstance(raw_index, int) and not isinstance(raw_index, bool):
+            index = raw_index
+        elif isinstance(raw_index, str) and re.fullmatch(r"[0-9]+", raw_index.strip()):
+            index = int(raw_index.strip())
+        else:
+            raise ValueError(f"{label} review {position} has an invalid index")
+        if not 1 <= index <= row_count:
+            raise ValueError(f"{label} review index {index} is out of range")
+        if index in review_map:
+            raise ValueError(f"{label} review index {index} is duplicated")
+        review_map[index] = item
+
+    missing = sorted(set(range(1, row_count + 1)) - set(review_map))
+    if missing:
+        raise ValueError(f"{label} response is missing review indexes: {missing}")
+    return review_map
+
+
+def parse_quality_reviews(content: str, rows: list[dict]) -> tuple[list[dict], list[str], dict]:
+    payload = _extract_json_object(content)
+    review_map = _strict_review_map(payload.get("reviews"), len(rows), label="answer review")
 
     accepted: list[dict] = []
     feedback: list[str] = []
@@ -196,20 +221,11 @@ def parse_quality_reviews(content: str, rows: list[dict]) -> tuple[list[dict], l
 
 def parse_culture_explanation_reviews(content: str, rows: list[dict]) -> tuple[list[dict], list[str], dict]:
     payload = _extract_json_object(content)
-    raw_reviews = payload.get("reviews")
-    if not isinstance(raw_reviews, list):
-        raise ValueError("explanation review response is missing reviews array")
-
-    review_map: dict[int, Mapping[str, object]] = {}
-    for item in raw_reviews:
-        if not isinstance(item, dict):
-            continue
-        try:
-            index = int(item.get("index"))
-        except (TypeError, ValueError):
-            continue
-        if 1 <= index <= len(rows) and index not in review_map:
-            review_map[index] = item
+    review_map = _strict_review_map(
+        payload.get("reviews"),
+        len(rows),
+        label="explanation review",
+    )
 
     accepted: list[dict] = []
     feedback: list[str] = []

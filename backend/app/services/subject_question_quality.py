@@ -1267,10 +1267,13 @@ def subject_v2_prompt_requirement(subject: str) -> str:
             "2. 先确定人物/时代/作品/制度/概念的事实锚点，再设计同朝代、同流派、同体裁或同门类干扰项。\n"
             "3. 只输出 culture_v3 教学契约，不要自行编写 explanation；后端会统一渲染现有解题思路、选项解析、知识点、记忆方法区块。\n"
             "4. question_form 只能为 direct_identification、relationship_match、negative_identification、odd_one_out；reasoning_mode 按事实关系选择 person_event_effect、person_school_claim、work_author_era、concept_definition、chronology、place_object_mapping、category_comparison、quote_meaning、institution_function、direct_fact。\n"
-            "5. reasoning_steps 分别写 clue、bridge、conclusion：clue 只提取题干线索，bridge 补出中间文化事实，conclusion 才落到答案；禁止把题干和答案换个说法当作 bridge。\n"
-            "6. option_analysis 必须覆盖 A-D。每项包含 verdict、fact、fit：fact 说明该项真实对应的知识，fit 说明为什么符合或为何与本题错配；不得只写‘符合题干’‘不符合共同限定’‘故不选’。\n"
-            "7. knowledge_extension 只扩展独立考试知识，不写做题步骤，也不重复 bridge。memory_strategy 只能为 keyword、contrast、chain、none；没有真正有用的记忆抓手时用 none 且 memory_hook 留空。\n"
-            "8. fact_anchor 和 evidence_excerpt 必须是可核对的具体事实；scope_level=core、controversy_status=stable、verification_status=cross_checked。内容优先级为准确、清楚、教学价值、简洁；不要出现来源、生成、AI、考纲归类或审核口吻。"
+            "5. reasoning_steps 分别写 clue、bridge、conclusion：clue 只提取题干线索；bridge 必须用同一条完整事实显式连接题干对象、关系依据和答案，conclusion 才落到答案。禁止写‘X对应Y’‘X的典型特征是Y’‘X的创作时期是Y’或‘这一观点属于Y’等答案改写。人物事件影响题至少写出两个有先后或因果关系的实际动作。\n"
+            "6. bridge 和 evidence_excerpt 必须直接点名题干对象，不能以‘他’‘该书’‘这句诗’开头，不能先堆叠其他人物再在句尾补题干对象；不得保留资料问句、章节编号、OCR 粘连句、截断句或宣传性绝对表述。\n"
+            "7. 逆向题的 clue 必须保留‘不正确/不属于/不同项/例外’等方向词；evidence_excerpt 必须同时支撑 bridge、点名被纠正选项的核心对象，并明确写出‘不在/不属于/并非/而非/不同’等纠偏边界，不能把错误选项本身当证据。\n"
+            "8. option_analysis 必须覆盖 A-D。每项包含 verdict、fact、fit：fact 必须保留该选项原文代表的对象，并说明它真正对应的人物、时代、作品、地点、概念或功能；不得拿同一人物的无关轶事充数，不得写‘稳定对应’或‘典型特征’模板。fit 再说明具体错配维度，三个错项不得反复套用同一句式。\n"
+            "9. knowledge_extension 必须继续围绕本题对象或正确知识扩展一个新事实，不得复制 bridge，也不得把错项 fact 搬到知识点。记忆方法必须先做价值判定：固定日期或短触发词用 keyword；至少两组同维度易混映射用 contrast；至少三个真实先后、措施或因果节点用 chain；没有增量价值才用 none 且 memory_hook 留空。禁止牵强谐音、硬凑首字、复述答案、截断口诀或引入未经核准的新事实。\n"
+            "10. 不使用‘世界最大/最早’‘十大名作’等未经必要核实的绝对表述；引语须区分原文和后人概括。资料不足、事实有争议或无法补出因果桥时，应让该候选拒收，不要用套话补齐。\n"
+            "11. fact_anchor 和 evidence_excerpt 必须是可核对的具体事实；scope_level=core、controversy_status=stable、verification_status=cross_checked。内容优先级为准确、清楚、教学价值、简洁；不要出现来源、生成、AI、考纲归类或审核口吻。"
         )
     if subject == ENGLISH_SUBJECT:
         return (
@@ -1306,12 +1309,12 @@ def subject_v2_output_schema(subject: str) -> str | None:
             '"fact_anchor":{"subject":"事实对象","relation":"对应关系","object":"A选项原文"},'
             '"reasoning_steps":{"clue":"题干中的关键线索","bridge":"能解释线索与答案关系的具体事实","conclusion":"因此选 A‘选项原文’"},'
             '"evidence_excerpt":"可核对的具体事实句","knowledge_extension":"与解题事实不同的独立复习知识",'
-            '"memory_strategy":"none","memory_hook":"",'
+            '"memory_strategy":"keyword或contrast或chain或none","memory_hook":"有增量价值的短记忆抓手；none时为空字符串",'
             '"option_analysis":{'
-            '"A":{"verdict":"correct","fact":"A项对应的真实知识","fit":"该事实直接回应题干线索"},'
-            '"B":{"verdict":"incorrect","fact":"B项实际对应的真实知识","fit":"其对象或关系与题干不同"},'
-            '"C":{"verdict":"incorrect","fact":"C项实际对应的真实知识","fit":"其对象或关系与题干不同"},'
-            '"D":{"verdict":"incorrect","fact":"D项实际对应的真实知识","fit":"其对象或关系与题干不同"}},'
+            '"A":{"verdict":"correct","fact":"含A选项对象的具体事实","fit":"说明该事实如何直接命中题干"},'
+            '"B":{"verdict":"incorrect","fact":"含B选项对象及其真实归属的事实","fit":"说明其人物或时代为何错配"},'
+            '"C":{"verdict":"incorrect","fact":"含C选项对象及其真实定义的事实","fit":"说明它实际解释的是另一对象"},'
+            '"D":{"verdict":"incorrect","fact":"含D选项对象及其真实作品关系的事实","fit":"说明该作品归属为何不合题干"}},'
             '"scope_level":"core","controversy_status":"stable","verification_status":"cross_checked",'
             '"difficulty_features":["难度来源"]}}]}'
         )

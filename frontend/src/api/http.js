@@ -31,12 +31,13 @@ function dispatchRequest(options, token, retried) {
   const data = cleanRequestData(options.data)
 
   return new Promise((resolve, reject) => {
-    uni.request({
+    const requestTask = uni.request({
       url: `${API_BASE_URL}${options.url}`,
       method: options.method || 'GET',
       timeout: options.timeout || 12000,
       data,
       header: buildRequestHeaders(options, token, 'application/json'),
+      ...(options.enableChunked ? { enableChunked: true } : {}),
       async success(response) {
         if (response.statusCode >= 200 && response.statusCode < 300) {
           resolve(response.data)
@@ -85,6 +86,17 @@ function dispatchRequest(options, token, retried) {
         })
       }
     })
+
+    if (typeof options.onHeadersReceived === 'function' && typeof requestTask?.onHeadersReceived === 'function') {
+      requestTask.onHeadersReceived((response) => {
+        try {
+          options.onHeadersReceived(response)
+        } catch (error) {
+          // Header feedback is an optional latency optimization. The ordinary
+          // response still completes the request if a client callback fails.
+        }
+      })
+    }
   })
 }
 

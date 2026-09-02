@@ -25,6 +25,21 @@ export function fetchMyCommunityPosts(params = {}) {
   })
 }
 
+export function fetchMyCommunityPost(postId) {
+  return request({
+    url: `/circle/community/my-posts/${encodeURIComponent(postId)}`,
+    method: 'GET'
+  })
+}
+
+export function resubmitMyCommunityExperiencePost(postId, payload) {
+  return request({
+    url: `/circle/community/my-posts/${encodeURIComponent(postId)}/resubmit`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function deleteMyCommunityPosts(postIds = []) {
   return request({
     url: '/circle/community/my-posts',

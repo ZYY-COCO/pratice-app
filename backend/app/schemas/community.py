@@ -1,11 +1,23 @@
 from typing import Literal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 COMMUNITY_CHAT_CATEGORIES = {"备考日常", "中华文化", "数学基础", "英语运用", "逻辑推理"}
-COMMUNITY_EXPERIENCE_CATEGORIES = {"Z001", "Z002", "专业课", "复试"}
+COMMUNITY_EXPERIENCE_EXAM_CODES = {"Z001", "Z002"}
+COMMUNITY_EXPERIENCE_STAGES = {"申请制", "初试", "复试"}
+COMMUNITY_LEGACY_EXPERIENCE_CATEGORIES = {"专业课", "复试"}
+COMMUNITY_EXPERIENCE_CATEGORIES = COMMUNITY_EXPERIENCE_EXAM_CODES | COMMUNITY_LEGACY_EXPERIENCE_CATEGORIES
+COMMUNITY_EXPERIENCE_REVIEW_REASON_CODES = {
+    "advertising_or_diversion",
+    "false_or_misleading",
+    "infringement",
+    "privacy",
+    "inappropriate",
+    "low_quality",
+    "other",
+}
 
 
 class CommunityMediaItem(BaseModel):
@@ -33,6 +45,7 @@ class CommunityPostItem(BaseModel):
     id: str
     post_type: Literal["chat", "experience"] = "chat"
     category: str
+    experience_stages: list[str] = Field(default_factory=list)
     author: str
     avatar: str
     avatar_url: str | None = None
@@ -48,6 +61,13 @@ class CommunityPostItem(BaseModel):
     is_featured: bool = False
     liked: bool = False
     author_verified: bool = False
+    is_published: bool = True
+    review_status: Literal["pending", "approved", "rejected"] = "approved"
+    review_version: int = 0
+    review_reason_code: str | None = None
+    review_note: str | None = None
+    reviewed_at: str | None = None
+    submitted_at: str | None = None
 
 
 class CommunityPostListResponse(BaseModel):
@@ -101,6 +121,22 @@ class CommunityPostDetailResponse(BaseModel):
     comments: list[CommunityCommentItem] = Field(default_factory=list)
 
 
+class CommunityExperienceReviewHistoryItem(BaseModel):
+    id: str
+    submission_version: int
+    action: Literal["submitted", "approved", "rejected"]
+    from_status: Literal["pending", "approved", "rejected"] | None = None
+    to_status: Literal["pending", "approved", "rejected"]
+    reason_code: str | None = None
+    review_note: str | None = None
+    created_at: str | None = None
+
+
+class CommunityOwnPostDetailResponse(BaseModel):
+    post: CommunityPostItem
+    review_history: list[CommunityExperienceReviewHistoryItem] = Field(default_factory=list)
+
+
 class CommunityLikeItem(BaseModel):
     id: str
     author: str
@@ -117,6 +153,8 @@ class CommunityLikeListResponse(BaseModel):
 class CommunityCreatePostRequest(BaseModel):
     post_type: Literal["chat", "experience"] = "chat"
     category: str = Field(min_length=1, max_length=24)
+    experience_stages: list[str] = Field(default_factory=list, max_length=3)
+    client_request_id: UUID = Field(default_factory=uuid4)
     title: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=3000)
     media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
@@ -124,18 +162,53 @@ class CommunityCreatePostRequest(BaseModel):
     @model_validator(mode="after")
     def validate_category_for_post_type(self) -> "CommunityCreatePostRequest":
         self.category = self.category.strip()
-        allowed_categories = (
-            COMMUNITY_EXPERIENCE_CATEGORIES
-            if self.post_type == "experience"
-            else COMMUNITY_CHAT_CATEGORIES
-        )
-        if self.category not in allowed_categories:
-            message = (
-                "经验贴分类仅支持 Z001、Z002、专业课、复试"
-                if self.post_type == "experience"
-                else "研友聊分类仅支持备考日常、中华文化、数学基础、英语运用、逻辑推理"
-            )
-            raise ValueError(message)
+        normalized_stages = list(dict.fromkeys(
+            str(stage or "").strip()
+            for stage in self.experience_stages
+            if str(stage or "").strip()
+        ))
+        if self.post_type == "experience":
+            if self.category not in COMMUNITY_EXPERIENCE_EXAM_CODES:
+                raise ValueError("经验贴考试类别仅支持 Z001、Z002")
+            if not normalized_stages:
+                raise ValueError("经验贴至少选择一个备考阶段")
+            if any(stage not in COMMUNITY_EXPERIENCE_STAGES for stage in normalized_stages):
+                raise ValueError("经验贴阶段仅支持申请制、初试、复试")
+            self.experience_stages = normalized_stages
+            return self
+
+        if self.category not in COMMUNITY_CHAT_CATEGORIES:
+            raise ValueError("研友聊分类仅支持备考日常、中华文化、数学基础、英语运用、逻辑推理")
+        self.experience_stages = []
+        return self
+
+
+class CommunityResubmitExperiencePostRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    category: str = Field(min_length=1, max_length=24)
+    experience_stages: list[str] = Field(min_length=1, max_length=3)
+    title: str = Field(min_length=1, max_length=80)
+    content: str = Field(min_length=1, max_length=3000)
+    media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
+
+    @model_validator(mode="after")
+    def validate_experience_fields(self) -> "CommunityResubmitExperiencePostRequest":
+        self.category = self.category.strip()
+        if self.category not in COMMUNITY_EXPERIENCE_EXAM_CODES:
+            raise ValueError("经验贴考试类别仅支持 Z001、Z002")
+        normalized_stages = list(dict.fromkeys(
+            str(stage or "").strip()
+            for stage in self.experience_stages
+            if str(stage or "").strip()
+        ))
+        if not normalized_stages:
+            raise ValueError("经验贴至少选择一个备考阶段")
+        if any(stage not in COMMUNITY_EXPERIENCE_STAGES for stage in normalized_stages):
+            raise ValueError("经验贴阶段仅支持申请制、初试、复试")
+        self.experience_stages = normalized_stages
+        self.title = self.title.strip()
+        self.content = self.content.strip()
         return self
 
 

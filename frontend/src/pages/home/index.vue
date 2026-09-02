@@ -870,7 +870,7 @@
                       <text v-else>{{ post.avatar }}</text>
                     </view>
                     <view class="community-author-main">
-                      <view class="community-author-name">{{ post.author }}<text v-if="post.authorVerified" class="community-author-verified">已认证前辈</text></view>
+                      <view class="community-author-name">{{ post.author }}<text v-if="post.authorVerified" class="community-author-verified">已认证</text></view>
                       <view class="community-author-meta">{{ post.publishTime }}</view>
                     </view>
                     <view class="community-stream-header-actions">
@@ -953,8 +953,12 @@
                   :title="selectedCircleCommunityTab === 'experience' ? '当前暂无已认证前辈经验贴' : '暂无匹配的交流内容'"
                   :description="selectedCircleCommunityTab === 'experience' ? '经验贴仅展示已认证前辈的公开分享，可先浏览研友聊中的讨论。' : '换个关键词或分类试试。'"
                 />
-                <view v-if="filteredActiveCommunityPosts.length || activeCommunityHasMore" class="community-load-state" @tap="loadMoreCircleCommunityPosts">
-                  {{ communityPostsLoading ? '正在加载更多帖子…' : activeCommunityHasMore ? '继续下滑加载更多帖子' : '已加载全部帖子' }}
+                <view
+                  v-if="(communityPostsLoading && filteredActiveCommunityPosts.length > 0) || activeCommunityHasMore"
+                  class="community-load-state"
+                  @tap="loadMoreCircleCommunityPosts"
+                >
+                  {{ communityPostsLoading ? '正在加载更多帖子…' : '继续下滑加载更多帖子' }}
                 </view>
               </view>
 
@@ -2208,7 +2212,7 @@
               <text v-else>{{ selectedCommunityPost.avatar }}</text>
             </view>
             <view class="community-reader-author-copy">
-              <view class="community-reader-author-name">{{ selectedCommunityPost.author }}<text v-if="selectedCommunityPost.authorVerified" class="community-author-verified">已认证前辈</text></view>
+              <view class="community-reader-author-name">{{ selectedCommunityPost.author }}<text v-if="selectedCommunityPost.authorVerified" class="community-author-verified">已认证</text></view>
               <view class="community-reader-author-meta">{{ communityReaderPostTypeLabel }} · {{ selectedCommunityPost.publishTime }}</view>
             </view>
           </view>
@@ -2717,7 +2721,6 @@
       type="button"
       :aria-label="mentorEntryAriaLabel"
       @tap.stop="openMentorVerificationEntry"
-      @click.stop="openMentorVerificationEntry"
     >
       <view v-if="mentorEntryLabel" class="mentor-entry-content">
         <view v-if="mentorEntryStatus === 'verified'" class="mentor-entry-grid-icon" aria-hidden="true">
@@ -2734,7 +2737,6 @@
       type="button"
       aria-label="发布经验贴"
       @tap.stop="openExperiencePublishPage"
-      @click.stop="openExperiencePublishPage"
     >
       <image src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
     </button>
@@ -2744,7 +2746,6 @@
       type="button"
       aria-label="发布话题"
       @tap.stop="openChatPublishPage"
-      @click.stop="openChatPublishPage"
     >
       <image src="/static/ui-icons/png/original/circle-publish.png" mode="aspectFit" />
     </button>
@@ -3038,6 +3039,8 @@ const mentorEntryStatusLoaded = ref(false)
 const openingMyConsultationEntry = ref(false)
 const currentMentorProfileId = ref('')
 let mentorEntryStatusRequest = null
+let mentorEntryStatusLastConfirmedAt = 0
+const MENTOR_ENTRY_STATUS_FRESH_MS = 60 * 1000
 const mentorFilters = ref(createDefaultMentorFilters())
 const mentorFilterDraft = ref(createDefaultMentorFilters())
 const mentorFilterMounted = ref(false)
@@ -3162,6 +3165,8 @@ let communityViewTimerId = null
 let communityLikeBurstTimerId = null
 let communityFeedPersistTimerId = null
 let lastCommunityPublishNavigationAt = 0
+let openingExperiencePublishEntry = false
+let openingMentorVerificationEntry = false
 const communityPostsLoadingTypes = new Set()
 const COMMUNITY_FEED_PAGE_SIZE = 12
 const COMMUNITY_FEED_CACHE_TTL = 60 * 1000
@@ -3454,8 +3459,9 @@ const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
 const circleCommunityPosts = ref([])
 const circleFeaturedCommunityPosts = ref([])
 const circleHotCommunityPosts = ref([])
-const circleExperienceCategories = ['全部', 'Z001', 'Z002', '专业课', '复试']
-const circleExperiencePostCategories = circleExperienceCategories.slice(1)
+const circleExperienceExamCodes = ['Z001', 'Z002']
+const circleExperienceStages = ['申请制', '初试', '复试']
+const circleExperienceCategories = ['全部', ...circleExperienceExamCodes, ...circleExperienceStages]
 const circleExperienceCommunityPosts = ref([])
 const circleFeaturedExperiencePosts = ref([])
 const circleHotExperienceCommunityPosts = ref([])
@@ -3507,14 +3513,13 @@ const filteredCircleExperiencePosts = computed(() => {
     // Also guard cached/legacy feed data on the client.  The API enforces the
     // same rule, while this keeps an old offline cache from impersonating an
     // authenticated predecessor after the policy is rolled out.
-    if (!item.authorVerified || !circleExperiencePostCategories.includes(String(item.category || '').trim())) return false
-    const itemCategory = getExperienceCategory(item)
-    const matchesCategory = selectedExperienceCategory.value === '全部'
-      || itemCategory === selectedExperienceCategory.value
+    if (!item.authorVerified || !circleExperienceExamCodes.includes(String(item.examCode || '').trim())) return false
+    const matchesCategory = matchesExperienceFilter(item, selectedExperienceCategory.value)
     if (!matchesCategory || !keyword) return matchesCategory
     return [
       item.author,
       item.category,
+      ...(item.experienceStages || []),
       item.title,
       item.summary,
       ...(item.commentPreviews || []).flatMap((comment) => [comment.author, comment.text]),
@@ -4907,6 +4912,10 @@ onShow(() => {
       void loadMentorEntryStatus({ force: true })
       void loadMentorProfiles({ force: mentorProfilesLoaded.value })
     } else {
+      if (postType === 'experience') {
+        mentorEntryStatus.value = getMentorVerificationStatus()
+        void loadMentorEntryStatus({ force: !isMentorEntryStatusFresh() })
+      }
       const sortBy = selectedCommunityPostSort.value
       const featuredOnly = sortBy === 'featured'
       loadCircleCommunityPosts(postType, {
@@ -6934,8 +6943,14 @@ function retryMentorProfiles() {
 }
 
 function setMentorEntryStatus(status) {
+  mentorEntryStatusLastConfirmedAt = Date.now()
   mentorEntryStatus.value = setMentorVerificationStatus(status)
   return mentorEntryStatus.value
+}
+
+function isMentorEntryStatusFresh() {
+  return mentorEntryStatusLastConfirmedAt > 0
+    && Date.now() - mentorEntryStatusLastConfirmedAt <= MENTOR_ENTRY_STATUS_FRESH_MS
 }
 
 function isCurrentMentorProfile(mentor) {
@@ -6949,6 +6964,7 @@ function loadMentorEntryStatus({ force = false } = {}) {
     mentorEntryStatus.value = 'unverified'
     mentorEntryStatusLoaded.value = false
     currentMentorProfileId.value = ''
+    mentorEntryStatusLastConfirmedAt = 0
     return Promise.resolve(mentorEntryStatus.value)
   }
   if (mentorEntryStatusRequest) return mentorEntryStatusRequest
@@ -6979,6 +6995,7 @@ function loadMentorEntryStatus({ force = false } = {}) {
       return setMentorEntryStatus('unverified')
     } catch (error) {
       // 接口暂时不可用时保留已知状态，避免入口在页面回显时反复跳变。
+      mentorEntryStatusLastConfirmedAt = 0
       mentorEntryStatus.value = cachedStatus
       return mentorEntryStatus.value
     } finally {
@@ -7115,11 +7132,28 @@ function resetLandingPageScroll() {
   })
 }
 
-async function openMentorVerificationEntry() {
-  await loadMentorEntryStatus()
-  const verificationStatus = mentorEntryStatus.value
-  const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
-  uni.navigateTo({ url: `/pages-sub-consultation/consultation/mentor-apply?mode=${mode}` })
+async function openMentorVerificationEntry(options = {}) {
+  if (openingMentorVerificationEntry) return
+  openingMentorVerificationEntry = true
+
+  try {
+    await loadMentorEntryStatus()
+    const verificationStatus = mentorEntryStatus.value
+    const mode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : 'apply'
+    const from = options?.from === 'experience-publish' ? '&from=experience-publish' : ''
+    await new Promise((resolve) => {
+      uni.navigateTo({
+        url: `/pages-sub-consultation/consultation/mentor-apply?mode=${mode}${from}`,
+        complete() {
+          openingMentorVerificationEntry = false
+          resolve()
+        }
+      })
+    })
+  } catch (error) {
+    openingMentorVerificationEntry = false
+    uni.showToast({ title: '认证入口打开失败，请稍后重试', icon: 'none' })
+  }
 }
 
 function getMyConsultationEntryUrl(status = mentorEntryStatus.value) {
@@ -7194,15 +7228,41 @@ function sortCommunityPosts(posts, sort) {
 
 function getExperienceCategory(post = {}) {
   const category = String(post.category || '').trim()
-  if (circleExperiencePostCategories.includes(category)) return category
+  if (circleExperienceExamCodes.includes(category)) return category
 
   const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
-  if (circleExperiencePostCategories.includes(explicitCode)) return explicitCode
+  if (circleExperienceExamCodes.includes(explicitCode)) return explicitCode
 
   const text = `${post.title || ''} ${post.summary || ''}`.toUpperCase()
-  if (['Z001', 'Z002'].includes(category)) return category
   if (category === 'Z002' || category === '数学基础' || text.includes('Z002')) return 'Z002'
   return 'Z001'
+}
+
+function getExperienceStages(post = {}) {
+  const rawStages = Array.isArray(post.experienceStages)
+    ? post.experienceStages
+    : Array.isArray(post.experience_stages)
+      ? post.experience_stages
+      : []
+  const stages = [...new Set(
+    rawStages
+      .map((stage) => String(stage || '').trim())
+      .filter((stage) => circleExperienceStages.includes(stage))
+  )]
+  if (stages.length) return stages
+
+  const legacyCategory = String(post.category || '').trim()
+  if (legacyCategory === '专业课') return ['初试']
+  if (legacyCategory === '复试') return ['复试']
+  if (legacyCategory === '申请制') return ['申请制']
+  return []
+}
+
+function matchesExperienceFilter(post, filter) {
+  if (!filter || filter === '全部') return true
+  if (circleExperienceExamCodes.includes(filter)) return post.examCode === filter
+  if (circleExperienceStages.includes(filter)) return (post.experienceStages || []).includes(filter)
+  return false
 }
 
 function getCommunityChatCategory(post = {}) {
@@ -7234,6 +7294,7 @@ function normalizeCommunityPost(post = {}) {
 
   const postType = post.postType || post.post_type || 'chat'
   const experienceCategory = getExperienceCategory(post)
+  const experienceStages = postType === 'experience' ? getExperienceStages(post) : []
   const category = postType === 'experience'
     ? experienceCategory
     : getCommunityChatCategory(post)
@@ -7243,6 +7304,7 @@ function normalizeCommunityPost(post = {}) {
     id: String(post.id || ''),
     postType,
     examCode: postType === 'experience' ? experienceCategory : '',
+    experienceStages,
     category,
     author: post.author || '研友',
     avatar: post.avatar || '研',
@@ -7495,11 +7557,17 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
   const normalizedSort = sortBy === 'hot' ? 'hot' : 'latest'
   const selectedCategory = normalizedPostType === 'experience' ? selectedExperienceCategory.value : selectedCommunityCategory.value
-  const normalizedCategory = selectedCategory && selectedCategory !== '全部' ? selectedCategory : ''
-  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: normalizedCategory })
-  const cacheIsFresh = featuredOnly || normalizedSort !== 'latest' || normalizedCategory ? false : hydrateCircleCommunityFeed(normalizedPostType)
+  const normalizedExperienceStage = normalizedPostType === 'experience' && circleExperienceStages.includes(selectedCategory)
+    ? selectedCategory
+    : ''
+  const normalizedCategory = selectedCategory && selectedCategory !== '全部' && !normalizedExperienceStage
+    ? selectedCategory
+    : ''
+  const activeFilter = normalizedCategory || normalizedExperienceStage
+  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: activeFilter })
+  const cacheIsFresh = featuredOnly || normalizedSort !== 'latest' || activeFilter ? false : hydrateCircleCommunityFeed(normalizedPostType)
   if (!featuredOnly && normalizedSort === 'latest' && cacheIsFresh && !force) return
-  if (force) resetCircleCommunityFeedPagination(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: normalizedCategory })
+  if (force) resetCircleCommunityFeedPagination(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: activeFilter })
   const requestKey = pageKey
   if (communityPostsLoadingTypes.has(requestKey)) return
   communityPostsLoadingTypes.add(requestKey)
@@ -7511,20 +7579,21 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
       featured_only: featuredOnly,
       sort_by: normalizedSort,
       category: normalizedCategory || undefined,
+      experience_stage: normalizedExperienceStage || undefined,
       cursor: communityFeedNextCursors[pageKey] || undefined
     })
     if (Array.isArray(response?.items)) {
       const posts = response.items.map((post) => normalizeCommunityPost(post))
       setCircleCommunityFeedPosts(normalizedPostType, posts, {
-        persist: !normalizedCategory && !featuredOnly && normalizedSort === 'latest',
+        persist: !activeFilter && !featuredOnly && normalizedSort === 'latest',
         featuredOnly,
         sortBy: normalizedSort,
-        category: normalizedCategory,
+        category: activeFilter,
         append: Boolean(communityFeedNextCursors[pageKey])
       })
       communityFeedNextCursors[pageKey] = String(response?.next_cursor || '')
       communityFeedHasMore[pageKey] = response?.has_more === true
-      if (!normalizedCategory && !featuredOnly && normalizedSort === 'latest') persistCircleCommunityFeed(normalizedPostType)
+      if (!activeFilter && !featuredOnly && normalizedSort === 'latest') persistCircleCommunityFeed(normalizedPostType)
     }
   } catch (error) {
     // 请求失败时保留已经读取到的真实缓存，不再回退到示例帖子。
@@ -8217,24 +8286,64 @@ function formatCommunityCommentTime(value) {
   return `${date.getMonth() + 1}/${date.getDate()}`
 }
 
+function showExperiencePublishVerificationModal() {
+  let confirmationInProgress = false
+  uni.showModal({
+    title: '发布经验帖需完成前辈认证',
+    content: '完成前辈认证后，即可发布经验帖；内容将展示认证标识，便于同学识别和参考。',
+    confirmText: '去认证',
+    success(result) {
+      if (!result.confirm) return
+      confirmationInProgress = true
+      void openMentorVerificationEntry({ from: 'experience-publish' }).finally(() => {
+        openingExperiencePublishEntry = false
+      })
+    },
+    complete() {
+      if (!confirmationInProgress) openingExperiencePublishEntry = false
+    }
+  })
+}
+
 async function openExperiencePublishPage() {
+  if (openingExperiencePublishEntry) return
+  openingExperiencePublishEntry = true
+
   if (!isAuthed.value) {
     goLogin()
+    setTimeout(() => {
+      openingExperiencePublishEntry = false
+    }, 700)
     return
   }
-  await loadMentorEntryStatus({ force: true })
-  if (mentorEntryStatus.value !== 'verified') {
-    uni.showModal({
-      title: '经验贴为认证前辈专属',
-      content: '通过前辈认证后，经验内容会带上已认证标识，方便同学放心参考。',
-      confirmText: '去认证',
-      success(result) {
-        if (result.confirm) void openMentorVerificationEntry()
-      }
-    })
+
+  const knownStatus = getMentorVerificationStatus()
+  mentorEntryStatus.value = knownStatus
+  if (knownStatus !== 'verified') {
+    // 未认证、审核中或被驳回都属于失败关闭分支，可以立即给出认证入口；
+    // 服务端状态在后台刷新，不再阻塞弹窗反馈。
+    showExperiencePublishVerificationModal()
+    void loadMentorEntryStatus({ force: true })
     return
   }
-  openCommunityPublishPage('experience')
+
+  try {
+    // 已认证属于正向放行：命中一分钟内的预取结果时立即进入，
+    // 状态过期时才等待服务端复核，网络失败不会凭陈旧缓存放行。
+    if (!isMentorEntryStatusFresh()) await loadMentorEntryStatus({ force: true })
+    if (mentorEntryStatus.value !== 'verified') {
+      showExperiencePublishVerificationModal()
+      return
+    }
+    if (!isMentorEntryStatusFresh()) throw new Error('mentor verification status unavailable')
+    openCommunityPublishPage('experience')
+    setTimeout(() => {
+      openingExperiencePublishEntry = false
+    }, 700)
+  } catch (error) {
+    openingExperiencePublishEntry = false
+    uni.showToast({ title: '发布权限校验失败，请稍后重试', icon: 'none' })
+  }
 }
 
 function openChatPublishPage() {
@@ -8281,6 +8390,7 @@ function selectCircleCommunityTab(tab) {
     resetCircleTabbar()
     return
   }
+  if (tab === 'experience') void loadMentorEntryStatus({ force: !isMentorEntryStatusFresh() })
   const shouldRefreshTab = consumeCircleCommunityFeedRefresh(tab)
   const sortBy = selectedCommunityPostSort.value
   const featuredOnly = sortBy === 'featured'

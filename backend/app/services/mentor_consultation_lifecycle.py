@@ -15,6 +15,7 @@ from typing import Any
 from app.db import get_supabase_admin
 from app.services.mentor_consultation_sla import normalize_case_priority
 from app.services.supabase_resilience import call_supabase
+from app.services.user_notifications import create_user_notification
 
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,57 @@ def _insert_event(supabase: Any, order_id: str, event_type: str, details: dict |
         logger.warning(
             "Consultation lifecycle event skipped (event=%s error_type=%s)",
             event_type,
+            type(exc).__name__,
+        )
+
+
+def _notify_applicant_of_lifecycle_timeout(
+    supabase: Any,
+    *,
+    order: dict,
+    timeout_reason: str,
+    title: str,
+    summary: str,
+    content: str,
+) -> None:
+    """Write one applicant-scoped status notification after a won transition."""
+
+    order_id = str(order.get("id") or "").strip()
+    recipient_user_id = str(order.get("applicant_user_id") or "").strip()
+    if not order_id or not recipient_user_id:
+        return
+
+    route_path = "/pages-sub-consultation/consultation/my-consultations"
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="consultation",
+            notification_type="mentor_order_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_order",
+            related_id=f"{order_id}:timeout",
+            route_path=route_path,
+            delivery_payload={
+                "surface": "mentor_order",
+                "audience": "applicant",
+                "event": "timeout",
+                "order_id": order_id,
+                "mentor_id": str(order.get("mentor_id") or ""),
+                "order_status": str(order.get("order_status") or "timeout"),
+                "timeout_reason": timeout_reason,
+                "consultation_type": str(order.get("consultation_type") or ""),
+                "payment_status": str(order.get("payment_status") or ""),
+                "refund_amount_cents": max(0, int(order.get("refund_amount_cents") or 0)),
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Consultation lifecycle notification skipped (order_id=%s reason=%s error_type=%s)",
+            order_id,
+            timeout_reason,
             type(exc).__name__,
         )
 
@@ -411,17 +463,14 @@ def refresh_expired_mentor_consultation_order(
         )
         if not response.data:
             return _get_order_or_existing(supabase, order_id, order)
-        _insert_system_message(
-            supabase,
-            order_id,
-            (
-                "前辈未在规定时间内接单，本次咨询已自动取消；测试退款已完成。"
-                if paid and refund_payment_status == "refunded"
-                else "前辈未在规定时间内接单，本次咨询已自动取消，平台已提交退款处理。"
-                if paid
-                else "前辈未在规定时间内接单，本次咨询已自动取消。"
-            ),
+        timeout_content = (
+            "前辈未在规定时间内接单，本次咨询已自动取消；测试退款已完成。"
+            if paid and refund_payment_status == "refunded"
+            else "前辈未在规定时间内接单，本次咨询已自动取消，平台已提交退款处理。"
+            if paid
+            else "前辈未在规定时间内接单，本次咨询已自动取消。"
         )
+        _insert_system_message(supabase, order_id, timeout_content)
         _insert_event(
             supabase,
             order_id,
@@ -435,6 +484,14 @@ def refresh_expired_mentor_consultation_order(
                 "consultation_refund_completed" if refund_payment_status == "refunded" else "consultation_refund_requested",
                 {"refund_amount_cents": refund_amount_cents, "refund_reference": f"TIMEOUT-{str(order.get('order_no') or '')}", "reason": "order_timeout"},
             )
+        _notify_applicant_of_lifecycle_timeout(
+            supabase,
+            order={**order, **response.data[0]},
+            timeout_reason="order_timed_out",
+            title="本次咨询已自动取消",
+            summary="前辈未在规定时间内接单，订单与退款状态已更新。",
+            content=timeout_content,
+        )
         return response.data[0]
 
     if order_status == "accepted":
@@ -473,17 +530,14 @@ def refresh_expired_mentor_consultation_order(
         )
         if not response.data:
             return _get_order_or_existing(supabase, order_id, order)
-        _insert_system_message(
-            supabase,
-            order_id,
-            (
-                "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消；测试退款已完成。"
-                if paid and refund_payment_status == "refunded"
-                else "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消，平台已提交退款处理。"
-                if paid
-                else "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消。"
-            ),
+        timeout_content = (
+            "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消；测试退款已完成。"
+            if paid and refund_payment_status == "refunded"
+            else "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消，平台已提交退款处理。"
+            if paid
+            else "前辈已接单但未在规定时间内开始服务，本次咨询已自动取消。"
         )
+        _insert_system_message(supabase, order_id, timeout_content)
         _insert_event(
             supabase,
             order_id,
@@ -501,6 +555,14 @@ def refresh_expired_mentor_consultation_order(
                 "consultation_refund_completed" if refund_payment_status == "refunded" else "consultation_refund_requested",
                 {"refund_amount_cents": refund_amount_cents, "refund_reference": f"START-TIMEOUT-{str(order.get('order_no') or '')}", "reason": "accepted_start_timeout"},
             )
+        _notify_applicant_of_lifecycle_timeout(
+            supabase,
+            order={**order, **response.data[0]},
+            timeout_reason="accepted_start_timed_out",
+            title="本次咨询未按时开始",
+            summary="前辈接单后未在规定时间内开始服务，订单与退款状态已更新。",
+            content=timeout_content,
+        )
         return response.data[0]
 
     if order_status != "booked" or order.get("started_at"):
@@ -559,17 +621,14 @@ def refresh_expired_mentor_consultation_order(
         )
     except Exception as exc:
         logger.warning("Consultation booking no-show slot expiry skipped (error_type=%s)", type(exc).__name__)
-    _insert_system_message(
-        supabase,
-        order_id,
-        (
-            "预约时段已结束，前辈未开始服务，本次咨询已自动取消；测试退款已完成。"
-            if paid and refund_payment_status == "refunded"
-            else "预约时段已结束，前辈未开始服务，本次咨询已自动取消，平台已提交退款处理。"
-            if paid
-            else "预约时段已结束，前辈未开始服务，本次咨询已自动取消。"
-        ),
+    timeout_content = (
+        "预约时段已结束，前辈未开始服务，本次咨询已自动取消；测试退款已完成。"
+        if paid and refund_payment_status == "refunded"
+        else "预约时段已结束，前辈未开始服务，本次咨询已自动取消，平台已提交退款处理。"
+        if paid
+        else "预约时段已结束，前辈未开始服务，本次咨询已自动取消。"
     )
+    _insert_system_message(supabase, order_id, timeout_content)
     _insert_event(
         supabase,
         order_id,
@@ -587,6 +646,14 @@ def refresh_expired_mentor_consultation_order(
             "consultation_refund_completed" if refund_payment_status == "refunded" else "consultation_refund_requested",
             {"refund_amount_cents": refund_amount_cents, "refund_reference": f"BOOKING-TIMEOUT-{str(order.get('order_no') or '')}", "reason": "booking_no_show"},
         )
+    _notify_applicant_of_lifecycle_timeout(
+        supabase,
+        order={**order, **response.data[0]},
+        timeout_reason="booking_no_show_timed_out",
+        title="预约咨询未按时开始",
+        summary="预约时段已结束，订单与退款状态已更新。",
+        content=timeout_content,
+    )
     return response.data[0]
 
 

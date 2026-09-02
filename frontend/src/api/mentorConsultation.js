@@ -96,10 +96,10 @@ export function createMentorVerificationApplication(payload) {
   })
 }
 
-export function uploadMentorVerificationDocument(applicationId, { filePath, file, fileName }) {
+export function uploadMentorVerificationDocument(applicationId, { path, filePath, file, fileName } = {}) {
   return uploadFileRequest({
     url: `/mentor-consultation/verification-applications/${encodeURIComponent(applicationId)}/documents`,
-    filePath,
+    filePath: filePath || path,
     file,
     fileName,
     name: 'file',

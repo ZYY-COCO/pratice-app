@@ -16,7 +16,14 @@
       <text class="mentor-chat-service-detail">{{ serviceTipDetail }}</text>
     </view>
 
-    <scroll-view scroll-y class="mentor-chat-scroll" :scroll-into-view="scrollTarget" scroll-with-animation>
+    <scroll-view
+      scroll-y
+      class="mentor-chat-scroll"
+      :scroll-into-view="scrollTarget"
+      :scroll-with-animation="scrollWithAnimation"
+      @touchstart="handleChatTouchStart"
+      @scroll="handleChatScroll"
+    >
       <view v-if="mentor" class="mentor-chat-content">
         <view class="mentor-chat-context-card" :class="{ expanded: contextExpanded }">
           <view
@@ -49,7 +56,7 @@
           {{ consultationActive ? '当前咨询仅支持文字沟通；如需提交图片凭证，可从右上角“…”进入举报页上传。' : waitingChatHint }}
         </view>
 
-        <template v-for="message in messages" :key="message.id">
+        <template v-for="message in messages" :key="message.renderKey || message.id">
           <view
             v-if="message.sender === 'system'"
             :id="`mentor-message-${message.id}`"
@@ -81,6 +88,16 @@
       </view>
     </scroll-view>
 
+    <view
+      v-if="mentor && unseenMessageCount > 0 && !consultationEnded && !shouldShowCompletionBar"
+      class="mentor-chat-new-message"
+      role="button"
+      aria-label="查看最新消息"
+      @tap="jumpToLatestMessages"
+    >
+      {{ unseenMessageCount > 1 ? `${unseenMessageCount} 条新消息` : '有新消息' }}
+    </view>
+
     <view v-if="mentor && consultationEnded" class="mentor-chat-completed-bar" :class="{ mentor: isMentorViewer }">
       <view><strong>{{ endedTitle }}</strong><text>{{ endedCopy }}</text></view>
       <template v-if="isMentorViewer">
@@ -105,19 +122,37 @@
       <button v-else class="light" @tap="openSupport">查看处理进度</button>
     </view>
 
-    <view v-else-if="mentor" class="mentor-chat-input-bar">
+    <view
+      v-else-if="mentor"
+      class="mentor-chat-input-bar"
+      :class="{ 'keyboard-open': keyboardOpen }"
+    >
       <input
-        v-model="messageInput"
+        ref="messageInputRef"
+        :value="messageInput"
+        :focus="composerFocusRequested"
         :disabled="!consultationActive"
         :placeholder="chatInputPlaceholder"
         placeholder-class="mentor-chat-placeholder"
         confirm-type="send"
+        :confirm-hold="true"
         maxlength="2000"
         cursor-spacing="16"
-        @focus="scrollToBottom"
-        @confirm="sendText"
+        @input="handleMessageInput"
+        @focus="handleComposerFocus"
+        @blur="handleComposerBlur"
+        @keyboardheightchange="handleComposerKeyboardHeightChange"
+        @compositionstart="handleCompositionStart"
+        @compositionend="handleCompositionEnd"
+        @confirm="sendText('confirm', $event)"
       />
-      <button class="mentor-chat-send" :disabled="!canSendText" @tap="sendText">发送</button>
+      <button
+        class="mentor-chat-send"
+        :disabled="!canSendText"
+        @touchstart="captureSendFocusIntent"
+        @mousedown.prevent="captureSendFocusIntent"
+        @tap="sendText('tap', $event)"
+      >发送</button>
     </view>
 
     <view v-if="!isMentorViewer && reviewVisible" class="mentor-review-mask" @tap="closeReview">
@@ -176,6 +211,13 @@ const CHAT_ORDER_POLL_INTERVAL = 12000
 const CHAT_RECONCILIATION_WINDOW_MS = 2 * 60 * 1000
 const CHAT_CURSOR_OVERLAP_MS = 2000
 const CHAT_HISTORY_PAGE_SIZE = 100
+const CHAT_NEAR_BOTTOM_THRESHOLD_PX = 96
+const CHAT_SEND_FOCUS_INTENT_WINDOW_MS = 1000
+const CHAT_STALE_INPUT_GUARD_MS = 120
+const CHAT_SCROLL_ANIMATION_RESET_MS = 120
+const CHAT_SEND_DISPATCH_LOCK_MS = 32
+const CHAT_KEYBOARD_VIEWPORT_SETTLE_BUFFER_MS = 40
+const CHAT_KEYBOARD_VIEWPORT_MAX_DURATION_MS = 1000
 
 const mentor = ref(null)
 const themeKey = ref(getStoredThemeKey())
@@ -185,6 +227,12 @@ const questionnaire = ref({})
 const contextExpanded = ref(false)
 const messages = ref([])
 const messageInput = ref('')
+const messageInputRef = ref(null)
+const composerFocusRequested = ref(false)
+const keyboardOpen = ref(false)
+const scrollWithAnimation = ref(true)
+const isNearChatBottom = ref(true)
+const unseenMessageCount = ref(0)
 const orderId = ref('')
 const orderStatus = ref('in_progress')
 const acceptedAt = ref('')
@@ -216,9 +264,37 @@ let messagePollInFlight = false
 let orderPollInFlight = false
 let messageCursor = ''
 let chatLoadPromise = null
+let chatLoadLifecycleRevision = -1
+let chatLoadOrderId = ''
 let pageVisible = true
+let pageDestroyed = false
+let pageLifecycleRevision = 0
 let returnSource = ''
 let historyStartReached = false
+let initialChatPositioned = false
+let composerFocused = false
+let composerComposing = false
+let keyboardClosedWhileFocused = false
+let composerRevision = 0
+let lastSentComposerRevision = -1
+let sendFocusIntentAt = 0
+let focusScrollSuppressedUntil = 0
+let clearedComposerValue = ''
+let clearedComposerAt = 0
+let staleComposerInputPending = false
+let chatViewportHeight = 0
+let lastChatScrollTop = 0
+let lastChatScrollHeight = 0
+let viewportQueryPending = false
+let viewportRefreshQueued = false
+let viewportQuerySequence = 0
+let scrollRequestSequence = 0
+let scrollAnimationResetTimer = null
+let sendDispatchLocked = false
+let sendDispatchUnlockTimer = null
+let keyboardViewportSyncTimer = null
+let keyboardViewportTransitionActive = false
+let keyboardTransitionShouldPinBottom = true
 
 const reviewTags = ['解答清晰', '回复及时', '很有帮助', '经验丰富', '建议具体']
 const isMentorViewer = computed(() => viewerRole.value === 'mentor')
@@ -334,6 +410,7 @@ onLoad((options) => {
 onShow(() => {
   pageVisible = true
   themeKey.value = getStoredThemeKey()
+  refreshChatViewportHeight()
   if (orderId.value) {
     void markCurrentOrderNotificationsRead()
     void loadChatData({ silent: true })
@@ -342,38 +419,98 @@ onShow(() => {
 
 onHide(() => {
   pageVisible = false
+  pageLifecycleRevision += 1
+  viewportQuerySequence += 1
+  viewportQueryPending = false
+  viewportRefreshQueued = false
+  composerFocused = false
+  composerComposing = false
+  keyboardClosedWhileFocused = false
+  keyboardOpen.value = false
+  keyboardViewportTransitionActive = false
+  keyboardTransitionShouldPinBottom = true
+  composerFocusRequested.value = false
+  sendFocusIntentAt = 0
   stopChatTimers()
 })
 
 onBeforeUnmount(() => {
   pageVisible = false
+  pageDestroyed = true
+  pageLifecycleRevision += 1
+  viewportQuerySequence += 1
+  viewportQueryPending = false
+  viewportRefreshQueued = false
+  composerFocused = false
+  composerComposing = false
+  keyboardClosedWhileFocused = false
+  keyboardOpen.value = false
+  keyboardViewportTransitionActive = false
+  keyboardTransitionShouldPinBottom = true
+  composerFocusRequested.value = false
+  sendFocusIntentAt = 0
   stopChatTimers()
 })
 
-async function loadChatData({ silent = false } = {}) {
-  if (!orderId.value) return
-  if (chatLoadPromise) return chatLoadPromise
+function isCurrentPageSnapshot(lifecycleRevision, requestedOrderId) {
+  return Boolean(
+    pageVisible
+    && !pageDestroyed
+    && lifecycleRevision === pageLifecycleRevision
+    && requestedOrderId === orderId.value
+  )
+}
 
-  chatLoadPromise = Promise.all([
-    fetchMentorConsultationOrder(orderId.value),
-    fetchMentorConsultationMessages(orderId.value, { limit: 100 })
-  ])
-    .then(([order, messagePayload]) => {
+async function loadChatData({ silent = false } = {}) {
+  if (!orderId.value || !pageVisible || pageDestroyed) return null
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
+  if (
+    chatLoadPromise
+    && chatLoadLifecycleRevision === requestedLifecycleRevision
+    && chatLoadOrderId === requestedOrderId
+  ) return chatLoadPromise
+
+  const request = (async () => {
+    try {
+      const [order, messagePayload] = await Promise.all([
+        fetchMentorConsultationOrder(requestedOrderId),
+        fetchMentorConsultationMessages(requestedOrderId, { limit: 100 })
+      ])
+      if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return null
       applyOrder(order)
       const incoming = Array.isArray(messagePayload?.items) ? messagePayload.items : []
       if (!historyStartReached) hasMoreHistoryMessages.value = incoming.length >= CHAT_HISTORY_PAGE_SIZE
-      if (mergeRemoteMessages(incoming)) scrollToBottom()
+      const mergeResult = mergeRemoteMessages(incoming)
+      if (!initialChatPositioned) {
+        initialChatPositioned = true
+        scrollToBottom({ animated: false })
+      } else {
+        handleRemoteMessageMerge(mergeResult)
+      }
+      refreshChatViewportHeight()
       startMessagePolling()
       startOrderPolling()
-    })
-    .catch((error) => {
-      if (!silent) uni.showToast({ title: error?.detail || '咨询聊天加载失败', icon: 'none' })
-    })
-    .finally(() => {
+      return true
+    } catch (error) {
+      if (!silent && isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) {
+        uni.showToast({ title: error?.detail || '咨询聊天加载失败', icon: 'none' })
+      }
+      return null
+    }
+  })()
+  chatLoadPromise = request
+  chatLoadLifecycleRevision = requestedLifecycleRevision
+  chatLoadOrderId = requestedOrderId
+  try {
+    return await request
+  } finally {
+    if (chatLoadPromise === request) {
       chatLoadPromise = null
-    })
-
-  return chatLoadPromise
+      chatLoadLifecycleRevision = -1
+      chatLoadOrderId = ''
+    }
+  }
 }
 
 async function markCurrentOrderNotificationsRead() {
@@ -428,28 +565,35 @@ function applyOrder(order) {
 
 function normalizeMessage(message = {}) {
   const senderRole = String(message.sender || message.sender_role || 'system')
+  const id = String(message.id || `local-${Date.now()}`)
+  const clientMessageId = String(message.clientMessageId || message.client_message_id || '')
   return {
-    id: String(message.id || `local-${Date.now()}`),
+    id,
+    renderKey: String(message.renderKey || (clientMessageId ? `client-${clientMessageId}` : `message-${id}`)),
     sender: senderRole === 'applicant' ? 'user' : senderRole,
     type: String(message.type || message.message_type || 'text'),
     content: String(message.content || ''),
     createdAt: message.createdAt || message.created_at || Date.now(),
-    clientMessageId: String(message.clientMessageId || message.client_message_id || ''),
+    clientMessageId,
     deliveryState: message.deliveryState || 'sent'
   }
 }
 
 function mergeRemoteMessages(incoming = []) {
   const remoteMessages = incoming.map(normalizeMessage)
-  if (!remoteMessages.length) return false
+  if (!remoteMessages.length) return { changed: false, addedMessages: [] }
 
   const next = [...messages.value]
   let changed = false
+  const addedMessages = []
   for (const remoteMessage of remoteMessages) {
     const existingIndex = next.findIndex((item) => item.id === remoteMessage.id)
     if (existingIndex >= 0) {
       if (next[existingIndex].deliveryState !== 'sent') {
-        next[existingIndex] = remoteMessage
+        next[existingIndex] = {
+          ...remoteMessage,
+          renderKey: next[existingIndex].renderKey || remoteMessage.renderKey
+        }
         changed = true
       }
       continue
@@ -457,9 +601,13 @@ function mergeRemoteMessages(incoming = []) {
 
     const optimisticIndex = next.findIndex((item) => isMatchingOptimisticMessage(item, remoteMessage))
     if (optimisticIndex >= 0) {
-      next[optimisticIndex] = remoteMessage
+      next[optimisticIndex] = {
+        ...remoteMessage,
+        renderKey: next[optimisticIndex].renderKey || remoteMessage.renderKey
+      }
     } else {
       next.push(remoteMessage)
+      addedMessages.push(remoteMessage)
     }
     changed = true
   }
@@ -472,12 +620,24 @@ function mergeRemoteMessages(incoming = []) {
     ))
     messages.value = next
   }
-  return changed
+  return { changed, addedMessages }
+}
+
+function handleRemoteMessageMerge({ addedMessages = [] } = {}) {
+  if (!addedMessages.length) return
+  if (isNearChatBottom.value) {
+    scrollToBottom()
+    return
+  }
+  unseenMessageCount.value += addedMessages.length
 }
 
 function isMatchingOptimisticMessage(localMessage, remoteMessage) {
   if (!localMessage || localMessage.deliveryState === 'sent') return false
-  if (localMessage.clientMessageId && localMessage.clientMessageId === remoteMessage.clientMessageId) return true
+  if (localMessage.clientMessageId || remoteMessage.clientMessageId) {
+    return Boolean(localMessage.clientMessageId)
+      && localMessage.clientMessageId === remoteMessage.clientMessageId
+  }
   if (localMessage.sender !== remoteMessage.sender || localMessage.type !== remoteMessage.type) return false
   if (localMessage.content !== remoteMessage.content) return false
   return Math.abs(toTimestamp(localMessage.createdAt) - toTimestamp(remoteMessage.createdAt)) <= CHAT_RECONCILIATION_WINDOW_MS
@@ -549,15 +709,18 @@ function scheduleNextMessagePoll(delay) {
 
 async function syncLatestMessages({ full = false } = {}) {
   if (!pageVisible || !orderId.value || messagePollInFlight) return true
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
   messagePollInFlight = true
   try {
     const after = full ? '' : getIncrementalMessageCursor()
-    const payload = await fetchMentorConsultationMessages(orderId.value, {
+    const payload = await fetchMentorConsultationMessages(requestedOrderId, {
       limit: 100,
       ...(after ? { after } : {})
     })
+    if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return false
     const incoming = Array.isArray(payload?.items) ? payload.items : []
-    if (mergeRemoteMessages(incoming)) scrollToBottom()
+    handleRemoteMessageMerge(mergeRemoteMessages(incoming))
     return true
   } catch (error) {
     return false
@@ -568,6 +731,8 @@ async function syncLatestMessages({ full = false } = {}) {
 
 async function loadEarlierMessages() {
   if (loadingEarlierMessages.value || !hasMoreHistoryMessages.value || !orderId.value) return
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
   const earliestMessage = messages.value.reduce((earliest, message) => {
     if (!earliest || toTimestamp(message.createdAt) < toTimestamp(earliest.createdAt)) return message
     return earliest
@@ -578,18 +743,23 @@ async function loadEarlierMessages() {
     return
   }
 
+  const historyAnchorId = `mentor-message-${earliestMessage.id}`
   loadingEarlierMessages.value = true
   try {
-    const payload = await fetchMentorConsultationMessages(orderId.value, {
+    const payload = await fetchMentorConsultationMessages(requestedOrderId, {
       before,
       limit: CHAT_HISTORY_PAGE_SIZE
     })
+    if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return
     const incoming = Array.isArray(payload?.items) ? payload.items : []
-    mergeRemoteMessages(incoming)
+    const mergeResult = mergeRemoteMessages(incoming)
     hasMoreHistoryMessages.value = incoming.length >= CHAT_HISTORY_PAGE_SIZE
     if (!hasMoreHistoryMessages.value) historyStartReached = true
+    if (mergeResult.changed) restoreMessageAnchor(historyAnchorId)
   } catch (error) {
-    uni.showToast({ title: error?.detail || '更早聊天记录加载失败', icon: 'none' })
+    if (isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) {
+      uni.showToast({ title: error?.detail || '更早聊天记录加载失败', icon: 'none' })
+    }
   } finally {
     loadingEarlierMessages.value = false
   }
@@ -612,9 +782,13 @@ function scheduleNextOrderPoll(delay) {
 
 async function syncCurrentOrder() {
   if (!pageVisible || !orderId.value || orderPollInFlight) return true
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
   orderPollInFlight = true
   try {
-    applyOrder(await fetchMentorConsultationOrder(orderId.value))
+    const order = await fetchMentorConsultationOrder(requestedOrderId)
+    if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return false
+    applyOrder(order)
     return true
   } catch (error) {
     return false
@@ -627,23 +801,246 @@ function stopChatTimers() {
   if (serviceTimer) clearInterval(serviceTimer)
   if (messagePollTimer) clearTimeout(messagePollTimer)
   if (orderPollTimer) clearTimeout(orderPollTimer)
+  if (scrollAnimationResetTimer) clearTimeout(scrollAnimationResetTimer)
+  if (sendDispatchUnlockTimer) clearTimeout(sendDispatchUnlockTimer)
+  if (keyboardViewportSyncTimer) clearTimeout(keyboardViewportSyncTimer)
   serviceTimer = null
   messagePollTimer = null
   orderPollTimer = null
+  scrollAnimationResetTimer = null
+  sendDispatchUnlockTimer = null
+  keyboardViewportSyncTimer = null
+  keyboardViewportTransitionActive = false
+  viewportRefreshQueued = false
+  sendDispatchLocked = false
+  scrollRequestSequence += 1
+  scrollWithAnimation.value = true
 }
 
-function sendText() {
+function getComposerEventValue(event) {
+  if (typeof event?.detail?.value === 'string') return event.detail.value
+  if (typeof event?.target?.value === 'string') return event.target.value
+  return null
+}
+
+function updateComposerValue(nextValue, { guardStaleValue = true } = {}) {
+  const normalizedValue = String(nextValue ?? '')
+  if (guardStaleValue && staleComposerInputPending) {
+    const withinGuardWindow = Date.now() - clearedComposerAt <= CHAT_STALE_INPUT_GUARD_MS
+    if (withinGuardWindow && messageInput.value === '') {
+      if (normalizedValue === clearedComposerValue) {
+        staleComposerInputPending = false
+        return ''
+      }
+      if (normalizedValue === '') return ''
+    }
+    staleComposerInputPending = false
+  }
+
+  if (normalizedValue !== messageInput.value) {
+    messageInput.value = normalizedValue
+    composerRevision += 1
+  }
+  return normalizedValue
+}
+
+function handleMessageInput(event) {
+  // A real input event after clearing is always new user input, even when it
+  // happens to equal the message that was just sent. The stale-value guard is
+  // reserved for late blur snapshots from the pre-send native input.
+  return updateComposerValue(getComposerEventValue(event) ?? '', { guardStaleValue: false })
+}
+
+function handleCompositionStart() {
+  composerComposing = true
+}
+
+function handleCompositionEnd(event) {
+  composerComposing = false
+  // uni-h5 的 compositionend detail.value 仅是本次上屏片段；原生 target.value 才是完整输入。
+  const finalValue = typeof event?.target?.value === 'string' ? event.target.value : null
+  if (finalValue !== null) updateComposerValue(finalValue, { guardStaleValue: false })
+}
+
+function handleComposerFocus() {
+  composerFocused = true
+  keyboardClosedWhileFocused = false
+  keyboardTransitionShouldPinBottom = isNearChatBottom.value
+  composerFocusRequested.value = true
+  refreshChatViewportHeight()
+  if (Date.now() >= focusScrollSuppressedUntil && isNearChatBottom.value) {
+    scrollToBottom({ animated: false })
+  }
+}
+
+function getComposerBlurValue(event) {
+  if (typeof event?.target?.value === 'string') return event.target.value
+  if (typeof event?.detail?.originalEvent?.target?.value === 'string') {
+    return event.detail.originalEvent.target.value
+  }
+  if (typeof event?.detail?.value === 'string') return event.detail.value
+  return null
+}
+
+function handleComposerBlur(event) {
+  const finalValue = getComposerBlurValue(event)
+  const wouldRestoreClearedSend = Boolean(
+    finalValue !== null
+    && clearedComposerValue
+    && finalValue === clearedComposerValue
+    && Date.now() - clearedComposerAt <= CHAT_SEND_FOCUS_INTENT_WINDOW_MS
+  )
+  if (finalValue !== null && !wouldRestoreClearedSend) updateComposerValue(finalValue)
+  composerFocused = false
+  keyboardClosedWhileFocused = false
+  composerFocusRequested.value = false
+}
+
+function captureSendFocusIntent() {
+  sendFocusIntentAt = composerFocused && !keyboardClosedWhileFocused ? Date.now() : 0
+}
+
+function normalizeKeyboardTransitionDuration(duration) {
+  const numericDuration = Number(duration)
+  if (!Number.isFinite(numericDuration) || numericDuration <= 0) return 0
+  const durationMs = numericDuration <= 10 ? numericDuration * 1000 : numericDuration
+  return Math.min(durationMs, CHAT_KEYBOARD_VIEWPORT_MAX_DURATION_MS)
+}
+
+function scheduleKeyboardViewportSync(duration) {
+  if (keyboardViewportSyncTimer) clearTimeout(keyboardViewportSyncTimer)
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
+  const delay = normalizeKeyboardTransitionDuration(duration) + CHAT_KEYBOARD_VIEWPORT_SETTLE_BUFFER_MS
+  keyboardViewportTransitionActive = true
+  keyboardViewportSyncTimer = setTimeout(() => {
+    keyboardViewportSyncTimer = null
+    if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return
+    keyboardViewportTransitionActive = false
+    refreshChatViewportHeight()
+    if (keyboardTransitionShouldPinBottom) scrollToBottom({ animated: false })
+  }, delay)
+}
+
+function handleComposerKeyboardHeightChange(event) {
+  const keyboardHeight = Number(event?.detail?.height)
+  if (Number.isFinite(keyboardHeight)) {
+    const wasKeyboardOpen = keyboardOpen.value
+    const nextKeyboardOpen = keyboardHeight > 0
+    if (wasKeyboardOpen === nextKeyboardOpen || !nextKeyboardOpen) {
+      keyboardTransitionShouldPinBottom = isNearChatBottom.value
+    }
+    keyboardOpen.value = nextKeyboardOpen
+    if (keyboardHeight > 0) {
+      keyboardClosedWhileFocused = false
+    } else if (composerFocused) {
+      keyboardClosedWhileFocused = true
+      composerFocusRequested.value = false
+    }
+    scheduleKeyboardViewportSync(event?.detail?.duration)
+  }
+  refreshChatViewportHeight()
+}
+
+function shouldKeepComposerFocusedAfterSend(source) {
+  const pointerStartedWhileFocused = sendFocusIntentAt > 0
+    && Date.now() - sendFocusIntentAt <= CHAT_SEND_FOCUS_INTENT_WINDOW_MS
+  sendFocusIntentAt = 0
+  return source === 'confirm' || pointerStartedWhileFocused
+}
+
+function focusComposerElement(lifecycleRevision, requestedOrderId) {
+  if (!isCurrentPageSnapshot(lifecycleRevision, requestedOrderId)) return
+  const component = messageInputRef.value
+  const nativeInput = component?.$el?.querySelector?.('input')
+  const focusTarget = nativeInput || component
+  if (typeof focusTarget?.focus !== 'function') return
+  try {
+    focusTarget.focus({ preventScroll: true })
+  } catch (error) {
+    focusTarget.focus()
+  }
+}
+
+function keepComposerFocusedAfterSend() {
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
+  if (
+    !isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)
+    || !consultationActive.value
+    || consultationEnded.value
+    || shouldShowCompletionBar.value
+  ) return
+  keyboardClosedWhileFocused = false
+  focusScrollSuppressedUntil = Date.now() + 500
+  composerFocusRequested.value = true
+  focusComposerElement(requestedLifecycleRevision, requestedOrderId)
+  nextTick(() => focusComposerElement(requestedLifecycleRevision, requestedOrderId))
+}
+
+function isActiveCompositionEvent(event) {
+  return Boolean(
+    composerComposing
+    || event?.isComposing
+    || event?.detail?.isComposing
+    || event?.detail?.originalEvent?.isComposing
+  )
+}
+
+function clearComposerAfterSend(rawValue) {
+  messageInput.value = ''
+  clearedComposerValue = String(rawValue || '')
+  clearedComposerAt = Date.now()
+  staleComposerInputPending = Boolean(clearedComposerValue)
+}
+
+function lockSendDispatchBriefly() {
+  sendDispatchLocked = true
+  if (sendDispatchUnlockTimer) clearTimeout(sendDispatchUnlockTimer)
+  sendDispatchUnlockTimer = setTimeout(() => {
+    sendDispatchLocked = false
+    sendDispatchUnlockTimer = null
+  }, CHAT_SEND_DISPATCH_LOCK_MS)
+}
+
+function sendText(source = 'tap', event) {
+  const shouldRetainComposerFocus = shouldKeepComposerFocusedAfterSend(source)
+  if (sendDispatchLocked) {
+    if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
+    return
+  }
+  if (isActiveCompositionEvent(event)) {
+    if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
+    return
+  }
   if (!consultationActive.value) {
     uni.showToast({ title: '请等待认证前辈开始咨询', icon: 'none' })
     return
   }
-  const content = messageInput.value.trim()
-  if (!content || consultationEnded.value || shouldShowCompletionBar.value || !orderId.value) return
 
+  if (source === 'confirm') {
+    const confirmedValue = getComposerEventValue(event)
+    if (confirmedValue !== null) updateComposerValue(confirmedValue)
+  }
+
+  const rawValue = messageInput.value
+  const content = rawValue.trim()
+  if (!content || consultationEnded.value || shouldShowCompletionBar.value || !orderId.value) {
+    if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
+    return
+  }
+  if (lastSentComposerRevision === composerRevision) {
+    if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
+    return
+  }
+
+  lockSendDispatchBriefly()
   const clientMessageId = createClientMessageId()
   const localMessageId = `local-${clientMessageId}`
+  lastSentComposerRevision = composerRevision
   messages.value = [...messages.value, {
     id: localMessageId,
+    renderKey: `client-${clientMessageId}`,
     sender: isMentorViewer.value ? 'mentor' : 'user',
     type: 'text',
     content,
@@ -651,8 +1048,9 @@ function sendText() {
     clientMessageId,
     deliveryState: 'sending'
   }]
-  messageInput.value = ''
+  clearComposerAfterSend(rawValue)
   scrollToBottom()
+  if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
   void sendPendingMessage(localMessageId)
 }
 
@@ -666,9 +1064,10 @@ async function sendPendingMessage(localMessageId) {
       client_message_id: pendingMessage.clientMessageId
     })
     const confirmedMessage = normalizeMessage(message)
-    messages.value = messages.value.map((item) => item.id === localMessageId ? confirmedMessage : item)
+    messages.value = messages.value.map((item) => item.id === localMessageId
+      ? { ...confirmedMessage, renderKey: item.renderKey || confirmedMessage.renderKey }
+      : item)
     updateMessageCursor([confirmedMessage])
-    scrollToBottom()
     scheduleNextMessagePoll(0)
   } catch (error) {
     messages.value = messages.value.map((item) => item.id === localMessageId
@@ -695,6 +1094,10 @@ async function retryMessage(message) {
   const pendingMessage = messages.value.find((item) => item.id === message.id)
   if (synced && pendingMessage?.deliveryState === 'sending') {
     void sendPendingMessage(message.id)
+  } else if (!synced) {
+    messages.value = messages.value.map((item) => item.id === message.id
+      ? { ...item, deliveryState: 'failed' }
+      : item)
   }
 }
 
@@ -733,10 +1136,123 @@ async function finishConsultation() {
   }
 }
 
-function scrollToBottom() {
+function scheduleScrollAnimationReset() {
+  if (scrollAnimationResetTimer) clearTimeout(scrollAnimationResetTimer)
+  scrollAnimationResetTimer = setTimeout(() => {
+    scrollWithAnimation.value = true
+    scrollAnimationResetTimer = null
+  }, CHAT_SCROLL_ANIMATION_RESET_MS)
+}
+
+function scrollToBottom({ animated = true } = {}) {
+  const requestSequence = ++scrollRequestSequence
+  isNearChatBottom.value = true
+  keyboardTransitionShouldPinBottom = true
+  unseenMessageCount.value = 0
+  scrollWithAnimation.value = animated
   nextTick(() => {
+    if (requestSequence !== scrollRequestSequence) return
     scrollTarget.value = ''
-    nextTick(() => { scrollTarget.value = 'mentor-chat-bottom' })
+    nextTick(() => {
+      if (requestSequence !== scrollRequestSequence) return
+      scrollTarget.value = 'mentor-chat-bottom'
+      if (!animated) scheduleScrollAnimationReset()
+    })
+  })
+}
+
+function restoreMessageAnchor(anchorId) {
+  if (!anchorId) return
+  const requestSequence = ++scrollRequestSequence
+  isNearChatBottom.value = false
+  keyboardTransitionShouldPinBottom = false
+  scrollWithAnimation.value = false
+  nextTick(() => {
+    if (requestSequence !== scrollRequestSequence) return
+    scrollTarget.value = ''
+    nextTick(() => {
+      if (requestSequence !== scrollRequestSequence) return
+      scrollTarget.value = anchorId
+      scheduleScrollAnimationReset()
+    })
+  })
+}
+
+function jumpToLatestMessages() {
+  scrollToBottom()
+}
+
+function updateNearBottomState() {
+  if (!chatViewportHeight || !lastChatScrollHeight) return
+  const distanceToBottom = Math.max(0, lastChatScrollHeight - lastChatScrollTop - chatViewportHeight)
+  isNearChatBottom.value = distanceToBottom <= CHAT_NEAR_BOTTOM_THRESHOLD_PX
+  if (isNearChatBottom.value) unseenMessageCount.value = 0
+}
+
+function handleChatScroll(event) {
+  const scrollTop = Number(event?.detail?.scrollTop)
+  const scrollHeight = Number(event?.detail?.scrollHeight)
+  if (Number.isFinite(scrollTop)) lastChatScrollTop = scrollTop
+  if (Number.isFinite(scrollHeight)) lastChatScrollHeight = scrollHeight
+  if (!chatViewportHeight) refreshChatViewportHeight()
+  if (!keyboardViewportTransitionActive) {
+    updateNearBottomState()
+    keyboardTransitionShouldPinBottom = isNearChatBottom.value
+  }
+}
+
+function handleChatTouchStart() {
+  if (!keyboardViewportTransitionActive) return
+  keyboardTransitionShouldPinBottom = false
+}
+
+function releaseViewportQuery(querySequence) {
+  if (querySequence !== viewportQuerySequence) return
+  viewportQueryPending = false
+  if (!viewportRefreshQueued) return
+  viewportRefreshQueued = false
+  refreshChatViewportHeight()
+}
+
+function refreshChatViewportHeight() {
+  if (viewportQueryPending) {
+    viewportRefreshQueued = true
+    return
+  }
+  if (
+    !pageVisible
+    || pageDestroyed
+    || typeof uni?.createSelectorQuery !== 'function'
+  ) return
+  const requestedLifecycleRevision = pageLifecycleRevision
+  const requestedOrderId = orderId.value
+  const querySequence = ++viewportQuerySequence
+  viewportQueryPending = true
+  nextTick(() => {
+    if (
+      querySequence !== viewportQuerySequence
+      || !isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)
+    ) {
+      releaseViewportQuery(querySequence)
+      return
+    }
+    try {
+      const query = uni.createSelectorQuery()
+      query.select('.mentor-chat-scroll').boundingClientRect((rect) => {
+        if (
+          querySequence === viewportQuerySequence
+          && isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)
+        ) {
+          const height = Number(rect?.height)
+          if (Number.isFinite(height) && height > 0) chatViewportHeight = height
+          if (!keyboardViewportTransitionActive) updateNearBottomState()
+        }
+        releaseViewportQuery(querySequence)
+      })
+      query.exec(() => releaseViewportQuery(querySequence))
+    } catch (error) {
+      releaseViewportQuery(querySequence)
+    }
   })
 }
 
@@ -838,9 +1354,10 @@ function goBack() {
 .mentor-chat-completed-bar{padding:14rpx 20rpx calc(16rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.98);display:grid;grid-template-columns:minmax(0,1fr) 166rpx 118rpx;align-items:center;gap:10rpx}.mentor-chat-completed-bar>view{min-width:0}.mentor-chat-completed-bar strong,.mentor-chat-completed-bar text{display:block}.mentor-chat-completed-bar strong{color:#31445f;font-size:22rpx;font-weight:900}.mentor-chat-completed-bar text{margin-top:5rpx;color:#8998aa;font-size:17rpx;line-height:1.3;font-weight:650}.mentor-chat-completed-bar button{box-sizing:border-box;height:64rpx;min-height:64rpx;margin:0;padding:0 10rpx;border:0;border-radius:17rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:19rpx;line-height:1;font-weight:850;white-space:nowrap}.mentor-chat-completed-bar button::after{border:0}.mentor-chat-completed-bar button.light{background:#edf4ff;color:#5274aa}
 .mentor-chat-completed-bar.mentor{grid-template-columns:minmax(0,1fr) 180rpx}
 .mentor-chat-recording-overlay{position:fixed;z-index:30;top:50%;left:50%;box-sizing:border-box;width:100%;padding:0 36rpx;transform:translate(-50%,-50%);pointer-events:none;display:flex;justify-content:center;opacity:1;transition:opacity 160ms ease}.mentor-chat-recording-overlay.ending{opacity:0}.mentor-chat-recording-bubble{box-sizing:border-box;min-width:284rpx;height:178rpx;padding:32rpx 30rpx;border:2rpx solid rgba(255,255,255,.34);border-radius:34rpx;background:var(--gyt-primary-gradient,linear-gradient(135deg,#3478f6,#68a0ff));box-shadow:0 22rpx 54rpx var(--gyt-primary-shadow,rgba(52,120,246,.2));display:flex;align-items:center;justify-content:center}.mentor-chat-waveform{height:94rpx;display:flex;align-items:center;justify-content:center;gap:7rpx}.mentor-chat-wave-bar{display:block;width:7rpx;min-width:7rpx;height:82rpx;min-height:82rpx;border-radius:999rpx;background:rgba(255,255,255,.96);transform-origin:center;transition:transform 72ms cubic-bezier(.2,.8,.2,1);will-change:transform}
-.mentor-review-mask{position:fixed;z-index:10;inset:0;padding:32rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));background:rgba(19,37,66,.35);display:flex;align-items:flex-end}.mentor-review-sheet{width:100%;padding:20rpx 28rpx 28rpx;border-radius:30rpx;background:#fff;box-shadow:0 -16rpx 46rpx rgba(28,62,117,.16)}.mentor-review-handle{width:64rpx;height:7rpx;margin:0 auto 22rpx;border-radius:999rpx;background:#dce6f4}.mentor-review-title{color:#273a55;font-size:29rpx;font-weight:900}.mentor-review-subtitle{margin-top:7rpx;color:#8796aa;font-size:20rpx;line-height:1.45;font-weight:650}.mentor-review-stars{display:flex;gap:12rpx;margin-top:22rpx}.mentor-review-stars button{width:54rpx;height:54rpx;margin:0;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center}.mentor-review-stars button image{display:block;width:42rpx;height:42rpx}.mentor-review-stars button::after,.mentor-review-tags button::after,.mentor-review-submit::after{border:0}.mentor-review-tags{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-review-tags button{min-height:48rpx;margin:0;padding:0 15rpx;border:2rpx solid #dce7f8;border-radius:14rpx;background:#fbfdff;color:#71839d;font-size:20rpx;font-weight:750}.mentor-review-tags button.active{border-color:#b9d2ff;background:#edf4ff;color:#3478f6}.mentor-review-sheet textarea{box-sizing:border-box;width:100%;min-height:144rpx;margin-top:20rpx;padding:16rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#fbfdff;color:#3a4f6e;font-size:21rpx;line-height:1.5}.mentor-review-count{margin-top:7rpx;color:#9aa9ba;text-align:right;font-size:18rpx}.mentor-review-submit{width:100%;min-height:72rpx;margin-top:16rpx;border:0;border-radius:20rpx;background:#3478f6;color:#fff;font-size:24rpx;font-weight:900;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}
+.mentor-review-mask{position:fixed;z-index:10;inset:0;padding:32rpx 20rpx calc(20rpx + env(safe-area-inset-bottom));background:rgba(19,37,66,.35);display:flex;align-items:flex-end}.mentor-review-sheet{width:100%;padding:20rpx 28rpx 28rpx;border-radius:30rpx;background:#fff;box-shadow:0 -16rpx 46rpx rgba(28,62,117,.16)}.mentor-review-handle{width:64rpx;height:7rpx;margin:0 auto 22rpx;border-radius:999rpx;background:#dce6f4}.mentor-review-title{color:#273a55;font-size:29rpx;font-weight:900}.mentor-review-subtitle{margin-top:7rpx;color:#8796aa;font-size:20rpx;line-height:1.45;font-weight:650}.mentor-review-stars{display:flex;gap:12rpx;margin-top:22rpx}.mentor-review-stars button{width:54rpx;height:54rpx;margin:0;padding:0;border:0;background:transparent;display:flex;align-items:center;justify-content:center}.mentor-review-stars button image{display:block;width:42rpx;height:42rpx}.mentor-review-stars button::after,.mentor-review-tags button::after,.mentor-review-submit::after{border:0}.mentor-review-tags{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-review-tags button{box-sizing:border-box;min-height:48rpx;margin:0;padding:0 15rpx;border:2rpx solid #dce7f8;border-radius:14rpx;background:#fbfdff;color:#71839d;display:flex;align-items:center;justify-content:center;text-align:center;font-size:20rpx;line-height:1.2;font-weight:750}.mentor-review-tags button.active{border-color:#b9d2ff;background:#edf4ff;color:#3478f6}.mentor-review-sheet textarea{box-sizing:border-box;width:100%;min-height:144rpx;margin-top:20rpx;padding:16rpx;border:2rpx solid #e0eafa;border-radius:18rpx;background:#fbfdff;color:#3a4f6e;font-size:21rpx;line-height:1.5}.mentor-review-count{margin-top:7rpx;color:#9aa9ba;text-align:right;font-size:18rpx}.mentor-review-submit{box-sizing:border-box;width:100%;height:72rpx;min-height:72rpx;margin-top:16rpx;padding:0 16rpx;border:0;border-radius:20rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:24rpx;line-height:1;font-weight:900;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}
 @media(max-width:350px){.mentor-chat-completed-bar{grid-template-columns:minmax(0,1fr) 142rpx 98rpx}.mentor-chat-completed-bar button{font-size:17rpx}.mentor-chat-input-bar{gap:7rpx;padding-right:12rpx;padding-left:12rpx}.mentor-chat-tool{width:54rpx;min-width:54rpx;height:54rpx;min-height:54rpx;padding:8rpx}.mentor-chat-send{min-width:100rpx;font-size:21rpx}}
-.mentor-chat-page { background: var(--gyt-page-bg); }
+.mentor-chat-page { position: relative; background: var(--gyt-page-bg); }
+.mentor-chat-new-message{position:absolute;z-index:6;right:22rpx;bottom:calc(112rpx + env(safe-area-inset-bottom));box-sizing:border-box;min-height:56rpx;padding:0 22rpx;border:2rpx solid var(--gyt-primary-border,#c8daf8);border-radius:999rpx;background:rgba(255,255,255,.96);color:var(--gyt-primary,#3478f6);display:flex;align-items:center;justify-content:center;font-size:19rpx;line-height:1;font-weight:850;box-shadow:0 10rpx 24rpx rgba(44,75,119,.14);-webkit-backdrop-filter:blur(12rpx);backdrop-filter:blur(12rpx)}
 .mentor-chat-text-hint{margin:15rpx 4rpx 0;color:#8192a8;font-size:18rpx;line-height:1.5;font-weight:650}
 .mentor-chat-completion-bar{padding:16rpx 20rpx calc(18rpx + env(safe-area-inset-bottom));border-top:2rpx solid var(--gyt-primary-border,#dbe7f8);background:var(--gyt-primary-tint,rgba(255,255,255,.98));display:grid;grid-template-columns:minmax(0,1fr) 156rpx;align-items:center;gap:14rpx}.mentor-chat-completion-bar.confirmed{background:#f7fbff}.mentor-chat-completion-bar>view{min-width:0}.mentor-chat-completion-bar strong,.mentor-chat-completion-bar text{display:block}.mentor-chat-completion-bar strong{color:#31445f;font-size:22rpx;font-weight:900}.mentor-chat-completion-bar text{margin-top:5rpx;color:#8191a7;font-size:17rpx;line-height:1.4;font-weight:650}.mentor-chat-completion-bar button{box-sizing:border-box;height:66rpx;min-height:66rpx;margin:0;padding:0 10rpx;border:0;border-radius:17rpx;background:var(--gyt-primary-gradient,#3478f6);color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:19rpx;line-height:1;font-weight:850;white-space:nowrap;box-shadow:0 8rpx 18rpx var(--gyt-primary-shadow,rgba(52,120,246,.18))}.mentor-chat-completion-bar button::after{border:0}.mentor-chat-completion-bar button.light{background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6);box-shadow:none}
 .mentor-chat-service-tip { border-color: rgba(229, 226, 224, .94); background: rgba(255, 255, 255, .94); color: var(--gyt-primary, #3478f6); box-shadow: 0 8rpx 20rpx rgba(48, 42, 38, .035); }
@@ -857,7 +1374,12 @@ function goBack() {
 .mentor-chat-delivery { white-space: nowrap; }
 .mentor-chat-delivery.sending { color: #8291a5; }
 .mentor-chat-delivery.failed { color: #cf5b63; font-weight: 800; }
-.mentor-chat-history-load{margin:16rpx auto 2rpx;text-align:center}.mentor-chat-history-load button{min-height:54rpx;margin:0;padding:0 22rpx;border:0;border-radius:999rpx;background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6);font-size:19rpx;line-height:54rpx;font-weight:800}.mentor-chat-history-load button::after{border:0}
+.mentor-chat-history-load{margin:16rpx auto 2rpx;text-align:center}.mentor-chat-history-load button{position:relative;box-sizing:border-box;width:260rpx;height:54rpx;min-height:54rpx;margin:0;padding:0 22rpx;border:0;border-radius:999rpx;background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6);display:flex;align-items:center;justify-content:center;text-align:center;font-size:19rpx;line-height:1;font-weight:800}.mentor-chat-history-load button::after{border:0}
+.mentor-chat-history-load button[loading]::before{position:absolute;top:0;bottom:0;left:14rpx;width:20rpx;height:20rpx;margin:auto 0}
+.mentor-chat-completion-bar button{position:relative}
+.mentor-chat-completion-bar button[loading]::before{position:absolute;top:0;bottom:0;left:8rpx;width:20rpx;height:20rpx;margin:auto 0}
+.mentor-review-submit{position:relative}
+.mentor-review-submit[loading]::before{position:absolute;top:0;bottom:0;left:18rpx;width:26rpx;height:26rpx;margin:auto 0}
 
 /* 移动端聊天优先保留对话空间，咨询资料按需展开。 */
 .mentor-chat-service-tip {
@@ -988,6 +1510,10 @@ function goBack() {
   box-shadow: 0 -10rpx 28rpx rgba(44, 75, 119, 0.07);
   -webkit-backdrop-filter: blur(18rpx);
   backdrop-filter: blur(18rpx);
+}
+
+.mentor-chat-input-bar.keyboard-open {
+  padding-bottom: 14rpx;
 }
 
 .mentor-chat-input-bar input {

@@ -4,11 +4,19 @@
 
     <scroll-view :scroll-y="pageMode !== 'center'" class="mentor-apply-scroll">
       <view v-if="pageMode === 'apply'" class="mentor-apply-content">
+        <view v-if="lastRejectionNote" class="mentor-rejection-notice">
+          <view class="mentor-rejection-notice-icon" aria-hidden="true">!</view>
+          <view class="mentor-rejection-notice-copy">
+            <strong>上次认证未通过</strong>
+            <text>{{ lastRejectionNote }}</text>
+            <small>请根据审核说明修改信息或补充材料后重新提交。</small>
+          </view>
+        </view>
         <view class="mentor-apply-card">
           <view class="mentor-apply-section-title">认证基本信息</view>
           <view class="mentor-apply-field">
             <view class="mentor-apply-label">真实姓名 <text>后台审核使用</text></view>
-            <input v-model="form.realName" placeholder="请输入真实姓名" placeholder-class="mentor-apply-placeholder" />
+            <input v-model="form.realName" maxlength="40" placeholder="请输入真实姓名" placeholder-class="mentor-apply-placeholder" />
             <view class="mentor-apply-tip">公开展示时系统会自动进行姓名脱敏。</view>
           </view>
           <view class="mentor-apply-field">
@@ -64,20 +72,56 @@
           </view>
         </view>
 
-        <view class="mentor-apply-card">
-          <view class="mentor-apply-section-title">擅长咨询领域</view>
-          <view class="mentor-apply-copy">最多选择 4 项，方便考生更精准地找到你。</view>
-          <view class="mentor-skill-options">
-            <button v-for="item in skillOptions" :key="item" :class="{ active: form.skills.includes(item) }" @tap="toggleSkill(item)">{{ item }}</button>
+        <button
+          class="mentor-consultation-opt-in"
+          :class="{ 'is-selected': form.consultationEnabled }"
+          type="button"
+          :aria-label="form.consultationEnabled ? '取消同步申请开通前辈咨询服务' : '同步申请开通前辈咨询服务'"
+          :aria-pressed="form.consultationEnabled ? 'true' : 'false'"
+          :aria-expanded="form.consultationEnabled ? 'true' : 'false'"
+          @tap="toggleConsultationEnabled"
+        >
+          <view class="mentor-consultation-opt-in-copy">
+            <strong>是否同步申请开通前辈咨询服务？</strong>
+            <text>认证通过后，可在「前辈咨询」频道提供付费咨询服务。</text>
           </view>
-        </view>
+          <view class="mentor-consultation-opt-in-check" aria-hidden="true">
+            <text v-if="form.consultationEnabled">✓</text>
+          </view>
+        </button>
 
-        <view class="mentor-apply-card">
-          <view class="mentor-apply-label"><text>个人简介</text><text>{{ form.bio.length }} / 500</text></view>
-          <textarea v-model="form.bio" maxlength="500" placeholder="介绍你的上岸经历、可提供的帮助和擅长方向。" placeholder-class="mentor-apply-placeholder" />
-          <view class="mentor-apply-price-field">
-            <view><strong>咨询价格</strong><text>单次咨询默认开启 60 分钟咨询窗口。</text></view>
-            <view class="mentor-price-input"><text>¥</text><input v-model="form.price" type="number" /><text>/ 次</text></view>
+        <view
+          class="mentor-consultation-fields"
+          :class="{ 'is-expanded': form.consultationEnabled }"
+          :aria-hidden="form.consultationEnabled ? 'false' : 'true'"
+        >
+          <view class="mentor-apply-card">
+            <view class="mentor-apply-section-title">擅长咨询领域</view>
+            <view class="mentor-apply-copy">最多选择 4 项，方便考生更精准地找到你。</view>
+            <view class="mentor-skill-options">
+              <button
+                v-for="item in skillOptions"
+                :key="item"
+                :class="{ active: form.skills.includes(item) }"
+                :disabled="!form.consultationEnabled"
+                @tap="toggleSkill(item)"
+              >{{ item }}</button>
+            </view>
+          </view>
+
+          <view class="mentor-apply-card">
+            <view class="mentor-apply-label"><text>个人简介</text><text>{{ form.bio.length }} / 500</text></view>
+            <textarea
+              v-model="form.bio"
+              :disabled="!form.consultationEnabled"
+              maxlength="500"
+              placeholder="介绍你的上岸经历、可提供的帮助和擅长方向。"
+              placeholder-class="mentor-apply-placeholder"
+            />
+            <view class="mentor-apply-price-field">
+              <view><strong>咨询价格</strong><text>单次咨询默认开启 60 分钟咨询窗口。</text></view>
+              <view class="mentor-price-input"><text>¥</text><input v-model="form.price" :disabled="!form.consultationEnabled" type="number" /><text>/ 次</text></view>
+            </view>
           </view>
         </view>
         <view class="mentor-apply-bottom-space"></view>
@@ -116,7 +160,7 @@
             <text class="mentor-center-hero-arrow" aria-hidden="true">›</text>
           </view>
 
-          <view class="mentor-center-status">
+          <view v-if="mentorProfile.consultationEnabled !== false" class="mentor-center-status">
             <view>
               <strong>{{ mentorProfile.onlineStatus === 'online' ? '在线接单中' : '暂不接即时咨询' }}</strong>
             </view>
@@ -136,11 +180,20 @@
               />
             </view>
           </view>
+          <view v-else class="mentor-center-status mentor-center-status-disabled">
+            <view>
+              <strong>咨询服务暂未开通</strong>
+              <text>当前仅展示前辈认证身份，可正常发布经验帖，不会收到新的咨询申请。</text>
+            </view>
+          </view>
 
           <view class="mentor-center-orders">
             <view class="mentor-center-orders-heading">
               <view><strong>我的咨询记录</strong></view>
-              <button :loading="mentorOrdersLoading" @tap="loadReceivedOrders">刷新</button>
+              <button :disabled="mentorOrdersLoading" @tap="loadReceivedOrders">
+                <view v-if="mentorOrdersLoading" class="mentor-center-button-spinner" aria-hidden="true"></view>
+                <text class="mentor-center-action-label">刷新</text>
+              </button>
             </view>
 
             <scroll-view scroll-y :show-scrollbar="false" class="mentor-center-orders-scroll" @scrolltolower="loadMoreReceivedOrders">
@@ -186,16 +239,22 @@
                   </view>
 
                   <view v-if="order.orderStatus === 'pending_accept'" class="mentor-center-order-actions">
-                    <button :loading="centerActionId === order.id" @tap.stop="openOrderDecision(order)">查看资料并处理</button>
+                    <button :disabled="Boolean(centerActionId)" @tap.stop="openOrderDecision(order)"><text class="mentor-center-action-label">查看资料并处理</text></button>
                   </view>
                   <view v-else-if="['accepted', 'booked', 'in_progress'].includes(order.orderStatus)" class="mentor-center-order-actions">
                     <button
                       v-if="canCancelReceivedOrder(order)"
                       class="light"
-                      :loading="centerActionId === order.id"
+                      :disabled="Boolean(centerActionId)"
                       @tap.stop="confirmMentorOrderCancellation(order)"
-                    >暂时无法服务</button>
-                    <button :loading="centerActionId === order.id" @tap.stop="openMentorOrderChat(order)">{{ order.orderStatus === 'in_progress' ? '进入咨询' : '开始咨询' }}</button>
+                    >
+                      <view v-if="isCenterActionLoading(order, 'cancel')" class="mentor-center-button-spinner" aria-hidden="true"></view>
+                      <text class="mentor-center-action-label">{{ isCenterActionLoading(order, 'cancel') ? '取消中' : '暂时无法服务' }}</text>
+                    </button>
+                    <button :disabled="Boolean(centerActionId)" @tap.stop="openMentorOrderChat(order)">
+                      <view v-if="isCenterActionLoading(order, 'chat')" class="mentor-center-button-spinner" aria-hidden="true"></view>
+                      <text class="mentor-center-action-label">{{ isCenterActionLoading(order, 'chat') ? '进入中' : order.orderStatus === 'in_progress' ? '进入咨询' : '开始咨询' }}</text>
+                    </button>
                   </view>
                 </view>
                 <view v-if="mentorOrders.length" class="mentor-center-orders-load-state" @tap="loadMoreReceivedOrders">
@@ -227,7 +286,17 @@
         </view>
         <view class="mentor-order-decision-question"><text>本次想咨询的问题</text><strong>{{ decisionOrder.questionnaire?.question || '考生暂未填写额外问题。' }}</strong></view>
         <view class="mentor-order-decision-reason"><view><text>暂不接受说明</text><strong>选填，提交后会同步给考生</strong></view><textarea v-model="decisionReason" maxlength="500" placeholder="例如：当前无法在约定时间内提供服务" placeholder-class="mentor-apply-placeholder" /><text>{{ decisionReason.length }} / 500</text></view>
-        <view class="mentor-order-decision-actions"><button class="light" :disabled="decisionSubmitting" @tap="closeOrderDecision">返回</button><button class="reject" :loading="decisionSubmitting" @tap="submitOrderDecision('reject')">暂不接受</button><button :loading="decisionSubmitting" @tap="submitOrderDecision('accept')">确认接单并开始咨询</button></view>
+        <view class="mentor-order-decision-actions">
+          <button class="light" :disabled="decisionSubmitting" @tap="closeOrderDecision"><text class="mentor-order-decision-label">返回</text></button>
+          <button class="reject" :disabled="decisionSubmitting" @tap="submitOrderDecision('reject')">
+            <view v-if="decisionSubmitting && decisionAction === 'reject'" class="mentor-order-decision-spinner" aria-hidden="true"></view>
+            <text class="mentor-order-decision-label">暂不接受</text>
+          </button>
+          <button :disabled="decisionSubmitting" @tap="submitOrderDecision('accept')">
+            <view v-if="decisionSubmitting && decisionAction === 'accept'" class="mentor-order-decision-spinner" aria-hidden="true"></view>
+            <text class="mentor-order-decision-label">确认接单并开始咨询</text>
+          </button>
+        </view>
       </view>
     </view>
   </view>
@@ -273,11 +342,14 @@ const pageMode = ref('apply')
 const schoolKeyword = ref('')
 const proofImages = ref([])
 const submitting = ref(false)
+const lastRejectionNote = ref('')
 const skillOptions = MENTOR_SKILL_OPTIONS
 const examOptions = ['Z001', 'Z002', '申请制']
 const MENTOR_YEAR_MIN = 2000
 const MENTOR_ADMISSION_YEAR_MAX = 2026
 const MENTOR_SCORE_MAX = 150
+const MENTOR_LEGAL_NAME_MIN_LENGTH = 2
+const MENTOR_LEGAL_NAME_MAX_LENGTH = 40
 const yearOptionsReferenceDate = ref(new Date())
 const admissionYearOptions = buildYearOptions(MENTOR_ADMISSION_YEAR_MAX)
 const graduationYearOptions = computed(() => buildYearOptions(getGraduationYearMaximum(yearOptionsReferenceDate.value)))
@@ -291,13 +363,16 @@ const mentorOrdersNextCursor = ref('')
 const mentorOrdersHasMore = ref(false)
 const onlineStatusUpdating = ref(false)
 const centerActionId = ref('')
+const centerActionType = ref('')
 const decisionOrder = ref(null)
 const decisionReason = ref('')
+const decisionAction = ref('')
 const notificationOrderId = ref('')
 const notificationOrderHandled = ref(false)
 const unreadMentorOrderTargets = ref({})
 const decisionClock = ref(Date.now())
 const entryFromProfile = ref(false)
+const entryFromExperiencePublish = ref(false)
 const ownerUser = ref(getAuthUser() || {})
 const themeKey = ref(getStoredThemeKey())
 
@@ -318,6 +393,7 @@ let latestUnreadLoadToken = 0
 
 onLoad((options) => {
   entryFromProfile.value = options?.from === 'profile-consultations'
+  entryFromExperiencePublish.value = options?.from === 'experience-publish'
   notificationOrderId.value = String(options?.orderId || '')
   void initializePage(options)
 })
@@ -373,12 +449,16 @@ onBeforeUnmount(stopDecisionCountdown)
 
 async function initializePage(options) {
   ownerUser.value = getAuthUser() || {}
+  lastRejectionNote.value = ''
+  const defaultApplication = createDefaultApplication({ consultationEnabled: !entryFromExperiencePublish.value })
   const saved = getMentorApplication()
   if (saved) {
-    form.value = { ...createDefaultApplication(), ...saved }
+    form.value = { ...defaultApplication, ...saved }
     normalizeApplicationYears()
     form.value.score = normalizeScoreInput(form.value.score)
     proofImages.value = normalizeProofImages(saved.proofImages)
+  } else {
+    form.value = defaultApplication
   }
   const verificationStatus = getMentorVerificationStatus()
   const fallbackPageMode = verificationStatus === 'verified' ? 'center' : verificationStatus === 'pending' ? 'pending' : (options?.mode === 'pending' ? 'pending' : 'apply')
@@ -436,11 +516,11 @@ async function initializePage(options) {
   pageMode.value = fallbackPageMode
 }
 
-function createDefaultApplication() {
+function createDefaultApplication({ consultationEnabled = true } = {}) {
   const graduationYear = getGraduationYearMaximum(new Date())
   const admissionYear = Math.min(2025, graduationYear)
   return {
-    realName: '', school: '', major: '', admissionYear: String(admissionYear), graduationYear: String(graduationYear), score: '', examType: 'Z001', skills: [], bio: '', price: '39'
+    realName: '', school: '', major: '', admissionYear: String(admissionYear), graduationYear: String(graduationYear), score: '', examType: 'Z001', skills: [], bio: '', price: '39', consultationEnabled: Boolean(consultationEnabled)
   }
 }
 
@@ -512,6 +592,7 @@ function handleScoreInput(event) {
 }
 
 function toggleSkill(skill) {
+  if (!form.value.consultationEnabled) return
   if (form.value.skills.includes(skill)) {
     form.value.skills = form.value.skills.filter((item) => item !== skill)
     return
@@ -521,6 +602,10 @@ function toggleSkill(skill) {
     return
   }
   form.value.skills = [...form.value.skills, skill]
+}
+
+function toggleConsultationEnabled() {
+  form.value.consultationEnabled = !form.value.consultationEnabled
 }
 
 function chooseProof() {
@@ -557,8 +642,14 @@ async function submitApplication() {
     uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent('/pages-sub-consultation/consultation/mentor-apply')}` })
     return
   }
-  if (!form.value.realName.trim() || !form.value.school.trim() || !form.value.major.trim() || !String(form.value.score).trim()) {
+  const legalName = form.value.realName.trim()
+  if (!legalName || !form.value.school.trim() || !form.value.major.trim() || !String(form.value.score).trim()) {
     uni.showToast({ title: '请补充真实姓名、录取院校、专业和初试成绩', icon: 'none' })
+    return
+  }
+  const legalNameLength = Array.from(legalName).length
+  if (legalNameLength < MENTOR_LEGAL_NAME_MIN_LENGTH || legalNameLength > MENTOR_LEGAL_NAME_MAX_LENGTH) {
+    uni.showToast({ title: '真实姓名请填写 2–40 个字', icon: 'none' })
     return
   }
   const score = Number(form.value.score)
@@ -570,34 +661,64 @@ async function submitApplication() {
     uni.showToast({ title: '毕业年份不能早于入学年份', icon: 'none' })
     return
   }
-  const price = Number(form.value.price)
-  if (!Number.isFinite(price) || price < 0 || price > 1000) {
+  const consultationEnabled = form.value.consultationEnabled === true
+  const price = consultationEnabled ? Number(form.value.price) : 0
+  if (consultationEnabled && (!Number.isFinite(price) || price < 0 || price > 1000)) {
     uni.showToast({ title: '请输入正确的咨询价格', icon: 'none' })
     return
   }
   submitting.value = true
+  let application = null
   try {
-    const application = await createMentorVerificationApplication({
-      legal_name: form.value.realName.trim(),
+    application = await createMentorVerificationApplication({
+      legal_name: legalName,
       school: form.value.school.trim(),
       major: form.value.major.trim(),
       admission_year: Number(form.value.admissionYear),
       graduation_year: form.value.graduationYear ? Number(form.value.graduationYear) : null,
       exam_type: form.value.examType === '申请制' ? 'application' : form.value.examType,
       score,
-      skills: form.value.skills,
-      bio: form.value.bio.trim(),
-      price_cents: Math.round(price * 100)
+      skills: consultationEnabled ? form.value.skills : [],
+      bio: consultationEnabled ? form.value.bio.trim() : '',
+      price_cents: consultationEnabled ? Math.round(price * 100) : 0,
+      consultation_enabled: consultationEnabled
     })
-    for (const proof of proofImages.value) {
-      await uploadMentorVerificationDocument(application.id, proof)
-    }
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '申请创建失败，请稍后重试', icon: 'none' })
+    submitting.value = false
+    return
+  }
+
+  try {
     saveMentorApplication({ ...form.value, proofImages: proofImages.value.map((item) => item.path) })
     setMentorVerificationStatus('pending')
+    lastRejectionNote.value = ''
     pageMode.value = 'pending'
+
+    const uploadFailures = []
+    for (const [index, proof] of proofImages.value.entries()) {
+      try {
+        await uploadMentorVerificationDocument(application.id, proof)
+      } catch (error) {
+        uploadFailures.push({ index, error })
+      }
+    }
+
+    if (uploadFailures.length) {
+      const uploadedCount = proofImages.value.length - uploadFailures.length
+      const uploadSummary = uploadedCount > 0
+        ? `已成功上传 ${uploadedCount} 份，另有 ${uploadFailures.length} 份上传失败。`
+        : `${uploadFailures.length} 份证明材料均未上传成功。`
+      uni.showModal({
+        title: '申请已提交',
+        content: `认证申请已进入审核，${uploadSummary}平台会在材料不足时通知你补充。`,
+        showCancel: false,
+        confirmText: '知道了'
+      })
+      return
+    }
+
     uni.showToast({ title: '申请已提交，等待审核', icon: 'success' })
-  } catch (error) {
-    uni.showToast({ title: error?.detail || '申请提交失败，请稍后重试', icon: 'none' })
   } finally {
     submitting.value = false
   }
@@ -611,6 +732,10 @@ function normalizeProofImages(value) {
 }
 
 function applyServerApplication(application) {
+  const consultationEnabled = application.consultation_enabled ?? application.consultationEnabled
+  const resolvedConsultationEnabled = consultationEnabled == null
+    ? form.value.consultationEnabled
+    : Boolean(consultationEnabled)
   form.value = {
     ...createDefaultApplication(),
     realName: application.legal_name || '',
@@ -620,14 +745,19 @@ function applyServerApplication(application) {
     graduationYear: application.graduation_year ? String(application.graduation_year) : '',
     score: String(application.score ?? ''),
     examType: application.exam_type === 'application' ? '申请制' : application.exam_type || 'Z001',
-    skills: Array.isArray(application.skills) ? application.skills : [],
-    bio: application.bio || '',
-    price: String(application.price ?? 39)
+    skills: resolvedConsultationEnabled && Array.isArray(application.skills) ? application.skills : form.value.skills,
+    bio: resolvedConsultationEnabled ? (application.bio || '') : form.value.bio,
+    price: resolvedConsultationEnabled ? String(application.price ?? 39) : form.value.price,
+    consultationEnabled: resolvedConsultationEnabled
   }
   normalizeApplicationYears()
   form.value.score = normalizeScoreInput(form.value.score)
   schoolKeyword.value = form.value.school
   const status = application.application_status === 'approved' ? 'verified' : application.application_status === 'pending' ? 'pending' : 'rejected'
+  const adminNote = String(application.admin_note || '').trim()
+  lastRejectionNote.value = status === 'rejected'
+    ? (adminNote || '原审核记录未填写具体理由，请核对认证信息和证明材料后重新提交。')
+    : ''
   setMentorVerificationStatus(status)
   pageMode.value = status === 'verified' ? 'center' : status === 'pending' ? 'pending' : 'apply'
 }
@@ -711,6 +841,7 @@ async function handleOnlineStatusChange(event) {
 async function handleOrderDecision(order, decision, reason = '') {
   if (!order?.id || centerActionId.value) return
   centerActionId.value = order.id
+  centerActionType.value = 'decision'
   try {
     const updated = normalizeMentorConsultationOrder(await decideMentorConsultationOrder(order.id, decision, reason))
     mentorOrders.value = mentorOrders.value.map((item) => item.id === updated.id ? updated : item)
@@ -721,6 +852,7 @@ async function handleOrderDecision(order, decision, reason = '') {
     return null
   } finally {
     centerActionId.value = ''
+    centerActionType.value = ''
   }
 }
 
@@ -737,22 +869,29 @@ function openOrderDecision(order) {
   markMentorOrderNotificationsRead(order)
   decisionOrder.value = order
   decisionReason.value = ''
+  decisionAction.value = ''
 }
 
 function closeOrderDecision() {
   if (decisionSubmitting.value) return
   decisionOrder.value = null
   decisionReason.value = ''
+  decisionAction.value = ''
 }
 
 async function submitOrderDecision(decision) {
   const order = decisionOrder.value
   if (!order?.id || decisionSubmitting.value) return
-  const updated = await handleOrderDecision(order, decision, decision === 'reject' ? decisionReason.value : '')
-  if (!updated) return
-  closeOrderDecision()
-  if (decision === 'accept' && updated.orderStatus === 'in_progress') {
-    await openMentorOrderChat(updated)
+  decisionAction.value = decision
+  try {
+    const updated = await handleOrderDecision(order, decision, decision === 'reject' ? decisionReason.value : '')
+    if (!updated) return
+    closeOrderDecision()
+    if (decision === 'accept' && updated.orderStatus === 'in_progress') {
+      await openMentorOrderChat(updated)
+    }
+  } finally {
+    decisionAction.value = ''
   }
 }
 
@@ -774,6 +913,7 @@ function confirmMentorOrderCancellation(order) {
 async function cancelReceivedMentorOrder(order) {
   if (!canCancelReceivedOrder(order) || centerActionId.value) return
   centerActionId.value = order.id
+  centerActionType.value = 'cancel'
   try {
     const updated = normalizeMentorConsultationOrder(await cancelMentorConsultationOrder(order.id))
     mentorOrders.value = mentorOrders.value.map((item) => item.id === updated.id ? updated : item)
@@ -782,6 +922,7 @@ async function cancelReceivedMentorOrder(order) {
     uni.showToast({ title: error?.detail || '取消服务失败，请稍后重试', icon: 'none' })
   } finally {
     centerActionId.value = ''
+    centerActionType.value = ''
   }
 }
 
@@ -789,6 +930,7 @@ async function openMentorOrderChat(order) {
   markMentorOrderNotificationsRead(order)
   if (!order?.id || !mentorProfile.value || centerActionId.value || !canEnterOrderService(order)) return
   centerActionId.value = order.id
+  centerActionType.value = 'chat'
   try {
     let activeOrder = order
     if (['accepted', 'booked'].includes(order.orderStatus)) {
@@ -802,7 +944,12 @@ async function openMentorOrderChat(order) {
     uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
   } finally {
     centerActionId.value = ''
+    centerActionType.value = ''
   }
+}
+
+function isCenterActionLoading(order, actionType) {
+  return centerActionId.value === order?.id && centerActionType.value === actionType
 }
 
 function openMentorSchedule() {
@@ -988,8 +1135,8 @@ function goBack() {
 .mentor-order-decision-heading{display:flex;align-items:flex-start;justify-content:space-between;gap:20rpx}.mentor-order-decision-heading strong,.mentor-order-decision-heading text{display:block}.mentor-order-decision-heading strong{color:#2b3f5d;font-size:29rpx;line-height:1.3;font-weight:900}.mentor-order-decision-heading text{margin-top:7rpx;color:#a9792e;font-size:19rpx;line-height:1.45;font-weight:750}.mentor-order-decision-heading button{width:54rpx;height:54rpx;min-height:54rpx;margin:0;padding:0;border:0;border-radius:50%;background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6);font-size:34rpx;line-height:1;font-weight:500}.mentor-order-decision-heading button::after,.mentor-order-decision-actions button::after{border:0}
 .mentor-order-decision-section-title{margin-top:28rpx;color:#425974;font-size:23rpx;font-weight:900}.mentor-order-decision-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));margin-top:15rpx;overflow:hidden;border:2rpx solid var(--gyt-primary-border,#dce8fa);border-radius:20rpx;background:var(--gyt-primary-tint,#fbfdff)}.mentor-order-decision-fields>view{min-width:0;padding:17rpx}.mentor-order-decision-fields>view:nth-child(even){border-left:2rpx solid var(--gyt-primary-border,#e7eef8)}.mentor-order-decision-fields>view:nth-child(n+3){border-top:2rpx solid var(--gyt-primary-border,#e7eef8)}.mentor-order-decision-fields text,.mentor-order-decision-fields strong{display:block}.mentor-order-decision-fields text{color:#8b9aad;font-size:18rpx;font-weight:700}.mentor-order-decision-fields strong{margin-top:6rpx;overflow:hidden;color:#4c627e;font-size:21rpx;line-height:1.4;font-weight:800;text-overflow:ellipsis;white-space:nowrap}
 .mentor-order-decision-question,.mentor-order-decision-reason{margin-top:18rpx;padding:20rpx;border:2rpx solid var(--gyt-primary-border,#dce8fa);border-radius:21rpx;background:var(--gyt-primary-tint,#fbfdff)}.mentor-order-decision-question text,.mentor-order-decision-question strong{display:block}.mentor-order-decision-question text{color:#8091a7;font-size:19rpx;font-weight:800}.mentor-order-decision-question strong{margin-top:9rpx;color:#536a86;font-size:22rpx;line-height:1.6;font-weight:650;white-space:pre-wrap}.mentor-order-decision-reason>view{display:flex;align-items:baseline;justify-content:space-between;gap:16rpx}.mentor-order-decision-reason>view text{color:#4c627e;font-size:22rpx;font-weight:900}.mentor-order-decision-reason>view strong{color:#94a1b2;font-size:17rpx;font-weight:650}.mentor-order-decision-reason textarea{box-sizing:border-box;width:100%;min-height:128rpx;margin-top:14rpx;padding:15rpx;border:2rpx solid var(--gyt-primary-border,#d7e5fb);border-radius:16rpx;background:var(--gyt-panel-bg,#fff);color:#415873;font-size:21rpx;line-height:1.55;font-weight:650}.mentor-order-decision-reason>text{display:block;margin-top:8rpx;color:#9aa8b8;text-align:right;font-size:17rpx;font-weight:650}
-.mentor-order-decision-actions{display:grid;grid-template-columns:.8fr 1fr 1.45fr;gap:10rpx;margin-top:22rpx}.mentor-order-decision-actions button{min-width:0;min-height:68rpx;margin:0;padding:0 10rpx;border:0;border-radius:18rpx;background:var(--gyt-primary-gradient,#3478f6);color:#fff;font-size:19rpx;line-height:1.25;font-weight:850}.mentor-order-decision-actions button.light{background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6)}.mentor-order-decision-actions button.reject{background:#f4a39b;color:#fff}.mentor-order-decision-actions button[disabled]{opacity:.58}
-@media(max-width:360px){.mentor-order-decision-fields{grid-template-columns:1fr}.mentor-order-decision-fields>view:nth-child(even){border-left:0}.mentor-order-decision-fields>view+view{border-top:2rpx solid var(--gyt-primary-border,#e7eef8)}.mentor-order-decision-actions{grid-template-columns:1fr}.mentor-order-decision-actions button{min-height:60rpx}}
+.mentor-order-decision-actions{display:grid;grid-template-columns:.8fr 1fr 1.45fr;gap:10rpx;margin-top:22rpx}.mentor-order-decision-actions button{box-sizing:border-box;position:relative;display:flex;align-items:center;justify-content:center;min-width:0;width:100%;height:68rpx;min-height:68rpx;margin:0;padding:0 10rpx;border:0;border-radius:18rpx;background:var(--gyt-primary-gradient,#3478f6);color:#fff;font-size:19rpx;line-height:1;font-weight:850;text-align:center;overflow:hidden;-webkit-appearance:none;appearance:none}.mentor-order-decision-actions button.light{background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6)}.mentor-order-decision-actions button.reject{background:#f4a39b;color:#fff}.mentor-order-decision-actions button[disabled]{background:var(--gyt-primary-gradient,#3478f6);color:#fff;opacity:.58}.mentor-order-decision-actions button.light[disabled]{background:var(--gyt-primary-soft,#edf4ff);color:var(--gyt-primary,#3478f6)}.mentor-order-decision-actions button.reject[disabled]{background:#f4a39b;color:#fff}.mentor-order-decision-label{display:block;width:100%;color:inherit;font-size:inherit;line-height:1.2;font-weight:inherit;text-align:center;white-space:nowrap}.mentor-order-decision-spinner{box-sizing:border-box;position:absolute;top:0;bottom:0;left:12rpx;width:28rpx;height:28rpx;margin:auto 0;border:3rpx solid rgba(255,255,255,.45);border-top-color:currentColor;border-radius:50%;color:inherit;pointer-events:none;animation:mentorOrderDecisionSpin .8s linear infinite}@keyframes mentorOrderDecisionSpin{to{transform:rotate(360deg)}}
+@media(max-width:360px){.mentor-order-decision-fields{grid-template-columns:1fr}.mentor-order-decision-fields>view:nth-child(even){border-left:0}.mentor-order-decision-fields>view+view{border-top:2rpx solid var(--gyt-primary-border,#e7eef8)}.mentor-order-decision-actions{grid-template-columns:1fr}.mentor-order-decision-actions button{height:60rpx;min-height:60rpx}.mentor-order-decision-spinner{left:18rpx}}
 
 /* 认证申请页沿用“我的”页的分组卡语言：暖灰底、白卡和中性字段面。
    品牌色只用于选中态与主操作，避免大面积蓝色描边和渐变。 */
@@ -1017,6 +1164,70 @@ function goBack() {
 
 .mentor-apply-content {
   padding: 18rpx 34rpx 0;
+}
+
+.mentor-rejection-notice {
+  box-sizing: border-box;
+  width: 100%;
+  margin-top: 18rpx;
+  padding: 24rpx 26rpx;
+  display: flex;
+  align-items: flex-start;
+  gap: 18rpx;
+  border: 2rpx solid #efd4d0;
+  border-radius: 30rpx;
+  background: #fff9f8;
+  box-shadow: 0 12rpx 30rpx rgba(128, 74, 69, .05);
+}
+
+.mentor-rejection-notice-icon {
+  width: 42rpx;
+  height: 42rpx;
+  min-width: 42rpx;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 50%;
+  background: #f4dfdc;
+  color: #b55f57;
+  font-size: 25rpx;
+  line-height: 1;
+  font-weight: 900;
+}
+
+.mentor-rejection-notice-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.mentor-rejection-notice-copy strong,
+.mentor-rejection-notice-copy text,
+.mentor-rejection-notice-copy small {
+  display: block;
+}
+
+.mentor-rejection-notice-copy strong {
+  color: #744b49;
+  font-size: 24rpx;
+  line-height: 1.4;
+  font-weight: 900;
+}
+
+.mentor-rejection-notice-copy text {
+  margin-top: 9rpx;
+  color: #815e5b;
+  font-size: 21rpx;
+  line-height: 1.65;
+  font-weight: 700;
+  white-space: pre-wrap;
+}
+
+.mentor-rejection-notice-copy small {
+  margin-top: 8rpx;
+  color: #a18380;
+  font-size: 18rpx;
+  line-height: 1.5;
+  font-weight: 600;
 }
 
 .mentor-apply-content .mentor-apply-card {
@@ -1156,6 +1367,234 @@ function goBack() {
   border: 0;
 }
 
+.mentor-consultation-opt-in {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: 126rpx;
+  margin: 18rpx 0 0;
+  padding: 24rpx 26rpx;
+  border: 0;
+  border-radius: 38rpx;
+  background: rgba(255, 255, 255, 0.96);
+  color: #343039;
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.04);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 22rpx;
+  text-align: left;
+  line-height: 1.2;
+  -webkit-appearance: none;
+  appearance: none;
+  transition: transform 160ms ease, box-shadow 220ms ease, background-color 220ms ease;
+}
+
+.mentor-consultation-opt-in::after {
+  border: 0;
+}
+
+.mentor-consultation-opt-in:active {
+  transform: scale(.994);
+}
+
+.mentor-consultation-opt-in.is-selected {
+  background: var(--gyt-panel-bg, rgba(255, 255, 255, 0.98));
+  box-shadow: 0 14rpx 36rpx rgba(56, 49, 64, 0.04), inset 0 0 0 2rpx var(--gyt-primary-border, #d9e7fc);
+}
+
+.mentor-consultation-opt-in-copy {
+  min-width: 0;
+  flex: 1;
+}
+
+.mentor-consultation-opt-in-copy strong,
+.mentor-consultation-opt-in-copy text {
+  display: block;
+}
+
+.mentor-consultation-opt-in-copy strong {
+  color: #343039;
+  font-size: 25rpx;
+  line-height: 1.35;
+  font-weight: 900;
+}
+
+.mentor-consultation-opt-in-copy text {
+  margin-top: 8rpx;
+  color: #918c95;
+  font-size: 19rpx;
+  line-height: 1.5;
+  font-weight: 650;
+}
+
+.mentor-consultation-opt-in-check {
+  box-sizing: border-box;
+  width: 44rpx;
+  height: 44rpx;
+  min-width: 44rpx;
+  border: 3rpx solid #c8c4cc;
+  border-radius: 50%;
+  background: #ffffff;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  transition: border-color 180ms ease, background-color 180ms ease, transform 220ms cubic-bezier(.22, 1, .36, 1);
+}
+
+.mentor-consultation-opt-in-check text {
+  margin: 0;
+  color: inherit;
+  font-size: 27rpx;
+  line-height: 1;
+  font-weight: 900;
+  animation: mentorConsultationCheckIn 180ms cubic-bezier(.22, 1, .36, 1) both;
+}
+
+@keyframes mentorConsultationCheckIn {
+  from { opacity: 0; transform: scale(.62); }
+  to { opacity: 1; transform: scale(1); }
+}
+
+.mentor-consultation-opt-in.is-selected .mentor-consultation-opt-in-check {
+  border-color: var(--gyt-primary, #3478f6);
+  background: var(--gyt-primary, #3478f6);
+  transform: scale(1.04);
+}
+
+.mentor-consultation-fields {
+  max-height: 0;
+  overflow: hidden;
+  opacity: 0;
+  visibility: hidden;
+  transform: translateY(-12rpx);
+  transform-origin: top;
+  pointer-events: none;
+  transition:
+    max-height 380ms cubic-bezier(.22, 1, .36, 1),
+    opacity 170ms ease,
+    transform 280ms cubic-bezier(.22, 1, .36, 1),
+    visibility 0s linear 380ms;
+}
+
+.mentor-consultation-fields.is-expanded {
+  max-height: 1600rpx;
+  opacity: 1;
+  visibility: visible;
+  transform: translateY(0);
+  pointer-events: auto;
+  transition:
+    max-height 380ms cubic-bezier(.22, 1, .36, 1),
+    opacity 220ms ease 70ms,
+    transform 320ms cubic-bezier(.22, 1, .36, 1),
+    visibility 0s linear 0s;
+}
+
+/* Keep every action label centered by its visible box, including loading and disabled states. */
+.mentor-apply-content .mentor-apply-search-results button,
+.mentor-apply-content .mentor-apply-exam-row button,
+.mentor-apply-content .mentor-skill-options button,
+.mentor-proof-image button,
+.mentor-proof-upload,
+.mentor-apply-demo-card button,
+.mentor-center-orders-heading button,
+.mentor-center-order-actions button,
+.mentor-order-decision-heading button {
+  box-sizing: border-box;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  line-height: 1.2;
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+.mentor-apply-content .mentor-apply-exam-row button {
+  line-height: 1.2;
+}
+
+.mentor-proof-image,
+.mentor-proof-upload {
+  box-sizing: border-box;
+}
+
+.mentor-center-schedule-button {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.mentor-center-schedule-button-label {
+  position: static;
+  width: 100%;
+  height: 100%;
+  display: flex !important;
+  align-items: center;
+  justify-content: center;
+  transform: none;
+}
+
+.mentor-center-orders-heading button,
+.mentor-center-order-actions button {
+  position: relative;
+  overflow: hidden;
+}
+
+.mentor-center-orders-heading button {
+  width: 112rpx;
+  min-width: 112rpx;
+  height: 52rpx;
+  min-height: 52rpx;
+}
+
+.mentor-center-order-actions button {
+  width: 196rpx;
+  min-width: 196rpx;
+  height: 58rpx;
+  min-height: 58rpx;
+}
+
+.mentor-center-orders-heading button[disabled],
+.mentor-center-order-actions button[disabled] {
+  padding-top: 0;
+  padding-bottom: 0;
+  opacity: .62;
+}
+
+.mentor-center-action-label {
+  display: block;
+  width: 100%;
+  margin: 0 !important;
+  color: inherit !important;
+  font-size: inherit !important;
+  line-height: 1.2 !important;
+  font-weight: inherit !important;
+  text-align: center;
+}
+
+.mentor-center-button-spinner {
+  box-sizing: border-box;
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: 8rpx;
+  width: 24rpx;
+  height: 24rpx;
+  margin: auto 0;
+  border: 3rpx solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  color: inherit;
+  pointer-events: none;
+  animation: mentorCenterButtonSpin .8s linear infinite;
+}
+
+@keyframes mentorCenterButtonSpin {
+  to { transform: rotate(360deg); }
+}
+
 @media(max-width:350px) {
   .mentor-apply-content {
     padding-right: 26rpx;
@@ -1165,6 +1604,24 @@ function goBack() {
   .mentor-apply-footer {
     padding-right: 26rpx;
     padding-left: 26rpx;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mentor-consultation-opt-in,
+  .mentor-consultation-opt-in-check,
+  .mentor-consultation-fields,
+  .mentor-consultation-fields.is-expanded {
+    transition: none;
+  }
+
+  .mentor-consultation-opt-in-check text {
+    animation: none;
+  }
+
+  .mentor-consultation-fields,
+  .mentor-consultation-fields.is-expanded {
+    transform: none;
   }
 }
 </style>

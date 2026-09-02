@@ -506,7 +506,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onHide, onLoad, onPageScroll, onShow, onUnload } from '@dcloudio/uni-app'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
-import { fetchAnswerHistory, fetchQuestionAbilityAccuracy, markQuestionUnfamiliar } from '../../api/answers'
+import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
 import { request } from '../../api/http'
 import { fetchQuestionProgress, fetchReviewDueQuestions } from '../../api/questions'
@@ -522,6 +522,11 @@ import QuestionStem from '../../components/QuestionStem.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
 import { confirmFavoriteRemoval } from '../../utils/favorites'
+import {
+  flushPendingAnswerSubmissions,
+  schedulePendingAnswerFlush,
+  submitAnswerWithReliableSync
+} from '../../utils/answerSubmissionQueue'
 import { getThemeIconSrc } from '../../utils/iconAssets'
 import { getSubjectTree } from '../../utils/knowledgeTree'
 import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality'
@@ -620,33 +625,6 @@ let timerId = null
 let activeTimerQuestionKey = ''
 let exitConfirmVisible = false
 let exitNavigationPending = false
-
-function sleep(milliseconds) {
-  return new Promise((resolve) => setTimeout(resolve, milliseconds))
-}
-
-async function refreshAbilityAccuracy(questionId) {
-  if (!hasAccessToken.value || !questionId) return
-
-  for (const delayMs of [350, 650]) {
-    await sleep(delayMs)
-    try {
-      const result = await fetchQuestionAbilityAccuracy({
-        question_id: questionId,
-        exam_code: examCode.value
-      })
-      const value = Number(result?.ability_accuracy)
-      if (!Number.isFinite(value)) continue
-
-      if (questionMeta.value.questionId === questionId) {
-        abilityAccuracy.value = value
-      }
-      return
-    } catch {
-      // The result is supplementary; answer feedback has already been displayed.
-    }
-  }
-}
 
 const subjectTree = computed(() => getSubjectTree(subject.value))
 const openMap = ref(buildOpenMap(subjectTree.value))
@@ -921,6 +899,7 @@ onLoad((options) => {
 
 onShow(() => {
   syncAccessToken()
+  void flushPendingAnswerSubmissions()
   loadCultureProgress()
   if (
     mode.value === 'quiz'
@@ -2346,7 +2325,7 @@ function buildPendingComprehensiveResult(question, selected, error) {
   }
 }
 
-function saveInstantQuestionResult(answerResult) {
+function saveInstantQuestionResult(answerResult, metadata = {}) {
   if (!answerResult || practiceMode.value === 'comprehensive') {
     return
   }
@@ -2364,10 +2343,61 @@ function saveInstantQuestionResult(answerResult) {
       explanation: answerResult.explanation,
       isCorrect: answerResult.isCorrect,
       syncFailed: Boolean(answerResult.syncFailed),
-      resultTag: resultTag.value,
-      abilityAccuracy: abilityAccuracy.value
+      resultTag: metadata.resultTag ?? resultTag.value,
+      abilityAccuracy: metadata.abilityAccuracy ?? abilityAccuracy.value
     }
   }
+}
+
+function applyResponsiveAnswerFeedback({
+  question,
+  questionKey,
+  selectedAnswer,
+  correctAnswer: nextCorrectAnswer,
+  explanation,
+  isCorrect,
+  addedToWrongQuestions,
+  persisted,
+  nextAbilityAccuracy
+}) {
+  const syncPending = persisted !== true
+  const nextResultTag = syncPending
+    ? '答案已显示，作答记录正在同步。'
+    : addedToWrongQuestions
+      ? `已写入错题本：${subject.value} / ${question.module || ''} / ${question.submodule || ''}`
+      : '本题答对，当前知识点继续保持。'
+  const answerResult = {
+    question,
+    selectedAnswer,
+    correctAnswer: nextCorrectAnswer,
+    explanation: explanation || '解析正在同步中，请稍候。',
+    isCorrect,
+    syncFailed: syncPending
+  }
+
+  saveInstantQuestionResult(answerResult, {
+    resultTag: nextResultTag,
+    abilityAccuracy: nextAbilityAccuracy ?? null
+  })
+  if (isAiTrainingMode.value) {
+    upsertAiReviewResult(answerResult)
+  }
+
+  if (currentQuestionKey.value !== questionKey || selectedOption.value !== selectedAnswer) {
+    return
+  }
+
+  correctAnswer.value = nextCorrectAnswer
+  if (explanation) {
+    answerExplanation.value = explanation
+  } else if (!answerExplanation.value) {
+    answerExplanation.value = '解析正在同步中，请稍候。'
+  }
+  resultTag.value = nextResultTag
+  abilityAccuracy.value = nextAbilityAccuracy ?? null
+  submitted.value = true
+  submitting.value = false
+  clearTimer()
 }
 
 async function submitComprehensiveBatch(entries) {
@@ -2436,57 +2466,89 @@ async function submitAnswer() {
   submitting.value = true
   explanationExpanded.value = false
   const submittedQuestionKey = currentQuestionKey.value
+  const submittedQuestion = currentQuestion.value
+  const submittedQuestionId = questionMeta.value.questionId
+  const submittedOption = selectedOption.value
+  const usesRemoteSubmission = hasAccessToken.value && isRealQuestion()
   clearTimer()
   const usedTime = getSubmissionUsedTime(submittedQuestionKey)
+  let earlyGradeReceived = false
   try {
     let answerResult = null
-    if (hasAccessToken.value && isRealQuestion()) {
-      const submittedQuestionId = questionMeta.value.questionId
-      const result = await request({
-        url: '/answers/submit',
-        method: 'POST',
-        timeout: 25000,
-        data: {
-          question_id: questionMeta.value.questionId,
-          selected_answer: selectedOption.value,
-          client_submission_id: getClientSubmissionId(submittedQuestionKey),
-          used_time: usedTime,
-          exam_code: examCode.value
+    if (usesRemoteSubmission) {
+      const payload = {
+        question_id: submittedQuestionId,
+        selected_answer: submittedOption,
+        client_submission_id: getClientSubmissionId(submittedQuestionKey),
+        used_time: usedTime,
+        exam_code: examCode.value
+      }
+      const result = await submitAnswerWithReliableSync(payload, {
+        onGraded(grade) {
+          if (grade.questionId && grade.questionId !== submittedQuestionId) return
+          earlyGradeReceived = true
+          applyResponsiveAnswerFeedback({
+            question: submittedQuestion,
+            questionKey: submittedQuestionKey,
+            selectedAnswer: submittedOption,
+            correctAnswer: grade.correctAnswer,
+            explanation: '',
+            isCorrect: grade.isCorrect,
+            addedToWrongQuestions: grade.addedToWrongQuestions,
+            persisted: false,
+            nextAbilityAccuracy: null
+          })
         }
       })
 
-      correctAnswer.value = result.correct_answer
-      answerExplanation.value = result.explanation
-      resultTag.value = result.added_to_wrong_questions
-        ? `已写入错题本：${subject.value} / ${questionMeta.value.module} / ${questionMeta.value.submodule}`
-        : '本题答对，当前知识点继续保持。'
-      abilityAccuracy.value = result.ability_accuracy ?? null
-      void refreshAbilityAccuracy(submittedQuestionId)
       answerResult = {
-        question: currentQuestion.value,
-        selectedAnswer: selectedOption.value,
+        question: submittedQuestion,
+        selectedAnswer: submittedOption,
         correctAnswer: result.correct_answer,
         explanation: result.explanation,
         isCorrect: result.is_correct,
-        syncFailed: false
+        syncFailed: result.persisted !== true
+      }
+      applyResponsiveAnswerFeedback({
+        question: submittedQuestion,
+        questionKey: submittedQuestionKey,
+        selectedAnswer: submittedOption,
+        correctAnswer: result.correct_answer,
+        explanation: result.explanation,
+        isCorrect: result.is_correct,
+        addedToWrongQuestions: result.added_to_wrong_questions,
+        persisted: result.persisted,
+        nextAbilityAccuracy: result.ability_accuracy ?? null
+      })
+      if (result.persisted !== true) {
+        if (result.persistence_retryable !== false) {
+          schedulePendingAnswerFlush()
+        } else {
+          uni.showToast({ title: result.persistence_error || '作答记录保存失败，请稍后重试', icon: 'none' })
+        }
       }
     } else {
-      correctAnswer.value = currentQuestion.value.answer
-      answerExplanation.value = currentQuestion.value.explanation
-      resultTag.value = currentQuestion.value.autoTag
+      correctAnswer.value = submittedQuestion.answer
+      answerExplanation.value = submittedQuestion.explanation
+      resultTag.value = submittedQuestion.autoTag
       abilityAccuracy.value = null
-      answerResult = buildLocalComprehensiveResult({ question: currentQuestion.value, selected: selectedOption.value })
+      answerResult = buildLocalComprehensiveResult({ question: submittedQuestion, selected: submittedOption })
+      saveInstantQuestionResult(answerResult)
+      submitted.value = true
+      submitting.value = false
     }
 
-    if (isAiTrainingMode.value && answerResult) {
+    if (isAiTrainingMode.value && answerResult && !usesRemoteSubmission) {
       upsertAiReviewResult(answerResult)
     }
-    saveInstantQuestionResult(answerResult)
-    submitted.value = true
-    clearTimer()
   } catch (error) {
-    if (isAiTrainingMode.value && isRealQuestion()) {
-      const pending = buildPendingComprehensiveResult(currentQuestion.value, selectedOption.value, error)
+    if (earlyGradeReceived) {
+      schedulePendingAnswerFlush()
+      uni.showToast({ title: '答案已显示，作答记录将在网络恢复后同步', icon: 'none' })
+      return
+    }
+    if (isAiTrainingMode.value && usesRemoteSubmission) {
+      const pending = buildPendingComprehensiveResult(submittedQuestion, submittedOption, error)
       correctAnswer.value = pending.correctAnswer
       answerExplanation.value = pending.explanation
       resultTag.value = '本题已尝试提交，网络返回异常，稍后可在 AI 总结页重新读取结果。'
@@ -2497,9 +2559,12 @@ async function submitAnswer() {
       clearTimer()
       return
     }
+    schedulePendingAnswerFlush()
     uni.showToast({ title: error?.detail || '提交失败', icon: 'none' })
   } finally {
-    submitting.value = false
+    if (currentQuestionKey.value === submittedQuestionKey) {
+      submitting.value = false
+    }
   }
 }
 
@@ -2645,11 +2710,10 @@ function goPrevQuestion() {
 
   if (reviewMode.value) {
     applyReviewAt(currentQuestionIndex.value - 1)
+    scrollToQuestionTop()
   } else {
     applyQuestionAt(currentQuestionIndex.value - 1)
   }
-
-  scrollToQuestionTop()
 }
 
 function goNextQuestion() {
@@ -2952,12 +3016,10 @@ function formatDuration(seconds) {
 }
 
 function scrollToQuestionTop() {
-  setTimeout(() => {
-    uni.pageScrollTo({
-      scrollTop: 0,
-      duration: 220
-    })
-  }, 30)
+  uni.pageScrollTo({
+    scrollTop: 0,
+    duration: 0
+  })
 }
 
 </script>

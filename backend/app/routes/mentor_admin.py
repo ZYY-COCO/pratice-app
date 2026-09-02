@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 
@@ -34,6 +35,7 @@ from app.schemas.mentor_consultation import (
     AdminMentorProfileItem,
     AdminMentorProfileListResponse,
     AdminMentorProfileUpdateRequest,
+    AdminMentorQualificationRevocationRequest,
     AdminMentorVerificationApplicationDetailResponse,
     AdminMentorVerificationApplicationListResponse,
     AdminMentorVerificationDecisionRequest,
@@ -74,9 +76,10 @@ MENTOR_APPLICATION_MAX_LIMIT = 100
 MENTOR_PROFILE_CHANGE_REQUEST_MAX_LIMIT = 100
 MENTOR_APPLICATION_FIELDS = (
     "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
-    "exam_type,score,skills,bio,price_cents,application_status,admin_note,reviewed_by,"
-    "reviewed_at,created_at,updated_at"
+    "exam_type,score,skills,bio,price_cents,consultation_enabled,application_status,admin_note,reviewed_by,"
+    "reviewed_at,revocation_reason,revoked_by,revoked_at,created_at,updated_at"
 )
+MENTOR_ADMIN_PROFILE_FIELDS = f"{ADMIN_PROFILE_FIELDS},consultation_enabled"
 MENTOR_CONSULTATION_REPORT_EVIDENCE_BUCKET = "mentor-consultation-report-evidence"
 MENTOR_CONSULTATION_REPORT_APPEAL_EVIDENCE_BUCKET = "mentor-consultation-report-appeal-evidence"
 MENTOR_CONSULTATION_REPORT_MAX_LIMIT = 100
@@ -148,7 +151,7 @@ def _get_mentor_or_404(supabase, mentor_id: str) -> dict:
     response = call_supabase(
         lambda: (
             supabase.table("mentor_profiles")
-            .select(ADMIN_PROFILE_FIELDS)
+            .select(MENTOR_ADMIN_PROFILE_FIELDS)
             .eq("id", mentor_id)
             .limit(1)
             .execute()
@@ -433,13 +436,26 @@ def _serialize_mentor_application(row: dict, *, document_count: int = 0) -> dict
         "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else []),
         "bio": str(row.get("bio") or ""),
         "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
+        "consultation_enabled": bool(row.get("consultation_enabled", True)),
         "application_status": str(row.get("application_status") or "pending"),
         "admin_note": row.get("admin_note") or None,
+        "revocation_reason": row.get("revocation_reason") or None,
+        "revoked_at": row.get("revoked_at") or None,
         "reviewed_at": row.get("reviewed_at") or None,
         "created_at": row.get("created_at") or None,
         "updated_at": row.get("updated_at") or None,
         "document_count": max(0, int(document_count or 0)),
     }
+
+
+def _serialize_admin_mentor_profile(
+    row: dict,
+    skills: list[str] | None = None,
+    aggregate: dict | None = None,
+) -> dict:
+    payload = serialize_mentor_admin(row, skills, aggregate)
+    payload["consultation_enabled"] = bool(row.get("consultation_enabled", True))
+    return payload
 
 
 def _serialize_mentor_profile_change_request(row: dict) -> dict:
@@ -492,6 +508,456 @@ def _log_profile_change_request_action(supabase, admin_profile: dict, action: st
         )
     except Exception as exc:
         logger.warning("Mentor profile change request admin action log skipped (error_type=%s)", type(exc).__name__)
+
+
+def _notify_mentor_verification_decision(
+    supabase,
+    application: dict,
+    *,
+    application_id: str,
+    decision: str,
+    admin_note: str | None,
+    mentor_id: str | None,
+) -> None:
+    recipient_user_id = str(application.get("applicant_user_id") or "").strip()
+    if not recipient_user_id:
+        return
+
+    approved = decision == "approve"
+    result_status = "approved" if approved else "rejected"
+    consultation_enabled = bool(application.get("consultation_enabled", True))
+    normalized_note = str(admin_note or "").strip()
+    if approved:
+        default_content = (
+            "认证身份和前辈咨询主页已生效，可前往完善服务信息并设置预约时段。"
+            if consultation_enabled
+            else "身份认证已完成；你当前未开通前辈咨询服务。"
+        )
+        title = "你的前辈认证已通过"
+        summary = "平台已完成认证审核，你现在可以使用前辈身份。"
+        content = f"{default_content}\n审核说明：{normalized_note}" if normalized_note else default_content
+        route_path = "/pages-sub-consultation/consultation/mentor-apply?mode=center"
+    else:
+        title = "你的前辈认证暂未通过"
+        summary = "请查看审核说明，补充资料后可重新提交。"
+        content = (
+            f"审核说明：{normalized_note}"
+            if normalized_note
+            else "本次认证材料暂未通过审核，请核对后重新提交。"
+        )
+        route_path = "/pages-sub-consultation/consultation/mentor-apply"
+
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="official",
+            notification_type="mentor_verification_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_verification_application",
+            related_id=f"{application_id}:{result_status}",
+            route_path=route_path,
+            delivery_payload={
+                "surface": "mentor_verification",
+                "application_id": application_id,
+                "status": result_status,
+                "mentor_id": str(mentor_id or ""),
+                "consultation_enabled": consultation_enabled,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Mentor verification decision notification skipped (application_id=%s error_type=%s)",
+            application_id,
+            type(exc).__name__,
+        )
+
+
+def _notify_mentor_qualification_revoked(
+    supabase,
+    application: dict,
+    *,
+    application_id: str,
+    mentor_id: str,
+    reason: str,
+) -> None:
+    recipient_user_id = str(application.get("applicant_user_id") or "").strip()
+    if not recipient_user_id:
+        return
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="official",
+            notification_type="mentor_qualification_revoked",
+            title="你的前辈资格已取消",
+            summary="平台已停止展示你的前辈身份，并关闭新增咨询服务。",
+            content=f"处理说明：{reason}",
+            related_type="mentor_verification_application",
+            related_id=f"{application_id}:revoked",
+            route_path="/pages-sub-consultation/consultation/mentor-apply?mode=revoked",
+            delivery_payload={
+                "surface": "mentor_verification",
+                "application_id": application_id,
+                "status": "revoked",
+                "mentor_id": mentor_id,
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Mentor qualification revocation notification skipped (application_id=%s error_type=%s)",
+            application_id,
+            type(exc).__name__,
+        )
+
+
+def _notify_mentor_profile_change_decision(
+    supabase,
+    request_row: dict,
+    *,
+    request_id: str,
+    decision: str,
+    admin_note: str | None,
+) -> None:
+    recipient_user_id = str(request_row.get("owner_user_id") or "").strip()
+    if not recipient_user_id:
+        return
+
+    approved = decision == "approve"
+    result_status = "approved" if approved else "rejected"
+    normalized_note = str(admin_note or "").strip()
+    if approved:
+        title = "你的前辈资料修改已通过"
+        summary = "平台已完成审核，新的前辈资料已经生效。"
+        default_content = "资料修改已同步到你的前辈主页。"
+    else:
+        title = "你的前辈资料修改暂未通过"
+        summary = "请查看审核说明，调整资料后可重新提交。"
+        default_content = "本次资料修改暂未通过审核，请核对后重新提交。"
+    content = f"审核说明：{normalized_note}" if normalized_note else default_content
+
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="official",
+            notification_type="mentor_profile_change_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_profile_change_request",
+            related_id=f"{request_id}:{result_status}",
+            route_path="/pages-sub-consultation/consultation/mentor-info",
+            delivery_payload={
+                "surface": "mentor_profile_change",
+                "request_id": request_id,
+                "status": result_status,
+                "mentor_id": str(request_row.get("mentor_id") or ""),
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Mentor profile change decision notification skipped (request_id=%s error_type=%s)",
+            request_id,
+            type(exc).__name__,
+        )
+
+
+def _normalize_consultation_notification_audience(value: object, *, fallback: str) -> str:
+    normalized = str(value or "").strip()
+    return normalized if normalized in {"applicant", "mentor"} else fallback
+
+
+def _create_consultation_participant_notification(
+    supabase,
+    *,
+    recipient_user_id: str,
+    audience: str,
+    notification_type: str,
+    title: str,
+    summary: str,
+    content: str,
+    related_type: str,
+    related_id: str,
+    route_path: str,
+    delivery_payload: dict,
+) -> None:
+    recipient_id = str(recipient_user_id or "").strip()
+    normalized_audience = str(audience or "").strip()
+    if not recipient_id or normalized_audience not in {"applicant", "mentor"}:
+        return
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_id,
+            # These messages are emitted by the platform/admin, so they keep
+            # the official HMTC identity. Their notification_type and payload
+            # still drive the consultation/report-specific unread targets.
+            category="official",
+            notification_type=notification_type,
+            title=title,
+            summary=summary,
+            content=content,
+            related_type=related_type,
+            related_id=related_id,
+            route_path=route_path,
+            delivery_payload={**delivery_payload, "audience": normalized_audience},
+        )
+    except Exception as exc:
+        logger.warning(
+            "Consultation participant notification skipped "
+            "(type=%s related_id=%s audience=%s error_type=%s)",
+            notification_type,
+            related_id,
+            normalized_audience,
+            type(exc).__name__,
+        )
+
+
+def _notify_consultation_report_participants(
+    supabase,
+    *,
+    report: dict,
+    status_value: str,
+    resolution: str,
+    admin_note: str | None,
+) -> None:
+    report_id = str(report.get("id") or "").strip()
+    order_id = str(report.get("order_id") or "").strip()
+    normalized_status = str(status_value or "").strip()
+    normalized_resolution = str(resolution or "none").strip() or "none"
+    if not report_id or not order_id or normalized_status == "pending":
+        return
+
+    reporter_audience = _normalize_consultation_notification_audience(
+        report.get("reporter_role"),
+        fallback="applicant",
+    )
+    respondent_audience = _normalize_consultation_notification_audience(
+        report.get("target_role"),
+        fallback="mentor" if reporter_audience == "applicant" else "applicant",
+    )
+    is_reviewing = normalized_status == "reviewing"
+    normalized_note = str(admin_note or "").strip()
+    participants = (
+        (
+            "reporter",
+            str(report.get("reporter_user_id") or "").strip(),
+            reporter_audience,
+            "你的咨询问题反馈已受理" if is_reviewing else "你的咨询问题反馈处理结果已更新",
+            "平台正在核实本次咨询情况。" if is_reviewing else "平台已更新本次问题反馈的处理结论。",
+            normalized_note or (
+                "平台正在结合订单、聊天和双方材料进行核实，请留意后续处理进度。"
+                if is_reviewing
+                else "平台已完成核查，处理结果已同步到平台处理进度。"
+            ),
+        ),
+        (
+            "respondent",
+            str(report.get("respondent_user_id") or report.get("target_user_id") or "").strip(),
+            respondent_audience,
+            "与你相关的咨询问题反馈正在核实" if is_reviewing else "与你相关的咨询问题反馈结果已更新",
+            "平台正在核实与你相关的咨询问题反馈。" if is_reviewing else "平台已完成与你相关的咨询问题反馈处理。",
+            normalized_note or (
+                "请留意平台处理进度，并按页面提示补充说明或材料。"
+                if is_reviewing
+                else "平台处理结论已更新，可进入处理进度查看详情。"
+            ),
+        ),
+    )
+    seen_recipients: set[str] = set()
+    for participant_role, recipient_id, audience, title, summary, content in participants:
+        if not recipient_id or recipient_id in seen_recipients:
+            continue
+        seen_recipients.add(recipient_id)
+        _create_consultation_participant_notification(
+            supabase,
+            recipient_user_id=recipient_id,
+            audience=audience,
+            notification_type="mentor_report_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_report",
+            related_id=(
+                f"{report_id}:report_status:{normalized_status}:"
+                f"{normalized_resolution}:{audience}"
+            ),
+            route_path="/pages-sub-consultation/consultation/mentor-support",
+            delivery_payload={
+                "surface": "mentor_report",
+                "event": f"report_{normalized_status}",
+                "participant_role": participant_role,
+                "order_id": order_id,
+                "report_id": report_id,
+                "status": normalized_status,
+                "resolution": normalized_resolution,
+            },
+        )
+
+
+def _notify_consultation_report_appeal_participants(
+    supabase,
+    *,
+    appeal: dict,
+    report: dict,
+    status_value: str,
+    decision: str,
+    admin_note: str | None,
+) -> None:
+    appeal_id = str(appeal.get("id") or "").strip()
+    report_id = str(report.get("id") or appeal.get("report_id") or "").strip()
+    order_id = str(report.get("order_id") or "").strip()
+    normalized_status = str(status_value or "").strip()
+    normalized_decision = str(decision or "none").strip() or "none"
+    if not appeal_id or not report_id or not order_id or normalized_status == "pending":
+        return
+
+    reporter_audience = _normalize_consultation_notification_audience(
+        report.get("reporter_role"),
+        fallback="applicant",
+    )
+    respondent_audience = _normalize_consultation_notification_audience(
+        report.get("target_role"),
+        fallback="mentor" if reporter_audience == "applicant" else "applicant",
+    )
+    respondent_user_id = str(report.get("respondent_user_id") or report.get("target_user_id") or "").strip()
+    appellant_side = str(appeal.get("appellant_role") or "reporter").strip()
+    if appellant_side == "respondent":
+        appellant_audience = respondent_audience
+        affected_user_id = str(report.get("reporter_user_id") or "").strip()
+        affected_audience = reporter_audience
+    else:
+        appellant_side = "reporter"
+        appellant_audience = reporter_audience
+        affected_user_id = respondent_user_id
+        affected_audience = respondent_audience
+
+    is_reviewing = normalized_status == "reviewing"
+    normalized_note = str(admin_note or "").strip()
+    participants = (
+        (
+            "appellant",
+            str(appeal.get("appellant_user_id") or "").strip(),
+            appellant_audience,
+            "你的咨询复核申请已受理" if is_reviewing else "你的咨询复核结果已更新",
+            "平台正在复核你提交的申请。" if is_reviewing else "平台已更新本次复核申请的处理结论。",
+            normalized_note or (
+                "平台正在结合订单、聊天和双方材料进行复核，请留意后续处理进度。"
+                if is_reviewing
+                else "平台已完成复核，处理结果已同步到平台处理进度。"
+            ),
+        ),
+        (
+            "affected_party",
+            affected_user_id,
+            affected_audience,
+            "与你相关的咨询复核正在处理" if is_reviewing else "与你相关的咨询复核结果已更新",
+            "平台正在复核另一方提交的申请。" if is_reviewing else "平台已更新与你相关的复核处理结论。",
+            normalized_note or (
+                "平台正在重新核对本次咨询及双方材料，请留意后续处理进度。"
+                if is_reviewing
+                else "平台复核结论已更新，可进入处理进度查看详情。"
+            ),
+        ),
+    )
+    seen_recipients: set[str] = set()
+    for participant_role, recipient_id, audience, title, summary, content in participants:
+        if not recipient_id or recipient_id in seen_recipients:
+            continue
+        seen_recipients.add(recipient_id)
+        _create_consultation_participant_notification(
+            supabase,
+            recipient_user_id=recipient_id,
+            audience=audience,
+            notification_type="mentor_report_appeal_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_report_appeal",
+            related_id=(
+                f"{appeal_id}:appeal_status:{normalized_status}:"
+                f"{normalized_decision}:{audience}"
+            ),
+            route_path="/pages-sub-consultation/consultation/mentor-support",
+            delivery_payload={
+                "surface": "mentor_report_appeal",
+                "event": f"appeal_{normalized_status}",
+                "participant_role": participant_role,
+                "appellant_side": appellant_side,
+                "order_id": order_id,
+                "report_id": report_id,
+                "appeal_id": appeal_id,
+                "status": normalized_status,
+                "decision": normalized_decision,
+            },
+        )
+
+
+def _notify_consultation_order_participants(
+    supabase,
+    *,
+    order: dict,
+    admin_note: str,
+) -> None:
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    normalized_note = str(admin_note or "").strip()
+    if not order_id or not normalized_note:
+        return
+
+    mentor_owner_user_id = ""
+    if mentor_id:
+        try:
+            mentor = _fetch_report_mentors(supabase, [mentor_id]).get(mentor_id, {})
+            mentor_owner_user_id = str(mentor.get("owner_user_id") or "").strip()
+        except Exception as exc:
+            logger.warning(
+                "Consultation participant lookup skipped (order_id=%s error_type=%s)",
+                order_id,
+                type(exc).__name__,
+            )
+
+    notice_digest = hashlib.sha256(normalized_note.encode("utf-8")).hexdigest()[:16]
+    participants = (
+        (
+            str(order.get("applicant_user_id") or "").strip(),
+            "applicant",
+            "/pages-sub-consultation/consultation/my-consultations",
+        ),
+        (
+            mentor_owner_user_id,
+            "mentor",
+            f"/pages-sub-consultation/consultation/mentor-apply?mode=center&orderId={order_id}",
+        ),
+    )
+    seen_recipients: set[str] = set()
+    for recipient_id, audience, route_path in participants:
+        if not recipient_id or recipient_id in seen_recipients:
+            continue
+        seen_recipients.add(recipient_id)
+        _create_consultation_participant_notification(
+            supabase,
+            recipient_user_id=recipient_id,
+            audience=audience,
+            notification_type="mentor_order_status",
+            title="平台咨询处理提醒",
+            summary="平台已向咨询双方发送最新处理说明。",
+            content=normalized_note,
+            related_type="mentor_consultation_order",
+            related_id=f"{order_id}:admin_notice:{notice_digest}:{audience}",
+            route_path=route_path,
+            delivery_payload={
+                "surface": "mentor_order",
+                "event": "admin_notice",
+                "action": "notify_participants",
+                "order_id": order_id,
+                "mentor_id": mentor_id,
+                "order_status": str(order.get("order_status") or ""),
+            },
+        )
 
 
 def _fetch_application_users(supabase, user_ids: list[str]) -> dict[str, dict]:
@@ -1145,7 +1611,7 @@ def list_admin_mentor_verification_applications(
 ) -> AdminMentorVerificationApplicationListResponse:
     normalized_status = str(application_status or "").strip().lower()
     normalized_keyword = str(keyword or "").strip().lower()
-    if normalized_status and normalized_status not in {"pending", "approved", "rejected"}:
+    if normalized_status and normalized_status not in {"pending", "approved", "rejected", "revoked"}:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的申请状态")
 
     supabase = get_supabase_admin()
@@ -1242,9 +1708,15 @@ def decide_admin_mentor_verification_application(
             raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该前辈申请已经处理")
 
         decision = payload.decision
+        admin_note = str(payload.admin_note or "").strip()
+        if decision == "reject" and len(admin_note) < 5:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail="驳回申请时请填写至少 5 个字的理由",
+            )
         update_data = {
             "application_status": "approved" if decision == "approve" else "rejected",
-            "admin_note": payload.admin_note.strip() if payload.admin_note else None,
+            "admin_note": admin_note or None,
             "reviewed_by": admin_profile.get("id"),
             "reviewed_at": datetime.now(timezone.utc).isoformat(),
         }
@@ -1281,7 +1753,8 @@ def decide_admin_mentor_verification_application(
                     "price_cents": int(application.get("price_cents") or 0),
                     "consultation_window_minutes": 60,
                     "online_status": "offline",
-                    "accepts_booking": True,
+                    "accepts_booking": bool(application.get("consultation_enabled", True)),
+                    "consultation_enabled": bool(application.get("consultation_enabled", True)),
                     "verification_status": "verified",
                     "is_published": True,
                     "is_featured": False,
@@ -1318,6 +1791,14 @@ def decide_admin_mentor_verification_application(
             application_id,
             {"mentor_id": mentor_id, "admin_note": update_data["admin_note"]},
         )
+        _notify_mentor_verification_decision(
+            supabase,
+            application,
+            application_id=application_id,
+            decision=decision,
+            admin_note=update_data["admin_note"],
+            mentor_id=mentor_id,
+        )
         document_counts = _fetch_application_document_counts(supabase, [application_id])
         return MentorVerificationApplicationItem(
             **_serialize_mentor_application(
@@ -1330,6 +1811,84 @@ def decide_admin_mentor_verification_application(
     except Exception as exc:
         logger.warning("Admin mentor application decision failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请处理失败") from exc
+
+
+@router.post("/applications/{application_id}/revoke", response_model=MentorVerificationApplicationItem)
+def revoke_admin_mentor_qualification(
+    application_id: str,
+    payload: AdminMentorQualificationRevocationRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> MentorVerificationApplicationItem:
+    reason = payload.reason.strip()
+    if len(reason) < 5:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="取消资格时请填写至少 5 个字的原因")
+
+    supabase = get_supabase_admin()
+    try:
+        application = _get_mentor_application_or_404(supabase, application_id)
+        if application.get("application_status") != "approved":
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="仅可取消当前已通过的前辈资格")
+
+        profile_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_profiles")
+                .select("id")
+                .eq("owner_user_id", application.get("applicant_user_id"))
+                .limit(1)
+                .execute()
+            ),
+            operation_name="mentor qualification revocation profile lookup",
+        )
+        if not profile_response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="未找到与申请关联的前辈档案")
+        mentor_id = str(profile_response.data[0].get("id") or "")
+
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "revoke_mentor_qualification",
+                {
+                    "p_application_id": application_id,
+                    "p_admin_user_id": admin_profile.get("id"),
+                    "p_reason": reason,
+                },
+            ).execute(),
+            operation_name="admin mentor qualification revoke",
+        )
+        if not response.data:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="前辈资格状态已变化，请刷新后重试")
+
+        _log_application_action(
+            supabase,
+            admin_profile,
+            "revoke_mentor_qualification",
+            application_id,
+            {"mentor_id": mentor_id, "reason": reason},
+        )
+        _notify_mentor_qualification_revoked(
+            supabase,
+            application,
+            application_id=application_id,
+            mentor_id=mentor_id,
+            reason=reason,
+        )
+        document_counts = _fetch_application_document_counts(supabase, [application_id])
+        return MentorVerificationApplicationItem(
+            **_serialize_mentor_application(
+                response.data[0],
+                document_count=document_counts.get(application_id, 0),
+            )
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        if "仅可取消当前已通过" in message or "资格状态已变化" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="前辈资格状态已变化，请刷新后重试",
+            ) from exc
+        logger.warning("Admin mentor qualification revocation failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈资格取消失败，请稍后重试") from exc
 
 
 @router.get("/profile-change-requests", response_model=AdminMentorProfileChangeRequestListResponse)
@@ -1424,6 +1983,13 @@ def decide_admin_mentor_profile_change_request(
             request_id,
             {"mentor_id": str(request_row.get("mentor_id") or ""), "admin_note": payload.admin_note.strip() if payload.admin_note else None},
         )
+        _notify_mentor_profile_change_decision(
+            supabase,
+            request_row,
+            request_id=request_id,
+            decision=payload.decision,
+            admin_note=payload.admin_note.strip() if payload.admin_note else None,
+        )
         return MentorProfileChangeRequestItem(**_serialize_mentor_profile_change_request(resolved))
     except HTTPException:
         raise
@@ -1451,7 +2017,7 @@ def list_admin_mentors(
 
     supabase = get_supabase_admin()
     try:
-        query = supabase.table("mentor_profiles").select(ADMIN_PROFILE_FIELDS, count="exact")
+        query = supabase.table("mentor_profiles").select(MENTOR_ADMIN_PROFILE_FIELDS, count="exact")
         if normalized_status:
             query = query.eq("verification_status", normalized_status)
         if normalized_visibility == "published":
@@ -1476,7 +2042,7 @@ def list_admin_mentors(
         aggregates_by_mentor = fetch_mentor_aggregates(supabase, mentor_ids)
         return AdminMentorProfileListResponse(
             items=[
-                serialize_mentor_admin(
+                _serialize_admin_mentor_profile(
                     row,
                     skills_by_mentor.get(str(row.get("id") or ""), []),
                     aggregates_by_mentor.get(str(row.get("id") or "")),
@@ -1505,7 +2071,7 @@ def get_admin_mentor(
         row = _get_mentor_or_404(supabase, mentor_id)
         skills_by_mentor = fetch_mentor_skills(supabase, [mentor_id])
         aggregates_by_mentor = fetch_mentor_aggregates(supabase, [mentor_id])
-        return AdminMentorProfileItem(**serialize_mentor_admin(
+        return AdminMentorProfileItem(**_serialize_admin_mentor_profile(
             row,
             skills_by_mentor.get(mentor_id, []),
             aggregates_by_mentor.get(mentor_id),
@@ -1529,6 +2095,9 @@ def create_admin_mentor(
     data["rating"] = 0
     data["rating_count"] = 0
     data["consult_count"] = 0
+    if not data.get("consultation_enabled", True):
+        data["accepts_booking"] = False
+        data["online_status"] = "offline"
     if data.get("graduation_year") is not None and data["graduation_year"] < data["admission_year"]:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="毕业年份不能早于入学年份")
     supabase = get_supabase_admin()
@@ -1546,7 +2115,7 @@ def create_admin_mentor(
         skills_by_mentor = fetch_mentor_skills(supabase, [str(row["id"])])
         aggregates_by_mentor = fetch_mentor_aggregates(supabase, [str(row["id"])])
         _log_admin_action(supabase, admin_profile, "create_mentor_profile", str(row["id"]), {"fields": sorted(data)})
-        return AdminMentorProfileItem(**serialize_mentor_admin(
+        return AdminMentorProfileItem(**_serialize_admin_mentor_profile(
             row,
             skills_by_mentor.get(str(row["id"]), []),
             aggregates_by_mentor.get(str(row["id"])),
@@ -1586,6 +2155,9 @@ def update_admin_mentor(
                 update_data["avatar_label"] = update_data["legal_name"][:1]
         if "avatar" in payload.model_fields_set:
             update_data["avatar_label"] = (avatar_value or current.get("avatar_label") or "研").strip()[:4]
+        if update_data.get("consultation_enabled") is False:
+            update_data["accepts_booking"] = False
+            update_data["online_status"] = "offline"
         admission_year = int(update_data.get("admission_year", current.get("admission_year") or 0))
         graduation_year = update_data.get("graduation_year", current.get("graduation_year"))
         if graduation_year is not None and int(graduation_year) < admission_year:
@@ -1597,6 +2169,17 @@ def update_admin_mentor(
             )
             if not response.data:
                 raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该前辈档案")
+        if update_data.get("consultation_enabled") is False:
+            call_supabase(
+                lambda: (
+                    supabase.table("mentor_availability_slots")
+                    .update({"status": "closed"})
+                    .eq("mentor_id", mentor_id)
+                    .eq("status", "available")
+                    .execute()
+                ),
+                operation_name="admin disabled mentor available slot close",
+            )
         if "skills" in payload.model_fields_set:
             _replace_mentor_skills(supabase, mentor_id, payload.skills or [])
         row = _get_mentor_or_404(supabase, mentor_id)
@@ -1609,7 +2192,7 @@ def update_admin_mentor(
             mentor_id,
             {"fields": sorted([*update_data.keys(), *( ["skills"] if "skills" in payload.model_fields_set else [] )])},
         )
-        return AdminMentorProfileItem(**serialize_mentor_admin(
+        return AdminMentorProfileItem(**_serialize_admin_mentor_profile(
             row,
             skills_by_mentor.get(mentor_id, []),
             aggregates_by_mentor.get(mentor_id),
@@ -2055,6 +2638,12 @@ def intervene_admin_mentor_consultation_order(
                 "report_synchronized": report_synchronized,
             },
         )
+        if action == "notify_participants":
+            _notify_consultation_order_participants(
+                supabase,
+                order=result_order,
+                admin_note=normalized_note,
+            )
         if action in {"refund_full", "refund_partial"}:
             _insert_consultation_admin_event(
                 supabase,
@@ -2440,22 +3029,12 @@ def update_admin_mentor_consultation_report_status(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该举报记录")
         row = response.data[0]
         if payload.status != "pending":
-            is_reviewing = payload.status == "reviewing"
-            create_user_notification(
+            _notify_consultation_report_participants(
                 supabase,
-                recipient_user_id=str(row.get("reporter_user_id") or ""),
-                category="consultation",
-                notification_type="mentor_report_status",
-                title="你的咨询问题反馈已受理" if is_reviewing else "你的咨询问题反馈处理结果已更新",
-                summary="平台正在核实本次咨询情况。" if is_reviewing else "平台已更新本次问题反馈的处理结论。",
-                content=normalized_note or (
-                    "平台正在结合订单、聊天和双方材料进行核实，请留意后续处理进度。"
-                    if is_reviewing
-                    else "平台已完成核查，处理结果已同步到平台处理进度。"
-                ),
-                related_type="mentor_consultation_report",
-                related_id=str(row.get("id") or report_id),
-                route_path="/pages-sub-consultation/consultation/mentor-support",
+                report=row,
+                status_value=payload.status,
+                resolution=resolution,
+                admin_note=normalized_note,
             )
         if terminal:
             resolution_copy = {
@@ -2894,22 +3473,13 @@ def update_admin_mentor_consultation_report_appeal_status(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="未找到该复核申请")
         updated = response.data[0]
         if payload.status != "pending":
-            is_reviewing = payload.status == "reviewing"
-            create_user_notification(
+            _notify_consultation_report_appeal_participants(
                 supabase,
-                recipient_user_id=str(updated.get("appellant_user_id") or ""),
-                category="consultation",
-                notification_type="mentor_report_appeal_status",
-                title="你的咨询复核申请已受理" if is_reviewing else "你的咨询复核结果已更新",
-                summary="平台正在复核你提交的申请。" if is_reviewing else "平台已更新本次复核申请的处理结论。",
-                content=normalized_note or (
-                    "平台正在结合订单、聊天和双方材料进行复核，请留意后续处理进度。"
-                    if is_reviewing
-                    else "平台已完成复核，处理结果已同步到平台处理进度。"
-                ),
-                related_type="mentor_consultation_report_appeal",
-                related_id=str(updated.get("id") or appeal_id),
-                route_path="/pages-sub-consultation/consultation/mentor-support",
+                appeal=updated,
+                report=report_after,
+                status_value=payload.status,
+                decision=payload.decision,
+                admin_note=normalized_note,
             )
         if payload.decision == "reopen":
             _insert_consultation_admin_system_message(

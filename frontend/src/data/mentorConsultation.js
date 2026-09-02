@@ -397,6 +397,7 @@ function normalizeMentorRecord(rawMentor = {}, related = {}) {
     consultCount: toNumber(rawMentor.consultCount ?? rawMentor.consult_count),
     price: toNumber(rawPrice),
     consultationWindowMinutes: toNumber(rawMentor.consultationWindowMinutes ?? rawMentor.consultation_window_minutes, 60),
+    consultationEnabled: Boolean(rawMentor.consultationEnabled ?? rawMentor.consultation_enabled ?? true),
     onlineStatus: String(rawMentor.onlineStatus || rawMentor.online_status || 'offline'),
     acceptsBooking: Boolean(rawMentor.acceptsBooking ?? rawMentor.accepts_booking ?? true),
     featured: Boolean(rawMentor.featured ?? rawMentor.is_featured),

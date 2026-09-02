@@ -267,7 +267,7 @@ source_year
 - 不要科普题、问答题、材料分析题。
 - 不要冷僻、争议性强或超出普通中华文化常识范围的题。
 - 干扰项必须有迷惑性，来自相近知识领域。
-- 解析控制在 50 字以内，只说明为什么选该答案。
+- 解析遵循 `docs/culture_explanation_model_v3.md`：按题型和难度动态控制长度，由结构化字段统一渲染因果推理、A-D 辨析、独立知识点与有价值的记忆方法。
 - 考点要清楚。
 
 必须覆盖五大板块：
@@ -517,6 +517,14 @@ android-wrapper/
    - 腾讯云部署用 `deploy/tencent-cloud/deploy.sh`。
 
 ## 当前最重要的待办
+
+### 中华文化解析 V3（2026-09-01）
+
+- 现有 Bottom Sheet 和刷题业务保持不变，解析内容改由 `culture_v3` 结构化字段统一渲染。
+- 30 题试点固定覆盖五个板块各 6 题，并通过基线 SHA、静态质量门、答案盲审输入隔离和 archived/pending 导入预览保护原题。
+- 全库离线编排入口为 `scripts/regenerate_common_culture_explanation_v3.py`：活动快照共 5221 道中华文化题，首轮按 6 题一批预计 871 批，支持独立重试反馈、原子 checkpoint 和 `--resume`。
+- 全库候选、checkpoint 和审核报告固定 `database_writes=0`、`ready_for_publish=false`；它们不是可直接发布的数据。
+- 本机模型凭据就绪后，先用独立 smoke 路径跑 6 题并复核；再开启默认路径的 5221 题断点任务。正式写库前仍须完成答案盲审、教学事实复核、importer dry-run、备份和当批用户确认。
 
 最高优先级：
 

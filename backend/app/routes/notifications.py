@@ -29,6 +29,14 @@ COMMUNITY_REPORT_NOTIFICATION_TYPES = (
     "community_appeal_status",
     "community_content_moderation",
 )
+CONSULTATION_REPORT_NOTIFICATION_TYPES = (
+    "mentor_report_status",
+    "mentor_report_appeal_status",
+)
+REPORT_NOTIFICATION_TYPES = (
+    *COMMUNITY_REPORT_NOTIFICATION_TYPES,
+    *CONSULTATION_REPORT_NOTIFICATION_TYPES,
+)
 CONSULTATION_ORDER_NOTIFICATION_TYPES = (
     "mentor_order_created",
     "mentor_chat_message",
@@ -162,7 +170,7 @@ def _summarize_unread_rows(rows: list[dict]) -> UserNotificationUnreadSummary:
             community += 1
         if category == "consultation":
             consultations += 1
-        if notification_type in COMMUNITY_REPORT_NOTIFICATION_TYPES:
+        if notification_type in REPORT_NOTIFICATION_TYPES:
             community_reports += 1
         if notification_type in POST_INTERACTION_NOTIFICATION_TYPES:
             post_interactions += 1
@@ -221,7 +229,7 @@ def _apply_read_scope(query, scope: str):
     if scope == "post_interactions":
         return query.in_("notification_type", list(POST_INTERACTION_NOTIFICATION_TYPES))
     if scope == "community_reports":
-        return query.in_("notification_type", list(COMMUNITY_REPORT_NOTIFICATION_TYPES))
+        return query.in_("notification_type", list(REPORT_NOTIFICATION_TYPES))
     if scope == "consultations":
         return query.eq("category", "consultation")
     return query.eq("category", "community")

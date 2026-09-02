@@ -69,6 +69,10 @@ class AiSubjectGenerationV2Tests(unittest.TestCase):
         self.assertIsNotNone(row, reasons)
         self.assertEqual(row["exam_code"], "COMMON")
         self.assertIn("解题思路：", row["explanation"])
+        self.assertEqual(
+            row["_culture_v3_review"]["fact_anchor"],
+            raw["culture_v3"]["fact_anchor"],
+        )
 
         raw = {**question, "culture_v2": build_culture_metadata()}
         row, reasons = _safe_question_candidate(raw, build_target(question), "Z001")
@@ -139,6 +143,20 @@ class BlindQuestionReviewTests(unittest.TestCase):
         candidate_payload = content.split("候选题：", 1)[1]
         self.assertNotIn('"answer"', candidate_payload)
 
+    def test_culture_blind_review_checks_stem_option_semantic_alignment(self):
+        row = build_culture_v3_question()
+        messages = build_quality_review_messages([row], "中华文化")
+        content = "\n".join(message["content"] for message in messages)
+        candidate_payload = content.split("候选题：", 1)[1]
+
+        self.assertIn("题干所问的语义类型是否与 A-D 一致", content)
+        self.assertIn("题干若问主张，四项都应是主张", content)
+        self.assertNotIn('"answer"', candidate_payload)
+        self.assertNotIn('"explanation"', candidate_payload)
+        self.assertNotIn('"subject"', candidate_payload)
+        self.assertNotIn('"module"', candidate_payload)
+        self.assertNotIn('"submodule"', candidate_payload)
+
     def test_blind_review_accepts_only_matching_independent_answer(self):
         row = build_english_question()
         accepted, feedback, _ = parse_quality_reviews(
@@ -167,15 +185,30 @@ class BlindQuestionReviewTests(unittest.TestCase):
         self.assertEqual(accepted, [])
         self.assertTrue(any("不一致" in item for item in feedback))
 
+    def test_blind_review_rejects_duplicate_indexes_instead_of_accepting_first(self):
+        row = build_english_question()
+        content = (
+            '{"reviews":['
+            '{"index":1,"accept":true,"independent_answer":"A","issues":[]},'
+            '{"index":1,"accept":false,"independent_answer":"B","issues":["答案冲突"]}'
+            "]}"
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            parse_quality_reviews(content, [row])
+
     def test_culture_explanation_review_checks_teaching_quality_after_answer_review(self):
         row = build_culture_v3_question()
+        row["_culture_v3_review"] = build_culture_v3_metadata()
         messages = build_culture_explanation_review_messages([row])
         content = "\n".join(message["content"] for message in messages)
         candidate = json.loads(content.split("候选解析：", 1)[1])[0]
         self.assertEqual(candidate["explanation"], row["explanation"])
+        self.assertEqual(candidate["culture_v3"], row["_culture_v3_review"])
         self.assertIn('"answer":"A"', content)
         self.assertIn("中间文化事实", content)
         self.assertIn("记忆方法允许省略", content)
+        self.assertIn("不要把 verification_status=cross_checked 当成事实正确证明", content)
 
     def test_culture_explanation_review_rejection_returns_specific_feedback(self):
         row = build_culture_v3_question()
@@ -185,6 +218,36 @@ class BlindQuestionReviewTests(unittest.TestCase):
         )
         self.assertEqual(accepted, [])
         self.assertTrue(any("没有真实知识" in item for item in feedback))
+
+    def test_culture_explanation_review_rejects_duplicate_indexes(self):
+        row = build_culture_v3_question()
+        content = (
+            '{"reviews":['
+            '{"index":1,"accept":true,"issues":[]},'
+            '{"index":1,"accept":false,"issues":["事实冲突"]}'
+            "]}"
+        )
+
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            parse_culture_explanation_reviews(content, [row])
+
+    def test_both_review_stages_reject_missing_fractional_and_out_of_range_indexes(self):
+        parsers_and_rows = (
+            (parse_quality_reviews, build_english_question()),
+            (parse_culture_explanation_reviews, build_culture_v3_question()),
+        )
+        invalid_payloads = (
+            ('{"reviews":[]}', "missing review indexes"),
+            ('{"reviews":[{"index":0}]}', "out of range"),
+            ('{"reviews":[{"index":2}]}', "out of range"),
+            ('{"reviews":[{"index":1.5}]}', "invalid index"),
+            ('{"reviews":[{"index":"1.5"}]}', "invalid index"),
+        )
+        for parser, row in parsers_and_rows:
+            for content, message in invalid_payloads:
+                with self.subTest(parser=parser.__name__, content=content):
+                    with self.assertRaisesRegex(ValueError, message):
+                        parser(content, [row])
 
 
 class CultureTwoStageReviewTests(unittest.IsolatedAsyncioTestCase):
@@ -207,6 +270,38 @@ class CultureTwoStageReviewTests(unittest.IsolatedAsyncioTestCase):
 
 
 class SubjectGenerationRetryTests(unittest.IsolatedAsyncioTestCase):
+    async def test_culture_review_metadata_is_stripped_before_database_rows(self):
+        question = build_culture_question()
+        raw = {
+            **question,
+            "explanation": "",
+            "culture_v3": build_culture_v3_metadata(),
+        }
+        response = {
+            "choices": [
+                {
+                    "message": {
+                        "content": json.dumps({"questions": [raw]}, ensure_ascii=False),
+                    }
+                }
+            ]
+        }
+        target = build_target(question, question_count=1)
+
+        async def pass_review(rows: list[dict], _: str):
+            self.assertIn("_culture_v3_review", rows[0])
+            return rows, [], {"round": 1}
+
+        with (
+            patch("app.routes.ai._existing_ai_fingerprints", return_value=(set(), [])),
+            patch("app.routes.ai._call_deepseek", new=AsyncMock(return_value=response)),
+            patch("app.routes.ai.review_generated_question_rows", side_effect=pass_review),
+        ):
+            rows, _ = await _generate_unique_question_rows(None, target, "Z001", [])
+
+        self.assertEqual(len(rows), 1)
+        self.assertNotIn("_culture_v3_review", rows[0])
+
     async def test_blind_review_rejection_is_fed_into_next_generation_attempt(self):
         question = build_english_question()
         raw = {**question, "english_v2": build_english_metadata()}

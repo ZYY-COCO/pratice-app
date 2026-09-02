@@ -102,8 +102,9 @@ PUBLIC_MENTOR_EXAM_TYPES = {"Z001", "Z002", "application"}
 PUBLIC_MENTOR_MAX_LIMIT = 100
 ORDER_MENTOR_FIELDS = (
     "id,owner_user_id,online_status,accepts_booking,price_cents,"
-    "consultation_window_minutes,is_published,verification_status"
+    "consultation_window_minutes,consultation_enabled,is_published,verification_status"
 )
+MENTOR_PUBLIC_PROFILE_FIELDS = f"{PUBLIC_PROFILE_FIELDS},consultation_enabled"
 ORDER_MENTOR_RESPONSE_WINDOW_MINUTES = 10
 ORDER_LIST_MAX_LIMIT = 100
 MENTOR_SLOT_MAX_LIMIT = 100
@@ -164,8 +165,8 @@ MENTOR_CONSULTATION_REPORT_APPEAL_FIELDS = (
 )
 MENTOR_VERIFICATION_APPLICATION_FIELDS = (
     "id,applicant_user_id,legal_name,school,major,admission_year,graduation_year,"
-    "exam_type,score,skills,bio,price_cents,application_status,admin_note,reviewed_at,"
-    "created_at,updated_at"
+    "exam_type,score,skills,bio,price_cents,consultation_enabled,application_status,admin_note,reviewed_at,"
+    "revocation_reason,revoked_at,created_at,updated_at"
 )
 MENTOR_PROFILE_CHANGE_REQUEST_FIELDS = (
     "id,mentor_id,owner_user_id,school,major,exam_type,score,skills,bio,price_cents,"
@@ -340,13 +341,26 @@ def _serialize_mentor_verification_application(row: dict, *, document_count: int
         "skills": normalize_skills(row.get("skills") if isinstance(row.get("skills"), list) else []),
         "bio": str(row.get("bio") or ""),
         "price": round(max(0, int(row.get("price_cents") or 0)) / 100, 2),
+        "consultation_enabled": bool(row.get("consultation_enabled", True)),
         "application_status": str(row.get("application_status") or "pending"),
         "admin_note": row.get("admin_note") or None,
+        "revocation_reason": row.get("revocation_reason") or None,
+        "revoked_at": row.get("revoked_at") or None,
         "reviewed_at": row.get("reviewed_at") or None,
         "created_at": row.get("created_at") or None,
         "updated_at": row.get("updated_at") or None,
         "document_count": max(0, int(document_count or 0)),
     }
+
+
+def _serialize_mentor_public_profile(
+    row: dict,
+    skills: list[str] | None = None,
+    aggregate: dict | None = None,
+) -> dict:
+    payload = serialize_mentor_public(row, skills, aggregate)
+    payload["consultation_enabled"] = bool(row.get("consultation_enabled", True))
+    return payload
 
 
 def _serialize_mentor_profile_change_request(row: dict) -> dict:
@@ -389,7 +403,12 @@ def _get_owned_mentor_verification_application_or_404(supabase, application_id: 
 def _get_order_mentor_or_404(supabase, mentor_id: str, *, require_public: bool = True) -> dict:
     query = supabase.table("mentor_profiles").select(ORDER_MENTOR_FIELDS).eq("id", mentor_id)
     if require_public:
-        query = query.eq("is_published", True).eq("verification_status", "verified")
+        query = (
+            query
+            .eq("consultation_enabled", True)
+            .eq("is_published", True)
+            .eq("verification_status", "verified")
+        )
     response = call_supabase(
         lambda: query.limit(1).execute(),
         operation_name="consultation mentor lookup",
@@ -403,7 +422,7 @@ def _get_current_owned_mentor_or_404(supabase, user_id: str) -> dict:
     response = call_supabase(
         lambda: (
             supabase.table("mentor_profiles")
-            .select(PUBLIC_PROFILE_FIELDS)
+            .select(MENTOR_PUBLIC_PROFILE_FIELDS)
             .eq("owner_user_id", user_id)
             .limit(1)
             .execute()
@@ -442,7 +461,7 @@ def _get_current_owned_mentor_for_action_or_404(supabase, user_id: str) -> dict:
     response = call_supabase(
         lambda: (
             supabase.table("mentor_profiles")
-            .select("id,price_cents")
+            .select("id,price_cents,consultation_enabled")
             .eq("owner_user_id", user_id)
             .limit(1)
             .execute()
@@ -454,6 +473,14 @@ def _get_current_owned_mentor_for_action_or_404(supabase, user_id: str) -> dict:
     return response.data[0]
 
 
+def _ensure_owned_mentor_consultation_enabled(mentor: dict) -> None:
+    if not bool(mentor.get("consultation_enabled", True)):
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="当前仅完成前辈认证，尚未开通咨询服务",
+        )
+
+
 def _serialize_owned_mentor_profile(supabase, row: dict) -> MentorOwnerProfileResponse:
     mentor_id = str(row.get("id") or "")
     skills_by_mentor = fetch_mentor_skills(supabase, [mentor_id])
@@ -461,7 +488,7 @@ def _serialize_owned_mentor_profile(supabase, row: dict) -> MentorOwnerProfileRe
     # database/mentor_consultation_aggregates.sql triggers.  Reusing those
     # fields avoids two full scans of reviews and completed orders whenever a
     # mentor opens their own homepage.
-    return MentorOwnerProfileResponse(mentor=serialize_mentor_public(
+    return MentorOwnerProfileResponse(mentor=_serialize_mentor_public_profile(
         row,
         skills_by_mentor.get(mentor_id, []),
     ))
@@ -1118,6 +1145,264 @@ def _notify_consultation_applicant_order_status(
     )
 
 
+def _notify_consultation_applicant_payment_status(
+    supabase,
+    *,
+    order: dict,
+    event: str,
+    detail: str = "",
+) -> None:
+    """Notify the applicant about asynchronous payment or refund outcomes."""
+
+    if event not in {"payment_failed", "refund_requested", "refund_completed", "refund_failed"}:
+        return
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    recipient_user_id = str(order.get("applicant_user_id") or "").strip()
+    if not order_id or not recipient_user_id:
+        return
+
+    refund_amount_cents = max(0, int(order.get("refund_amount_cents") or 0))
+    amount_text = f"¥{refund_amount_cents / 100:.2f}" if refund_amount_cents else "咨询费用"
+    normalized_detail = str(detail or "").strip()
+    if event == "payment_failed":
+        title = "咨询支付未完成"
+        summary = "本次支付未成功，订单仍可重新支付或取消。"
+        content = normalized_detail or "你可以返回“我的咨询”重新发起支付或取消订单。"
+    elif event == "refund_requested":
+        title = "咨询费用已进入退款处理"
+        summary = f"订单已关闭，平台已提交{amount_text}原路退款。"
+        content = normalized_detail or "退款结果会在支付渠道确认后同步，请留意后续通知。"
+    elif event == "refund_completed":
+        title = "咨询退款已完成"
+        summary = f"{amount_text}已原路退回，请留意支付账户到账情况。"
+        content = normalized_detail or "退款结果已同步到你的咨询记录。"
+    else:
+        title = "咨询退款处理出现异常"
+        summary = "平台已收到异常提醒并会继续跟进。"
+        content = normalized_detail or "请在“我的咨询”中查看进度，平台会继续处理本次退款。"
+
+    route_path = "/pages-sub-consultation/consultation/my-consultations"
+    event_reference = str(order.get("refund_reference") or order.get("payment_reference") or "").strip()
+    related_id = f"{order_id}:{event}:{event_reference}" if event_reference else f"{order_id}:{event}"
+
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="consultation",
+            notification_type="mentor_order_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_order",
+            related_id=related_id,
+            route_path=route_path,
+            delivery_payload={
+                "surface": "mentor_order",
+                "audience": "applicant",
+                "event": event,
+                "order_id": order_id,
+                "mentor_id": mentor_id,
+                "order_status": str(order.get("order_status") or ""),
+                "payment_status": str(order.get("payment_status") or ""),
+                "refund_amount_cents": refund_amount_cents,
+                "refund_reference": str(order.get("refund_reference") or "") or None,
+                "native_push": {
+                    "title": title,
+                    "body": summary,
+                    "route_path": route_path,
+                },
+            },
+        )
+    except Exception as exc:
+        logger.warning(
+            "Consultation payment notification skipped (order_id=%s event=%s error_type=%s)",
+            order_id,
+            event,
+            type(exc).__name__,
+        )
+
+
+def _notify_consultation_completion_status(
+    supabase,
+    *,
+    order: dict,
+    mentor: dict,
+    recipient_role: str,
+    event: str,
+    confirming_role: str,
+) -> None:
+    """Notify one participant about a pending or completed mutual confirmation."""
+
+    if recipient_role not in {"mentor", "applicant"} or event not in {"completion_pending", "completed"}:
+        return
+    order_id = str(order.get("id") or "").strip()
+    mentor_id = str(order.get("mentor_id") or "").strip()
+    normalized_recipient_role = recipient_role
+    recipient_user_id = str((
+        mentor.get("owner_user_id")
+        if normalized_recipient_role == "mentor"
+        else order.get("applicant_user_id")
+    ) or "").strip()
+    if not order_id or not mentor_id or not recipient_user_id:
+        return
+
+    route_path = (
+        f"/pages-sub-consultation/consultation/mentor-chat?mentorId={mentor_id}&orderId={order_id}"
+        f"&role={normalized_recipient_role}&from={'mentor-center' if normalized_recipient_role == 'mentor' else 'my-consultations'}"
+    )
+    if event == "completed":
+        title = "本次咨询已完成"
+        summary = (
+            "双方已确认结束，本次服务记录已保存。"
+            if normalized_recipient_role == "mentor"
+            else "双方已确认结束，现在可以评价本次咨询。"
+        )
+        content = "聊天记录会继续保留，可随时返回查看。"
+        related_id = f"{order_id}:completed"
+    else:
+        title = "咨询用户已确认结束" if confirming_role == "applicant" else "前辈已确认本次咨询结束"
+        summary = "请确认本次咨询是否完成。"
+        content = "请进入本次咨询记录完成结束确认。"
+        related_id = f"{order_id}:completion_pending:{confirming_role}"
+
+    delivery_payload = {
+        "surface": "mentor_order",
+        "audience": normalized_recipient_role,
+        "event": "completed" if event == "completed" else "completion_pending",
+        "order_id": order_id,
+        "mentor_id": mentor_id,
+        "order_status": str(order.get("order_status") or ""),
+    }
+    if event == "completion_pending":
+        # The confirming side is meaningful only while waiting for the other
+        # participant. A completed notification must keep an identical payload
+        # when either participant retries so the outbox event key stays stable.
+        delivery_payload["confirming_role"] = confirming_role
+
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_user_id,
+            category="consultation",
+            notification_type="mentor_order_status",
+            title=title,
+            summary=summary,
+            content=content,
+            related_type="mentor_consultation_order",
+            related_id=related_id,
+            route_path=route_path,
+            delivery_payload=delivery_payload,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Consultation completion notification skipped (order_id=%s event=%s audience=%s error_type=%s)",
+            order_id,
+            event,
+            normalized_recipient_role,
+            type(exc).__name__,
+        )
+
+
+def _notify_consultation_report_participant(
+    supabase,
+    *,
+    report: dict,
+    recipient_user_id: str | None,
+    audience: str,
+    participation_role: str,
+    event: str,
+    actor_user_id: str | None = None,
+    appeal_id: str | None = None,
+) -> None:
+    """Notify the other report participant without coupling delivery to the case workflow."""
+
+    report_id = str(report.get("id") or "").strip()
+    order_id = str(report.get("order_id") or "").strip()
+    recipient_id = str(recipient_user_id or "").strip()
+    actor_id = str(actor_user_id or "").strip()
+    normalized_appeal_id = str(appeal_id or "").strip() or None
+    if (
+        not report_id
+        or not order_id
+        or not recipient_id
+        or recipient_id == actor_id
+        or audience not in {"applicant", "mentor"}
+        or participation_role not in {"reporter", "respondent"}
+    ):
+        return
+
+    if event == "created" and participation_role == "respondent":
+        notification_type = "mentor_report_status"
+        title = "你收到一条咨询问题反馈"
+        summary = "请及时提交说明与相关凭证。"
+        content = "平台会结合订单、聊天和双方材料核实，请前往处理页面查看并回应。"
+        related_type = "mentor_consultation_report"
+        related_id = f"{report_id}:created:respondent"
+        route_path = (
+            "/pages-sub-consultation/consultation/mentor-response"
+            f"?reportId={report_id}"
+        )
+    elif event == "responded" and participation_role == "reporter":
+        notification_type = "mentor_report_status"
+        title = "被反馈方已提交说明"
+        summary = "对方已补充本次咨询的说明与材料。"
+        content = "平台正在核实，你可以前往平台处理进度查看当前状态。"
+        related_type = "mentor_consultation_report"
+        related_id = f"{report_id}:responded:reporter"
+        route_path = "/pages-sub-consultation/consultation/mentor-support"
+    elif event == "appeal_created" and normalized_appeal_id:
+        notification_type = "mentor_report_appeal_status"
+        title = "本次咨询处理结果已被申请复核"
+        summary = "另一方已申请平台重新核实本次处理结果。"
+        content = "平台会重新核对双方说明、凭证、订单和聊天记录，请留意后续通知。"
+        related_type = "mentor_consultation_report_appeal"
+        related_id = f"{normalized_appeal_id}:created:counterparty"
+        route_path = "/pages/circle/community-reports"
+    else:
+        return
+
+    delivery_payload = {
+        "surface": "mentor_consultation_report",
+        "audience": audience,
+        "participation_role": participation_role,
+        "event": event,
+        "order_id": order_id,
+        "report_id": report_id,
+        "appeal_id": normalized_appeal_id,
+        "native_push": {
+            "title": title,
+            "body": summary,
+            "route_path": route_path,
+        },
+    }
+    try:
+        create_user_notification(
+            supabase,
+            recipient_user_id=recipient_id,
+            category="consultation",
+            notification_type=notification_type,
+            title=title,
+            summary=summary,
+            content=content,
+            related_type=related_type,
+            related_id=related_id,
+            route_path=route_path,
+            delivery_payload=delivery_payload,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Consultation report participant notification skipped "
+            "(report_id=%s event=%s audience=%s participation_role=%s error_type=%s)",
+            report_id,
+            event,
+            audience,
+            participation_role,
+            type(exc).__name__,
+        )
+
+
 @router.get("/me/verification-application", response_model=MentorVerificationApplicationStatusResponse)
 def get_my_mentor_verification_application(
     user_id: str = Depends(get_current_user_id),
@@ -1315,6 +1600,8 @@ def get_my_owned_mentor_profile(
     supabase = get_supabase_admin()
     try:
         mentor = _get_current_owned_mentor_or_404(supabase, user_id)
+        if mentor.get("verification_status") == "revoked":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="当前前辈资格已取消")
         return _serialize_owned_mentor_profile(supabase, mentor)
     except HTTPException:
         raise
@@ -1420,6 +1707,7 @@ def update_my_owned_mentor_availability(
     supabase = get_supabase_admin()
     try:
         mentor = _get_current_owned_mentor_for_action_or_404(supabase, user_id)
+        _ensure_owned_mentor_consultation_enabled(mentor)
         mentor_id = str(mentor.get("id") or "")
         response = call_supabase(
             lambda: (
@@ -1541,6 +1829,7 @@ def create_my_mentor_availability_slot(
     supabase = get_supabase_admin()
     try:
         mentor = _get_current_owned_mentor_for_action_or_404(supabase, user_id)
+        _ensure_owned_mentor_consultation_enabled(mentor)
         mentor_id = str(mentor.get("id") or "")
         starts_at_iso = starts_at.isoformat()
         ends_at_iso = ends_at.isoformat()
@@ -1591,6 +1880,7 @@ def update_my_mentor_availability_slot(
     supabase = get_supabase_admin()
     try:
         mentor = _get_current_owned_mentor_for_action_or_404(supabase, user_id)
+        _ensure_owned_mentor_consultation_enabled(mentor)
         mentor_id = str(mentor.get("id") or "")
         slot = _get_slot_or_404(supabase, str(slot_id))
         if str(slot.get("mentor_id") or "") != mentor_id:
@@ -1718,7 +2008,8 @@ def list_public_mentors(
         response = call_supabase(
             lambda: (
                 supabase.table("mentor_profiles")
-                .select(PUBLIC_PROFILE_FIELDS)
+                .select(MENTOR_PUBLIC_PROFILE_FIELDS)
+                .eq("consultation_enabled", True)
                 .eq("is_published", True)
                 .eq("verification_status", "verified")
                 .limit(PUBLIC_MENTOR_MAX_LIMIT)
@@ -1755,7 +2046,7 @@ def list_public_mentors(
         aggregates_by_mentor = fetch_mentor_aggregates(supabase, mentor_ids)
         return MentorPublicListResponse(
             items=[
-                serialize_mentor_public(
+                _serialize_mentor_public_profile(
                     row,
                     skills_by_mentor.get(str(row.get("id") or ""), []),
                     aggregates_by_mentor.get(str(row.get("id") or "")),
@@ -1781,8 +2072,9 @@ def get_public_mentor(mentor_id: str) -> MentorPublicDetailResponse:
         response = call_supabase(
             lambda: (
                 supabase.table("mentor_profiles")
-                .select(PUBLIC_PROFILE_FIELDS)
+                .select(MENTOR_PUBLIC_PROFILE_FIELDS)
                 .eq("id", mentor_id)
+                .eq("consultation_enabled", True)
                 .eq("is_published", True)
                 .eq("verification_status", "verified")
                 .limit(1)
@@ -1822,7 +2114,7 @@ def get_public_mentor(mentor_id: str) -> MentorPublicDetailResponse:
             operation_name="public mentor availability list",
         )
         return MentorPublicDetailResponse(
-            mentor=serialize_mentor_public(
+            mentor=_serialize_mentor_public_profile(
                 mentor_row,
                 skills_by_mentor.get(mentor_id, []),
                 aggregates_by_mentor.get(mentor_id),
@@ -1866,8 +2158,9 @@ def list_my_mentor_favorites(
             mentor_response = call_supabase(
                 lambda: (
                     supabase.table("mentor_profiles")
-                    .select(PUBLIC_PROFILE_FIELDS)
+                    .select(MENTOR_PUBLIC_PROFILE_FIELDS)
                     .in_("id", mentor_ids)
+                    .eq("consultation_enabled", True)
                     .eq("is_published", True)
                     .eq("verification_status", "verified")
                     .execute()
@@ -1889,7 +2182,7 @@ def list_my_mentor_favorites(
                     mentor_id=str(row.get("mentor_id") or ""),
                     created_at=row.get("created_at") or None,
                     mentor=(
-                        serialize_mentor_public(
+                        _serialize_mentor_public_profile(
                             mentor_rows_by_id[str(row.get("mentor_id") or "")],
                             skills_by_mentor.get(str(row.get("mentor_id") or ""), []),
                             aggregates_by_mentor.get(str(row.get("mentor_id") or "")),
@@ -2339,6 +2632,11 @@ def handle_mentor_consultation_payment_webhook(
                             order_id,
                             "支付结果到达时订单预占已结束，平台已自动关闭订单并提交全额原路退款。",
                         )
+                    _notify_consultation_applicant_payment_status(
+                        supabase,
+                        order=late_order,
+                        event="refund_requested",
+                    )
                     return MentorConsultationPaymentWebhookResponse(
                         detail="支付已确认，但订单预占已结束；全额退款处理中",
                         order=_serialize_order_item(late_order),
@@ -2368,6 +2666,12 @@ def handle_mentor_consultation_payment_webhook(
 
         if payload.status == "failed":
             if current_payment_status == "failed" and not order.get("refund_reference") and existing_reference == payload.payment_reference:
+                _notify_consultation_applicant_payment_status(
+                    supabase,
+                    order=order,
+                    event="payment_failed",
+                    detail=str(payload.failure_reason or ""),
+                )
                 return MentorConsultationPaymentWebhookResponse(
                     detail="支付失败结果已处理",
                     order=_serialize_order_item(order),
@@ -2392,6 +2696,12 @@ def handle_mentor_consultation_payment_webhook(
                     and not refreshed_order.get("refund_reference")
                     and str(refreshed_order.get("payment_reference") or "") == payload.payment_reference
                 ):
+                    _notify_consultation_applicant_payment_status(
+                        supabase,
+                        order=refreshed_order,
+                        event="payment_failed",
+                        detail=str(payload.failure_reason or ""),
+                    )
                     return MentorConsultationPaymentWebhookResponse(
                         detail="支付失败结果已处理",
                         order=_serialize_order_item(refreshed_order),
@@ -2401,6 +2711,12 @@ def handle_mentor_consultation_payment_webhook(
             callback_details["failure_reason"] = str(payload.failure_reason or "") or None
             _insert_order_event(supabase, order_id, event_type="consultation_payment_failed", actor_role="system", details=callback_details)
             _insert_system_message(supabase, order_id, "本次支付未完成，订单仍处于待支付状态；请重新发起支付或取消订单。")
+            _notify_consultation_applicant_payment_status(
+                supabase,
+                order=response.data[0],
+                event="payment_failed",
+                detail=str(payload.failure_reason or ""),
+            )
             return MentorConsultationPaymentWebhookResponse(
                 detail="已记录支付失败结果",
                 order=_serialize_order_item(response.data[0]),
@@ -2415,6 +2731,11 @@ def handle_mentor_consultation_payment_webhook(
         callback_details.update({"refund_reference": payload.refund_reference, "refund_amount_cents": callback_refund_amount})
         if payload.status == "refunded":
             if current_payment_status == "refunded":
+                _notify_consultation_applicant_payment_status(
+                    supabase,
+                    order=order,
+                    event="refund_completed",
+                )
                 return MentorConsultationPaymentWebhookResponse(
                     detail="退款结果已处理",
                     order=_serialize_order_item(order),
@@ -2435,6 +2756,11 @@ def handle_mentor_consultation_payment_webhook(
             if not response.data:
                 refreshed_order = _get_order_or_404(supabase, order_id)
                 if str(refreshed_order.get("payment_status") or "") == "refunded" and str(refreshed_order.get("refund_reference") or "") == payload.refund_reference:
+                    _notify_consultation_applicant_payment_status(
+                        supabase,
+                        order=refreshed_order,
+                        event="refund_completed",
+                    )
                     return MentorConsultationPaymentWebhookResponse(
                         detail="退款结果已处理",
                         order=_serialize_order_item(refreshed_order),
@@ -2444,12 +2770,23 @@ def handle_mentor_consultation_payment_webhook(
             _insert_order_event(supabase, order_id, event_type="consultation_refund_completed", actor_role="system", details=callback_details)
             _insert_system_message(supabase, order_id, f"平台已确认退款完成，退款金额 ¥{callback_refund_amount / 100:.2f} 将原路退回。")
             record_consultation_refund(supabase, response.data[0])
+            _notify_consultation_applicant_payment_status(
+                supabase,
+                order=response.data[0],
+                event="refund_completed",
+            )
             return MentorConsultationPaymentWebhookResponse(
                 detail="退款确认成功",
                 order=_serialize_order_item(response.data[0]),
             )
 
         if current_payment_status == "failed" and order.get("refund_reference"):
+            _notify_consultation_applicant_payment_status(
+                supabase,
+                order=order,
+                event="refund_failed",
+                detail=str(payload.failure_reason or ""),
+            )
             return MentorConsultationPaymentWebhookResponse(
                 detail="退款异常结果已处理",
                 order=_serialize_order_item(order),
@@ -2470,6 +2807,12 @@ def handle_mentor_consultation_payment_webhook(
         if not response.data:
             refreshed_order = _get_order_or_404(supabase, order_id)
             if str(refreshed_order.get("payment_status") or "") == "failed" and str(refreshed_order.get("refund_reference") or "") == payload.refund_reference:
+                _notify_consultation_applicant_payment_status(
+                    supabase,
+                    order=refreshed_order,
+                    event="refund_failed",
+                    detail=str(payload.failure_reason or ""),
+                )
                 return MentorConsultationPaymentWebhookResponse(
                     detail="退款异常结果已处理",
                     order=_serialize_order_item(refreshed_order),
@@ -2479,6 +2822,12 @@ def handle_mentor_consultation_payment_webhook(
         callback_details["failure_reason"] = str(payload.failure_reason or "") or None
         _insert_order_event(supabase, order_id, event_type="consultation_refund_failed", actor_role="system", details=callback_details)
         _insert_system_message(supabase, order_id, "退款处理出现异常，平台已收到提醒并会继续跟进；你可以在平台处理进度查看结果。")
+        _notify_consultation_applicant_payment_status(
+            supabase,
+            order=response.data[0],
+            event="refund_failed",
+            detail=str(payload.failure_reason or ""),
+        )
         return MentorConsultationPaymentWebhookResponse(
             detail="已记录退款异常",
             order=_serialize_order_item(response.data[0]),
@@ -3008,8 +3357,28 @@ def complete_mentor_consultation_order(
     normalized_order_id = str(order_id)
     supabase = get_supabase_admin()
     try:
-        order, participant_role, _ = _get_order_participant(supabase, normalized_order_id, user_id)
+        order, participant_role, mentor = _get_order_participant(supabase, normalized_order_id, user_id)
         if str(order.get("order_status") or "") == "completed":
+            if (
+                order.get("applicant_completion_confirmed_at")
+                and order.get("mentor_completion_confirmed_at")
+            ):
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=order,
+                    mentor=mentor,
+                    recipient_role="applicant",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=order,
+                    mentor=mentor,
+                    recipient_role="mentor",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
             return _serialize_order_item(order)
         _assert_order_status(order, {"in_progress"}, "该订单当前还没有开始咨询")
         confirmation_field = (
@@ -3018,6 +3387,7 @@ def complete_mentor_consultation_order(
             else "applicant_completion_confirmed_at"
         )
         now_iso = _utc_now().isoformat()
+        confirmation_was_new = False
         if not order.get(confirmation_field):
             response = call_supabase(
                 lambda: (
@@ -3025,6 +3395,7 @@ def complete_mentor_consultation_order(
                     .update({confirmation_field: now_iso})
                     .eq("id", normalized_order_id)
                     .eq("order_status", "in_progress")
+                    .is_(confirmation_field, "null")
                     .execute()
                 ),
                 operation_name="consultation completion confirmation",
@@ -3038,10 +3409,31 @@ def complete_mentor_consultation_order(
                 actor_role=participant_role,
                 actor_user_id=user_id,
             )
+            confirmation_was_new = True
 
         current = _get_order_or_404(supabase, normalized_order_id)
         applicant_confirmed = bool(current.get("applicant_completion_confirmed_at"))
         mentor_confirmed = bool(current.get("mentor_completion_confirmed_at"))
+        current_status = str(current.get("order_status") or "")
+        if current_status != "in_progress":
+            if current_status == "completed" and applicant_confirmed and mentor_confirmed:
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=current,
+                    mentor=mentor,
+                    recipient_role="applicant",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=current,
+                    mentor=mentor,
+                    recipient_role="mentor",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
+            return _serialize_order_item(current)
         if applicant_confirmed and mentor_confirmed:
             completed_response = call_supabase(
                 lambda: (
@@ -3063,11 +3455,36 @@ def complete_mentor_consultation_order(
                     actor_role="system",
                     details={"completion": "mutual_confirmation"},
                 )
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=final_order,
+                    mentor=mentor,
+                    recipient_role="applicant",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
+                _notify_consultation_completion_status(
+                    supabase,
+                    order=final_order,
+                    mentor=mentor,
+                    recipient_role="mentor",
+                    event="completed",
+                    confirming_role=participant_role,
+                )
                 record_consultation_income_pending(supabase, final_order)
             return _serialize_order_item(final_order)
 
         other_party = "前辈" if participant_role == "applicant" else "咨询用户"
         _insert_system_message(supabase, normalized_order_id, f"{ '咨询用户' if participant_role == 'applicant' else '前辈' }已提交结束确认，等待{other_party}确认。")
+        if confirmation_was_new:
+            _notify_consultation_completion_status(
+                supabase,
+                order=current,
+                mentor=mentor,
+                recipient_role="mentor" if participant_role == "applicant" else "applicant",
+                event="completion_pending",
+                confirming_role=participant_role,
+            )
         return _serialize_order_item(current)
     except HTTPException:
         raise
@@ -3464,6 +3881,15 @@ def create_mentor_consultation_report(
                 f"本案最迟将在 {first_response_hours} 小时内获得平台首次响应。"
             ),
         )
+        _notify_consultation_report_participant(
+            supabase,
+            report=response.data[0],
+            recipient_user_id=target_user_id,
+            audience=target_role,
+            participation_role="respondent",
+            event="created",
+            actor_user_id=user_id,
+        )
         return MentorConsultationReportCreateResponse(**_serialize_consultation_report(
             response.data[0],
             user_id=user_id,
@@ -3530,6 +3956,15 @@ def respond_to_mentor_consultation_report(
             supabase,
             order_id,
             "被反馈方已补充本次咨询的说明。平台正在结合双方材料、订单和聊天记录核实。",
+        )
+        _notify_consultation_report_participant(
+            supabase,
+            report=updated,
+            recipient_user_id=updated.get("reporter_user_id") or report.get("reporter_user_id"),
+            audience=str(updated.get("reporter_role") or report.get("reporter_role") or "applicant"),
+            participation_role="reporter",
+            event="responded",
+            actor_user_id=user_id,
         )
         evidence_summary = _fetch_consultation_report_evidence_summary(supabase, [normalized_report_id])
         return MentorConsultationReportCreateResponse(**_serialize_consultation_report(
@@ -3780,6 +4215,24 @@ def create_mentor_consultation_report_appeal(
                 f"{actor_label}已申请复核本次平台处理结果。平台将重新核对双方说明、凭证、订单和聊天记录。"
                 f"复核申请最迟将在 {first_response_hours} 小时内获得平台首次响应。"
             ),
+        )
+        if participation_role == "reporter":
+            appeal_recipient_user_id = report.get("respondent_user_id") or report.get("target_user_id")
+            appeal_recipient_audience = str(report.get("target_role") or "mentor")
+            appeal_recipient_participation_role = "respondent"
+        else:
+            appeal_recipient_user_id = report.get("reporter_user_id")
+            appeal_recipient_audience = str(report.get("reporter_role") or "applicant")
+            appeal_recipient_participation_role = "reporter"
+        _notify_consultation_report_participant(
+            supabase,
+            report=report,
+            recipient_user_id=appeal_recipient_user_id,
+            audience=appeal_recipient_audience,
+            participation_role=appeal_recipient_participation_role,
+            event="appeal_created",
+            actor_user_id=user_id,
+            appeal_id=str(appeal.get("id") or ""),
         )
         return MentorConsultationReportAppealItem(**_serialize_consultation_report_appeal(appeal))
     except HTTPException:

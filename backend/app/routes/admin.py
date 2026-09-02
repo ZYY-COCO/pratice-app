@@ -2,7 +2,7 @@ import json
 import logging
 import re
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
+from datetime import date, datetime, timedelta, timezone
 from hashlib import sha256
 
 from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
@@ -29,6 +29,10 @@ from app.schemas.admin import (
     AdminCommunityAppealStatusUpdateRequest,
     AdminCommunityCommentItem,
     AdminCommunityCommentVisibilityRequest,
+    AdminCommunityExperienceReviewDecisionRequest,
+    AdminCommunityExperienceReviewDetailResponse,
+    AdminCommunityExperienceReviewHistoryItem,
+    AdminCommunityExperienceReviewListResponse,
     AdminCommunityBulkVisibilityRequest,
     AdminCommunityBulkVisibilityResponse,
     AdminCommunityOverviewResponse,
@@ -143,6 +147,18 @@ COMMUNITY_ADMIN_POST_SORTS = {
     "likes": ("like_count", True),
     "comments": ("comment_count", True),
 }
+COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STATUSES = {"all", "pending", "approved", "rejected"}
+COMMUNITY_ADMIN_EXPERIENCE_REVIEW_CATEGORIES = {"all", "Z001", "Z002"}
+COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES = {"申请制", "初试", "复试"}
+COMMUNITY_EXPERIENCE_REVIEW_REASON_LABELS = {
+    "advertising_or_diversion": "广告营销或站外引流",
+    "false_or_misleading": "虚假、夸大或误导性信息",
+    "infringement": "侵权或未经授权转载",
+    "privacy": "泄露个人隐私",
+    "inappropriate": "不友善、低俗或违规内容",
+    "low_quality": "内容不完整或与备考经验无关",
+    "other": "其他原因",
+}
 COMMUNITY_ADMIN_REPORT_LIMIT = 50
 COMMUNITY_ADMIN_REPORT_MAX_LIMIT = 100
 COMMUNITY_ADMIN_REPORT_STATUSES = {"pending", "reviewing", "resolved", "dismissed"}
@@ -166,6 +182,7 @@ COMMUNITY_ADMIN_APPEAL_FIELDS = (
     "admin_note,handled_by,handled_at,created_at,updated_at"
 )
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
+COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY = "_circle_experience_stages"
 CHINA_STANDARD_TIME = timezone(timedelta(hours=8))
 OPERATIONS_IMPORT_BATCH_SIZE = 500
 SCORELINE_RECORD_KINDS = {"score", "missing", "unavailable", "official", "multiple", "note"}
@@ -556,19 +573,68 @@ def _community_admin_post_type(row: dict) -> str:
     return "chat"
 
 
+def _community_admin_experience_stages(row: dict) -> list[str]:
+    if _community_admin_post_type(row) != "experience":
+        return []
+    stored_stages = row.get("experience_stages")
+    if isinstance(stored_stages, list):
+        normalized = list(dict.fromkeys(
+            stage
+            for stage in (str(value or "").strip() for value in stored_stages)
+            if stage in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES
+        ))
+        if normalized:
+            return normalized
+    media = row.get("media")
+    if isinstance(media, list):
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            marker = item.get(COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY)
+            if isinstance(marker, list):
+                return list(dict.fromkeys(
+                    stage
+                    for stage in (str(value or "").strip() for value in marker)
+                    if stage in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES
+                ))
+    legacy_category = str(row.get("category") or "").strip()
+    return {"专业课": ["初试"], "复试": ["复试"]}.get(legacy_category, [])
+
+
+def _community_admin_review_status(row: dict) -> str:
+    if _community_admin_post_type(row) != "experience":
+        return "approved"
+    review_status = str(row.get("review_status") or "").strip().lower()
+    if review_status in {"pending", "approved", "rejected"}:
+        return review_status
+    return "pending" if row.get("is_published") is False and not row.get("moderation_note") else "approved"
+
+
 def _community_admin_media(value: object) -> list[dict]:
     if not isinstance(value, list):
         return []
     return [
         item
         for item in value
-        if isinstance(item, dict) and COMMUNITY_POST_TYPE_MARKER_KEY not in item
+        if (
+            isinstance(item, dict)
+            and COMMUNITY_POST_TYPE_MARKER_KEY not in item
+            and COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY not in item
+        )
     ][:9]
 
 
 def _is_missing_community_post_type_column_error(exc: Exception) -> bool:
+    return _is_missing_community_post_column_error(exc, "post_type")
+
+
+def _is_missing_community_post_column_error(exc: Exception, column_name: str) -> bool:
     message = str(exc).lower()
-    return "post_type" in message and ("does not exist" in message or "42703" in message)
+    normalized_column = str(column_name or "").strip().lower()
+    return bool(normalized_column) and normalized_column in message and any(
+        marker in message
+        for marker in ("does not exist", "could not find", "schema cache", "42703", "pgrst204")
+    )
 
 
 def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
@@ -580,6 +646,7 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
         author_avatar=str(row.get("author_avatar") or author_name[:1] or "研"),
         category=str(row.get("category") or "备考日常"),
         post_type=_community_admin_post_type(row),
+        experience_stages=_community_admin_experience_stages(row),
         title=str(row.get("title") or ""),
         content=str(row.get("content") or ""),
         media=_community_admin_media(row.get("media")),
@@ -588,6 +655,13 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
         view_count=_safe_int(row.get("view_count"), 0),
         is_published=bool(row.get("is_published")),
         is_featured=bool(row.get("is_featured")),
+        review_status=_community_admin_review_status(row),
+        review_version=max(0, _safe_int(row.get("review_version"), 0)),
+        review_reason_code=str(row.get("review_reason_code") or "").strip() or None,
+        review_note=str(row.get("review_note") or "").strip() or None,
+        reviewed_by=str(row.get("reviewed_by") or "").strip() or None,
+        reviewed_at=row.get("reviewed_at"),
+        submitted_at=row.get("submitted_at"),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
     )
@@ -651,6 +725,30 @@ def _fetch_community_report_users(supabase, user_ids: list[str]) -> dict[str, di
         for row in (response.data or [])
         if row.get("id")
     }
+
+
+def _fetch_admin_experience_review_history(
+    supabase,
+    post_id: str,
+) -> list[AdminCommunityExperienceReviewHistoryItem]:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_post_review_history")
+            .select(
+                "id,submission_version,action,from_status,to_status,reason_code,"
+                "review_note,actor_user_id,created_at"
+            )
+            .eq("post_id", post_id)
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        ),
+        operation_name="admin community experience review history",
+    )
+    return [
+        AdminCommunityExperienceReviewHistoryItem(**row)
+        for row in (response.data or [])
+    ]
 
 
 def _community_report_user_item(user_id: str, users: dict[str, dict]) -> dict:
@@ -4114,6 +4212,17 @@ def question_admin_community_overview(
     local_now = datetime.now(CHINA_STANDARD_TIME)
     today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
     try:
+        try:
+            pending_experience_reviews = _count_query(
+                supabase.table("circle_community_posts")
+                .select("id", count="exact")
+                .eq("post_type", "experience")
+                .eq("review_status", "pending")
+            )
+        except Exception as review_exc:
+            if not _is_missing_community_post_column_error(review_exc, "review_status"):
+                raise
+            pending_experience_reviews = 0
         return AdminCommunityOverviewResponse(
             total_posts=_count_table(supabase, "circle_community_posts"),
             published_posts=_count_query(
@@ -4142,12 +4251,242 @@ def question_admin_community_overview(
                 .select("id", count="exact")
                 .eq("status", "reviewing")
             ),
+            pending_experience_reviews=pending_experience_reviews,
         )
     except Exception as exc:
         logger.warning("Admin community overview unavailable (error_type=%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
             detail="社区内容数据暂时不可用",
+        ) from exc
+
+
+@router.get(
+    "/question-portal/community/experience-reviews",
+    response_model=AdminCommunityExperienceReviewListResponse,
+)
+def question_admin_community_experience_reviews(
+    review_status: str = Query(default="all", max_length=20),
+    category: str = Query(default="all", max_length=20),
+    experience_stage: str | None = Query(default=None, max_length=20),
+    search: str | None = Query(default=None, max_length=80),
+    date_from: date | None = Query(default=None),
+    date_to: date | None = Query(default=None),
+    sort_by: str = Query(default="newest", max_length=20),
+    limit: int = Query(default=COMMUNITY_ADMIN_POST_LIMIT, ge=1, le=COMMUNITY_ADMIN_POST_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityExperienceReviewListResponse:
+    normalized_status = review_status.strip().lower() or "all"
+    raw_category = category.strip()
+    normalized_category = "all" if not raw_category or raw_category.lower() == "all" else raw_category.upper()
+    normalized_stage = str(experience_stage or "").strip()
+    normalized_sort = sort_by.strip().lower() or "newest"
+    if normalized_status not in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STATUSES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的审核状态")
+    if normalized_category not in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_CATEGORIES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的考试类别")
+    if normalized_stage and normalized_stage not in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的备考阶段")
+    if normalized_sort not in {"newest", "oldest"}:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的排序方式")
+    if date_from and date_to and date_from > date_to:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="开始日期不能晚于结束日期")
+
+    supabase = get_supabase_admin()
+    try:
+        query = (
+            supabase.table("circle_community_posts")
+            .select("*", count="exact")
+            .eq("post_type", "experience")
+        )
+        if normalized_status != "all":
+            query = query.eq("review_status", normalized_status)
+        if normalized_category != "all":
+            query = query.eq("category", normalized_category)
+        if normalized_stage:
+            query = query.contains("experience_stages", [normalized_stage])
+        if search:
+            term = search.strip().replace(",", " ").replace("(", " ").replace(")", " ")
+            if term:
+                query = query.or_(
+                    f"title.ilike.%{term}%,content.ilike.%{term}%,author_name.ilike.%{term}%"
+                )
+        if date_from:
+            start_at = datetime.combine(date_from, datetime.min.time(), tzinfo=CHINA_STANDARD_TIME)
+            query = query.gte("submitted_at", _to_iso(start_at.astimezone(timezone.utc)))
+        if date_to:
+            end_at = datetime.combine(
+                date_to + timedelta(days=1),
+                datetime.min.time(),
+                tzinfo=CHINA_STANDARD_TIME,
+            )
+            query = query.lt("submitted_at", _to_iso(end_at.astimezone(timezone.utc)))
+        response = call_supabase(
+            lambda: (
+                query.order("submitted_at", desc=normalized_sort == "newest")
+                .order("id", desc=normalized_sort == "newest")
+                .range(offset, offset + limit - 1)
+                .execute()
+            ),
+            operation_name="admin community experience review list",
+        )
+        return AdminCommunityExperienceReviewListResponse(
+            items=[_build_admin_community_post_item(row) for row in (response.data or [])],
+            count=int(response.count or 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Admin community experience review list unavailable (error_type=%s)",
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="经验贴审核数据暂时不可用，请确认已执行审核数据库迁移",
+        ) from exc
+
+
+@router.get(
+    "/question-portal/community/experience-reviews/{post_id}",
+    response_model=AdminCommunityExperienceReviewDetailResponse,
+)
+def question_admin_community_experience_review_detail(
+    post_id: str,
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityExperienceReviewDetailResponse:
+    supabase = get_supabase_admin()
+    try:
+        post = _community_post_detail_row(supabase, post_id)
+        if _community_admin_post_type(post) != "experience":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="经验贴不存在")
+        return AdminCommunityExperienceReviewDetailResponse(
+            post=_build_admin_community_post_item(post),
+            review_history=_fetch_admin_experience_review_history(supabase, post_id),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Admin community experience review detail unavailable (post_id=%s error_type=%s)",
+            post_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="经验贴审核详情暂时不可用",
+        ) from exc
+
+
+@router.patch(
+    "/question-portal/community/experience-reviews/{post_id}",
+    response_model=AdminCommunityPostItem,
+)
+def question_admin_review_community_experience_post(
+    post_id: str,
+    payload: AdminCommunityExperienceReviewDecisionRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityPostItem:
+    supabase = get_supabase_admin()
+    try:
+        current = _community_post_detail_row(supabase, post_id)
+        if _community_admin_post_type(current) != "experience":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="经验贴不存在")
+        if _community_admin_review_status(current) != "pending":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该经验贴审核状态已变化，请刷新后重试",
+            )
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "review_circle_community_experience_post",
+                {
+                    "p_post_id": post_id,
+                    "p_reviewer_id": admin_profile.get("id"),
+                    "p_decision": payload.decision,
+                    "p_reason_code": payload.reason_code,
+                    "p_review_note": payload.review_note,
+                },
+            ).execute(),
+            operation_name="admin community experience review decision",
+        )
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该经验贴审核状态已变化，请刷新后重试",
+            )
+        row = response.data[0]
+        author_id = str(row.get("author_id") or "").strip()
+        review_version = max(1, _safe_int(row.get("review_version"), 1))
+        title = str(row.get("title") or "经验贴").strip() or "经验贴"
+        if author_id:
+            if payload.decision == "approved":
+                notification_title = "你的经验贴已通过审核"
+                notification_summary = f"《{title}》已公开展示"
+                notification_content = payload.review_note or "平台审核已通过，其他用户现在可以看到这篇经验贴。"
+                route_path = (
+                    "/pages/home/index?tab=circle&section=community&communityTab=experience"
+                    f"&postId={post_id}"
+                )
+            else:
+                reason_label = COMMUNITY_EXPERIENCE_REVIEW_REASON_LABELS.get(
+                    str(payload.reason_code or ""),
+                    "内容未通过审核",
+                )
+                notification_title = "你的经验贴未通过审核"
+                notification_summary = reason_label
+                notification_content = payload.review_note or reason_label
+                route_path = f"/pages/circle/my-posts?type=experience&reviewPostId={post_id}"
+            create_user_notification(
+                supabase,
+                recipient_user_id=author_id,
+                category="community",
+                notification_type=f"community_experience_review_{payload.decision}",
+                title=notification_title,
+                summary=notification_summary,
+                content=notification_content,
+                related_type="community_post",
+                related_id=f"{post_id}:review:{review_version}:{payload.decision}",
+                route_path=route_path,
+                delivery_payload={
+                    "surface": "community_experience_review",
+                    "post_id": post_id,
+                    "review_status": payload.decision,
+                    "review_version": review_version,
+                    "reason_code": payload.reason_code or "",
+                },
+            )
+        _log_admin_action(
+            supabase,
+            admin_profile,
+            action=f"{payload.decision}_community_experience_post",
+            target_type="community_post",
+            target_id=post_id,
+            details={
+                "review_version": review_version,
+                "reason_code": payload.reason_code,
+                "review_note": payload.review_note,
+            },
+        )
+        return _build_admin_community_post_item(row)
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        if "审核状态已变化" in message:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="该经验贴审核状态已变化，请刷新后重试",
+            ) from exc
+        logger.warning(
+            "Admin community experience review failed (post_id=%s error_type=%s)",
+            post_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="经验贴审核结果保存失败，请稍后重试",
         ) from exc
 
 
@@ -4286,6 +4625,27 @@ def question_admin_bulk_update_community_post_visibility(
     supabase = get_supabase_admin()
     try:
         now_iso = _to_iso(_now())
+        if payload.is_published:
+            selected_response = call_supabase(
+                lambda: (
+                    supabase.table("circle_community_posts")
+                    .select("id,post_type,review_status,media")
+                    .in_("id", payload.ids)
+                    .execute()
+                ),
+                operation_name="admin community bulk visibility review guard",
+            )
+            blocked_ids = [
+                str(row.get("id") or "")
+                for row in (selected_response.data or [])
+                if _community_admin_post_type(row) == "experience"
+                and _community_admin_review_status(row) != "approved"
+            ]
+            if blocked_ids:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="待审核或未通过的经验贴需先在“经验贴审核”中通过",
+                )
         response = call_supabase(
             lambda: (
                 supabase.table("circle_community_posts")
@@ -4323,6 +4683,8 @@ def question_admin_bulk_update_community_post_visibility(
             },
         )
         return AdminCommunityBulkVisibilityResponse(updated_count=updated_count)
+    except HTTPException:
+        raise
     except Exception as exc:
         logger.warning("Admin community bulk visibility update failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(
@@ -4384,6 +4746,16 @@ def question_admin_update_community_post_visibility(
     supabase = get_supabase_admin()
     try:
         now_iso = _to_iso(_now())
+        current = _community_post_detail_row(supabase, post_id)
+        if (
+            payload.is_published
+            and _community_admin_post_type(current) == "experience"
+            and _community_admin_review_status(current) != "approved"
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="请先在“经验贴审核”中通过该内容",
+            )
         response = call_supabase(
             lambda: (
                 supabase.table("circle_community_posts")

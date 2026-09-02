@@ -28,6 +28,15 @@ class MarkUnfamiliarRequest(BaseModel):
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 
 
+class GradeAnswerResponse(BaseModel):
+    question_id: str
+    selected_answer: str
+    correct_answer: str
+    is_correct: bool
+    explanation: str
+    added_to_wrong_questions: bool
+
+
 class SubmitAnswerResponse(BaseModel):
     question_id: str
     selected_answer: str
@@ -43,6 +52,8 @@ class SubmitAnswerResponse(BaseModel):
     idempotent: bool = False
     is_first_attempt: bool | None = None
     attempt_number: int | None = None
+    persistence_error: str | None = None
+    persistence_retryable: bool = False
 
 
 class SubmitBatchAnswerResponse(BaseModel):

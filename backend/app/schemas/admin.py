@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 class AdminMeResponse(BaseModel):
@@ -274,6 +274,7 @@ class AdminCommunityOverviewResponse(BaseModel):
     total_reports: int = 0
     pending_reports: int = 0
     reviewing_reports: int = 0
+    pending_experience_reviews: int = 0
 
 
 class AdminCommunityPostItem(BaseModel):
@@ -283,6 +284,7 @@ class AdminCommunityPostItem(BaseModel):
     author_avatar: str = "研"
     category: str = "备考日常"
     post_type: str = "chat"
+    experience_stages: list[str] = Field(default_factory=list)
     title: str = ""
     content: str = ""
     media: list[dict] = Field(default_factory=list)
@@ -291,6 +293,13 @@ class AdminCommunityPostItem(BaseModel):
     view_count: int = 0
     is_published: bool = True
     is_featured: bool = False
+    review_status: Literal["pending", "approved", "rejected"] = "approved"
+    review_version: int = 0
+    review_reason_code: str | None = None
+    review_note: str | None = None
+    reviewed_by: str | None = None
+    reviewed_at: str | None = None
+    submitted_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -303,6 +312,53 @@ class AdminCommunityPostListResponse(BaseModel):
 class AdminCommunityPostDetailResponse(BaseModel):
     post: AdminCommunityPostItem
     comments: list["AdminCommunityCommentItem"] = Field(default_factory=list)
+
+
+class AdminCommunityExperienceReviewHistoryItem(BaseModel):
+    id: str
+    submission_version: int
+    action: Literal["submitted", "approved", "rejected"]
+    from_status: Literal["pending", "approved", "rejected"] | None = None
+    to_status: Literal["pending", "approved", "rejected"]
+    reason_code: str | None = None
+    review_note: str | None = None
+    actor_user_id: str | None = None
+    created_at: str | None = None
+
+
+class AdminCommunityExperienceReviewListResponse(BaseModel):
+    items: list[AdminCommunityPostItem] = Field(default_factory=list)
+    count: int = 0
+
+
+class AdminCommunityExperienceReviewDetailResponse(BaseModel):
+    post: AdminCommunityPostItem
+    review_history: list[AdminCommunityExperienceReviewHistoryItem] = Field(default_factory=list)
+
+
+class AdminCommunityExperienceReviewDecisionRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    decision: Literal["approved", "rejected"]
+    reason_code: Literal[
+        "advertising_or_diversion",
+        "false_or_misleading",
+        "infringement",
+        "privacy",
+        "inappropriate",
+        "low_quality",
+        "other",
+    ] | None = None
+    review_note: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_rejection_reason(self) -> "AdminCommunityExperienceReviewDecisionRequest":
+        self.review_note = str(self.review_note or "").strip() or None
+        if self.decision == "rejected" and (not self.reason_code or not self.review_note):
+            raise ValueError("驳回经验贴时必须选择官方理由并填写处理说明")
+        if self.decision == "approved":
+            self.reason_code = None
+        return self
 
 
 class AdminCommunityCommentItem(BaseModel):

@@ -12,6 +12,7 @@ from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.community import (
     COMMUNITY_EXPERIENCE_CATEGORIES,
+    COMMUNITY_EXPERIENCE_STAGES,
     CommunityCommentItem,
     CommunityCommentLikeResponse,
     CommunityCommentPreview,
@@ -32,16 +33,19 @@ from app.schemas.community import (
     CommunityLikeResponse,
     CommunityLikedPostItem,
     CommunityLikedPostListResponse,
+    CommunityExperienceReviewHistoryItem,
+    CommunityOwnPostDetailResponse,
     CommunityPostDetailResponse,
     CommunityPostItem,
     CommunityPostListResponse,
     CommunityReportItem,
     CommunityReportListResponse,
+    CommunityResubmitExperiencePostRequest,
     CommunityPostStats,
     CommunityViewRequest,
     CommunityViewResponse,
 )
-from app.services.supabase_resilience import call_supabase
+from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
 from app.services.user_notifications import create_user_notification
 from app.utils.cursor_pagination import (
     build_keyset_filter,
@@ -64,6 +68,16 @@ COMMUNITY_IMAGE_CONTENT_TYPES = {
 }
 COMMUNITY_POST_TYPES = {"chat", "experience"}
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
+COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY = "_circle_experience_stages"
+COMMUNITY_EXPERIENCE_REVIEW_COLUMNS = {
+    "review_status",
+    "review_version",
+    "review_reason_code",
+    "review_note",
+    "reviewed_by",
+    "reviewed_at",
+    "submitted_at",
+}
 COMMUNITY_STAT_UPDATE_ATTEMPTS = 4
 COMMUNITY_APPEAL_FIELDS = (
     "id,appellant_user_id,target_type,post_id,comment_id,content,status,moderation_action,"
@@ -98,6 +112,9 @@ COMMUNITY_RETIRED_SEED_POST_IDS = frozenset(
     }
 )
 _community_post_type_column_available: bool | None = None
+_community_client_request_id_column_available: bool | None = None
+_community_experience_stages_column_available: bool | None = None
+_community_experience_review_columns_available: bool | None = None
 _community_comment_visibility_column_available: bool | None = None
 
 
@@ -145,11 +162,62 @@ def _community_post_type(row: dict) -> str:
     return post_type if post_type in COMMUNITY_POST_TYPES else "chat"
 
 
+def _community_experience_stages(row: dict) -> list[str]:
+    if _community_post_type(row) != "experience":
+        return []
+
+    stored_stages = row.get("experience_stages")
+    if isinstance(stored_stages, list):
+        normalized_stages = list(dict.fromkeys(
+            stage
+            for stage in (str(value or "").strip() for value in stored_stages)
+            if stage in COMMUNITY_EXPERIENCE_STAGES
+        ))
+        if normalized_stages:
+            return normalized_stages
+
+    media = row.get("media")
+    if isinstance(media, list):
+        for item in media:
+            if not isinstance(item, dict):
+                continue
+            marker = item.get(COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY)
+            if not isinstance(marker, list):
+                continue
+            return list(dict.fromkeys(
+                stage
+                for stage in (str(value or "").strip() for value in marker)
+                if stage in COMMUNITY_EXPERIENCE_STAGES
+            ))
+
+    legacy_category = str(row.get("category") or "").strip()
+    if legacy_category == "复试":
+        return ["复试"]
+    if legacy_category == "专业课":
+        return ["初试"]
+    return []
+
+
+def _matches_community_experience_stage(row: dict, stage: str) -> bool:
+    normalized_stage = str(stage or "").strip()
+    return not normalized_stage or normalized_stage in _community_experience_stages(row)
+
+
+def _community_review_status(row: dict) -> str:
+    if _community_post_type(row) != "experience":
+        return "approved"
+    review_status = str(row.get("review_status") or "").strip().lower()
+    if review_status in {"pending", "approved", "rejected"}:
+        return review_status
+    return "pending" if row.get("is_published") is False and not row.get("moderation_note") else "approved"
+
+
 def _is_public_verified_experience_post(row: dict, verified_author_ids: set[str]) -> bool:
     return (
         _community_post_type(row) == "experience"
         and str(row.get("author_id") or "") in verified_author_ids
         and str(row.get("category") or "") in COMMUNITY_EXPERIENCE_CATEGORIES
+        and _community_review_status(row) == "approved"
     )
 
 
@@ -159,13 +227,25 @@ def _normalise_media(value: object) -> list[dict]:
     return [
         item
         for item in value
-        if isinstance(item, dict) and COMMUNITY_POST_TYPE_MARKER_KEY not in item
+        if (
+            isinstance(item, dict)
+            and COMMUNITY_POST_TYPE_MARKER_KEY not in item
+            and COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY not in item
+        )
     ][:9]
 
 
 def _is_missing_post_type_column_error(exc: Exception) -> bool:
+    return _is_missing_community_post_column_error(exc, "post_type")
+
+
+def _is_missing_community_post_column_error(exc: Exception, column_name: str) -> bool:
     message = str(exc).lower()
-    return "post_type" in message and ("does not exist" in message or "42703" in message)
+    normalized_column = str(column_name or "").strip().lower()
+    return bool(normalized_column) and normalized_column in message and any(
+        marker in message
+        for marker in ("does not exist", "could not find", "schema cache", "42703", "pgrst204")
+    )
 
 
 def _is_missing_comment_visibility_column_error(exc: Exception) -> bool:
@@ -178,6 +258,174 @@ def _is_missing_comment_visibility_column_error(exc: Exception) -> bool:
 
 def _create_legacy_post_media(media: list[dict], post_type: str) -> list[dict]:
     return [*media, {COMMUNITY_POST_TYPE_MARKER_KEY: post_type}]
+
+
+def _create_post_media(
+    media: list[dict],
+    post_type: str,
+    experience_stages: list[str],
+    *,
+    use_legacy_stage_marker: bool = False,
+) -> list[dict]:
+    if post_type != "experience" or not use_legacy_stage_marker:
+        return media
+    return [
+        *media,
+        {COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY: experience_stages},
+    ]
+
+
+def _find_community_post_by_request_id(
+    supabase,
+    *,
+    author_id: str,
+    client_request_id: str,
+) -> dict | None:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_posts")
+            .select("*")
+            .eq("author_id", author_id)
+            .eq("client_request_id", client_request_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community post idempotency lookup",
+    )
+    return (response.data or [None])[0]
+
+
+def _lookup_idempotent_community_post(
+    supabase,
+    *,
+    author_id: str,
+    client_request_id: str,
+) -> dict | None:
+    global _community_client_request_id_column_available
+
+    if _community_client_request_id_column_available is False:
+        return None
+    try:
+        existing = _find_community_post_by_request_id(
+            supabase,
+            author_id=author_id,
+            client_request_id=client_request_id,
+        )
+    except Exception as exc:
+        if not _is_missing_community_post_column_error(exc, "client_request_id"):
+            raise
+        _community_client_request_id_column_available = False
+        return None
+    _community_client_request_id_column_available = True
+    return existing
+
+
+def _insert_community_post_with_compatibility(
+    supabase,
+    *,
+    post_data: dict,
+    post_type: str,
+    experience_stages: list[str],
+    client_request_id: str,
+) -> dict | None:
+    """Insert against both migrated and transitional community post schemas."""
+
+    global _community_client_request_id_column_available
+    global _community_experience_stages_column_available
+    global _community_experience_review_columns_available
+    global _community_post_type_column_available
+
+    base_post_data = {
+        key: value
+        for key, value in post_data.items()
+        if key not in COMMUNITY_EXPERIENCE_REVIEW_COLUMNS
+    }
+    review_post_data = {
+        key: value
+        for key, value in post_data.items()
+        if key in COMMUNITY_EXPERIENCE_REVIEW_COLUMNS
+    }
+
+    for _ in range(6):
+        include_client_request_id = _community_client_request_id_column_available is not False
+        include_experience_stages = _community_experience_stages_column_available is not False
+        include_review_columns = (
+            bool(review_post_data)
+            and _community_experience_review_columns_available is not False
+        )
+        include_post_type = _community_post_type_column_available is not False
+
+        insert_data = {
+            **base_post_data,
+            "media": _create_post_media(
+                list(base_post_data.get("media") or []),
+                post_type,
+                experience_stages,
+                use_legacy_stage_marker=not include_experience_stages,
+            ),
+        }
+        if include_review_columns:
+            insert_data.update(review_post_data)
+        if include_client_request_id:
+            insert_data["client_request_id"] = client_request_id
+        if include_experience_stages:
+            insert_data["experience_stages"] = experience_stages
+        if include_post_type:
+            insert_data["post_type"] = post_type
+        else:
+            insert_data["media"] = _create_legacy_post_media(insert_data["media"], post_type)
+
+        try:
+            response = call_supabase(
+                lambda insert_data=insert_data: (
+                    supabase.table("circle_community_posts").insert(insert_data).execute()
+                ),
+                operation_name="circle community post create",
+            )
+        except Exception as exc:
+            if (
+                include_client_request_id
+                and _is_missing_community_post_column_error(exc, "client_request_id")
+            ):
+                _community_client_request_id_column_available = False
+                continue
+            if (
+                include_experience_stages
+                and _is_missing_community_post_column_error(exc, "experience_stages")
+            ):
+                _community_experience_stages_column_available = False
+                continue
+            if include_post_type and _is_missing_post_type_column_error(exc):
+                _community_post_type_column_available = False
+                continue
+            if include_review_columns and any(
+                _is_missing_community_post_column_error(exc, column_name)
+                for column_name in COMMUNITY_EXPERIENCE_REVIEW_COLUMNS
+            ):
+                _community_experience_review_columns_available = False
+                continue
+            if _is_duplicate_community_interaction_error(exc) and include_client_request_id:
+                existing = _find_community_post_by_request_id(
+                    supabase,
+                    author_id=str(post_data.get("author_id") or ""),
+                    client_request_id=client_request_id,
+                )
+                if existing:
+                    _community_client_request_id_column_available = True
+                    return existing
+            raise
+
+        if include_client_request_id:
+            _community_client_request_id_column_available = True
+        if include_experience_stages:
+            _community_experience_stages_column_available = True
+        if include_post_type:
+            _community_post_type_column_available = True
+        if include_review_columns:
+            _community_experience_review_columns_available = True
+        return (response.data or [None])[0]
+
+    raise RuntimeError("Community post schema compatibility retries exhausted")
 
 
 def _detect_community_image_content_type(data: bytes) -> tuple[str, str] | None:
@@ -355,6 +603,7 @@ def _post_item(
         id=post_id,
         post_type=_community_post_type(row),
         category=str(row.get("category") or "备考日常"),
+        experience_stages=_community_experience_stages(row),
         author=str(row.get("author_name") or "研友"),
         avatar=_first_character(row.get("author_avatar") or row.get("author_name")),
         avatar_url=_community_avatar_url(row, profiles),
@@ -374,6 +623,13 @@ def _post_item(
         is_featured=bool(row.get("is_featured")),
         liked=post_id in liked_post_ids,
         author_verified=str(row.get("author_id") or "") in (verified_author_ids or set()),
+        is_published=bool(row.get("is_published", True)),
+        review_status=_community_review_status(row),
+        review_version=max(0, int(row.get("review_version") or 0)),
+        review_reason_code=str(row.get("review_reason_code") or "").strip() or None,
+        review_note=str(row.get("review_note") or "").strip() or None,
+        reviewed_at=row.get("reviewed_at"),
+        submitted_at=row.get("submitted_at"),
     )
 
 
@@ -794,6 +1050,47 @@ def _current_verified_mentor_author(supabase, user_id: str) -> dict:
     return response.data[0]
 
 
+def _get_owned_post_row(supabase, post_id: str, user_id: str) -> dict:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_posts")
+            .select("*")
+            .eq("id", post_id)
+            .eq("author_id", user_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community own post lookup",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在")
+    return response.data[0]
+
+
+def _fetch_experience_review_history(
+    supabase,
+    post_id: str,
+) -> list[CommunityExperienceReviewHistoryItem]:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_post_review_history")
+            .select(
+                "id,submission_version,action,from_status,to_status,reason_code,"
+                "review_note,created_at"
+            )
+            .eq("post_id", post_id)
+            .order("created_at", desc=True)
+            .limit(100)
+            .execute()
+        ),
+        operation_name="circle community experience review history",
+    )
+    return [
+        CommunityExperienceReviewHistoryItem(**row)
+        for row in (response.data or [])
+    ]
+
+
 def _serialize_community_report(row: dict, posts: dict[str, dict], comments: dict[str, dict]) -> dict:
     target_type = str(row.get("target_type") or "post")
     post = posts.get(str(row.get("post_id") or ""), {})
@@ -1109,10 +1406,74 @@ def _raise_community_service_error(exc: Exception) -> None:
     ) from exc
 
 
+def _community_provider_error_metadata(exc: Exception) -> tuple[str | None, int | None]:
+    provider_status: int | None = None
+    for source in (exc, getattr(exc, "response", None)):
+        if source is None:
+            continue
+        for attribute in ("status_code", "status"):
+            try:
+                candidate_status = int(getattr(source, attribute, None))
+            except (TypeError, ValueError):
+                continue
+            if 100 <= candidate_status <= 599:
+                provider_status = candidate_status
+                break
+        if provider_status is not None:
+            break
+
+    raw_code = getattr(exc, "code", None)
+    if raw_code is None:
+        raw_code = getattr(getattr(exc, "response", None), "code", None)
+    provider_code = str(raw_code or "").strip()
+    if not (
+        1 <= len(provider_code) <= 32
+        and all(character.isascii() and (character.isalnum() or character in "-_.") for character in provider_code)
+    ):
+        provider_code = ""
+    if provider_status is None and provider_code.isdigit():
+        numeric_code = int(provider_code)
+        if 100 <= numeric_code <= 599:
+            provider_status = numeric_code
+    return provider_code or None, provider_status
+
+
+def _raise_community_post_create_error(
+    exc: Exception,
+    *,
+    payload: CommunityCreatePostRequest,
+    stage: str,
+) -> None:
+    provider_code, provider_status = _community_provider_error_metadata(exc)
+    logger.warning(
+        "Circle community post create failed "
+        "(stage=%s request_id=%s post_type=%s category=%s content_length=%s "
+        "media_count=%s provider_code=%s provider_status=%s)",
+        stage,
+        str(payload.client_request_id),
+        payload.post_type,
+        payload.category,
+        len(payload.content),
+        len(payload.media),
+        provider_code or "-",
+        provider_status if provider_status is not None else "-",
+    )
+    detail = (
+        "考研圈上游服务暂时不可用，请稍后重试"
+        if is_transient_supabase_error(exc)
+        else "帖子保存失败，请稍后重试"
+    )
+    raise HTTPException(
+        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+        detail=detail,
+    ) from exc
+
+
 @router.get("/posts", response_model=CommunityPostListResponse)
 def list_community_posts(
     post_type: Literal["chat", "experience"] = Query(default="chat"),
     category: str | None = Query(default=None, max_length=24),
+    experience_stage: Literal["申请制", "初试", "复试"] | None = Query(default=None),
     featured_only: bool = Query(default=False),
     sort_by: Literal["latest", "hot"] = Query(default="latest"),
     limit: int = Query(default=12, ge=1, le=30),
@@ -1124,9 +1485,11 @@ def list_community_posts(
     normalized_category = str(category or "").strip()
     if normalized_category == "全部":
         normalized_category = ""
+    normalized_experience_stage = str(experience_stage or "").strip() if post_type == "experience" else ""
     cursor_context = {
         "post_type": post_type,
         "category": normalized_category,
+        "experience_stage": normalized_experience_stage,
         "featured_only": featured_only,
         "sort_by": sort_by,
     }
@@ -1241,6 +1604,11 @@ def list_community_posts(
                     row for row in candidate_rows
                     if _is_public_verified_experience_post(row, verified_ids)
                 ]
+                if normalized_experience_stage:
+                    candidate_rows = [
+                        row for row in candidate_rows
+                        if _matches_community_experience_stage(row, normalized_experience_stage)
+                    ]
             visible_rows.extend(candidate_rows)
 
         has_more = len(visible_rows) > limit
@@ -1408,7 +1776,7 @@ def list_my_community_posts(
     cursor: str | None = Query(default=None, max_length=2048),
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityPostListResponse:
-    """Return the current user's published posts, newest first."""
+    """Return all posts owned by the current user, including review states."""
 
     global _community_post_type_column_available
 
@@ -1423,7 +1791,6 @@ def list_my_community_posts(
                 supabase.table("circle_community_posts")
                 .select("*")
                 .eq("author_id", user_id)
-                .eq("is_published", True)
             )
             if include_post_type and post_type != "all":
                 query = query.eq("post_type", post_type)
@@ -1523,6 +1890,91 @@ def list_my_community_posts(
         raise
     except Exception as exc:
         _raise_community_service_error(exc)
+
+
+@router.get("/my-posts/{post_id}", response_model=CommunityOwnPostDetailResponse)
+def get_my_community_post(
+    post_id: str,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityOwnPostDetailResponse:
+    supabase = get_supabase_admin()
+    try:
+        row = _get_owned_post_row(supabase, post_id, user_id)
+        profiles = _fetch_community_profiles(supabase, [user_id])
+        verified_author_ids = _fetch_verified_mentor_owner_ids(supabase, [user_id])
+        review_history = (
+            _fetch_experience_review_history(supabase, post_id)
+            if _community_post_type(row) == "experience"
+            else []
+        )
+        return CommunityOwnPostDetailResponse(
+            post=_post_item(row, set(), {}, profiles, verified_author_ids),
+            review_history=review_history,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.patch("/my-posts/{post_id}/resubmit", response_model=CommunityPostItem)
+def resubmit_my_community_experience_post(
+    post_id: str,
+    payload: CommunityResubmitExperiencePostRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityPostItem:
+    supabase = get_supabase_admin()
+    try:
+        current = _get_owned_post_row(supabase, post_id, user_id)
+        if _community_post_type(current) != "experience":
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="经验贴不存在")
+        if _community_review_status(current) != "rejected":
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="只有审核未通过的经验贴可以修改后重新提交",
+            )
+        _current_verified_mentor_author(supabase, user_id)
+        media = [item.model_dump(by_alias=True) for item in payload.media[:9]]
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "resubmit_circle_community_experience_post",
+                {
+                    "p_post_id": post_id,
+                    "p_author_id": user_id,
+                    "p_category": payload.category,
+                    "p_experience_stages": payload.experience_stages,
+                    "p_title": payload.title,
+                    "p_content": payload.content,
+                    "p_media": media,
+                },
+            ).execute(),
+            operation_name="circle community experience resubmit",
+        )
+        if not response.data:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="经验贴审核状态已变化，请刷新后重试",
+            )
+        row = response.data[0]
+        profiles = _fetch_community_profiles(supabase, [user_id])
+        return _post_item(row, set(), {}, profiles, {user_id})
+    except HTTPException:
+        raise
+    except Exception as exc:
+        message = str(exc)
+        if "只有审核未通过" in message or "审核状态已变化" in message:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail=message) from exc
+        if "经验贴不存在" in message:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="经验贴不存在") from exc
+        logger.warning(
+            "Circle community experience resubmit failed (post_id=%s error_type=%s)",
+            post_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="经验贴重新提交失败，请稍后重试",
+        ) from exc
 
 
 @router.delete("/my-posts", response_model=CommunityDeletePostsResponse)
@@ -1856,20 +2308,29 @@ def create_community_post(
     payload: CommunityCreatePostRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityPostItem:
-    global _community_post_type_column_available
-
-    supabase = get_supabase_admin()
+    stage = "author_lookup"
     try:
+        supabase = get_supabase_admin()
         author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
         author_tone = "blue"
         author_verified = False
         if payload.post_type == "experience":
+            stage = "mentor_verification"
             mentor_author = _current_verified_mentor_author(supabase, user_id)
             author_name = str(mentor_author.get("display_name") or author_name)
             author_avatar = _first_character(mentor_author.get("avatar_label") or author_name)
             author_tone = str(mentor_author.get("avatar_tone") or "blue")
             author_avatar_url = str(mentor_author.get("avatar_url") or "").strip() or author_avatar_url
             author_verified = True
+
+        client_request_id = str(payload.client_request_id)
+        stage = "idempotency_lookup"
+        existing_post = _lookup_idempotent_community_post(
+            supabase,
+            author_id=user_id,
+            client_request_id=client_request_id,
+        )
+
         media = [item.model_dump(by_alias=True) for item in payload.media[:9]]
         post_data = {
             "author_id": user_id,
@@ -1881,35 +2342,35 @@ def create_community_post(
             "content": payload.content.strip(),
             "media": media,
         }
+        if payload.post_type == "experience":
+            post_data.update({
+                "is_published": False,
+                "review_status": "pending",
+                "review_version": 1,
+                "review_reason_code": None,
+                "review_note": None,
+                "reviewed_by": None,
+                "reviewed_at": None,
+                "submitted_at": datetime.now(timezone.utc).isoformat(),
+            })
 
-        if _community_post_type_column_available is not False:
-            try:
-                response = call_supabase(
-                    lambda: supabase.table("circle_community_posts").insert(
-                        {**post_data, "post_type": payload.post_type}
-                    ).execute(),
-                    operation_name="circle community post create",
-                )
-                _community_post_type_column_available = True
-            except Exception as exc:
-                if not _is_missing_post_type_column_error(exc):
-                    raise
-                _community_post_type_column_available = False
-
-        if _community_post_type_column_available is False:
-            response = call_supabase(
-                lambda: supabase.table("circle_community_posts").insert(
-                    {
-                        **post_data,
-                        "media": _create_legacy_post_media(media, payload.post_type),
-                    }
-                ).execute(),
-                operation_name="circle community legacy post create",
+        if existing_post is None:
+            stage = "post_insert"
+            post_row = _insert_community_post_with_compatibility(
+                supabase,
+                post_data=post_data,
+                post_type=payload.post_type,
+                experience_stages=payload.experience_stages,
+                client_request_id=client_request_id,
             )
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Circle post create failed")
+        else:
+            post_row = existing_post
+
+        stage = "response"
+        if not post_row:
+            raise RuntimeError("Community post insert returned no row")
         return _post_item(
-            response.data[0],
+            post_row,
             set(),
             {},
             {user_id: {"avatar_url": author_avatar_url}},
@@ -1918,7 +2379,7 @@ def create_community_post(
     except HTTPException:
         raise
     except Exception as exc:
-        _raise_community_service_error(exc)
+        _raise_community_post_create_error(exc, payload=payload, stage=stage)
 
 
 @router.post("/posts/{post_id}/like", response_model=CommunityLikeResponse)

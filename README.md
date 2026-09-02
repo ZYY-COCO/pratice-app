@@ -54,6 +54,7 @@ npm run build:mp-weixin
 ## 文档入口
 
 - [docs/project_context.md](docs/project_context.md)：当前项目状态、部署、题库重建方向和接手顺序。
+- [docs/practice_question_delivery_model.md](docs/practice_question_delivery_model.md)：用户刷题出题机制现状、三学科独立边界和后续统一模型骨架。
 - [docs/question_bank_generation_rules.md](docs/question_bank_generation_rules.md)：英语运用、Z002 数学基础题库生成硬规则。
 - [docs/ai_question_generation_spec.md](docs/ai_question_generation_spec.md)：通用 AI 题库 JSON 格式和导入工作流。
 - [docs/culture_explanation_model_v3.md](docs/culture_explanation_model_v3.md)：中华文化教学型解析 V3 字段契约、题型路由和质量门。

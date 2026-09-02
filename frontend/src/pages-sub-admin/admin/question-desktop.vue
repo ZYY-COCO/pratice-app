@@ -296,7 +296,10 @@
             >
               <image class="content-management-tab-icon" :src="tab.icon" mode="aspectFit" />
               <view class="content-management-tab-copy">
-                <text class="content-management-tab-label">{{ tab.label }}</text>
+                <view class="content-management-tab-label-row">
+                  <text class="content-management-tab-label">{{ tab.label }}</text>
+                  <text v-if="tab.badge" class="content-management-tab-badge">{{ tab.badge > 99 ? '99+' : tab.badge }}</text>
+                </view>
                 <text class="content-management-tab-description">{{ tab.description }}</text>
               </view>
               <text class="content-management-tab-arrow">›</text>
@@ -428,15 +431,15 @@
                   <view class="community-stat-cell">{{ formatCount(item.like_count) }}</view>
                   <view class="community-stat-cell">{{ formatCount(item.comment_count) }}</view>
                   <view class="status-cell">
-                    <text class="status-pill" :class="item.is_published ? 'published' : 'archived'">
-                      {{ communityPostStatusText(item.is_published) }}
+                    <text class="status-pill" :class="communityPostStatusTone(item)">
+                      {{ communityPostStatusText(item) }}
                     </text>
                   </view>
                   <view class="date-cell">{{ formatDate(item.created_at) }}</view>
                   <view class="community-action-cell">
                     <button v-if="!communitySelectedIds.length" class="row-action" @tap.stop="openCommunityPostDetail(item)">查看</button>
                     <button
-                      v-if="!communitySelectedIds.length"
+                      v-if="!communitySelectedIds.length && canToggleCommunityPostVisibility(item)"
                       class="community-visibility-button"
                       :class="{ restore: !item.is_published }"
                       @tap.stop="toggleCommunityPostVisibility(item)"
@@ -460,12 +463,20 @@
           </view>
           </view>
 
-          <view v-if="contentManagementMountedTabs.reports" v-show="contentManagementTab === 'reports'" class="content-management-view">
-            <AdminCommunityModeration ref="communityModerationRef" :preview="devPreviewMode" />
+          <view v-if="contentManagementMountedTabs.experienceReviews" v-show="contentManagementTab === 'experienceReviews'" class="content-management-view">
+            <AdminCommunityExperienceReview
+              ref="communityExperienceReviewRef"
+              :preview="devPreviewMode"
+              @pending-count="handleExperienceReviewPendingCount"
+            />
           </view>
 
-          <view v-if="contentManagementMountedTabs.appeals" v-show="contentManagementTab === 'appeals'" class="content-management-view">
-            <AdminCommunityAppeals ref="communityAppealsRef" :preview="devPreviewMode" />
+          <view v-if="contentManagementMountedTabs.governance" v-show="contentManagementTab === 'governance'" class="content-management-view">
+            <AdminCommunityGovernance
+              ref="communityGovernanceRef"
+              :preview="devPreviewMode"
+              :initial-tab="contentGovernanceInitialTab"
+            />
           </view>
         </section>
 
@@ -1195,8 +1206,8 @@
                 </view>
               </view>
               <view class="community-detail-status">
-                <text class="status-pill" :class="communityDetail.post.is_published ? 'published' : 'archived'">
-                  {{ communityPostStatusText(communityDetail.post.is_published) }}
+                <text class="status-pill" :class="communityPostStatusTone(communityDetail.post)">
+                  {{ communityPostStatusText(communityDetail.post) }}
                 </text>
                 <text>{{ formatDateTime(communityDetail.post.created_at) }}</text>
               </view>
@@ -1260,7 +1271,7 @@
         <view class="drawer-footer community-detail-footer">
           <button class="footer-button secondary" :disabled="communitySaving" @tap="closeCommunityPostDetail">关闭</button>
           <button
-            v-if="communityDetail?.post"
+            v-if="communityDetail?.post && canToggleCommunityPostVisibility(communityDetail.post)"
             class="footer-button"
             :class="communityDetail.post.is_published ? 'danger' : 'primary'"
             :disabled="communitySaving"
@@ -1555,8 +1566,8 @@
 <script setup>
 import { computed, nextTick, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
-import AdminCommunityAppeals from '../../components/AdminCommunityAppeals.vue'
-import AdminCommunityModeration from '../../components/AdminCommunityModeration.vue'
+import AdminCommunityExperienceReview from '../../components/AdminCommunityExperienceReview.vue'
+import AdminCommunityGovernance from '../../components/AdminCommunityGovernance.vue'
 import AdminConsultationManagement from '../../components/AdminConsultationManagement.vue'
 import AdminMembershipPageManager from '../../components/AdminMembershipPageManager.vue'
 import AdminMockExamManagement from '../../components/AdminMockExamManagement.vue'
@@ -1638,14 +1649,15 @@ const questionBanksLoading = ref(false)
 const questionBanksError = ref(false)
 const activeSection = ref('dashboard')
 const contentManagementTab = ref('posts')
-const contentManagementMountedTabs = reactive({ posts: true, reports: false, appeals: false })
+const contentManagementMountedTabs = reactive({ posts: true, experienceReviews: false, governance: false })
+const contentGovernanceInitialTab = ref('reports')
 const consultationManagementRef = ref(null)
 const consultationInitialView = ref('applications')
 const consultationInitialCaseView = ref('reports')
 const mockExamManagementRef = ref(null)
 const resourceManagementRef = ref(null)
-const communityModerationRef = ref(null)
-const communityAppealsRef = ref(null)
+const communityExperienceReviewRef = ref(null)
+const communityGovernanceRef = ref(null)
 const sidebarCollapsed = ref(false)
 const sidebarToggleTitle = computed(() => (sidebarCollapsed.value ? '打开边栏' : '关闭边栏'))
 const authUser = ref(getAuthUser() || {})
@@ -1682,7 +1694,8 @@ const communityOverview = reactive({
   today_posts: 0,
   total_reports: 0,
   pending_reports: 0,
-  reviewing_reports: 0
+  reviewing_reports: 0,
+  pending_experience_reviews: 0
 })
 const communityFilters = reactive({
   status: 'all',
@@ -1989,11 +2002,11 @@ const navItems = [
 ]
 const visibleNavItems = computed(() => navItems.filter((item) => canAccessSection(item.key)))
 
-const contentManagementTabs = [
-  { key: 'posts', label: '社区内容', description: '研友聊、经验贴', icon: '/static/ui-icons/circle-community.svg' },
-  { key: 'reports', label: '内容举报', description: '用户举报内容', icon: '/static/ui-icons/report.svg' },
-  { key: 'appeals', label: '内容申诉复核', description: '内容处置申诉', icon: '/static/ui-icons/community-comment-heart.svg' }
-]
+const contentManagementTabs = computed(() => [
+  { key: 'posts', label: '社区内容', description: '研友聊、经验贴', icon: '/static/ui-icons/circle-community.svg', badge: 0 },
+  { key: 'experienceReviews', label: '经验贴审核', description: '审核前辈投稿内容', icon: '/static/ui-icons/circle-experience.svg', badge: communityOverview.pending_experience_reviews },
+  { key: 'governance', label: '内容治理', description: '举报处理、申诉复核', icon: '/static/ui-icons/report.svg', badge: 0 }
+])
 
 const difficultyOptions = [
   { label: '全部难度', value: '' },
@@ -2282,7 +2295,7 @@ const currentNavLabel = computed(() => {
     : label
 })
 const contentManagementTabLabel = computed(() => (
-  contentManagementTabs.find((item) => item.key === contentManagementTab.value)?.label || '社区内容'
+  contentManagementTabs.value.find((item) => item.key === contentManagementTab.value)?.label || '社区内容'
 ))
 const showHeaderBackButton = computed(() => (
   activeSection.value === 'review' ||
@@ -2549,6 +2562,7 @@ const communityBulkVisibilityAction = computed(() => {
   const publishedStates = Array.from(new Set(items.map((item) => Boolean(item.is_published))))
   if (publishedStates.length !== 1) return null
   const isPublished = publishedStates[0]
+  if (!isPublished && items.some((item) => !canToggleCommunityPostVisibility(item))) return null
   return {
     isPublished: !isPublished,
     label: isPublished ? (items.length > 1 ? '批量下架' : '下架') : (items.length > 1 ? '批量恢复' : '恢复'),
@@ -2558,6 +2572,7 @@ const communityBulkVisibilityAction = computed(() => {
 const communityBulkFeaturedAction = computed(() => {
   const items = selectedCommunityPosts.value
   if (!items.length || items.length !== communitySelectedIds.value.length) return null
+  if (items.some((item) => item.post_type === 'experience' && item.review_status !== 'approved')) return null
   const allFeatured = items.every((item) => Boolean(item.is_featured))
   return {
     isFeatured: !allFeatured,
@@ -2660,9 +2675,10 @@ onLoad(async (options = {}) => {
     homeContentClock.value = Date.now()
   }, 30_000)
   const legacyContentSections = {
-    community: 'posts',
-    communityReports: 'reports',
-    communityAppeals: 'appeals'
+    community: { tab: 'posts' },
+    communityExperienceReviews: { tab: 'experienceReviews' },
+    communityReports: { tab: 'governance', governanceTab: 'reports' },
+    communityAppeals: { tab: 'governance', governanceTab: 'appeals' }
   }
   const legacyConsultationSections = {
     mentors: { view: 'applications', caseView: 'reports' },
@@ -2670,8 +2686,10 @@ onLoad(async (options = {}) => {
     mentorAppeals: { view: 'cases', caseView: 'appeals' }
   }
   if (legacyContentSections[options.section]) {
+    const contentRoute = legacyContentSections[options.section]
     activeSection.value = 'community'
-    contentManagementTab.value = legacyContentSections[options.section]
+    contentManagementTab.value = contentRoute.tab
+    if (contentRoute.governanceTab) contentGovernanceInitialTab.value = contentRoute.governanceTab
     contentManagementMountedTabs[contentManagementTab.value] = true
   } else if (legacyConsultationSections[options.section]) {
     activeSection.value = 'consultation'
@@ -2841,6 +2859,7 @@ async function loadCommunityData() {
     communityOverview.total_reports = Number(overviewResponse?.total_reports || 0)
     communityOverview.pending_reports = Number(overviewResponse?.pending_reports || 0)
     communityOverview.reviewing_reports = Number(overviewResponse?.reviewing_reports || 0)
+    communityOverview.pending_experience_reviews = Number(overviewResponse?.pending_experience_reviews || 0)
     communityPosts.value = Array.isArray(postsResponse?.items) ? postsResponse.items : []
     communityCount.value = Number(postsResponse?.count || 0)
     const totalPages = Math.max(1, Math.ceil(communityCount.value / communityPageSize))
@@ -3023,22 +3042,26 @@ async function switchSection(section) {
 }
 
 function selectContentManagementTab(tab) {
-  if (!contentManagementTabs.some((item) => item.key === tab)) return
+  if (!contentManagementTabs.value.some((item) => item.key === tab)) return
   contentManagementMountedTabs[tab] = true
   contentManagementTab.value = tab
 }
 
 async function refreshContentManagementTab() {
   await nextTick()
-  if (contentManagementTab.value === 'reports') {
-    await communityModerationRef.value?.refresh?.()
+  if (contentManagementTab.value === 'experienceReviews') {
+    await communityExperienceReviewRef.value?.refresh?.()
     return
   }
-  if (contentManagementTab.value === 'appeals') {
-    await communityAppealsRef.value?.refresh?.()
+  if (contentManagementTab.value === 'governance') {
+    await communityGovernanceRef.value?.refresh?.()
     return
   }
   await loadCommunityData()
+}
+
+function handleExperienceReviewPendingCount(value) {
+  communityOverview.pending_experience_reviews = Math.max(0, Number(value) || 0)
 }
 
 function toggleSidebarCollapsed() {
@@ -4423,6 +4446,7 @@ function loadDevPreviewCommunity() {
   communityOverview.total_reports = 2
   communityOverview.pending_reports = 1
   communityOverview.reviewing_reports = 1
+  communityOverview.pending_experience_reviews = 1
   communityLoadError.value = false
   communityLoading.value = false
   communitySelectedIds.value = []
@@ -6038,8 +6062,24 @@ function questionDisplayStatus(question) {
   return status
 }
 
-function communityPostStatusText(isPublished) {
-  return isPublished ? '公开展示' : '已下架'
+function communityPostStatusText(item) {
+  if (item?.post_type === 'experience' && item.review_status === 'pending') return '待审核'
+  if (item?.post_type === 'experience' && item.review_status === 'rejected') return '审核未通过'
+  return item?.is_published ? '公开展示' : '已下架'
+}
+
+function communityPostStatusTone(item) {
+  if (item?.post_type === 'experience' && item.review_status === 'pending') return 'pending'
+  if (item?.post_type === 'experience' && item.review_status === 'rejected') return 'returned'
+  return item?.is_published ? 'published' : 'archived'
+}
+
+function canToggleCommunityPostVisibility(item) {
+  return !(
+    item?.post_type === 'experience'
+    && item?.review_status !== 'approved'
+    && !item?.is_published
+  )
 }
 
 function communityPostTypeText(postType) {
@@ -7278,6 +7318,30 @@ button {
   flex: 1;
 }
 
+.content-management-tab-label-row {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.content-management-tab-badge {
+  min-width: 19px;
+  height: 19px;
+  padding: 0 6px;
+  border-radius: 10px;
+  box-sizing: border-box;
+  background: #e85f57;
+  color: #fff;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 auto;
+  font-size: 9px;
+  line-height: 1;
+  font-weight: 850;
+}
+
 .content-management-tab-label,
 .content-management-tab-description {
   display: block;
@@ -7299,6 +7363,7 @@ button {
 }
 
 .content-management-tab-label {
+  min-width: 0;
   color: #385069;
   font-size: 15px;
   font-weight: 800;
@@ -8649,6 +8714,11 @@ button {
 .status-pill.archived {
   color: #69778a;
   background: #edf1f4;
+}
+
+.status-pill.returned {
+  color: #b85d53;
+  background: #fff0ed;
 }
 
 .date-cell {

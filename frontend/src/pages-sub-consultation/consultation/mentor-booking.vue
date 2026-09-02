@@ -199,7 +199,7 @@ function goBack() {
 .mentor-booking-date-card + .mentor-booking-date-card { margin-top: 16rpx; }
 .mentor-booking-date { color: #354864; font-size: 25rpx; line-height: 1.25; font-weight: 900; }
 .mentor-booking-slots { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12rpx; margin-top: 18rpx; }
-.mentor-booking-slot { min-height: 106rpx; margin: 0; padding: 12rpx; border: 2rpx solid #cfe0fb; border-radius: 18rpx; background: #fbfdff; color: #3d5474; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8rpx; font-size: 22rpx; line-height: 1.2; font-weight: 850; }
+.mentor-booking-slot { box-sizing: border-box; min-height: 134rpx; margin: 0; padding: 12rpx; border: 2rpx solid #cfe0fb; border-radius: 18rpx; background: #fbfdff; color: #3d5474; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 8rpx; text-align: center; font-size: 22rpx; line-height: 1.2; font-weight: 850; }
 .mentor-booking-slot::after, .mentor-booking-footer button::after { border: 0; }
 .mentor-booking-slot view { color: #3478f6; font-size: 20rpx; }
 .mentor-booking-slot.selected { border-color: #3478f6; background: #edf4ff; color: #3478f6; box-shadow: 0 8rpx 18rpx rgba(52, 120, 246, 0.12); }
@@ -216,7 +216,7 @@ function goBack() {
 .mentor-booking-selection { min-width: 0; flex: 1; }
 .mentor-booking-selection text { display: block; overflow: hidden; color: #4e627e; font-size: 20rpx; line-height: 1.3; font-weight: 700; text-overflow: ellipsis; white-space: nowrap; }
 .mentor-booking-selection view { margin-top: 5rpx; color: #1e2d42; font-size: 27rpx; line-height: 1.2; font-weight: 900; }
-.mentor-booking-footer button { min-width: 178rpx; min-height: 74rpx; margin: 0; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; font-size: 24rpx; font-weight: 900; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
+.mentor-booking-footer button { box-sizing: border-box; min-width: 178rpx; height: 74rpx; min-height: 74rpx; margin: 0; padding: 0 18rpx; border: 0; border-radius: 20rpx; background: #3478f6; color: #fff; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 24rpx; line-height: 1; font-weight: 900; white-space: nowrap; box-shadow: 0 10rpx 22rpx rgba(52,120,246,.2); }
 .mentor-booking-footer button[disabled] { background: #bdcadc; box-shadow: none; }
 
 .mentor-booking-page { background: var(--gyt-page-bg); }

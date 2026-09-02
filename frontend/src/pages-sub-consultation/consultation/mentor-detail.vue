@@ -526,7 +526,7 @@ function goHome() {
 .mentor-review-empty { padding: 34rpx 0 12rpx; color: #92a0b3; text-align: center; font-size: 21rpx; line-height: 1.4; font-weight: 650; }
 
 .mentor-detail-missing { padding: 130rpx 48rpx; color: #718197; text-align: center; font-size: 26rpx; font-weight: 750; }
-.mentor-detail-missing button { margin-top: 28rpx; border: 0; border-radius: 18rpx; background: #3478f6; color: #fff; font-size: 23rpx; font-weight: 800; }
+.mentor-detail-missing button { box-sizing: border-box; min-height: 64rpx; margin: 28rpx auto 0; padding: 0 24rpx; border: 0; border-radius: 18rpx; background: #3478f6; color: #fff; display: flex; align-items: center; justify-content: center; text-align: center; font-size: 23rpx; line-height: 1; font-weight: 800; }
 .mentor-detail-missing button::after { border: 0; }
 .mentor-detail-bottom-space { height: calc(170rpx + env(safe-area-inset-bottom)); }
 
@@ -543,6 +543,7 @@ function goHome() {
 .mentor-detail-action-bar-self { grid-template-columns: 78rpx minmax(0, 1fr); }
 
 .mentor-detail-favorite {
+  box-sizing: border-box;
   width: 72rpx;
   height: 72rpx;
   min-width: 72rpx;

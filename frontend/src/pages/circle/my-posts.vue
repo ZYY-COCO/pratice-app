@@ -33,7 +33,7 @@
       <text>{{ error }}</text>
       <button hover-class="none" @tap="loadMyPosts">重新加载</button>
     </view>
-    <AppEmptyState v-else-if="posts.length === 0" label="暂无已发布帖子" />
+    <AppEmptyState v-else-if="posts.length === 0" label="暂无帖子" />
 
     <scroll-view v-else scroll-y class="my-posts-list-scroll" @scrolltolower="loadMoreMyPosts">
       <view class="my-posts-list">
@@ -64,6 +64,12 @@
             <view class="my-post-category">{{ post.category }}</view>
           </view>
 
+          <view
+            v-if="post.postType === 'experience'"
+            class="my-post-review-status"
+            :class="post.reviewStatus"
+          >{{ reviewStatusText(post.reviewStatus) }}</view>
+
           <view class="my-post-card-body" :class="{ 'has-cover': post.coverUrl }">
             <view class="my-post-copy">
               <view class="my-post-card-title">{{ post.title || '研圈帖子' }}</view>
@@ -72,13 +78,28 @@
             <image v-if="post.coverUrl" class="my-post-cover" :src="post.coverUrl" mode="aspectFill" />
           </view>
 
+          <view v-if="post.reviewStatus === 'rejected' && post.reviewNote" class="my-post-review-note">
+            <strong>{{ reviewReasonText(post.reviewReasonCode) }}</strong>
+            <text>{{ post.reviewNote }}</text>
+          </view>
+
           <view class="my-post-card-footer">
             <view class="my-post-stats">
               <view><image src="/static/ui-icons/png/neutral/circle-like.png" mode="aspectFit" /><text>{{ post.stats.likes }}</text></view>
               <view><image src="/static/ui-icons/png/neutral/circle-comment.png" mode="aspectFit" /><text>{{ post.stats.comments }}</text></view>
               <view><image src="/static/ui-icons/png/neutral/circle-view.png" mode="aspectFit" /><text>{{ post.stats.views }}</text></view>
             </view>
-            <text v-if="!selectionMode" class="my-post-detail-link">查看详情 ›</text>
+            <view v-if="!selectionMode" class="my-post-card-actions">
+              <button
+                v-if="post.postType === 'experience' && post.reviewStatus === 'rejected'"
+                class="my-post-edit-button"
+                hover-class="none"
+                @tap.stop="editRejectedPost(post)"
+              >修改并重提</button>
+              <text class="my-post-detail-link">
+                {{ post.postType === 'experience' && (post.reviewStatus !== 'approved' || !post.isPublished) ? '审核记录 ›' : '查看详情 ›' }}
+              </text>
+            </view>
           </view>
         </view>
       </view>
@@ -97,6 +118,62 @@
       </view>
     </transition>
 
+    <view v-if="reviewDetailVisible" class="review-detail-backdrop" @tap="closeReviewDetail">
+      <view class="review-detail-dialog" @tap.stop>
+        <view class="review-detail-header">
+          <view>
+            <text>经验贴审核记录</text>
+            <strong>{{ reviewDetail?.post?.title || '经验贴' }}</strong>
+          </view>
+          <button aria-label="关闭审核记录" hover-class="none" @tap="closeReviewDetail">
+            <CloseIcon />
+          </button>
+        </view>
+
+        <scroll-view scroll-y class="review-detail-scroll">
+          <view v-if="reviewDetailLoading" class="review-detail-state">正在读取审核记录…</view>
+          <view v-else-if="reviewDetailError" class="review-detail-state error">
+            <text>{{ reviewDetailError }}</text>
+            <button hover-class="none" @tap="loadReviewDetail(reviewDetailPostId)">重新加载</button>
+          </view>
+          <view v-else-if="reviewDetail?.post" class="review-detail-content">
+            <view class="review-current-status" :class="reviewDetail.post.review_status">
+              <text>当前状态</text>
+              <strong>{{ reviewStatusText(reviewDetail.post.review_status) }}</strong>
+              <small>{{ reviewCurrentStatusHint(reviewDetail.post) }}</small>
+            </view>
+
+            <view v-if="reviewDetail.post.review_status === 'rejected'" class="review-official-note">
+              <text>官方理由 · {{ reviewReasonText(reviewDetail.post.review_reason_code) }}</text>
+              <strong>{{ reviewDetail.post.review_note }}</strong>
+            </view>
+
+            <view class="review-history-heading">历次审核记录</view>
+            <view v-if="!reviewDetail.review_history?.length" class="review-history-empty">暂无审核记录</view>
+            <view v-else class="review-history-list">
+              <view v-for="item in reviewDetail.review_history" :key="item.id" class="review-history-item">
+                <view class="review-history-marker" :class="item.action"></view>
+                <view class="review-history-copy">
+                  <view>
+                    <strong>{{ reviewActionText(item.action) }}</strong>
+                    <text>第 {{ item.submission_version }} 次提交</text>
+                  </view>
+                  <small>{{ formatReviewDate(item.created_at) }}</small>
+                  <text v-if="item.reason_code || item.review_note" class="review-history-note">
+                    {{ item.reason_code ? `${reviewReasonText(item.reason_code)}：` : '' }}{{ item.review_note || '' }}
+                  </text>
+                </view>
+              </view>
+            </view>
+          </view>
+        </scroll-view>
+
+        <view v-if="reviewDetail?.post?.review_status === 'rejected'" class="review-detail-actions">
+          <button hover-class="none" @tap="editRejectedPost(reviewDetail.post)">修改并重新提交</button>
+        </view>
+      </view>
+    </view>
+
     <!-- #ifdef H5 -->
     <IcpFooter />
     <!-- #endif -->
@@ -110,7 +187,12 @@ import IcpFooter from '../../components/IcpFooter.vue'
 import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
-import { deleteMyCommunityPosts, fetchMyCommunityPosts } from '../../api/community'
+import CloseIcon from '../../components/CloseIcon.vue'
+import {
+  deleteMyCommunityPosts,
+  fetchMyCommunityPost,
+  fetchMyCommunityPosts
+} from '../../api/community'
 import {
   fetchUserNotificationUnreadSummary,
   markUserNotificationReadTarget
@@ -140,12 +222,19 @@ const loadingMore = ref(false)
 const nextCursor = ref('')
 const hasMore = ref(false)
 const unreadPostTargets = ref({ chat: {}, experience: {} })
+const reviewDetailVisible = ref(false)
+const reviewDetailLoading = ref(false)
+const reviewDetailError = ref('')
+const reviewDetail = ref(null)
+const reviewDetailPostId = ref('')
+const requestedReviewPostId = ref('')
 let latestUnreadLoadToken = 0
 onLoad((options) => {
   const requestedType = String(options?.type || '')
   if (postTypeOptions.some((item) => item.value === requestedType)) {
     activePostType.value = requestedType
   }
+  requestedReviewPostId.value = String(options?.reviewPostId || '').trim()
 })
 
 onShow(() => {
@@ -155,7 +244,12 @@ onShow(() => {
     return
   }
   void loadUnreadPostTargets()
-  void loadMyPosts()
+  void loadMyPosts().then(() => {
+    const postId = requestedReviewPostId.value
+    if (!postId) return
+    requestedReviewPostId.value = ''
+    void openReviewRecord({ id: postId, postType: 'experience' })
+  })
 })
 
 function normalizeUnreadTargets(value) {
@@ -279,7 +373,18 @@ function normalizeMyPost(post = {}) {
     title: String(post.title || ''),
     content: String(post.content || post.summary || ''),
     publishTime: String(post.publishTime || post.publish_time || '刚刚'),
+    media,
     coverUrl: String(cover?.imageUrl || cover?.image_url || '').trim(),
+    isPublished: post.isPublished ?? post.is_published ?? true,
+    reviewStatus: String(post.reviewStatus || post.review_status || 'approved'),
+    reviewVersion: Number(post.reviewVersion ?? post.review_version ?? 0),
+    reviewReasonCode: String(post.reviewReasonCode || post.review_reason_code || ''),
+    reviewNote: String(post.reviewNote || post.review_note || ''),
+    reviewedAt: post.reviewedAt || post.reviewed_at || null,
+    submittedAt: post.submittedAt || post.submitted_at || null,
+    experienceStages: Array.isArray(post.experienceStages || post.experience_stages)
+      ? [...(post.experienceStages || post.experience_stages)]
+      : [],
     stats: {
       likes: Number(post.stats?.likes ?? post.like_count ?? 0),
       comments: Number(post.stats?.comments ?? post.comment_count ?? 0),
@@ -325,6 +430,10 @@ function handlePostTap(post) {
     togglePostSelection(post?.id)
     return
   }
+  if (post?.postType === 'experience' && (post.reviewStatus !== 'approved' || !post.isPublished)) {
+    void openReviewRecord(post)
+    return
+  }
   openPost(post)
 }
 
@@ -363,6 +472,93 @@ async function deleteSelectedPosts(postIds) {
   } finally {
     deletingPosts.value = false
   }
+}
+
+async function openReviewRecord(post) {
+  const postId = String(post?.id || '').trim()
+  if (!postId) return
+  reviewDetailPostId.value = postId
+  reviewDetailVisible.value = true
+  await loadReviewDetail(postId)
+}
+
+async function loadReviewDetail(postId) {
+  if (!postId || reviewDetailLoading.value) return
+  reviewDetailLoading.value = true
+  reviewDetailError.value = ''
+  try {
+    reviewDetail.value = await fetchMyCommunityPost(postId)
+  } catch (requestError) {
+    reviewDetail.value = null
+    reviewDetailError.value = requestError?.detail || '审核记录读取失败，请稍后重试'
+  } finally {
+    reviewDetailLoading.value = false
+  }
+}
+
+function closeReviewDetail() {
+  if (reviewDetailLoading.value) return
+  reviewDetailVisible.value = false
+  reviewDetail.value = null
+  reviewDetailError.value = ''
+  reviewDetailPostId.value = ''
+}
+
+function editRejectedPost(post) {
+  const postId = String(post?.id || '').trim()
+  const reviewStatus = String(post?.reviewStatus || post?.review_status || '')
+  if (!postId || reviewStatus !== 'rejected') return
+  closeReviewDetail()
+  uni.navigateTo({
+    url: `/pages/circle/publish?type=experience&edit=${encodeURIComponent(postId)}`
+  })
+}
+
+function reviewStatusText(value) {
+  return {
+    pending: '审核中',
+    approved: '已通过',
+    rejected: '未通过'
+  }[value] || '已通过'
+}
+
+function reviewReasonText(value) {
+  return {
+    advertising_or_diversion: '广告营销或站外引流',
+    false_or_misleading: '虚假、夸大或误导性信息',
+    infringement: '侵权或未经授权转载',
+    privacy: '泄露个人隐私',
+    inappropriate: '不友善、低俗或违规内容',
+    low_quality: '内容不完整或与备考经验无关',
+    other: '其他原因'
+  }[value] || '平台审核说明'
+}
+
+function reviewActionText(value) {
+  return {
+    submitted: '已提交审核',
+    approved: '审核通过',
+    rejected: '审核未通过'
+  }[value] || '审核状态更新'
+}
+
+function reviewCurrentStatusHint(post = {}) {
+  if (post.review_status === 'pending') return '工作人员正在审核，通过后将自动公开展示'
+  if (post.review_status === 'rejected') return '可以根据官方理由修改内容后重新提交'
+  return post.is_published ? '内容已在经验贴公开展示' : '内容已通过审核，当前处于下架状态'
+}
+
+function formatReviewDate(value) {
+  const date = new Date(value)
+  if (Number.isNaN(date.getTime())) return '时间待同步'
+  return new Intl.DateTimeFormat('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false
+  }).format(date)
 }
 
 function openPost(post) {
@@ -405,7 +601,9 @@ function goBack() {
 .my-posts-state-card button::after,
 .my-posts-tab::after,
 .my-post-selector::after,
-.my-posts-delete-bar button::after {
+.my-posts-delete-bar button::after,
+.my-post-edit-button::after,
+.review-detail-dialog button::after {
   border: 0;
 }
 
@@ -673,6 +871,23 @@ function goBack() {
   white-space: nowrap;
 }
 
+.my-post-review-status {
+  width: fit-content;
+  margin-top: 16rpx;
+  padding: 7rpx 11rpx;
+  border-radius: 999rpx;
+  background: #e8f7f2;
+  color: #238b75;
+  font-size: 18rpx;
+  line-height: 1;
+  font-weight: 900;
+  white-space: nowrap;
+  display: inline-flex;
+}
+
+.my-post-review-status.pending { background: #fff4df; color: #a86f1c; }
+.my-post-review-status.rejected { background: #fff0ed; color: #c45e52; }
+
 .my-post-card-body { margin-top: 20rpx; }
 
 .my-post-card-body.has-cover {
@@ -714,6 +929,37 @@ function goBack() {
   flex-shrink: 0;
 }
 
+.my-post-review-note {
+  margin-top: 16rpx;
+  padding: 16rpx 18rpx;
+  border-left: 5rpx solid #e78376;
+  border-radius: 12rpx;
+  background: #fff6f3;
+}
+
+.my-post-review-note strong,
+.my-post-review-note text {
+  display: block;
+}
+
+.my-post-review-note strong {
+  color: #b65349;
+  font-size: 21rpx;
+  line-height: 1.35;
+}
+
+.my-post-review-note text {
+  margin-top: 6rpx;
+  overflow: hidden;
+  color: #765650;
+  font-size: 21rpx;
+  line-height: 1.5;
+  text-overflow: ellipsis;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
 .my-post-card-footer {
   margin-top: 18rpx;
   padding-top: 0;
@@ -751,6 +997,154 @@ function goBack() {
   line-height: 1.4;
   font-weight: 900;
   white-space: nowrap;
+}
+
+.my-post-card-actions {
+  display: flex;
+  align-items: center;
+  gap: 14rpx;
+}
+
+.my-post-edit-button {
+  min-width: 128rpx;
+  height: 54rpx;
+  margin: 0;
+  padding: 0 14rpx;
+  border: 0;
+  border-radius: 16rpx;
+  background: #edf8f5;
+  color: #268d79;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 20rpx;
+  line-height: 1;
+  font-weight: 850;
+}
+
+.review-detail-backdrop {
+  position: fixed;
+  z-index: 80;
+  inset: 0;
+  padding: 32rpx 24rpx;
+  box-sizing: border-box;
+  background: rgba(23, 37, 54, .42);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  -webkit-backdrop-filter: blur(6rpx);
+  backdrop-filter: blur(6rpx);
+}
+
+.review-detail-dialog {
+  width: min(680rpx, calc(100vw - 48rpx));
+  max-height: min(980rpx, calc(100dvh - 64rpx));
+  overflow: hidden;
+  border-radius: 24rpx;
+  background: #ffffff;
+  box-shadow: 0 32rpx 90rpx rgba(20, 35, 54, .24);
+  display: flex;
+  flex-direction: column;
+}
+
+.review-detail-header {
+  padding: 26rpx 26rpx 22rpx;
+  border-bottom: 2rpx solid #edf1f5;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.review-detail-header > view { min-width: 0; }
+.review-detail-header text,
+.review-detail-header strong { display: block; }
+.review-detail-header text { color: #2d8d79; font-size: 19rpx; font-weight: 850; }
+.review-detail-header strong { margin-top: 7rpx; overflow: hidden; color: #26384c; font-size: 27rpx; text-overflow: ellipsis; white-space: nowrap; }
+
+.review-detail-header button {
+  width: 58rpx;
+  height: 58rpx;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: #f2f5f7;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 58rpx;
+}
+
+.review-detail-header :deep(.close-icon-image) { width: 28rpx; height: 28rpx; }
+.review-detail-scroll { min-height: 0; flex: 1; }
+.review-detail-content { padding: 24rpx 26rpx 30rpx; }
+.review-detail-state { padding: 80rpx 28rpx; color: #8795a6; font-size: 23rpx; text-align: center; }
+.review-detail-state.error { color: #b85d55; }
+.review-detail-state button { min-width: 154rpx; height: 60rpx; margin: 20rpx auto 0; border: 0; border-radius: 16rpx; background: #edf8f5; color: #278d79; font-size: 21rpx; }
+
+.review-current-status {
+  padding: 20rpx;
+  border-left: 6rpx solid #4dbda5;
+  border-radius: 14rpx;
+  background: #effaf7;
+}
+
+.review-current-status.pending { border-left-color: #d7a747; background: #fff8e9; }
+.review-current-status.rejected { border-left-color: #df766a; background: #fff4f1; }
+.review-current-status text,
+.review-current-status strong,
+.review-current-status small { display: block; }
+.review-current-status text { color: #7c8b99; font-size: 19rpx; }
+.review-current-status strong { margin-top: 7rpx; color: #31495f; font-size: 28rpx; }
+.review-current-status small { margin-top: 7rpx; color: #6f8091; font-size: 21rpx; line-height: 1.5; }
+
+.review-official-note {
+  margin-top: 20rpx;
+  padding: 19rpx 20rpx;
+  border: 2rpx solid #f1d5cf;
+  border-radius: 14rpx;
+  background: #fffafa;
+}
+
+.review-official-note text,
+.review-official-note strong { display: block; }
+.review-official-note text { color: #c15d52; font-size: 20rpx; font-weight: 850; }
+.review-official-note strong { margin-top: 9rpx; color: #6d514d; font-size: 22rpx; line-height: 1.6; }
+
+.review-history-heading { margin: 28rpx 0 15rpx; color: #40556b; font-size: 23rpx; font-weight: 900; }
+.review-history-empty { padding: 28rpx; border-radius: 14rpx; background: #f7f9fb; color: #98a4b0; font-size: 21rpx; text-align: center; }
+.review-history-list { display: flex; flex-direction: column; gap: 0; }
+.review-history-item { position: relative; padding: 0 0 24rpx 34rpx; }
+.review-history-item:not(:last-child)::before { width: 2rpx; content: ''; position: absolute; top: 14rpx; bottom: -2rpx; left: 10rpx; background: #dce6e9; }
+.review-history-marker { width: 20rpx; height: 20rpx; position: absolute; top: 5rpx; left: 1rpx; border: 5rpx solid #fff; border-radius: 50%; box-shadow: 0 0 0 2rpx #d7e3e7; background: #5bbfa9; }
+.review-history-marker.rejected { background: #df766a; }
+.review-history-marker.submitted { background: #d6a54c; }
+.review-history-copy > view { display: flex; align-items: center; justify-content: space-between; gap: 14rpx; }
+.review-history-copy strong { color: #40566b; font-size: 22rpx; }
+.review-history-copy > view text { color: #93a1ae; font-size: 18rpx; }
+.review-history-copy small { display: block; margin-top: 6rpx; color: #9aa6b2; font-size: 18rpx; }
+.review-history-note { display: block; margin-top: 8rpx; color: #65778a; font-size: 20rpx; line-height: 1.55; }
+
+.review-detail-actions {
+  padding: 18rpx 26rpx calc(env(safe-area-inset-bottom) + 20rpx);
+  border-top: 2rpx solid #edf1f5;
+  background: #ffffff;
+}
+
+.review-detail-actions button {
+  width: 100%;
+  height: 74rpx;
+  margin: 0;
+  border: 0;
+  border-radius: 18rpx;
+  background: #2ea78d;
+  color: #ffffff;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 23rpx;
+  font-weight: 900;
 }
 
 .my-posts-delete-bar {

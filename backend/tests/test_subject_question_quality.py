@@ -232,10 +232,65 @@ class CultureQuestionQualityTests(unittest.TestCase):
         self.assertIn("A. ✓", question["explanation"])
 
     def test_culture_v3_allows_omitting_a_low_value_memory_block(self):
-        metadata = build_culture_v3_metadata()
-        metadata["memory_strategy"] = "none"
-        metadata["memory_hook"] = ""
         question = build_culture_question()
+        question.update(
+            {
+                "module": "中国古代科技常识",
+                "submodule": "科技发明",
+                "stem": "独轮车主要属于哪一方面的成就？",
+                "option_a": "茶学",
+                "option_b": "建筑技术",
+                "option_c": "运输工具",
+                "option_d": "农学",
+                "answer": "C",
+                "difficulty": 3,
+            }
+        )
+        metadata = {
+            "version": "3.0",
+            "question_form": "direct_identification",
+            "reasoning_mode": "direct_fact",
+            "fact_anchor": {
+                "subject": "独轮车",
+                "relation": "成就所属领域",
+                "object": "运输工具",
+            },
+            "reasoning_steps": {
+                "clue": "独轮车用途",
+                "bridge": "独轮车以单轮承载车架和货物，借人力推行完成搬运，功能属于陆路运输。",
+                "conclusion": "因此选 C“运输工具”",
+            },
+            "evidence_excerpt": "独轮车是以一个车轮负重、由人推行的运输工具。",
+            "knowledge_extension": "独轮车的窄车身便于在狭窄道路通行。",
+            "memory_strategy": "none",
+            "memory_hook": "",
+            "option_analysis": {
+                "A": {
+                    "verdict": "incorrect",
+                    "fact": "茶学涵盖茶树栽培、制茶与饮用",
+                    "fit": "领域不同，并非茶事研究",
+                },
+                "B": {
+                    "verdict": "incorrect",
+                    "fact": "建筑技术关注结构营造与施工方法",
+                    "fit": "用途不同，并非建筑营造",
+                },
+                "C": {
+                    "verdict": "correct",
+                    "fact": "运输工具承担人员或货物的位移",
+                    "fit": "直接对应搬运功能",
+                },
+                "D": {
+                    "verdict": "incorrect",
+                    "fact": "农学研究作物栽培与农业生产",
+                    "fit": "虽可农用但不属于农学成就",
+                },
+            },
+            "scope_level": "core",
+            "controversy_status": "stable",
+            "verification_status": "cross_checked",
+            "difficulty_features": ["需按器物功能而非使用场景归类"],
+        }
         question["explanation"] = render_culture_explanation_v3(question, metadata)
         result = audit_culture_question(question, metadata=metadata, require_v2_metadata=True)
         self.assertTrue(result["valid_for_generation"], result["issues"])

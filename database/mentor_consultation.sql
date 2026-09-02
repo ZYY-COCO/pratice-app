@@ -26,6 +26,7 @@ create table if not exists public.mentor_profiles (
   price_cents integer not null default 3900 check (price_cents between 0 and 100000),
   consultation_window_minutes smallint not null default 60
     check (consultation_window_minutes between 15 and 180),
+  consultation_enabled boolean not null default true,
   online_status text not null default 'offline'
     check (online_status in ('online', 'offline', 'busy')),
   accepts_booking boolean not null default true,
@@ -134,6 +135,7 @@ create table if not exists public.mentor_verification_applications (
   skills jsonb not null default '[]'::jsonb check (jsonb_typeof(skills) = 'array'),
   bio text not null default '' check (char_length(bio) <= 500),
   price_cents integer not null default 3900 check (price_cents between 0 and 100000),
+  consultation_enabled boolean not null default true,
   application_status text not null default 'pending'
     check (application_status in ('pending', 'approved', 'rejected')),
   admin_note text check (char_length(admin_note) <= 1000),
@@ -157,6 +159,15 @@ create table if not exists public.mentor_verification_documents (
 
 create index if not exists idx_mentor_profiles_public_list
   on public.mentor_profiles (is_published, verification_status, recommend_score desc, created_at desc);
+
+create index if not exists idx_mentor_profiles_consultation_public_list
+  on public.mentor_profiles (
+    consultation_enabled,
+    is_published,
+    verification_status,
+    recommend_score desc,
+    created_at desc
+  );
 
 create index if not exists idx_mentor_profiles_school_major
   on public.mentor_profiles (school, major);
@@ -223,7 +234,7 @@ alter table public.mentor_verification_documents enable row level security;
 drop policy if exists "published verified mentors are readable" on public.mentor_profiles;
 create policy "published verified mentors are readable"
   on public.mentor_profiles for select
-  using (is_published = true and verification_status = 'verified');
+  using (consultation_enabled = true and is_published = true and verification_status = 'verified');
 
 drop policy if exists "published mentor skills are readable" on public.mentor_profile_skills;
 create policy "published mentor skills are readable"
@@ -232,6 +243,7 @@ create policy "published mentor skills are readable"
     exists (
       select 1 from public.mentor_profiles profile
       where profile.id = mentor_id
+        and profile.consultation_enabled = true
         and profile.is_published = true
         and profile.verification_status = 'verified'
     )
@@ -244,6 +256,7 @@ create policy "published mentor slots are readable"
     exists (
       select 1 from public.mentor_profiles profile
       where profile.id = mentor_id
+        and profile.consultation_enabled = true
         and profile.is_published = true
         and profile.verification_status = 'verified'
     )
@@ -257,6 +270,7 @@ create policy "published mentor reviews are readable"
     and exists (
       select 1 from public.mentor_profiles profile
       where profile.id = mentor_id
+        and profile.consultation_enabled = true
         and profile.is_published = true
         and profile.verification_status = 'verified'
     )
@@ -325,6 +339,7 @@ insert into public.mentor_profiles (
   story,
   price_cents,
   consultation_window_minutes,
+  consultation_enabled,
   online_status,
   accepts_booking,
   verification_status,
@@ -352,6 +367,7 @@ values (
   '2025 年通过港澳台研究生招生考试录取至暨南大学应用经济学专业，初试 110 分，复试综合排名靠前。',
   3900,
   60,
+  true,
   'online',
   true,
   'verified',
@@ -377,6 +393,7 @@ set legal_name = excluded.legal_name,
     story = excluded.story,
     price_cents = excluded.price_cents,
     consultation_window_minutes = excluded.consultation_window_minutes,
+    consultation_enabled = excluded.consultation_enabled,
     online_status = excluded.online_status,
     accepts_booking = excluded.accepts_booking,
     verification_status = excluded.verification_status,

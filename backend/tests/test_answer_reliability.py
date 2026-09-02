@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import json
 import unittest
 from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
@@ -185,6 +187,148 @@ class AnswerReliabilityTests(unittest.TestCase):
         self.assertEqual(response.stats_exam_code, "Z001")
         self.assertEqual(response.attempt_number, 1)
         self.assertEqual(response.ability_accuracy, 100)
+
+    def test_responsive_submit_exposes_grade_before_starting_persistence(self):
+        grade_result = {
+            "question_id": "question-1",
+            "exam_code": "Z001",
+            "subject": "逻辑推理",
+            "module": "演绎推理",
+            "submodule": "充分条件",
+            "source_type": "official",
+            "selected_answer": "B",
+            "correct_answer": "B",
+            "is_correct": True,
+            "explanation": "解析",
+            "added_to_wrong_questions": False,
+            "ability_accuracy": None,
+        }
+        durable_result = {
+            "submission_id": "submission-1",
+            "client_submission_id": "client-1",
+            "stats_exam_code": "Z001",
+            "idempotent": False,
+            "persisted": True,
+            "is_first_attempt": True,
+            "attempt_number": 1,
+            "ability_accuracy": 100,
+        }
+        payload = SubmitAnswerRequest(
+            question_id="question-1",
+            client_submission_id="client-1",
+            selected_answer="B",
+            used_time=18,
+            exam_code="Z001",
+        )
+        with (
+            patch.object(answers, "get_supabase_admin", return_value=object()),
+            patch.object(answers, "submit_answer", return_value=grade_result),
+            patch.object(answers, "persist_answer_submission", return_value=durable_result) as persist,
+        ):
+            response = answers.submit_responsive(payload=payload, user_id="user-1")
+
+            self.assertEqual(response.headers["x-gyt-grading-ready"], "1")
+            self.assertEqual(response.headers["x-gyt-correct-answer"], "B")
+            self.assertEqual(response.headers["x-gyt-is-correct"], "1")
+            self.assertFalse(persist.called)
+
+            async def consume_stream():
+                iterator = response.body_iterator.__aiter__()
+                first_chunk = await iterator.__anext__()
+                self.assertEqual(first_chunk, b" ")
+                self.assertFalse(persist.called)
+                chunks = [first_chunk]
+                async for chunk in iterator:
+                    chunks.append(chunk)
+                return b"".join(chunks)
+
+            body = json.loads(asyncio.run(consume_stream()))
+
+        persist.assert_called_once()
+        self.assertTrue(body["persisted"])
+        self.assertEqual(body["submission_id"], "submission-1")
+        self.assertEqual(body["correct_answer"], "B")
+
+    def test_grade_fallback_returns_feedback_without_starting_persistence(self):
+        grade_result = {
+            "question_id": "question-1",
+            "exam_code": "Z001",
+            "subject": "逻辑推理",
+            "module": "演绎推理",
+            "submodule": "充分条件",
+            "source_type": "official",
+            "selected_answer": "A",
+            "correct_answer": "B",
+            "is_correct": False,
+            "explanation": "解析",
+            "added_to_wrong_questions": True,
+            "ability_accuracy": None,
+        }
+        payload = SubmitAnswerRequest(
+            question_id="question-1",
+            client_submission_id="client-1",
+            selected_answer="A",
+            used_time=18,
+            exam_code="Z001",
+        )
+        with (
+            patch.object(answers, "get_supabase_admin", return_value=object()),
+            patch.object(answers, "submit_answer", return_value=grade_result),
+            patch.object(answers, "persist_answer_submission") as persist,
+        ):
+            response = answers.grade(payload=payload, user_id="user-1")
+
+        persist.assert_not_called()
+        self.assertEqual(response.correct_answer, "B")
+        self.assertFalse(response.is_correct)
+        self.assertTrue(response.added_to_wrong_questions)
+
+    def test_responsive_submit_keeps_grade_and_reports_retryable_persistence_failure(self):
+        grade_result = {
+            "question_id": "question-1",
+            "exam_code": "Z001",
+            "subject": "逻辑推理",
+            "module": "演绎推理",
+            "submodule": "充分条件",
+            "source_type": "official",
+            "selected_answer": "A",
+            "correct_answer": "B",
+            "is_correct": False,
+            "explanation": "解析",
+            "added_to_wrong_questions": True,
+            "ability_accuracy": None,
+        }
+        payload = SubmitAnswerRequest(
+            question_id="question-1",
+            client_submission_id="client-1",
+            selected_answer="A",
+            used_time=18,
+            exam_code="Z001",
+        )
+        with (
+            patch.object(answers, "get_supabase_admin", return_value=object()),
+            patch.object(answers, "submit_answer", return_value=grade_result),
+            patch.object(
+                answers,
+                "persist_answer_submission",
+                side_effect=HTTPException(status_code=503, detail="暂时不可用"),
+            ),
+        ):
+            response = answers.submit_responsive(payload=payload, user_id="user-1")
+
+            async def consume_stream():
+                chunks = []
+                async for chunk in response.body_iterator:
+                    chunks.append(chunk)
+                return b"".join(chunks)
+
+            body = json.loads(asyncio.run(consume_stream()))
+
+        self.assertEqual(response.headers["x-gyt-correct-answer"], "B")
+        self.assertEqual(response.headers["x-gyt-is-correct"], "0")
+        self.assertFalse(body["persisted"])
+        self.assertTrue(body["persistence_retryable"])
+        self.assertEqual(body["persistence_error"], "暂时不可用")
 
     def test_learning_progress_uses_first_attempt_correctness(self):
         active_questions = [{"id": "question-1"}]

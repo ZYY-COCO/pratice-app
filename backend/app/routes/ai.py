@@ -337,6 +337,10 @@ def _safe_question_candidate(
         )
         if rejection_reasons or not quality["valid_for_generation"]:
             return None, rejection_reasons[:8]
+        if target.subject == CULTURE_SUBJECT and isinstance(culture_v3, dict):
+            # Internal-only review payload.  It is exposed to the teaching/fact
+            # reviewer, then stripped before a row can reach the database.
+            row["_culture_v3_review"] = dict(culture_v3)
 
     return row, []
 
@@ -950,7 +954,9 @@ async def _generate_unique_question_rows(
                     quality_feedback.append("候选题干与近期或本轮题目重复")
                 continue
             seen.add(fingerprint)
-            rows.append(row)
+            storage_row = dict(row)
+            storage_row.pop("_culture_v3_review", None)
+            rows.append(storage_row)
             added_this_round += 1
             if len(rows) >= target.question_count:
                 break

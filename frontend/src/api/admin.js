@@ -226,6 +226,29 @@ export function updateQuestionAdminCommunityPostVisibility(postId, payload) {
   })
 }
 
+export function fetchQuestionAdminCommunityExperienceReviews(params = {}) {
+  return request({
+    url: '/admin/question-portal/community/experience-reviews',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function fetchQuestionAdminCommunityExperienceReviewDetail(postId) {
+  return request({
+    url: `/admin/question-portal/community/experience-reviews/${encodeURIComponent(postId)}`,
+    method: 'GET'
+  })
+}
+
+export function reviewQuestionAdminCommunityExperiencePost(postId, payload) {
+  return request({
+    url: `/admin/question-portal/community/experience-reviews/${encodeURIComponent(postId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function updateQuestionAdminCommunityCommentVisibility(postId, commentId, payload) {
   return request({
     url: `/admin/question-portal/community/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/visibility`,
@@ -628,6 +651,14 @@ export function fetchAdminMentorVerificationApplication(applicationId) {
 export function decideAdminMentorVerificationApplication(applicationId, payload) {
   return request({
     url: `/admin/mentor-consultation/applications/${encodeURIComponent(applicationId)}/decision`,
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function revokeAdminMentorQualification(applicationId, payload) {
+  return request({
+    url: `/admin/mentor-consultation/applications/${encodeURIComponent(applicationId)}/revoke`,
     method: 'POST',
     data: payload
   })

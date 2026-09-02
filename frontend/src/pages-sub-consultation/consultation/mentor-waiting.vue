@@ -104,7 +104,7 @@
 
 <script setup>
 import { computed, onBeforeUnmount, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import {
   fetchMentorProfile,
@@ -147,6 +147,13 @@ const preparingPayment = ref(false)
 const themeKey = ref(getStoredThemeKey())
 let countdownTimer = null
 let orderPollTimer = null
+let orderLoadPromise = null
+let orderStateRevision = 0
+let orderRefreshQueued = false
+let countdownRefreshDeadline = ''
+let pageActive = false
+let pageDestroyed = false
+let hasShown = false
 
 const isBooking = computed(() => mode.value === 'booking')
 const isFailed = computed(() => ['timeout', 'rejected', 'refunded'].includes(status.value))
@@ -218,23 +225,79 @@ onLoad((options) => {
     return
   }
   void loadMentor(mentorId)
-  void loadOrder()
 })
 
 onShow(() => {
+  const silent = hasShown
+  hasShown = true
+  pageActive = true
   themeKey.value = getStoredThemeKey()
-  if (orderId.value) void loadOrder({ silent: true })
+  if (orderId.value) {
+    if (['pending_payment', 'pending_accept', 'accepted'].includes(status.value)) {
+      syncRemainingSeconds()
+      if (remainingSeconds.value > 0) startCountdown()
+    }
+    scheduleOrderPolling({ restart: true })
+    void loadOrder({ silent, queueIfBusy: true })
+  }
 })
 
-onBeforeUnmount(stopOrderTimers)
+onHide(() => {
+  pageActive = false
+  stopOrderTimers()
+})
 
-async function loadOrder({ silent = false } = {}) {
-  if (!orderId.value) return
+onBeforeUnmount(() => {
+  pageDestroyed = true
+  pageActive = false
+  orderStateRevision += 1
+  orderRefreshQueued = false
+  stopOrderTimers()
+})
+
+async function loadOrder({ silent = false, queueIfBusy = false } = {}) {
+  if (!orderId.value || pageDestroyed) return null
+  if (orderLoadPromise) {
+    if (queueIfBusy) orderRefreshQueued = true
+    return orderLoadPromise
+  }
+  const requestedOrderId = orderId.value
+  const requestedRevision = orderStateRevision
+  const request = (async () => {
+    try {
+      const order = await fetchMentorConsultationOrder(requestedOrderId)
+      if (
+        pageDestroyed ||
+        requestedOrderId !== orderId.value ||
+        requestedRevision !== orderStateRevision
+      ) return null
+      applyOrder(order, { fromLoad: true })
+      return order
+    } catch (error) {
+      if (
+        !silent &&
+        pageActive &&
+        !pageDestroyed &&
+        requestedOrderId === orderId.value &&
+        requestedRevision === orderStateRevision
+      ) {
+        uni.showToast({ title: error?.detail || '咨询订单加载失败', icon: 'none' })
+      }
+      return null
+    }
+  })()
+  orderLoadPromise = request
   try {
-    const order = await fetchMentorConsultationOrder(orderId.value)
-    applyOrder(order)
-  } catch (error) {
-    if (!silent) uni.showToast({ title: error?.detail || '咨询订单加载失败', icon: 'none' })
+    return await request
+  } finally {
+    if (orderLoadPromise === request) orderLoadPromise = null
+    if (orderRefreshQueued && pageActive && !pageDestroyed) {
+      orderRefreshQueued = false
+      void loadOrder({ silent: true })
+    } else {
+      if (!pageActive) orderRefreshQueued = false
+      scheduleOrderPolling()
+    }
   }
 }
 
@@ -251,7 +314,8 @@ async function loadMentor(mentorId) {
   }
 }
 
-function applyOrder(order) {
+function applyOrder(order, { fromLoad = false } = {}) {
+  if (!fromLoad) orderStateRevision += 1
   const draft = saveConsultationOrder(order)
   status.value = draft.orderStatus || 'pending_accept'
   mode.value = draft.consultationType === 'booking' ? 'booking' : 'instant'
@@ -270,46 +334,75 @@ function applyOrder(order) {
   if (['pending_payment', 'pending_accept', 'accepted'].includes(status.value)) {
     syncRemainingSeconds()
     startCountdown()
-  } else if (countdownTimer) {
-    clearInterval(countdownTimer)
-    countdownTimer = null
+  } else {
+    stopCountdown()
   }
   if (['pending_payment', 'pending_accept', 'accepted', 'booked'].includes(status.value) || isRefunding.value) {
-    startOrderPolling()
+    scheduleOrderPolling({ restart: true })
   } else {
-    stopOrderTimers()
+    stopOrderPolling()
   }
 }
 
+function getCountdownDeadline() {
+  return String((isPaymentPending.value ? paymentExpiresAt.value : expiresAt.value) || '')
+}
+
 function syncRemainingSeconds() {
-  const deadline = Date.parse((isPaymentPending.value ? paymentExpiresAt.value : expiresAt.value) || '')
+  const deadline = Date.parse(getCountdownDeadline())
   remainingSeconds.value = Number.isFinite(deadline)
     ? Math.max(0, Math.ceil((deadline - Date.now()) / 1000))
     : 0
 }
 
 function startCountdown() {
-  if (countdownTimer) return
+  if (!pageActive || !showCountdown.value || countdownTimer) return
   countdownTimer = setInterval(() => {
+    if (!pageActive) return
     syncRemainingSeconds()
     if (remainingSeconds.value <= 0) {
-      void loadOrder({ silent: true })
+      const deadline = getCountdownDeadline()
+      if (deadline && countdownRefreshDeadline !== deadline) {
+        countdownRefreshDeadline = deadline
+        void loadOrder({ silent: true, queueIfBusy: true })
+      }
     }
   }, 1000)
 }
 
-function startOrderPolling() {
+function stopCountdown() {
+  if (countdownTimer) clearInterval(countdownTimer)
+  countdownTimer = null
+}
+
+function shouldPollOrder() {
+  return ['pending_payment', 'pending_accept', 'accepted', 'booked'].includes(status.value) || isRefunding.value
+}
+
+function stopOrderPolling() {
+  if (orderPollTimer) clearTimeout(orderPollTimer)
+  orderPollTimer = null
+}
+
+function scheduleOrderPolling({ restart = false } = {}) {
+  if (!pageActive || pageDestroyed || !shouldPollOrder()) {
+    stopOrderPolling()
+    return
+  }
+  if (restart) stopOrderPolling()
   if (orderPollTimer) return
-  orderPollTimer = setInterval(() => {
-    void loadOrder({ silent: true })
-  }, status.value === 'booked' ? 30000 : 5000)
+  const delay = status.value === 'booked' ? 30000 : 5000
+  orderPollTimer = setTimeout(async () => {
+    orderPollTimer = null
+    if (!pageActive || pageDestroyed) return
+    await loadOrder({ silent: true })
+    scheduleOrderPolling()
+  }, delay)
 }
 
 function stopOrderTimers() {
-  if (countdownTimer) clearInterval(countdownTimer)
-  if (orderPollTimer) clearInterval(orderPollTimer)
-  countdownTimer = null
-  orderPollTimer = null
+  stopCountdown()
+  stopOrderPolling()
 }
 
 async function openChat() {
@@ -359,21 +452,32 @@ async function skipPaymentForLocalRehearsal() {
 
 async function openPaymentCheckout() {
   if (!paymentCheckoutUrl.value && !preparingPayment.value && orderId.value) {
+    const requestedOrderId = orderId.value
+    const requestedRevision = orderStateRevision
     preparingPayment.value = true
     try {
-      const intent = await createMentorConsultationPaymentIntent(orderId.value)
-      const order = await fetchMentorConsultationOrder(orderId.value)
-      const draft = saveConsultationOrder({
+      const intent = await createMentorConsultationPaymentIntent(requestedOrderId)
+      const order = await fetchMentorConsultationOrder(requestedOrderId)
+      if (
+        pageDestroyed ||
+        requestedOrderId !== orderId.value ||
+        requestedRevision !== orderStateRevision
+      ) return
+      applyOrder({
         ...order,
         payment_provider: intent?.provider || '',
         payment_checkout_url: intent?.checkout_url || '',
         payment_message: intent?.message || ''
       })
-      paymentCheckoutUrl.value = draft.paymentCheckoutUrl || ''
-      paymentMessage.value = draft.paymentMessage || ''
-      paymentStatus.value = draft.paymentStatus || paymentStatus.value
     } catch (error) {
-      uni.showToast({ title: error?.detail || '支付订单暂时无法刷新，请稍后重试', icon: 'none' })
+      if (
+        pageActive &&
+        !pageDestroyed &&
+        requestedOrderId === orderId.value &&
+        requestedRevision === orderStateRevision
+      ) {
+        uni.showToast({ title: error?.detail || '支付订单暂时无法刷新，请稍后重试', icon: 'none' })
+      }
       return
     } finally {
       preparingPayment.value = false
@@ -445,12 +549,13 @@ function goBack() {
 .mentor-waiting-person-card { padding:24rpx; display:flex; align-items:center; gap:15rpx; color:#7c8ca1;font-size:21rpx;line-height:1.4;font-weight:650; }.mentor-waiting-avatar{width:68rpx;height:68rpx;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:26rpx;font-weight:900;flex-shrink:0}.mentor-waiting-avatar.tone-blue{background:#e6efff;color:#3478f6}.mentor-waiting-avatar.tone-mint{background:#e2f4ef;color:#198777}.mentor-waiting-avatar.tone-violet{background:#eeeafe;color:#7162bd}.mentor-waiting-avatar.tone-warm{background:#f9eee1;color:#b66c32}.mentor-waiting-name{color:#354863;font-size:25rpx;font-weight:900}.mentor-waiting-name text{margin-left:8rpx;padding:5rpx 9rpx;border-radius:999rpx;background:#edf4ff;color:#3478f6;font-size:17rpx;font-weight:800}.mentor-waiting-booked-note{margin-top:5rpx;color:#3d9161;font-size:19rpx;font-weight:750}
 .mentor-waiting-flow-card{padding:26rpx}.mentor-waiting-flow-title{color:#3e5472;font-size:24rpx;font-weight:900}.mentor-waiting-flow{margin-top:18rpx}.mentor-waiting-flow>view{position:relative;display:flex;align-items:center;gap:12rpx;color:#8391a4;font-size:21rpx;line-height:1.3;font-weight:700}.mentor-waiting-flow>view+view{margin-top:15rpx}.mentor-waiting-flow text{width:30rpx;height:30rpx;border-radius:50%;background:#e9eef6;color:#8290a4;display:inline-flex;align-items:center;justify-content:center;font-size:18rpx;font-weight:900;flex-shrink:0}.mentor-waiting-flow text.done{background:#e7f5ec;color:#249458}.mentor-waiting-flow text.active{background:#edf4ff;color:#3478f6}.mentor-waiting-flow text.mentor-waiting-flow-copy{width:auto;height:auto;border-radius:0;background:transparent;color:inherit;display:block;font-size:21rpx;font-weight:700}
 .mentor-waiting-notice{padding:25rpx;color:#728399;font-size:21rpx;line-height:1.6;font-weight:650}.mentor-waiting-notice text{display:block;margin-bottom:8rpx;color:#42608c;font-size:24rpx;font-weight:900}
-.mentor-demo-card{padding:24rpx;color:#7b8ca3;font-size:20rpx;line-height:1.55;font-weight:650}.mentor-demo-card>view:first-child{color:#48648e;font-size:24rpx;font-weight:900}.mentor-demo-card>text{display:block;margin-top:7rpx}.mentor-demo-actions{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-demo-actions button{min-height:52rpx;margin:0;padding:0 16rpx;border:0;border-radius:15rpx;background:#3478f6;color:#fff;font-size:20rpx;font-weight:850}.mentor-demo-actions button::after,.mentor-waiting-footer button::after{border:0}.mentor-demo-actions button.light{background:#edf4ff;color:#4d72ab}
-.mentor-waiting-bottom-space{height:calc(150rpx + env(safe-area-inset-bottom))}.mentor-waiting-footer{padding:16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.97)}.mentor-waiting-footer-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14rpx}.mentor-waiting-footer-actions>button:only-child{grid-column:1/-1}.mentor-waiting-footer button{width:100%;min-height:76rpx;margin:0;border:0;border-radius:20rpx;background:#3478f6;color:#fff;font-size:24rpx;font-weight:900;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}.mentor-waiting-footer button.secondary{background:#edf4ff;color:#4f71a8;box-shadow:none}
+.mentor-demo-card{padding:24rpx;color:#7b8ca3;font-size:20rpx;line-height:1.55;font-weight:650}.mentor-demo-card>view:first-child{color:#48648e;font-size:24rpx;font-weight:900}.mentor-demo-card>text{display:block;margin-top:7rpx}.mentor-demo-actions{display:flex;flex-wrap:wrap;gap:10rpx;margin-top:18rpx}.mentor-demo-actions button{box-sizing:border-box;flex:0 0 auto;height:52rpx;min-height:52rpx;margin:0;padding:0 16rpx;border:0;border-radius:15rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:20rpx;line-height:1.2;font-weight:850}.mentor-demo-actions button[disabled]{height:52rpx;min-height:52rpx;padding-top:0;padding-bottom:0}.mentor-demo-actions button::after,.mentor-waiting-footer button::after{border:0}.mentor-demo-actions button.light{background:#edf4ff;color:#4d72ab}
+.mentor-waiting-bottom-space{height:calc(150rpx + env(safe-area-inset-bottom))}.mentor-waiting-footer{padding:16rpx 24rpx calc(18rpx + env(safe-area-inset-bottom));border-top:2rpx solid #dbe7f8;background:rgba(255,255,255,.97)}.mentor-waiting-footer-actions{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:14rpx}.mentor-waiting-footer-actions>button:only-child{grid-column:1/-1}.mentor-waiting-footer button{position:relative;box-sizing:border-box;width:100%;min-width:0;height:76rpx;min-height:76rpx;margin:0;padding:0 20rpx;border:0;border-radius:20rpx;background:#3478f6;color:#fff;display:flex;align-items:center;justify-content:center;text-align:center;font-size:24rpx;line-height:1.2;font-weight:900;white-space:nowrap;box-shadow:0 10rpx 22rpx rgba(52,120,246,.2)}.mentor-waiting-footer button[loading]::before{position:absolute;top:0;bottom:0;left:16rpx;margin:auto 0;flex:0 0 auto}.mentor-waiting-footer button[disabled]{height:76rpx;min-height:76rpx;padding-top:0;padding-bottom:0;opacity:.62}.mentor-waiting-footer button.secondary{background:#edf4ff;color:#4f71a8;box-shadow:none}
 
 .mentor-countdown text{display:block;margin-bottom:8rpx;color:#7590bc;font-size:18rpx;letter-spacing:0;font-weight:750}
 .mentor-waiting-page { background: var(--gyt-page-bg); }
 .mentor-waiting-main,.mentor-waiting-person-card,.mentor-waiting-flow-card,.mentor-waiting-notice,.mentor-demo-card { border-color: var(--gyt-primary-border, #d6e6ff); background: var(--gyt-panel-bg, #ffffff); box-shadow: 0 14rpx 34rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.07)); }
 .mentor-waiting-icon.waiting,.mentor-countdown,.mentor-waiting-avatar.tone-blue,.mentor-waiting-name text,.mentor-waiting-flow text.active,.mentor-demo-actions button.light,.mentor-waiting-footer button.secondary { background: var(--gyt-primary-soft, #edf4ff); color: var(--gyt-primary, #3478f6); }
 .mentor-demo-actions button,.mentor-waiting-footer button { background: var(--gyt-primary-gradient, #3478f6); box-shadow: 0 10rpx 22rpx var(--gyt-primary-shadow, rgba(52, 120, 246, 0.2)); }
+.mentor-waiting-footer button[loading]::before { box-sizing: border-box; width: 24rpx; height: 24rpx; }
 </style>

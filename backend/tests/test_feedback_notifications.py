@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 from app.routes import admin, notifications
 from app.schemas.admin import AdminFeedbackStatusRequest
-from app.schemas.notifications import UserNotificationReadTargetRequest
+from app.schemas.notifications import UserNotificationReadScopeRequest, UserNotificationReadTargetRequest
 from app.services.user_notifications import normalize_notification_route_path
 
 
@@ -133,12 +133,19 @@ class FeedbackNotificationTests(unittest.TestCase):
                 "notification_type": "community_report_status",
                 "delivery_payload": {},
             },
+            {
+                "id": "consultation-report-result",
+                "category": "consultation",
+                "notification_type": "mentor_report_status",
+                "delivery_payload": {"order_id": "order-report"},
+            },
         ]
 
         summary = notifications._summarize_unread_rows(rows)
 
-        self.assertEqual(summary.total, 5)
+        self.assertEqual(summary.total, 6)
         self.assertEqual(summary.circle, 4)
+        self.assertEqual(summary.community_reports, 2)
         self.assertEqual(summary.community_chat, 1)
         self.assertEqual(summary.community_experience, 1)
         self.assertEqual(summary.applicant_consultations, 1)
@@ -147,6 +154,69 @@ class FeedbackNotificationTests(unittest.TestCase):
         self.assertEqual(summary.community_post_targets["experience"], {"post-exp": 1})
         self.assertEqual(summary.consultation_order_targets["mentor"], {"order-mentor": 1})
         self.assertEqual(summary.consultation_order_targets["applicant"], {"order-applicant": 1})
+
+    def test_combined_report_read_scope_includes_community_and_consultation_cases(self):
+        query = _NotificationReadQuery(_NotificationReadClient([]))
+
+        result = notifications._apply_read_scope(query, "community_reports")
+
+        self.assertIs(result, query)
+        included_types = next(
+            value
+            for kind, field, value in query.filters
+            if kind == "in" and field == "notification_type"
+        )
+        self.assertEqual(
+            set(included_types),
+            {
+                "community_report_status",
+                "community_appeal_status",
+                "community_content_moderation",
+                "mentor_report_status",
+                "mentor_report_appeal_status",
+            },
+        )
+
+    def test_combined_report_page_marks_only_report_notifications_read(self):
+        rows = [
+            {
+                "id": "community-report",
+                "recipient_user_id": "user-1",
+                "notification_type": "community_report_status",
+                "read_at": None,
+            },
+            {
+                "id": "consultation-report",
+                "recipient_user_id": "user-1",
+                "notification_type": "mentor_report_status",
+                "read_at": None,
+            },
+            {
+                "id": "consultation-appeal",
+                "recipient_user_id": "user-1",
+                "notification_type": "mentor_report_appeal_status",
+                "read_at": None,
+            },
+            {
+                "id": "consultation-order",
+                "recipient_user_id": "user-1",
+                "notification_type": "mentor_order_status",
+                "read_at": None,
+            },
+        ]
+        client = _NotificationReadClient(rows)
+
+        with patch.object(notifications, "get_supabase_admin", return_value=client):
+            response = notifications.mark_user_notification_scope_read(
+                UserNotificationReadScopeRequest(scope="community_reports"),
+                user_id="user-1",
+            )
+
+        self.assertEqual(response.updated_count, 3)
+        self.assertTrue(rows[0]["read_at"])
+        self.assertTrue(rows[1]["read_at"])
+        self.assertTrue(rows[2]["read_at"])
+        self.assertIsNone(rows[3]["read_at"])
 
     def test_target_read_matching_does_not_clear_another_post_or_order(self):
         post_target = UserNotificationReadTargetRequest(target_type="community_post", target_id="post-1")

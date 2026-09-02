@@ -7,7 +7,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 MentorExamType = Literal["Z001", "Z002", "application"]
 MentorOnlineStatus = Literal["online", "offline", "busy"]
-MentorVerificationStatus = Literal["unverified", "pending", "verified", "rejected"]
+MentorVerificationStatus = Literal["unverified", "pending", "verified", "rejected", "revoked"]
 MentorProfileChangeRequestStatus = Literal["pending", "approved", "rejected"]
 MentorSlotStatus = Literal["available", "held", "booked", "expired", "closed"]
 MentorConsultationType = Literal["instant", "booking"]
@@ -77,6 +77,7 @@ class MentorPublicItem(BaseModel):
     consult_count: int = Field(default=0, ge=0)
     price: float | int = Field(ge=0)
     consultation_window_minutes: int = Field(default=60, ge=15, le=180)
+    consultation_enabled: bool = True
     online_status: MentorOnlineStatus = "offline"
     accepts_booking: bool = True
     is_featured: bool = False
@@ -213,6 +214,7 @@ class MentorVerificationApplicationCreateRequest(BaseModel):
     skills: list[str] = Field(default_factory=list, max_length=4)
     bio: str = Field(default="", max_length=500)
     price_cents: int = Field(default=3900, ge=0, le=100000)
+    consultation_enabled: bool = True
 
 
 class MentorVerificationApplicationItem(BaseModel):
@@ -228,8 +230,11 @@ class MentorVerificationApplicationItem(BaseModel):
     skills: list[str] = Field(default_factory=list)
     bio: str = ""
     price: float | int = Field(ge=0)
-    application_status: Literal["pending", "approved", "rejected"] = "pending"
+    consultation_enabled: bool = True
+    application_status: Literal["pending", "approved", "rejected", "revoked"] = "pending"
     admin_note: str | None = None
+    revocation_reason: str | None = None
+    revoked_at: str | None = None
     reviewed_at: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
@@ -262,6 +267,12 @@ class AdminMentorVerificationDecisionRequest(BaseModel):
     admin_note: str | None = Field(default=None, max_length=1000)
 
 
+class AdminMentorQualificationRevocationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    reason: str = Field(min_length=5, max_length=1000)
+
+
 class AdminMentorProfileCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -280,6 +291,7 @@ class AdminMentorProfileCreateRequest(BaseModel):
     story: str = Field(default="", max_length=2000)
     price_cents: int = Field(default=3900, ge=0, le=100000)
     consultation_window_minutes: int = Field(default=60, ge=15, le=180)
+    consultation_enabled: bool = True
     online_status: MentorOnlineStatus = "offline"
     accepts_booking: bool = True
     verification_status: MentorVerificationStatus = "pending"
@@ -310,6 +322,7 @@ class AdminMentorProfileUpdateRequest(BaseModel):
     story: str | None = Field(default=None, max_length=2000)
     price_cents: int | None = Field(default=None, ge=0, le=100000)
     consultation_window_minutes: int | None = Field(default=None, ge=15, le=180)
+    consultation_enabled: bool | None = None
     online_status: MentorOnlineStatus | None = None
     accepts_booking: bool | None = None
     verification_status: MentorVerificationStatus | None = None
