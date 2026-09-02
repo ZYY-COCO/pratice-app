@@ -4,7 +4,7 @@ import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
 
 from app.config import get_settings
 from app.db import get_supabase_admin
@@ -63,7 +63,7 @@ from app.services.mentor_consultation_sla import (
     normalize_case_priority,
     serialize_case_sla,
 )
-from app.services.supabase_resilience import call_supabase
+from app.services.supabase_resilience import call_supabase, is_missing_supabase_relation_error
 from app.services.user_notifications import create_user_notification
 
 
@@ -1697,142 +1697,220 @@ def get_admin_mentor_verification_application(
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请详情暂时不可用") from exc
 
 
-@router.post("/applications/{application_id}/decision", response_model=MentorVerificationApplicationItem)
-def decide_admin_mentor_verification_application(
+def _resolve_mentor_application_decision_fast(
+    supabase,
+    *,
     application_id: str,
-    payload: AdminMentorVerificationDecisionRequest,
-    admin_profile: dict = Depends(require_question_admin_user),
-) -> MentorVerificationApplicationItem:
-    supabase = get_supabase_admin()
+    decision: str,
+    admin_note: str | None,
+    reviewer_user_id: str | None,
+) -> tuple[dict, str | None, bool, int]:
+    response = call_supabase(
+        lambda: supabase.rpc(
+            "resolve_mentor_verification_application",
+            {
+                "p_application_id": application_id,
+                "p_decision": decision,
+                "p_reviewer_user_id": reviewer_user_id,
+                "p_admin_note": admin_note,
+            },
+        ).execute(),
+        operation_name="atomic mentor application decision",
+    )
+    result = response.data
+    if isinstance(result, list):
+        result = result[0] if result else None
+    if not isinstance(result, dict) or not isinstance(result.get("application"), dict):
+        raise RuntimeError("Invalid mentor application decision response")
+
+    mentor_id = str(result.get("mentor_id") or "").strip() or None
     try:
-        application = _get_mentor_application_or_404(supabase, application_id)
-        if application.get("application_status") != "pending":
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该前辈申请已经处理")
+        document_count = max(0, int(result.get("document_count") or 0))
+    except (TypeError, ValueError):
+        document_count = 0
+    return (
+        result["application"],
+        mentor_id,
+        bool(result.get("restored_existing_profile")),
+        document_count,
+    )
 
-        decision = payload.decision
-        admin_note = str(payload.admin_note or "").strip()
-        if decision == "reject" and len(admin_note) < 5:
-            raise HTTPException(
-                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
-                detail="驳回申请时请填写至少 5 个字的理由",
-            )
-        update_data = {
-            "application_status": "approved" if decision == "approve" else "rejected",
-            "admin_note": admin_note or None,
-            "reviewed_by": admin_profile.get("id"),
-            "reviewed_at": datetime.now(timezone.utc).isoformat(),
-        }
-        mentor_id = None
-        restored_existing_profile = False
-        if decision == "approve":
-            owner_user_id = str(application.get("applicant_user_id") or "")
-            profile_response = call_supabase(
-                lambda: (
-                    supabase.table("mentor_profiles")
-                    .select("id,verification_status")
-                    .eq("owner_user_id", owner_user_id)
-                    .limit(1)
-                    .execute()
-                ),
-                operation_name="approved mentor profile lookup",
-            )
-            if profile_response.data:
-                existing_profile = profile_response.data[0]
-                mentor_id = str(existing_profile.get("id") or "")
-                existing_status = str(existing_profile.get("verification_status") or "").strip().lower()
-                if existing_status != "revoked":
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="该账号当前已有有效前辈档案，请刷新后重试",
-                    )
 
-                consultation_enabled = bool(application.get("consultation_enabled", True))
-                restored_profile_data = {
-                    "legal_name": str(application.get("legal_name") or "").strip(),
-                    "display_name": mask_mentor_name(application.get("legal_name")),
-                    "avatar_label": str(application.get("legal_name") or "前")[:1],
-                    "school": str(application.get("school") or "").strip(),
-                    "major": str(application.get("major") or "").strip(),
-                    "admission_year": int(application.get("admission_year") or 0),
-                    "graduation_year": application.get("graduation_year"),
-                    "exam_type": application.get("exam_type"),
-                    "score": int(application["score"]) if application.get("score") is not None else None,
-                    "bio": str(application.get("bio") or ""),
-                    "price_cents": int(application.get("price_cents") or 0),
-                    "online_status": "offline",
-                    "accepts_booking": consultation_enabled,
-                    "consultation_enabled": consultation_enabled,
-                    "verification_status": "verified",
-                    "is_published": True,
-                    "is_featured": False,
-                }
-                restored_response = call_supabase(
-                    lambda: (
-                        supabase.table("mentor_profiles")
-                        .update(restored_profile_data)
-                        .eq("id", mentor_id)
-                        .eq("owner_user_id", owner_user_id)
-                        .eq("verification_status", "revoked")
-                        .execute()
-                    ),
-                    operation_name="revoked mentor profile restore",
-                )
-                if not restored_response.data:
-                    raise HTTPException(
-                        status_code=status.HTTP_409_CONFLICT,
-                        detail="前辈档案状态已变化，请刷新后重试",
-                    )
-                restored_existing_profile = True
-            else:
-                consultation_enabled = bool(application.get("consultation_enabled", True))
-                profile_data = {
-                    "owner_user_id": owner_user_id,
-                    "legal_name": str(application.get("legal_name") or "").strip(),
-                    "display_name": mask_mentor_name(application.get("legal_name")),
-                    "avatar_label": str(application.get("legal_name") or "前")[:1],
-                    "avatar_tone": "blue",
-                    "school": str(application.get("school") or "").strip(),
-                    "major": str(application.get("major") or "").strip(),
-                    "admission_year": int(application.get("admission_year") or 0),
-                    "graduation_year": application.get("graduation_year"),
-                    "exam_type": application.get("exam_type"),
-                    "score": int(application["score"]) if application.get("score") is not None else None,
-                    "bio": str(application.get("bio") or ""),
-                    "story": "",
-                    "price_cents": int(application.get("price_cents") or 0),
-                    "consultation_window_minutes": 60,
-                    "online_status": "offline",
-                    "accepts_booking": consultation_enabled,
-                    "consultation_enabled": consultation_enabled,
-                    "verification_status": "verified",
-                    "is_published": True,
-                    "is_featured": False,
-                    "recommend_score": 0,
-                    "rating": 0,
-                    "rating_count": 0,
-                    "consult_count": 0,
-                }
-                profile_response = call_supabase(
-                    lambda: supabase.table("mentor_profiles").insert(profile_data).execute(),
-                    operation_name="approved mentor profile create",
-                )
-                if not profile_response.data:
-                    raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈档案创建失败")
-                mentor_id = str(profile_response.data[0].get("id") or "")
-            _replace_mentor_skills(supabase, mentor_id, application.get("skills") or [])
+def _mentor_application_decision_rpc_error(exc: Exception) -> HTTPException | None:
+    error_text = str(exc).upper()
+    mappings = (
+        ("MENTOR_APPLICATION_NOT_FOUND", status.HTTP_404_NOT_FOUND, "未找到前辈申请"),
+        ("MENTOR_APPLICATION_ALREADY_PROCESSED", status.HTTP_409_CONFLICT, "该前辈申请已经处理"),
+        ("MENTOR_PROFILE_ALREADY_ACTIVE", status.HTTP_409_CONFLICT, "该账号当前已有有效前辈档案，请刷新后重试"),
+        ("MENTOR_PROFILE_STATE_CHANGED", status.HTTP_409_CONFLICT, "前辈档案状态已变化，请刷新后重试"),
+        ("MENTOR_APPLICATION_REJECT_REASON_REQUIRED", status.HTTP_422_UNPROCESSABLE_ENTITY, "驳回申请时请填写至少 5 个字的理由"),
+        ("MENTOR_APPLICATION_DECISION_UNSUPPORTED", status.HTTP_422_UNPROCESSABLE_ENTITY, "不支持的前辈审核操作"),
+    )
+    for marker, status_code, detail in mappings:
+        if marker in error_text:
+            return HTTPException(status_code=status_code, detail=detail)
+    return None
 
-        response = call_supabase(
+
+def _resolve_mentor_application_decision_legacy(
+    supabase,
+    *,
+    application_id: str,
+    decision: str,
+    admin_note: str | None,
+    reviewer_user_id: str | None,
+) -> tuple[dict, str | None, bool, int]:
+    application = _get_mentor_application_or_404(supabase, application_id)
+    if application.get("application_status") != "pending":
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该前辈申请已经处理")
+
+    update_data = {
+        "application_status": "approved" if decision == "approve" else "rejected",
+        "admin_note": admin_note,
+        "reviewed_by": reviewer_user_id,
+        "reviewed_at": datetime.now(timezone.utc).isoformat(),
+    }
+    mentor_id = None
+    restored_existing_profile = False
+    if decision == "approve":
+        owner_user_id = str(application.get("applicant_user_id") or "")
+        profile_response = call_supabase(
             lambda: (
-                supabase.table("mentor_verification_applications")
-                .update(update_data)
-                .eq("id", application_id)
-                .eq("application_status", "pending")
+                supabase.table("mentor_profiles")
+                .select("id,verification_status")
+                .eq("owner_user_id", owner_user_id)
+                .limit(1)
                 .execute()
             ),
-            operation_name="admin mentor application decision",
+            operation_name="approved mentor profile lookup",
         )
-        if not response.data:
-            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该前辈申请已经处理")
+        if profile_response.data:
+            existing_profile = profile_response.data[0]
+            mentor_id = str(existing_profile.get("id") or "")
+            existing_status = str(existing_profile.get("verification_status") or "").strip().lower()
+            if existing_status != "revoked":
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="该账号当前已有有效前辈档案，请刷新后重试",
+                )
+
+            consultation_enabled = bool(application.get("consultation_enabled", True))
+            restored_profile_data = {
+                "legal_name": str(application.get("legal_name") or "").strip(),
+                "display_name": mask_mentor_name(application.get("legal_name")),
+                "avatar_label": str(application.get("legal_name") or "前")[:1],
+                "school": str(application.get("school") or "").strip(),
+                "major": str(application.get("major") or "").strip(),
+                "admission_year": int(application.get("admission_year") or 0),
+                "graduation_year": application.get("graduation_year"),
+                "exam_type": application.get("exam_type"),
+                "score": int(application["score"]) if application.get("score") is not None else None,
+                "bio": str(application.get("bio") or ""),
+                "price_cents": int(application.get("price_cents") or 0),
+                "online_status": "offline",
+                "accepts_booking": consultation_enabled,
+                "consultation_enabled": consultation_enabled,
+                "verification_status": "verified",
+                "is_published": True,
+                "is_featured": False,
+            }
+            restored_response = call_supabase(
+                lambda: (
+                    supabase.table("mentor_profiles")
+                    .update(restored_profile_data)
+                    .eq("id", mentor_id)
+                    .eq("owner_user_id", owner_user_id)
+                    .eq("verification_status", "revoked")
+                    .execute()
+                ),
+                operation_name="revoked mentor profile restore",
+            )
+            if not restored_response.data:
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="前辈档案状态已变化，请刷新后重试",
+                )
+            restored_existing_profile = True
+        else:
+            consultation_enabled = bool(application.get("consultation_enabled", True))
+            profile_data = {
+                "owner_user_id": owner_user_id,
+                "legal_name": str(application.get("legal_name") or "").strip(),
+                "display_name": mask_mentor_name(application.get("legal_name")),
+                "avatar_label": str(application.get("legal_name") or "前")[:1],
+                "avatar_tone": "blue",
+                "school": str(application.get("school") or "").strip(),
+                "major": str(application.get("major") or "").strip(),
+                "admission_year": int(application.get("admission_year") or 0),
+                "graduation_year": application.get("graduation_year"),
+                "exam_type": application.get("exam_type"),
+                "score": int(application["score"]) if application.get("score") is not None else None,
+                "bio": str(application.get("bio") or ""),
+                "story": "",
+                "price_cents": int(application.get("price_cents") or 0),
+                "consultation_window_minutes": 60,
+                "online_status": "offline",
+                "accepts_booking": consultation_enabled,
+                "consultation_enabled": consultation_enabled,
+                "verification_status": "verified",
+                "is_published": True,
+                "is_featured": False,
+                "recommend_score": 0,
+                "rating": 0,
+                "rating_count": 0,
+                "consult_count": 0,
+            }
+            profile_response = call_supabase(
+                lambda: supabase.table("mentor_profiles").insert(profile_data).execute(),
+                operation_name="approved mentor profile create",
+            )
+            if not profile_response.data:
+                raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈档案创建失败")
+            mentor_id = str(profile_response.data[0].get("id") or "")
+        _replace_mentor_skills(supabase, mentor_id, application.get("skills") or [])
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_verification_applications")
+            .update(update_data)
+            .eq("id", application_id)
+            .eq("application_status", "pending")
+            .execute()
+        ),
+        operation_name="admin mentor application decision",
+    )
+    if not response.data:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="该前辈申请已经处理")
+    document_counts = _fetch_application_document_counts(supabase, [application_id])
+    return (
+        response.data[0],
+        mentor_id,
+        restored_existing_profile,
+        document_counts.get(application_id, 0),
+    )
+
+
+def _complete_mentor_application_decision_followups(
+    application: dict,
+    admin_profile: dict,
+    *,
+    application_id: str,
+    decision: str,
+    admin_note: str | None,
+    mentor_id: str | None,
+    restored_existing_profile: bool,
+    write_audit_log: bool,
+) -> None:
+    try:
+        supabase = get_supabase_admin()
+    except Exception as exc:
+        logger.warning(
+            "Mentor application decision follow-up client unavailable (error_type=%s)",
+            type(exc).__name__,
+        )
+        return
+
+    if write_audit_log:
         _log_application_action(
             supabase,
             admin_profile,
@@ -1840,24 +1918,93 @@ def decide_admin_mentor_verification_application(
             application_id,
             {
                 "mentor_id": mentor_id,
-                "admin_note": update_data["admin_note"],
+                "admin_note": admin_note,
                 "restored_existing_profile": restored_existing_profile,
             },
         )
-        _notify_mentor_verification_decision(
-            supabase,
-            application,
-            application_id=application_id,
-            decision=decision,
-            admin_note=update_data["admin_note"],
-            mentor_id=mentor_id,
+    _notify_mentor_verification_decision(
+        supabase,
+        application,
+        application_id=application_id,
+        decision=decision,
+        admin_note=admin_note,
+        mentor_id=mentor_id,
+    )
+
+
+@router.post("/applications/{application_id}/decision", response_model=MentorVerificationApplicationItem)
+def decide_admin_mentor_verification_application(
+    application_id: str,
+    payload: AdminMentorVerificationDecisionRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+    background_tasks: BackgroundTasks = None,
+) -> MentorVerificationApplicationItem:
+    supabase = get_supabase_admin()
+    decision = payload.decision
+    admin_note = str(payload.admin_note or "").strip() or None
+    if decision == "reject" and len(admin_note or "") < 5:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="驳回申请时请填写至少 5 个字的理由",
         )
-        document_counts = _fetch_application_document_counts(supabase, [application_id])
-        return MentorVerificationApplicationItem(
-            **_serialize_mentor_application(
-                response.data[0],
-                document_count=document_counts.get(application_id, 0),
+
+    used_fast_path = False
+    try:
+        if hasattr(supabase, "rpc"):
+            try:
+                application, mentor_id, restored_existing_profile, document_count = (
+                    _resolve_mentor_application_decision_fast(
+                        supabase,
+                        application_id=application_id,
+                        decision=decision,
+                        admin_note=admin_note,
+                        reviewer_user_id=admin_profile.get("id"),
+                    )
+                )
+                used_fast_path = True
+            except Exception as exc:
+                if not is_missing_supabase_relation_error(exc):
+                    mapped_error = _mentor_application_decision_rpc_error(exc)
+                    if mapped_error:
+                        raise mapped_error from exc
+                    raise
+                logger.info("Atomic mentor application decision RPC unavailable; using compatibility path")
+
+        if not used_fast_path:
+            application, mentor_id, restored_existing_profile, document_count = (
+                _resolve_mentor_application_decision_legacy(
+                    supabase,
+                    application_id=application_id,
+                    decision=decision,
+                    admin_note=admin_note,
+                    reviewer_user_id=admin_profile.get("id"),
+                )
             )
+
+        followup_kwargs = {
+            "application_id": application_id,
+            "decision": decision,
+            "admin_note": admin_note,
+            "mentor_id": mentor_id,
+            "restored_existing_profile": restored_existing_profile,
+            "write_audit_log": not used_fast_path,
+        }
+        if background_tasks is not None:
+            background_tasks.add_task(
+                _complete_mentor_application_decision_followups,
+                dict(application),
+                dict(admin_profile),
+                **followup_kwargs,
+            )
+        else:
+            _complete_mentor_application_decision_followups(
+                application,
+                admin_profile,
+                **followup_kwargs,
+            )
+
+        return MentorVerificationApplicationItem(
+            **_serialize_mentor_application(application, document_count=document_count)
         )
     except HTTPException:
         raise

@@ -1,11 +1,12 @@
 from __future__ import annotations
 
+import asyncio
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
 from uuid import uuid4
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
 from app.routes import mentor_admin
 
@@ -13,6 +14,27 @@ from app.routes import mentor_admin
 class _Response:
     def __init__(self, data):
         self.data = data
+
+
+class _RpcCall:
+    def __init__(self, client):
+        self.client = client
+
+    def execute(self):
+        if self.client.error:
+            raise self.client.error
+        return _Response(self.client.result)
+
+
+class _RpcClient:
+    def __init__(self, result=None, *, error: Exception | None = None):
+        self.result = result
+        self.error = error
+        self.calls: list[tuple[str, dict]] = []
+
+    def rpc(self, name, payload):
+        self.calls.append((name, payload))
+        return _RpcCall(self)
 
 
 def _application_row(*, consultation_enabled: bool = True, application_status: str = "pending") -> dict:
@@ -207,6 +229,93 @@ class MentorAdminNotificationTests(unittest.TestCase):
             )
 
         self.assertEqual(result.application_status, "rejected")
+
+    def test_atomic_application_decision_uses_one_rpc_and_defers_notification(self):
+        application = _application_row()
+        mentor_id = str(uuid4())
+        resolved = {
+            **application,
+            "application_status": "approved",
+            "admin_note": "材料核验无误",
+            "reviewed_at": "2026-09-02T08:00:00+00:00",
+        }
+        client = _RpcClient({
+            "application": resolved,
+            "mentor_id": mentor_id,
+            "restored_existing_profile": False,
+            "document_count": 2,
+        })
+        background_tasks = BackgroundTasks()
+        admin_profile = {"id": str(uuid4())}
+
+        with (
+            patch.object(mentor_admin, "get_supabase_admin", return_value=client),
+            patch.object(mentor_admin, "_resolve_mentor_application_decision_legacy") as legacy_path,
+            patch.object(mentor_admin, "_log_application_action") as log_action,
+            patch.object(mentor_admin, "create_user_notification") as create_notification,
+        ):
+            result = mentor_admin.decide_admin_mentor_verification_application(
+                application["id"],
+                SimpleNamespace(decision="approve", admin_note="材料核验无误"),
+                admin_profile,
+                background_tasks,
+            )
+
+            self.assertEqual(result.application_status, "approved")
+            self.assertEqual(result.document_count, 2)
+            self.assertEqual(len(client.calls), 1)
+            self.assertEqual(client.calls[0][0], "resolve_mentor_verification_application")
+            legacy_path.assert_not_called()
+            log_action.assert_not_called()
+            create_notification.assert_not_called()
+
+            asyncio.run(background_tasks())
+
+            log_action.assert_not_called()
+            create_notification.assert_called_once()
+
+    def test_missing_atomic_rpc_uses_compatibility_path(self):
+        application = _application_row()
+        resolved = {**application, "application_status": "rejected", "admin_note": "请补充录取证明首页"}
+        client = _RpcClient(error=RuntimeError("PGRST202 Could not find the function in the schema cache"))
+
+        with (
+            patch.object(mentor_admin, "get_supabase_admin", return_value=client),
+            patch.object(
+                mentor_admin,
+                "_resolve_mentor_application_decision_legacy",
+                return_value=(resolved, None, False, 1),
+            ) as legacy_path,
+            patch.object(mentor_admin, "_complete_mentor_application_decision_followups"),
+        ):
+            result = mentor_admin.decide_admin_mentor_verification_application(
+                application["id"],
+                SimpleNamespace(decision="reject", admin_note="请补充录取证明首页"),
+                {"id": str(uuid4())},
+            )
+
+        self.assertEqual(result.application_status, "rejected")
+        self.assertEqual(len(client.calls), 1)
+        legacy_path.assert_called_once()
+
+    def test_atomic_application_conflict_keeps_compatibility_path_closed(self):
+        application = _application_row()
+        client = _RpcClient(error=RuntimeError("MENTOR_APPLICATION_ALREADY_PROCESSED"))
+
+        with (
+            patch.object(mentor_admin, "get_supabase_admin", return_value=client),
+            patch.object(mentor_admin, "_resolve_mentor_application_decision_legacy") as legacy_path,
+            self.assertRaises(HTTPException) as raised,
+        ):
+            mentor_admin.decide_admin_mentor_verification_application(
+                application["id"],
+                SimpleNamespace(decision="approve", admin_note=None),
+                {"id": str(uuid4())},
+            )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(raised.exception.detail, "该前辈申请已经处理")
+        legacy_path.assert_not_called()
 
     def test_profile_change_decision_creates_official_notification(self):
         request_row = _profile_change_row()
