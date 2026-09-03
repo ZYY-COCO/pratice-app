@@ -135,6 +135,19 @@ for (const sourceName of vectorSources) {
       `src/static/ui-icons/png/${relativePng}: generated icon is missing or empty`
     )
   }
+
+  const blueVariantPath = path.join(runtimeIconRoot, 'blue', outputName)
+  const neutralVariantPath = path.join(runtimeIconRoot, 'neutral', outputName)
+  if (
+    sourceName.startsWith('tab-') &&
+    fs.existsSync(blueVariantPath)
+    && fs.existsSync(neutralVariantPath)
+    && sha256(fs.readFileSync(blueVariantPath)) === sha256(fs.readFileSync(neutralVariantPath))
+  ) {
+    errors.push(
+      `src/static/ui-icons/${sourceName}: blue and neutral PNG variants are identical`
+    )
+  }
 }
 
 for (const { source: sourceName, themeable } of normalizedRasterSources) {
