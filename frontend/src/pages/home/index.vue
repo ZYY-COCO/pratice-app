@@ -457,6 +457,8 @@
                     canvas-id="circle-score-overview-canvas"
                     :points="activeCircleScoreCanvasPoints"
                     :grid-y="activeCircleScoreChart.gridY"
+                    :line-color="currentTheme.primary"
+                    :point-stroke="currentTheme.primary"
                     :active-index="circleScoreOverviewActiveIndex"
                     interactive
                     @point-touch-start="startCircleScorePointHold('overview', $event)"
@@ -634,6 +636,7 @@
           :class="{
             'is-scoreline-browser': isScoreLineBrowser,
             'is-route-compositor-safe': selectedCircleSection !== 'scores',
+            'is-community-reader-underlay': Boolean(selectedCommunityPost),
             'is-route-moving': circleDetailRouteMotion !== 'idle' && circleDetailRouteMotion !== 'dragging',
             'is-route-dragging': circleDetailRouteMotion === 'dragging',
             'is-route-settling': circleDetailRouteMotion === 'drag-cancelling' || circleDetailRouteMotion === 'drag-leaving',
@@ -822,6 +825,8 @@
                   :placeholder="selectedCircleCommunityTab === 'experience' ? '搜索经验贴' : '搜索研友聊'"
                   placeholder-class="experience-search-placeholder"
                   confirm-type="search"
+                  @input="scheduleActiveCommunitySearch"
+                  @confirm="submitActiveCommunitySearch"
                 />
                 <button
                   v-if="activeCommunitySearchKeyword"
@@ -883,7 +888,13 @@
                     </view>
                     <view class="community-stream-header-actions">
                       <view v-if="isCommunityPostUnread(post)" class="community-post-unread-badge">新互动</view>
-                      <view class="community-topic">{{ post.category }}</view>
+                      <view class="community-topic-list" :class="{ 'is-experience': post.postType === 'experience' }">
+                        <view
+                          v-for="tag in getCommunityPostTags(post)"
+                          :key="`${post.id}-${tag}`"
+                          class="community-topic"
+                        >{{ tag }}</view>
+                      </view>
                       <button class="community-post-more" aria-label="帖子更多操作" @tap.stop="openCommunityPostActions(post)">
                         <image src="/static/ui-icons/png/original/more.png" mode="aspectFit" />
                       </button>
@@ -893,20 +904,26 @@
                   <view class="community-post-title">{{ post.title }}</view>
                   <view class="community-post-copy">{{ post.summary }}</view>
 
-                  <view v-if="post.media.length" class="community-media-grid" :class="`count-${Math.min(post.media.length, 3)}`">
+                  <view v-if="post.media.length" class="community-media-grid" :class="`count-${Math.min(post.media.length, 2)}`">
                     <view
-                      v-for="(media, mediaIndex) in post.media.slice(0, 3)"
+                      v-for="(media, mediaIndex) in post.media.slice(0, 2)"
                       :key="media.imageUrl || media.image_url || `${media.kicker}-${media.title}`"
                       class="community-media-tile"
                       :class="[`tone-${media.tone}`, { 'is-image': media.imageUrl || media.image_url }]"
                     >
-                      <image v-if="media.imageUrl || media.image_url" class="community-media-image" :src="media.imageUrl || media.image_url" mode="aspectFill" />
+                      <image
+                        v-if="media.imageUrl || media.image_url"
+                        class="community-media-image"
+                        :src="media.thumbnailUrl || media.thumbnail_url || media.imageUrl || media.image_url"
+                        mode="aspectFill"
+                        lazy-load
+                      />
                       <view v-else class="community-media-text">
                         <view class="community-media-kicker">{{ media.kicker }}</view>
                         <view class="community-media-title">{{ media.title }}</view>
                         <view class="community-media-copy">{{ media.copy }}</view>
                       </view>
-                      <view v-if="post.media.length > 3 && mediaIndex === 2" class="community-media-more">+{{ post.media.length - 3 }}</view>
+                      <view v-if="post.mediaCount > 2 && mediaIndex === 1" class="community-media-more">+{{ post.mediaCount - 2 }}</view>
                     </view>
                   </view>
 
@@ -950,10 +967,19 @@
                 </view>
 
                 <AppPageLoadingState
-                  v-if="communityPostsLoading && filteredActiveCommunityPosts.length === 0"
+                  v-if="activeCommunityLoading && filteredActiveCommunityPosts.length === 0"
                   class="community-feed-state"
                   :message="selectedCircleCommunityTab === 'experience' ? '正在整理经验贴...' : '正在整理研友聊...'"
                 />
+                <AppEmptyState
+                  v-else-if="activeCommunityLoadError && filteredActiveCommunityPosts.length === 0"
+                  class="community-feed-state"
+                  label="帖子加载失败"
+                  title="暂时没有加载出来"
+                  :description="activeCommunityLoadError"
+                >
+                  <button @tap="retryActiveCommunityFeed">重新加载</button>
+                </AppEmptyState>
                 <AppEmptyState
                   v-else-if="filteredActiveCommunityPosts.length === 0"
                   class="community-feed-state"
@@ -962,11 +988,11 @@
                   :description="selectedCircleCommunityTab === 'experience' ? '' : '换个关键词或分类试试。'"
                 />
                 <view
-                  v-if="(communityPostsLoading && filteredActiveCommunityPosts.length > 0) || activeCommunityHasMore"
+                  v-if="(activeCommunityLoading && filteredActiveCommunityPosts.length > 0) || activeCommunityLoadError || activeCommunityHasMore"
                   class="community-load-state"
-                  @tap="loadMoreCircleCommunityPosts"
+                  @tap="activeCommunityLoadError ? retryActiveCommunityFeed() : loadMoreCircleCommunityPosts()"
                 >
-                  {{ communityPostsLoading ? '正在加载更多帖子…' : '继续下滑加载更多帖子' }}
+                  {{ activeCommunityLoading ? '正在加载更多帖子…' : (activeCommunityLoadError ? '加载失败，点击重试' : '继续下滑加载更多帖子') }}
                 </view>
               </view>
 
@@ -1075,6 +1101,8 @@
                       canvas-id="circle-score-detail-canvas"
                       :points="selectedScoreLineCanvasPoints"
                       :grid-y="selectedScoreLineChart.gridY"
+                      :line-color="currentTheme.primary"
+                      :point-stroke="currentTheme.primary"
                       :active-index="circleScoreDetailActiveIndex"
                       interactive
                       @point-touch-start="startCircleScorePointHold('detail', $event)"
@@ -2199,16 +2227,23 @@
     <view
       v-if="selectedCommunityPost"
       class="community-reader"
-      :class="{ 'is-closing': communityReaderClosing }"
+      :class="{
+        'is-closing': communityReaderClosing,
+        'is-owner-preview': communityReaderOwnerPreview,
+        'is-route-moving': communityReaderRouteMotion === 'entering' || communityReaderRouteMotion === 'leaving',
+        'is-route-offscreen': communityReaderRouteMotion === 'enter-from' || communityReaderRouteMotion === 'leaving'
+      }"
       @tap.stop
       @touchstart="beginCommunityReaderEdgeSwipe"
       @touchend="finishCommunityReaderEdgeSwipe"
+      @touchcancel="cancelCommunityReaderEdgeSwipe"
+      @transitionend="handleCommunityReaderRouteTransitionEnd"
     >
       <view class="community-reader-surface">
         <view class="community-reader-topbar">
           <button
             class="community-reader-back"
-            aria-label="返回社区"
+            :aria-label="communityReaderReturnsToMyPosts ? '返回我的帖子' : '返回社区'"
             :disabled="communityReaderClosing"
             @tap.stop="closeCommunityPostWithTapGuard"
           >
@@ -2223,8 +2258,19 @@
               <view class="community-reader-author-name">{{ selectedCommunityPost.author }}<text v-if="selectedCommunityPost.authorVerified" class="community-author-verified">已认证</text></view>
               <view class="community-reader-author-meta">{{ communityReaderPostTypeLabel }} · {{ selectedCommunityPost.publishTime }}</view>
             </view>
+            <view
+              class="community-reader-top-hitbox"
+              aria-label="双击回到文章顶部"
+              @tap.stop="handleCommunityReaderTopZoneTap"
+            ></view>
           </view>
-          <view class="community-reader-category">{{ selectedCommunityPost.category }}</view>
+          <view class="community-reader-tag-list">
+            <view
+              v-for="tag in getCommunityPostTags(selectedCommunityPost)"
+              :key="`reader-${selectedCommunityPost.id}-${tag}`"
+              class="community-reader-category"
+            >{{ tag }}</view>
+          </view>
           <button class="community-reader-share" aria-label="帖子更多操作" @tap="shareCommunityPost">•••</button>
         </view>
 
@@ -2233,8 +2279,15 @@
           class="community-reader-scroll"
           :scroll-into-view="communityReaderScrollTarget"
           :scroll-with-animation="true"
+          @scroll="handleCommunityReaderScroll"
+          @touchmove="handleCommunityReaderScrollTouchMove"
         >
-          <view class="community-reader-body">
+          <view id="community-reader-top" class="community-reader-body">
+            <view
+              v-if="communityReaderOwnerPreview && !communityReaderOwnerLoading"
+              class="community-reader-owner-status"
+              :class="`is-${communityReaderOwnerStatus.key}`"
+            >{{ communityReaderOwnerStatus.label }}</view>
             <view
               v-if="selectedCommunityPost.media && selectedCommunityPost.media.length"
               class="community-reader-media"
@@ -2254,6 +2307,7 @@
                       v-if="media.imageUrl || media.image_url"
                       :src="media.imageUrl || media.image_url"
                       mode="aspectFit"
+                      @tap.stop="previewCommunityReaderImages(media)"
                     />
                     <view v-else class="community-reader-media-fallback">
                       <view>{{ media.kicker }}</view>
@@ -2271,7 +2325,7 @@
             <view class="community-reader-title">{{ selectedCommunityPost.title }}</view>
             <view class="community-reader-copy">{{ selectedCommunityPost.content || selectedCommunityPost.summary }}</view>
 
-            <view id="community-reader-comments" class="community-reader-comments-section">
+            <view v-if="communityReaderInteractionsEnabled" id="community-reader-comments" class="community-reader-comments-section">
               <view class="community-reader-comments-toolbar">
                 <view class="community-reader-comments-tabs">
                   <button
@@ -2302,7 +2356,16 @@
               </view>
 
               <template v-if="communityInteractionTab === 'comments'">
-                <AppPageLoadingState v-if="communityCommentsLoading" compact message="正在整理评论..." />
+                <AppPageLoadingState v-if="communityCommentsLoading && sortedCommunityComments.length === 0" compact message="正在整理评论..." />
+                <AppEmptyState
+                  v-else-if="communityCommentsLoadError && sortedCommunityComments.length === 0"
+                  compact
+                  label="评论加载失败"
+                  title="评论暂时没有加载出来"
+                  :description="communityCommentsLoadError"
+                >
+                  <button @tap="retryCommunityComments">重新加载</button>
+                </AppEmptyState>
                 <AppEmptyState
                   v-else-if="sortedCommunityComments.length === 0"
                   compact
@@ -2310,8 +2373,21 @@
                   title="暂无评论"
                   description="来留下第一条讨论吧。"
                 />
-                  <view v-else class="community-reader-comment-list">
-                  <view v-for="comment in sortedCommunityComments" :key="comment.id" class="community-reader-comment-item">
+                <view v-else class="community-reader-comment-list">
+                  <button
+                    v-if="communityCommentsHasMore || communityCommentsLoadingMore || communityCommentsLoadError"
+                    class="community-comments-page-action"
+                    :disabled="communityCommentsLoadingMore"
+                    @tap.stop="communityCommentsHasMore ? loadMoreCommunityComments() : retryCommunityComments()"
+                  >
+                    {{ communityCommentsLoadingMore ? '正在加载更早评论…' : (communityCommentsLoadError ? '加载失败，点击重试' : '查看更早评论') }}
+                  </button>
+                  <view
+                    v-for="comment in sortedCommunityComments"
+                    :key="comment.id"
+                    class="community-reader-comment-item"
+                    :class="{ 'is-sending': comment.deliveryStatus === 'sending', 'is-failed': comment.deliveryStatus === 'failed' }"
+                  >
                     <view class="community-reader-comment-avatar">
                       <image v-if="comment.avatarUrl" :src="comment.avatarUrl" mode="aspectFill" />
                       <text v-else>{{ comment.avatar }}</text>
@@ -2319,7 +2395,15 @@
                     <view class="community-reader-comment-main">
                       <view class="community-reader-comment-author">{{ comment.author }}</view>
                       <view class="community-reader-comment-copy">{{ comment.content }}</view>
-                      <view class="community-reader-comment-time">{{ formatCommunityCommentTime(comment.createdAt) }}</view>
+                      <view class="community-reader-comment-time">
+                        <text>{{ formatCommunityCommentTime(comment.createdAt) }}</text>
+                        <text v-if="comment.deliveryStatus === 'sending'" class="community-comment-delivery-state"> · 发送中</text>
+                        <button
+                          v-else-if="comment.deliveryStatus === 'failed'"
+                          class="community-comment-retry"
+                          @tap.stop="retryCommunityComment(comment)"
+                        >发送失败，点击重试</button>
+                      </view>
                     </view>
                     <button
                       class="community-reader-comment-like"
@@ -2327,6 +2411,7 @@
                       :aria-label="comment.liked ? '取消评论点赞' : '点赞评论'"
                       :aria-pressed="comment.liked"
                       :aria-busy="isCommunityCommentLikePending(selectedCommunityCommentsPost.id, comment.id)"
+                      :disabled="Boolean(comment.deliveryStatus)"
                       @tap.stop="toggleCommunityCommentLike(comment)"
                     >
                       <image
@@ -2337,7 +2422,7 @@
                       />
                       <text>{{ comment.likeCount }}</text>
                     </button>
-                    <button class="community-reader-comment-more" aria-label="评论更多操作" @tap.stop="openCommunityCommentActions(comment)">•••</button>
+                    <button v-if="!comment.deliveryStatus" class="community-reader-comment-more" aria-label="评论更多操作" @tap.stop="openCommunityCommentActions(comment)">•••</button>
                   </view>
                 </view>
               </template>
@@ -2368,18 +2453,32 @@
           </view>
         </scroll-view>
 
-        <view class="community-reader-actions">
-          <view class="community-reader-comment-entry">
+        <view
+          v-if="communityReaderInteractionsEnabled"
+          class="community-reader-actions"
+          :class="{ 'keyboard-open': communityCommentKeyboardVisible }"
+          :style="communityReaderActionsStyle"
+        >
+          <view class="community-reader-comment-entry" @tap.stop="handleCommunityCommentEntryTap">
             <image src="/static/ui-icons/png/original/circle-comment.png" mode="aspectFit" />
             <input
+              v-if="communityCommentEntryReady"
               v-model="communityCommentDraft"
               maxlength="500"
               confirm-type="send"
               placeholder="说点什么..."
               placeholder-class="community-reader-comment-placeholder"
+              :focus="communityCommentInputFocused"
+              :adjust-position="false"
+              cursor-spacing="0"
               :disabled="communityCommentSubmitting"
+              @tap.stop
+              @focus="handleCommunityCommentInputFocus"
+              @blur="handleCommunityCommentInputBlur"
+              @keyboardheightchange="handleCommunityCommentKeyboardHeightChange"
               @confirm="submitCommunityComment"
             />
+            <view v-else class="community-reader-comment-prompt">说点什么...</view>
           </view>
             <button
               class="community-reader-action"
@@ -2433,7 +2532,13 @@
               <view class="community-author-name">{{ selectedCommunityPost.author }}</view>
               <view class="community-author-meta">{{ selectedCommunityPost.publishTime }}</view>
             </view>
-            <view class="community-topic">{{ selectedCommunityPost.category }}</view>
+            <view class="community-topic-list community-detail-topic-list">
+              <view
+                v-for="tag in getCommunityPostTags(selectedCommunityPost)"
+                :key="`detail-${selectedCommunityPost.id}-${tag}`"
+                class="community-topic"
+              >{{ tag }}</view>
+            </view>
           </view>
 
           <view class="community-detail-title">{{ selectedCommunityPost.title }}</view>
@@ -2804,6 +2909,9 @@ import {
 import {
   createCommunityComment,
   deleteCommunityComment,
+  deleteMyCommunityPosts,
+  fetchCommunityComments,
+  fetchMyCommunityPost,
   fetchCommunityPost,
   fetchCommunityPostLikes,
   fetchCommunityPosts,
@@ -2871,6 +2979,7 @@ import { getPublicEmail, getUserContactLabel, getUserDisplayName } from '../../u
 const examOptions = EXAM_OPTIONS
 const ENABLE_CIRCLE = true
 const CIRCLE_DETAIL_ROUTE_DURATION = 380
+const MY_POSTS_REFRESH_REQUIRED_KEY = 'circle-my-posts-refresh-required'
 const CIRCLE_DETAIL_ROUTE_FRAME_DELAY = 32
 const CIRCLE_DETAIL_ROUTE_FALLBACK_DELAY = 80
 const CIRCLE_EDGE_SWIPE_START_WIDTH = 28
@@ -2880,7 +2989,7 @@ const CIRCLE_EDGE_SWIPE_FINISH_VELOCITY = 0.45
 const CIRCLE_EDGE_SWIPE_MIN_FLING_DISTANCE = 42
 const CIRCLE_SCORE_MIRROR_WIDTH = 300
 const CIRCLE_SCORE_MIRROR_HEIGHT = 112
-const COMMUNITY_READER_TAP_GUARD_DELAY = 160
+const COMMUNITY_READER_DOUBLE_TAP_WINDOW = 320
 const historicalScoreLineYears = reactive([...fallbackHistoricalScoreLineYears])
 const historicalScoreLineRecords = reactive(fallbackHistoricalScoreLineRecords.map((record) => ({
   ...record,
@@ -3034,6 +3143,7 @@ const experienceSearchKeyword = ref('')
 const selectedCircleCommunityTab = ref('chat')
 const selectedCommunityCategory = ref('全部')
 const communitySearchKeyword = ref('')
+const communityAppliedSearch = reactive({ chat: '', experience: '' })
 const selectedCommunityPostSort = ref('latest')
 const mentorSearchKeyword = ref('')
 const selectedMentorSort = ref('recommended')
@@ -3059,12 +3169,22 @@ const mentorFavoriteIds = ref(getMentorFavoriteIds())
 const mentorFavoritePendingIds = ref([])
 const selectedCommunityPost = ref(null)
 const communityReaderClosing = ref(false)
-let communityReaderCloseTimer = null
+const communityReaderRouteMotion = ref('idle')
+const communityReaderEntrySource = ref('')
+const communityReaderOwnerPreview = ref(false)
+const communityReaderOwnerLoading = ref(false)
+const communityReaderInteractionsEnabled = ref(true)
+let communityReaderRouteFrameTimer = null
+let communityReaderRouteFinishTimer = null
 const selectedCommunityCommentsPost = ref(null)
 const communityReaderScrollTarget = ref('')
 const communityReaderMediaIndex = ref(0)
 const communityComments = ref([])
 const communityCommentsLoading = ref(false)
+const communityCommentsLoadingMore = ref(false)
+const communityCommentsNextCursor = ref('')
+const communityCommentsHasMore = ref(false)
+const communityCommentsLoadError = ref('')
 const communityInteractionTab = ref('comments')
 const communityLikes = ref([])
 const communityLikesLoading = ref(false)
@@ -3072,12 +3192,35 @@ const communityCommentSort = ref('default')
 const communityPostsLoading = ref(false)
 const communityFeedNextCursors = reactive({})
 const communityFeedHasMore = reactive({})
+const communityFeedPages = reactive({})
+const communityFeedErrors = reactive({})
+const communityFeedLoadingState = reactive({})
 const communityLikeIconSrc = '/static/ui-icons/png/original/circle-like.png'
 const communityLikeFilledIconSrc = '/static/ui-icons/png/original/circle-like-filled.png'
 const communityLikeBurstPostId = ref('')
 const communityLikeBurstBubbles = Object.freeze([1, 2, 3])
 const communityCommentDraft = ref('')
 const communityCommentSubmitting = ref(false)
+const communityCommentEntryReady = ref(false)
+const communityCommentInputFocused = ref(false)
+const communityCommentKeyboardOffset = ref(0)
+const communityCommentKeyboardVisible = ref(false)
+const communityCommentKeyboardTransitionMs = ref(180)
+const communityReaderActionsStyle = computed(() => ({
+  transform: `translate3d(0, -${Math.max(0, Number(communityCommentKeyboardOffset.value) || 0)}px, 0)`,
+  transitionDuration: `${Math.max(0, Number(communityCommentKeyboardTransitionMs.value) || 0)}ms`
+}))
+let communityReaderTopZoneLastTapAt = 0
+let communityReaderLastScrollTop = 0
+let communityCommentInputFocusStartedAt = 0
+let communityCommentVisibilityTimer = null
+let communityCommentKeyboardHeight = 0
+let communityReaderViewportBaseHeight = 0
+let communityCommentKeyboardSyncTimer = null
+let communityCommentKeyboardResetTimer = null
+let communityCommentVisualViewportBound = false
+let communityCommentKeyboardSyncRevision = 0
+let communitySearchDebounceTimer = null
 const communityPostLikePendingIds = reactive({})
 const communityCommentLikePendingIds = reactive({})
 const communityPostLikeQueues = new Map()
@@ -3178,9 +3321,10 @@ let openingMentorVerificationEntry = false
 const communityPostsLoadingTypes = new Set()
 const COMMUNITY_FEED_PAGE_SIZE = 12
 const COMMUNITY_FEED_CACHE_TTL = 60 * 1000
-const COMMUNITY_FEED_CACHE_PREFIX = 'circle-community-feed-v2'
+const COMMUNITY_FEED_CACHE_PREFIX = 'circle-community-feed-v5'
 const communityFeedCacheHydratedKeys = new Set()
 const communityFeedCacheFreshness = new Map()
+const communityFeedPageFreshness = new Map()
 const pendingCommunityFeedPersistTypes = new Set()
 let communityFeedPrefetchStarted = false
 const tabs = computed(() => {
@@ -3474,12 +3618,14 @@ const circleExperienceCommunityPosts = ref([])
 const circleFeaturedExperiencePosts = ref([])
 const circleHotExperienceCommunityPosts = ref([])
 const filteredCircleCommunityPosts = computed(() => {
-  const keyword = communitySearchKeyword.value.trim().toLowerCase()
-  const sourcePosts = selectedCommunityPostSort.value === 'featured'
-    ? circleFeaturedCommunityPosts.value
-    : selectedCommunityPostSort.value === 'hot'
-      ? circleHotCommunityPosts.value
-      : circleCommunityPosts.value
+  const keyword = communityAppliedSearch.chat.trim().toLowerCase()
+  const category = selectedCommunityCategory.value === '全部' ? '' : selectedCommunityCategory.value
+  const sourcePosts = getCircleCommunityFeedPosts('chat', {
+    featuredOnly: selectedCommunityPostSort.value === 'featured',
+    sortBy: selectedCommunityPostSort.value,
+    category,
+    search: keyword
+  })
   return sourcePosts.filter((item) => {
     const matchesCategory = selectedCommunityCategory.value === '全部' || item.category === selectedCommunityCategory.value
     if (!matchesCategory || !keyword) return matchesCategory
@@ -3510,13 +3656,22 @@ const sortedCommunityComments = computed(() => {
 const communityReaderPostTypeLabel = computed(() => (
   selectedCommunityPost.value?.postType === 'experience' ? '经验贴' : '研友聊'
 ))
+const communityReaderReturnsToMyPosts = computed(() => communityReaderEntrySource.value === 'my-posts')
+const communityReaderOwnerStatus = computed(() => {
+  const post = selectedCommunityPost.value || {}
+  if (post.reviewStatus === 'pending') return { key: 'pending', label: '待审核' }
+  if (post.reviewStatus === 'rejected' || post.isPublished === false) return { key: 'archived', label: '已下架' }
+  return { key: 'approved', label: '已通过' }
+})
 const filteredCircleExperiencePosts = computed(() => {
-  const keyword = experienceSearchKeyword.value.trim().toLowerCase()
-  const sourcePosts = selectedCommunityPostSort.value === 'featured'
-    ? circleFeaturedExperiencePosts.value
-    : selectedCommunityPostSort.value === 'hot'
-      ? circleHotExperienceCommunityPosts.value
-      : circleExperienceCommunityPosts.value
+  const keyword = communityAppliedSearch.experience.trim().toLowerCase()
+  const category = selectedExperienceCategory.value === '全部' ? '' : selectedExperienceCategory.value
+  const sourcePosts = getCircleCommunityFeedPosts('experience', {
+    featuredOnly: selectedCommunityPostSort.value === 'featured',
+    sortBy: selectedCommunityPostSort.value,
+    category,
+    search: keyword
+  })
   return sourcePosts.filter((item) => {
     // Also guard cached/legacy feed data on the client.  The API enforces the
     // same rule, while this keeps an old offline cache from impersonating an
@@ -3616,10 +3771,13 @@ const activeCommunityPageKey = computed(() => getCircleCommunityFeedPageKey(
   {
     featuredOnly: selectedCommunityPostSort.value === 'featured',
     sortBy: selectedCommunityPostSort.value,
-    category: activeCommunityCategory.value === '全部' ? '' : activeCommunityCategory.value
+    category: activeCommunityCategory.value === '全部' ? '' : activeCommunityCategory.value,
+    search: communityAppliedSearch[normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)] || ''
   }
 ))
 const activeCommunityHasMore = computed(() => communityFeedHasMore[activeCommunityPageKey.value] === true)
+const activeCommunityLoading = computed(() => communityFeedLoadingState[activeCommunityPageKey.value] === true)
+const activeCommunityLoadError = computed(() => String(communityFeedErrors[activeCommunityPageKey.value] || ''))
 const mentorHasActiveSearch = computed(() => Boolean(
   mentorSearchKeyword.value.trim() || mentorActiveFilterCount.value
 ))
@@ -4668,6 +4826,7 @@ watch(wrongItems, () => {
 
 onLoad((options) => {
   const launchOptions = resolveHomeLaunchOptions(options)
+  communityReaderEntrySource.value = String(launchOptions?.entry || '') === 'my-posts' ? 'my-posts' : ''
   // #ifdef MP-WEIXIN
   syncMpSafeLayout()
   // #endif
@@ -4676,6 +4835,8 @@ onLoad((options) => {
     if (launchOptions?.section === 'community') {
       const requestedCommunityTab = String(launchOptions?.communityTab || '')
       const requestedCommunityPostId = String(launchOptions?.postId || '').trim()
+      const requestedOwnerPreview = communityReaderEntrySource.value === 'my-posts'
+        && String(launchOptions?.ownerPreview || '') === '1'
       const restoreCommunityDeepLink = () => {
         selectedCircleSection.value = 'community'
         showCircleDetailImmediately()
@@ -4691,6 +4852,10 @@ onLoad((options) => {
       }
       const openRequestedCommunityPost = () => {
         if (!requestedCommunityPostId || selectedCommunityPost.value?.id === requestedCommunityPostId) return
+        if (requestedOwnerPreview) {
+          void openOwnedCommunityPostFromRoute(requestedCommunityPostId, requestedCommunityTab)
+          return
+        }
         void openCommunityPost({
           id: requestedCommunityPostId,
           post_type: requestedCommunityTab === 'experience' ? 'experience' : 'chat',
@@ -4927,9 +5092,10 @@ onShow(() => {
       const sortBy = selectedCommunityPostSort.value
       const featuredOnly = sortBy === 'featured'
       loadCircleCommunityPosts(postType, {
-        force: consumeCircleCommunityFeedRefresh(postType) || featuredOnly || sortBy === 'hot',
+        force: consumeCircleCommunityFeedRefresh(postType),
         featuredOnly,
-        sortBy
+        sortBy,
+        search: communityAppliedSearch[normalizeCircleCommunityPostType(postType)]
       })
     }
   }
@@ -4950,12 +5116,13 @@ onHide(() => {
 
 onBackPress(() => {
   if (activeTab.value !== 'circle') return false
-  if (selectedCommunityCommentsPost.value) {
-    closeCommunityComments()
+  if (selectedCommunityPost.value) {
+    if (communityReaderReturnsToMyPosts.value) return false
+    closeCommunityPostWithTapGuard()
     return true
   }
-  if (selectedCommunityPost.value) {
-    closeCommunityPost()
+  if (selectedCommunityCommentsPost.value) {
+    closeCommunityComments()
     return true
   }
   if (selectedCirclePost.value) {
@@ -4977,7 +5144,15 @@ onBeforeUnmount(() => {
   clearCircleOverviewRestoreTimer()
   clearCircleDetailRouteTimers()
   resetCircleEdgeSwipeState()
-  clearCommunityReaderCloseTimer()
+  clearCommunityReaderRouteTimers()
+  clearCommunityCommentVisibilityTimer()
+  clearCommunityCommentKeyboardSyncTimer()
+  clearCommunityCommentKeyboardResetTimer()
+  unbindCommunityCommentVisualViewport()
+  if (communitySearchDebounceTimer !== null) {
+    clearTimeout(communitySearchDebounceTimer)
+    communitySearchDebounceTimer = null
+  }
   clearMentorFilterMotionTimers()
   flushScheduledCircleCommunityFeedPersist()
   if (subscriptionSheetOpenTimer) clearTimeout(subscriptionSheetOpenTimer)
@@ -6892,18 +7067,21 @@ function selectExperienceCategory(category) {
   selectedCirclePost.value = null
   const sortBy = selectedCommunityPostSort.value
   void loadCircleCommunityPosts('experience', {
-    force: true,
+    force: false,
     featuredOnly: sortBy === 'featured',
-    sortBy
+    sortBy,
+    search: communityAppliedSearch.experience
   })
 }
 
 function clearExperienceSearch() {
   experienceSearchKeyword.value = ''
+  applyCommunitySearch('experience', '', { force: true })
 }
 
 function clearCommunitySearch() {
   communitySearchKeyword.value = ''
+  applyCommunitySearch('chat', '', { force: true })
 }
 
 function clearActiveCommunitySearch() {
@@ -6914,16 +7092,68 @@ function clearActiveCommunitySearch() {
   clearCommunitySearch()
 }
 
+function applyCommunitySearch(postType, value, { force = false } = {}) {
+  const normalizedPostType = normalizeCircleCommunityPostType(postType)
+  const keyword = String(value || '').trim()
+  if (!force && communityAppliedSearch[normalizedPostType] === keyword) return
+  communityAppliedSearch[normalizedPostType] = keyword
+  const sortBy = selectedCommunityPostSort.value
+  void loadCircleCommunityPosts(normalizedPostType, {
+    force: true,
+    featuredOnly: sortBy === 'featured',
+    sortBy,
+    search: keyword
+  })
+}
+
+function scheduleActiveCommunitySearch(event) {
+  const postType = normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)
+  const fallbackValue = postType === 'experience'
+    ? experienceSearchKeyword.value
+    : communitySearchKeyword.value
+  const keyword = String(event?.detail?.value ?? fallbackValue)
+  if (communitySearchDebounceTimer !== null) clearTimeout(communitySearchDebounceTimer)
+  communitySearchDebounceTimer = setTimeout(() => {
+    communitySearchDebounceTimer = null
+    applyCommunitySearch(postType, keyword)
+  }, 360)
+}
+
+function submitActiveCommunitySearch(event) {
+  if (communitySearchDebounceTimer !== null) {
+    clearTimeout(communitySearchDebounceTimer)
+    communitySearchDebounceTimer = null
+  }
+  const postType = normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)
+  const fallbackValue = postType === 'experience'
+    ? experienceSearchKeyword.value
+    : communitySearchKeyword.value
+  applyCommunitySearch(postType, event?.detail?.value ?? fallbackValue, { force: true })
+}
+
+function retryActiveCommunityFeed() {
+  const postType = normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)
+  const sortBy = selectedCommunityPostSort.value
+  void loadCircleCommunityPosts(postType, {
+    force: true,
+    featuredOnly: sortBy === 'featured',
+    sortBy,
+    search: communityAppliedSearch[postType]
+  })
+}
+
 function selectCommunityPostSort(event) {
   const selectedIndex = Number(event?.detail?.value)
   const nextSort = communityPostSortOptions[selectedIndex]?.value
   if (!nextSort) return
   selectedCommunityPostSort.value = nextSort
-  if (selectedCircleCommunityTab.value !== 'mentor' && ['featured', 'hot'].includes(nextSort)) {
+  if (selectedCircleCommunityTab.value !== 'mentor') {
+    const postType = normalizeCircleCommunityPostType(selectedCircleCommunityTab.value)
     void loadCircleCommunityPosts(selectedCircleCommunityTab.value, {
-      force: true,
+      force: false,
       featuredOnly: nextSort === 'featured',
-      sortBy: nextSort
+      sortBy: nextSort,
+      search: communityAppliedSearch[postType]
     })
   }
 }
@@ -7215,7 +7445,8 @@ function shuffleCommunityPosts(posts) {
 
 function sortCommunityPosts(posts, sort) {
   if (sort === 'featured') {
-    return shuffleCommunityPosts(posts.filter(isCommunityPostFeatured))
+    // 精选顺序由服务端稳定返回，互动状态更新时不再随机换位。
+    return posts.filter(isCommunityPostFeatured)
   }
   // “热门”由服务端按完整公开内容池的互动数据排序，避免只在当前最新帖里重排。
   if (sort === 'hot') return [...posts]
@@ -7267,6 +7498,19 @@ function getExperienceStages(post = {}) {
   return []
 }
 
+function getCommunityPostTags(post = {}) {
+  if ((post.postType || post.post_type) !== 'experience') {
+    const category = String(post.category || '').trim()
+    return category ? [category] : []
+  }
+
+  const selectedStages = new Set(getExperienceStages(post))
+  return [
+    getExperienceCategory(post),
+    ...circleExperienceStages.filter((stage) => selectedStages.has(stage))
+  ].filter(Boolean)
+}
+
 function matchesExperienceFilter(post, filter) {
   if (!filter || filter === '全部') return true
   if (circleExperienceExamCodes.includes(filter)) return post.examCode === filter
@@ -7286,6 +7530,10 @@ function getCommunityChatCategory(post = {}) {
 }
 
 function normalizeCommunityPost(post = {}) {
+  const ownershipKnown = Object.prototype.hasOwnProperty.call(post, 'ownershipKnown')
+    ? Boolean(post.ownershipKnown)
+    : Object.prototype.hasOwnProperty.call(post, 'isMine')
+      || Object.prototype.hasOwnProperty.call(post, 'is_mine')
   const stats = post.stats || {}
   const rawCommentPreviews = Array.isArray(post.commentPreviews)
     ? post.commentPreviews
@@ -7321,14 +7569,22 @@ function normalizeCommunityPost(post = {}) {
     publishTime: post.publishTime || post.publish_time || '刚刚',
     tone: post.tone || 'blue',
     title: post.title || '',
-    summary: post.summary || post.content || '',
+    summary: String(post.summary || post.content || '').slice(0, 320),
     content: post.content || post.summary || '',
     media: Array.isArray(post.media) ? post.media.slice(0, 9) : [],
+    mediaCount: Math.max(
+      Array.isArray(post.media) ? post.media.length : 0,
+      Number(post.mediaCount ?? post.media_count ?? 0)
+    ),
     commentPreviews,
     commentPreview: commentPreviews[0] || null,
     isFeatured: isCommunityPostFeatured(post),
     liked: Boolean(post.liked || post.is_liked),
+    isMine: Boolean(post.isMine || post.is_mine),
+    ownershipKnown,
     authorVerified: Boolean(post.authorVerified || post.author_verified),
+    isPublished: Boolean(post.isPublished ?? post.is_published ?? true),
+    reviewStatus: String(post.reviewStatus || post.review_status || 'approved'),
     stats: {
       likes: Number(stats.likes ?? post.like_count ?? 0),
       comments: Number(stats.comments ?? post.comment_count ?? 0),
@@ -7347,7 +7603,11 @@ function normalizeCommunityComment(comment = {}) {
     createdAt: comment.createdAt || comment.created_at || new Date().toISOString(),
     isMine: Boolean(comment.isMine || comment.is_mine),
     liked: Boolean(comment.liked || comment.is_liked),
-    likeCount: Number(comment.likeCount ?? comment.like_count ?? 0)
+    likeCount: Number(comment.likeCount ?? comment.like_count ?? 0),
+    deliveryStatus: comment.deliveryStatus || '',
+    clientRequestId: comment.clientRequestId || comment.client_request_id || '',
+    optimisticCounted: Boolean(comment.optimisticCounted),
+    errorMessage: comment.errorMessage || ''
   }
 }
 
@@ -7384,10 +7644,54 @@ function patchCommunityPost(postId, patch, { persist = true } = {}) {
     circleHotExperienceCommunityPosts
   ]
   communityPostLists.forEach(patchList)
+  Object.keys(communityFeedPages).forEach((pageKey) => {
+    const posts = communityFeedPages[pageKey]
+    if (!Array.isArray(posts)) return
+    const index = posts.findIndex((post) => post.id === postId)
+    if (index < 0) return
+    const nextPosts = [...posts]
+    nextPosts[index] = applyPatch(nextPosts[index])
+    communityFeedPages[pageKey] = nextPosts
+  })
 
   if (persist) {
     scheduleCircleCommunityFeedPersist('chat')
     scheduleCircleCommunityFeedPersist('experience')
+  }
+}
+
+function toCommunityFeedCachePost(post = {}) {
+  const normalized = normalizeCommunityPost(post)
+  return {
+    id: normalized.id,
+    postType: normalized.postType,
+    category: normalized.category,
+    examCode: normalized.examCode,
+    experienceStages: normalized.experienceStages,
+    author: normalized.author,
+    avatar: normalized.avatar,
+    avatarUrl: normalized.avatarUrl,
+    publishTime: normalized.publishTime,
+    tone: normalized.tone,
+    title: normalized.title,
+    summary: normalized.summary,
+    content: '',
+    media: normalized.media.slice(0, 2).map((media = {}) => ({
+      kicker: media.kicker || '',
+      title: media.title || '',
+      copy: media.copy || '',
+      tone: media.tone || 'sky',
+      imageUrl: media.imageUrl || media.image_url || '',
+      thumbnailUrl: media.thumbnailUrl || media.thumbnail_url || ''
+    })),
+    mediaCount: normalized.mediaCount,
+    commentPreviews: normalized.commentPreviews,
+    isFeatured: normalized.isFeatured,
+    liked: normalized.liked,
+    isMine: normalized.isMine,
+    ownershipKnown: normalized.ownershipKnown,
+    authorVerified: normalized.authorVerified,
+    stats: normalized.stats
   }
 }
 
@@ -7409,14 +7713,15 @@ function getCircleCommunityFeedStorageKey(postType) {
   return `${COMMUNITY_FEED_CACHE_PREFIX}:${viewerId}:${normalizeCircleCommunityPostType(postType)}`
 }
 
-function getCircleCommunityFeedPageKey(postType, { featuredOnly = false, sortBy = 'latest', category = '' } = {}) {
+function getCircleCommunityFeedPageKey(postType, { featuredOnly = false, sortBy = 'latest', category = '', search = '' } = {}) {
   const normalizedType = normalizeCircleCommunityPostType(postType)
   const normalizedCategory = String(category || '').trim()
-  return `${normalizedType}:${featuredOnly ? 'featured' : (sortBy === 'hot' ? 'hot' : 'latest')}:${normalizedCategory || 'all'}`
+  const normalizedSearch = String(search || '').trim().toLowerCase()
+  return `${normalizedType}:${featuredOnly ? 'featured' : (sortBy === 'hot' ? 'hot' : 'latest')}:${normalizedCategory || 'all'}:${encodeURIComponent(normalizedSearch) || 'none'}`
 }
 
-function resetCircleCommunityFeedPagination(postType, { featuredOnly = false, sortBy = 'latest', category = '' } = {}) {
-  const key = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category })
+function resetCircleCommunityFeedPagination(postType, { featuredOnly = false, sortBy = 'latest', category = '', search = '' } = {}) {
+  const key = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category, search })
   communityFeedNextCursors[key] = ''
   communityFeedHasMore[key] = true
   return key
@@ -7438,7 +7743,9 @@ function consumeCircleCommunityFeedRefresh(postType) {
   }
 }
 
-function getCircleCommunityFeedPosts(postType, { featuredOnly = false, sortBy = 'latest' } = {}) {
+function getCircleCommunityFeedPosts(postType, { featuredOnly = false, sortBy = 'latest', category = '', search = '' } = {}) {
+  const pageKey = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category, search })
+  if (Array.isArray(communityFeedPages[pageKey])) return communityFeedPages[pageKey]
   if (normalizeCircleCommunityPostType(postType) === 'experience') {
     if (featuredOnly) return circleFeaturedExperiencePosts.value
     return sortBy === 'hot' ? circleHotExperienceCommunityPosts.value : circleExperienceCommunityPosts.value
@@ -7447,14 +7754,15 @@ function getCircleCommunityFeedPosts(postType, { featuredOnly = false, sortBy = 
   return sortBy === 'hot' ? circleHotCommunityPosts.value : circleCommunityPosts.value
 }
 
-function setCircleCommunityFeedPosts(postType, posts, { persist = true, featuredOnly = false, sortBy = 'latest', category = '', append = false } = {}) {
+function setCircleCommunityFeedPosts(postType, posts, { persist = true, featuredOnly = false, sortBy = 'latest', category = '', search = '', append = false } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
-  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy, category })
+  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy, category, search })
   const incomingPosts = Array.isArray(posts) ? posts : []
-  const currentPosts = getCircleCommunityFeedPosts(normalizedPostType, { featuredOnly, sortBy })
+  const currentPosts = getCircleCommunityFeedPosts(normalizedPostType, { featuredOnly, sortBy, category, search })
   const nextPosts = append
     ? [...currentPosts, ...incomingPosts.filter((item) => !currentPosts.some((existing) => existing.id === item.id))]
     : incomingPosts
+  communityFeedPages[pageKey] = nextPosts
   if (!append && communityFeedNextCursors[pageKey] === undefined) {
     communityFeedNextCursors[pageKey] = ''
   }
@@ -7473,7 +7781,7 @@ function setCircleCommunityFeedPosts(postType, posts, { persist = true, featured
   } else {
     circleCommunityPosts.value = nextPosts
   }
-  if (persist && !category && !featuredOnly && sortBy === 'latest') {
+  if (persist && !category && !search && !featuredOnly && sortBy === 'latest') {
     persistCircleCommunityFeed(normalizedPostType)
   }
 }
@@ -7483,7 +7791,7 @@ function persistCircleCommunityFeed(postType) {
   try {
     uni.setStorageSync(storageKey, {
       cachedAt: Date.now(),
-      posts: getCircleCommunityFeedPosts(postType),
+      posts: getCircleCommunityFeedPosts(postType).map((post) => toCommunityFeedCachePost(post)),
       nextCursor: communityFeedNextCursors[getCircleCommunityFeedPageKey(postType)] || '',
       hasMore: communityFeedHasMore[getCircleCommunityFeedPageKey(postType)] !== false
     })
@@ -7536,6 +7844,7 @@ function hydrateCircleCommunityFeed(postType) {
     communityFeedHasMore[pageKey] = cached.hasMore !== false
     const cachedAt = Number(cached.cachedAt || 0)
     communityFeedCacheFreshness.set(storageKey, cachedAt)
+    communityFeedPageFreshness.set(pageKey, cachedAt)
     return Date.now() - cachedAt <= COMMUNITY_FEED_CACHE_TTL
   } catch (error) {
     communityFeedCacheFreshness.set(storageKey, 0)
@@ -7562,9 +7871,10 @@ function warmCircleCommunityFeeds() {
   }
 }
 
-async function loadCircleCommunityPosts(postType = 'chat', { force = false, featuredOnly = false, sortBy = 'latest' } = {}) {
+async function loadCircleCommunityPosts(postType = 'chat', { force = false, featuredOnly = false, sortBy = 'latest', search } = {}) {
   const normalizedPostType = normalizeCircleCommunityPostType(postType)
   const normalizedSort = sortBy === 'hot' ? 'hot' : 'latest'
+  const normalizedSearch = String(search ?? communityAppliedSearch[normalizedPostType] ?? '').trim()
   const selectedCategory = normalizedPostType === 'experience' ? selectedExperienceCategory.value : selectedCommunityCategory.value
   const normalizedExperienceStage = normalizedPostType === 'experience' && circleExperienceStages.includes(selectedCategory)
     ? selectedCategory
@@ -7573,14 +7883,31 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
     ? selectedCategory
     : ''
   const activeFilter = normalizedCategory || normalizedExperienceStage
-  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: activeFilter })
-  const cacheIsFresh = featuredOnly || normalizedSort !== 'latest' || activeFilter ? false : hydrateCircleCommunityFeed(normalizedPostType)
+  const pageKey = getCircleCommunityFeedPageKey(normalizedPostType, {
+    featuredOnly,
+    sortBy: normalizedSort,
+    category: activeFilter,
+    search: normalizedSearch
+  })
+  const cacheIsFresh = featuredOnly || normalizedSort !== 'latest' || activeFilter || normalizedSearch
+    ? false
+    : hydrateCircleCommunityFeed(normalizedPostType)
+  const pageIsFresh = Array.isArray(communityFeedPages[pageKey])
+    && Date.now() - Number(communityFeedPageFreshness.get(pageKey) || 0) <= COMMUNITY_FEED_CACHE_TTL
+  if (!force && !communityFeedNextCursors[pageKey] && pageIsFresh) return
   if (!featuredOnly && normalizedSort === 'latest' && cacheIsFresh && !force) return
-  if (force) resetCircleCommunityFeedPagination(normalizedPostType, { featuredOnly, sortBy: normalizedSort, category: activeFilter })
+  if (force) resetCircleCommunityFeedPagination(normalizedPostType, {
+    featuredOnly,
+    sortBy: normalizedSort,
+    category: activeFilter,
+    search: normalizedSearch
+  })
   const requestKey = pageKey
   if (communityPostsLoadingTypes.has(requestKey)) return
   communityPostsLoadingTypes.add(requestKey)
   communityPostsLoading.value = true
+  communityFeedLoadingState[requestKey] = true
+  communityFeedErrors[requestKey] = ''
   try {
     const response = await fetchCommunityPosts({
       limit: COMMUNITY_FEED_PAGE_SIZE,
@@ -7589,6 +7916,7 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
       sort_by: normalizedSort,
       category: normalizedCategory || undefined,
       experience_stage: normalizedExperienceStage || undefined,
+      search: normalizedSearch || undefined,
       cursor: communityFeedNextCursors[pageKey] || undefined
     })
     if (Array.isArray(response?.items)) {
@@ -7598,16 +7926,19 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
         featuredOnly,
         sortBy: normalizedSort,
         category: activeFilter,
+        search: normalizedSearch,
         append: Boolean(communityFeedNextCursors[pageKey])
       })
       communityFeedNextCursors[pageKey] = String(response?.next_cursor || '')
       communityFeedHasMore[pageKey] = response?.has_more === true
-      if (!activeFilter && !featuredOnly && normalizedSort === 'latest') persistCircleCommunityFeed(normalizedPostType)
+      communityFeedPageFreshness.set(pageKey, Date.now())
+      if (!activeFilter && !normalizedSearch && !featuredOnly && normalizedSort === 'latest') persistCircleCommunityFeed(normalizedPostType)
     }
   } catch (error) {
-    // 请求失败时保留已经读取到的真实缓存，不再回退到示例帖子。
+    communityFeedErrors[requestKey] = getSafeError(error, '帖子加载失败，请检查网络后重试')
   } finally {
     communityPostsLoadingTypes.delete(requestKey)
+    communityFeedLoadingState[requestKey] = false
     communityPostsLoading.value = communityPostsLoadingTypes.size > 0
   }
 }
@@ -7615,37 +7946,88 @@ async function loadCircleCommunityPosts(postType = 'chat', { force = false, feat
 async function openCommunityPost(post, options = {}) {
   const initialPost = normalizeCommunityPost(post)
   if (!initialPost.id) return
-  clearCommunityReaderCloseTimer()
-  communityReaderClosing.value = false
+  clearCommunityReaderRouteTimers()
   markCommunityPostNotificationsRead(initialPost)
   clearCommunityViewTimer()
   clearCommunityLikeBurst()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
+  communityCommentEntryReady.value = false
+  communityCommentInputFocused.value = false
+  communityReaderTopZoneLastTapAt = 0
+  communityReaderLastScrollTop = 0
+  communityReaderOwnerPreview.value = options.ownerPreview === true
+  communityReaderInteractionsEnabled.value = options.interactionsEnabled !== false
   selectedCommunityPost.value = initialPost
-  scheduleCommunityView(initialPost.id)
-  void openCommunityComments(initialPost)
+  showCommunityReaderWithTransition()
+  if (communityReaderInteractionsEnabled.value) {
+    scheduleCommunityView(initialPost.id)
+    void openCommunityComments(initialPost)
+  }
+  nextTick(() => {
+    captureCommunityReaderViewportBaseHeight(true)
+    bindCommunityCommentVisualViewport()
+    scheduleCommunityCommentVisibilityCheck(80)
+  })
 
   if (options.focusComments) {
     await nextTick()
     focusCommunityReaderComments()
   }
+}
+
+async function openOwnedCommunityPostFromRoute(postId, requestedCommunityTab = '') {
+  const normalizedPostId = String(postId || '').trim()
+  if (!normalizedPostId) return
+  communityReaderOwnerLoading.value = true
+  await openCommunityPost({
+    id: normalizedPostId,
+    post_type: requestedCommunityTab === 'experience' ? 'experience' : 'chat',
+    author: '我',
+    title: '正在加载帖子...',
+    content: '',
+    is_mine: true,
+    is_published: false,
+    ownershipKnown: true
+  }, {
+    ownerPreview: true,
+    interactionsEnabled: false
+  })
 
   try {
-    const response = await fetchCommunityPost(initialPost.id)
-    if (response?.post && selectedCommunityPost.value?.id === initialPost.id) {
-      const remotePost = normalizeCommunityPost(response.post)
-      selectedCommunityPost.value = remotePost
-      patchCommunityPost(initialPost.id, remotePost)
+    const response = await fetchMyCommunityPost(normalizedPostId)
+    if (selectedCommunityPost.value?.id !== normalizedPostId) return
+    const ownedPost = normalizeCommunityPost(response?.post || {})
+    if (!ownedPost.id) throw { detail: '帖子内容不存在' }
+    selectedCommunityPost.value = ownedPost
+    communityReaderOwnerLoading.value = false
+    communityReaderInteractionsEnabled.value = ownedPost.isPublished && ownedPost.reviewStatus === 'approved'
+    if (communityReaderInteractionsEnabled.value) {
+      void openCommunityComments(ownedPost)
     }
   } catch (error) {
-    // 详情的本地预览仍可阅读；互动请求会明确提示服务状态。
+    if (selectedCommunityPost.value?.id !== normalizedPostId) return
+    communityReaderOwnerLoading.value = false
+    uni.showToast({ title: getSafeError(error, '帖子内容读取失败，请稍后重试'), icon: 'none' })
+    returnToMyPostsFromCommunityReader()
   }
 }
 
 function openCommunityPostComments(post) {
   void openCommunityPost(post, { focusComments: true })
+}
+
+function scrollCommunityReaderTo(targetId) {
+  const postId = selectedCommunityPost.value?.id
+  if (!postId || !targetId) return
+
+  communityReaderScrollTarget.value = ''
+  nextTick(() => {
+    if (selectedCommunityPost.value?.id === postId) {
+      communityReaderScrollTarget.value = targetId
+    }
+  })
 }
 
 function focusCommunityReaderComments() {
@@ -7656,24 +8038,385 @@ function focusCommunityReaderComments() {
     void openCommunityComments(post)
   }
 
-  communityReaderScrollTarget.value = ''
-  nextTick(() => {
-    communityReaderScrollTarget.value = 'community-reader-comments'
+  scrollCommunityReaderTo('community-reader-comments')
+  scheduleCommunityCommentVisibilityCheck(360)
+}
+
+function getCommunityCommentViewportMetrics() {
+  let layoutHeight = 0
+  try {
+    layoutHeight = Math.max(0, Number(uni.getWindowInfo?.()?.windowHeight || 0))
+  } catch (error) {
+    // 少数旧端不支持 getWindowInfo，继续使用浏览器视口或键盘高度兜底。
+  }
+
+  let visualBottom = layoutHeight
+  if (typeof window !== 'undefined') {
+    const browserHeight = Math.max(
+      0,
+      Number(window.innerHeight || window.document?.documentElement?.clientHeight || 0)
+    )
+    if (browserHeight > 0) layoutHeight = browserHeight
+
+    const viewport = window.visualViewport
+    const viewportHeight = Math.max(0, Number(viewport?.height || 0))
+    if (viewport && viewportHeight > 0) {
+      visualBottom = Math.max(0, Number(viewport.offsetTop || 0) + viewportHeight)
+    } else {
+      visualBottom = layoutHeight
+    }
+  }
+
+  return {
+    layoutHeight,
+    visualBottom: visualBottom > 0 ? visualBottom : layoutHeight
+  }
+}
+
+function captureCommunityReaderViewportBaseHeight(force = false) {
+  const metrics = getCommunityCommentViewportMetrics()
+  const candidate = Math.max(metrics.layoutHeight, metrics.visualBottom)
+  if (candidate <= 0) return
+
+  if (force || communityReaderViewportBaseHeight <= 0) {
+    communityReaderViewportBaseHeight = candidate
+    return
+  }
+
+  if (
+    !communityCommentInputFocused.value
+    && communityCommentKeyboardHeight <= 0
+    && communityCommentKeyboardOffset.value <= 0
+  ) {
+    communityReaderViewportBaseHeight = candidate
+    return
+  }
+
+  communityReaderViewportBaseHeight = Math.max(communityReaderViewportBaseHeight, candidate)
+}
+
+function normalizeCommunityCommentKeyboardDuration(duration) {
+  const numericDuration = Number(duration)
+  if (!Number.isFinite(numericDuration) || numericDuration <= 0) return 180
+  const durationMs = numericDuration <= 10 ? numericDuration * 1000 : numericDuration
+  return Math.min(600, Math.max(80, Math.round(durationMs)))
+}
+
+function clearCommunityCommentKeyboardSyncTimer() {
+  if (communityCommentKeyboardSyncTimer === null) return
+  clearTimeout(communityCommentKeyboardSyncTimer)
+  communityCommentKeyboardSyncTimer = null
+}
+
+function clearCommunityCommentKeyboardResetTimer() {
+  if (communityCommentKeyboardResetTimer === null) return
+  clearTimeout(communityCommentKeyboardResetTimer)
+  communityCommentKeyboardResetTimer = null
+}
+
+function syncCommunityCommentKeyboardOffset() {
+  const syncRevision = ++communityCommentKeyboardSyncRevision
+  const postId = selectedCommunityPost.value?.id
+  if (!postId) {
+    communityCommentKeyboardOffset.value = 0
+    communityCommentKeyboardVisible.value = false
+    return
+  }
+
+  const metrics = getCommunityCommentViewportMetrics()
+  if (communityReaderViewportBaseHeight <= 0) {
+    captureCommunityReaderViewportBaseHeight(true)
+  }
+  const baseHeight = Math.max(
+    communityReaderViewportBaseHeight,
+    metrics.layoutHeight,
+    metrics.visualBottom
+  )
+  if (baseHeight <= 0) return
+
+  let visibleBottom = communityCommentKeyboardHeight > 0
+    ? Math.max(0, baseHeight - communityCommentKeyboardHeight)
+    : baseHeight
+  const visualViewportReduced = metrics.visualBottom > 0 && metrics.visualBottom < baseHeight - 1
+  const layoutViewportReduced = metrics.layoutHeight > 0 && metrics.layoutHeight < baseHeight - 1
+  if (visualViewportReduced) visibleBottom = Math.min(visibleBottom, metrics.visualBottom)
+  if (layoutViewportReduced) visibleBottom = Math.min(visibleBottom, metrics.layoutHeight)
+
+  const viewportCoveredHeight = Math.max(0, baseHeight - visibleBottom)
+  communityCommentKeyboardVisible.value = communityCommentKeyboardHeight > 0 || viewportCoveredHeight > 80
+
+  const currentOffset = Math.max(0, Number(communityCommentKeyboardOffset.value) || 0)
+  const query = uni.createSelectorQuery()
+  query.select('.community-reader-actions').boundingClientRect()
+  query.exec((rects) => {
+    if (
+      selectedCommunityPost.value?.id !== postId
+      || communityCommentKeyboardSyncRevision !== syncRevision
+    ) return
+    const actionsRect = rects?.[0]
+    const unshiftedBottom = actionsRect
+      ? Number(actionsRect.bottom || 0) + currentOffset
+      : baseHeight
+    const nextOffset = Math.min(
+      baseHeight,
+      Math.max(0, Math.round(unshiftedBottom - visibleBottom))
+    )
+    communityCommentKeyboardOffset.value = nextOffset > 1 ? nextOffset : 0
   })
+}
+
+function scheduleCommunityCommentKeyboardSync(delay = 0) {
+  clearCommunityCommentKeyboardSyncTimer()
+  communityCommentKeyboardSyncTimer = setTimeout(() => {
+    communityCommentKeyboardSyncTimer = null
+    syncCommunityCommentKeyboardOffset()
+  }, Math.max(0, Number(delay) || 0))
+}
+
+function scheduleCommunityCommentKeyboardReset(delay = 360) {
+  clearCommunityCommentKeyboardResetTimer()
+  communityCommentKeyboardResetTimer = setTimeout(() => {
+    communityCommentKeyboardResetTimer = null
+    if (communityCommentInputFocused.value) return
+    communityCommentKeyboardHeight = 0
+    communityCommentKeyboardTransitionMs.value = 180
+    syncCommunityCommentKeyboardOffset()
+  }, Math.max(0, Number(delay) || 0))
+}
+
+function handleCommunityCommentVisualViewportChange() {
+  if (!selectedCommunityPost.value?.id) return
+  captureCommunityReaderViewportBaseHeight()
+  scheduleCommunityCommentKeyboardSync(16)
+}
+
+function bindCommunityCommentVisualViewport() {
+  const viewport = typeof window !== 'undefined' ? window.visualViewport : null
+  if (
+    communityCommentVisualViewportBound
+    || !viewport
+    || typeof viewport.addEventListener !== 'function'
+  ) return
+
+  viewport.addEventListener('resize', handleCommunityCommentVisualViewportChange)
+  viewport.addEventListener('scroll', handleCommunityCommentVisualViewportChange)
+  communityCommentVisualViewportBound = true
+}
+
+function unbindCommunityCommentVisualViewport() {
+  const viewport = typeof window !== 'undefined' ? window.visualViewport : null
+  if (!communityCommentVisualViewportBound) return
+
+  if (viewport && typeof viewport.removeEventListener === 'function') {
+    viewport.removeEventListener('resize', handleCommunityCommentVisualViewportChange)
+    viewport.removeEventListener('scroll', handleCommunityCommentVisualViewportChange)
+  }
+  communityCommentVisualViewportBound = false
+}
+
+function resetCommunityCommentKeyboardState() {
+  clearCommunityCommentKeyboardSyncTimer()
+  clearCommunityCommentKeyboardResetTimer()
+  communityCommentKeyboardSyncRevision += 1
+  communityCommentKeyboardHeight = 0
+  communityReaderViewportBaseHeight = 0
+  communityCommentKeyboardOffset.value = 0
+  communityCommentKeyboardVisible.value = false
+  communityCommentKeyboardTransitionMs.value = 180
+}
+
+function handleCommunityCommentKeyboardHeightChange(event) {
+  const keyboardHeight = Number(event?.detail?.height)
+  if (!Number.isFinite(keyboardHeight)) return
+
+  clearCommunityCommentKeyboardResetTimer()
+  communityCommentKeyboardHeight = Math.max(0, keyboardHeight)
+  communityCommentKeyboardTransitionMs.value = normalizeCommunityCommentKeyboardDuration(event?.detail?.duration)
+  nextTick(syncCommunityCommentKeyboardOffset)
+  scheduleCommunityCommentKeyboardSync(communityCommentKeyboardTransitionMs.value + 40)
+}
+
+function hideCommunityCommentKeyboard() {
+  communityCommentInputFocused.value = false
+  if (typeof uni.hideKeyboard === 'function') {
+    uni.hideKeyboard()
+  }
+  if (communityCommentKeyboardVisible.value || communityCommentKeyboardHeight > 0) {
+    scheduleCommunityCommentKeyboardReset()
+  }
+}
+
+function clearCommunityCommentVisibilityTimer() {
+  if (communityCommentVisibilityTimer === null) return
+  clearTimeout(communityCommentVisibilityTimer)
+  communityCommentVisibilityTimer = null
+}
+
+function resetCommunityCommentEntry(options = {}) {
+  clearCommunityCommentVisibilityTimer()
+  communityCommentEntryReady.value = false
+  communityCommentInputFocused.value = false
+  communityCommentInputFocusStartedAt = 0
+  if (options.hideKeyboard === true) hideCommunityCommentKeyboard()
+}
+
+function isCommunityReaderCommentsInView() {
+  return new Promise((resolve) => {
+    const query = uni.createSelectorQuery()
+    query.select('.community-reader-scroll').boundingClientRect()
+    query.select('#community-reader-comments').boundingClientRect()
+    query.exec((rects) => {
+      const viewport = rects?.[0]
+      const comments = rects?.[1]
+      if (!viewport || !comments) {
+        resolve(false)
+        return
+      }
+
+      const viewportTop = Number(viewport.top || 0)
+      const viewportHeight = Math.max(0, Number(viewport.height || 0))
+      const activationLine = viewportTop + Math.min(96, Math.max(48, viewportHeight * 0.16))
+      resolve(
+        Number(comments.top || 0) <= activationLine
+        && Number(comments.bottom || 0) > activationLine
+      )
+    })
+  })
+}
+
+function scheduleCommunityCommentVisibilityCheck(delay = 120) {
+  clearCommunityCommentVisibilityTimer()
+  const postId = selectedCommunityPost.value?.id
+  if (!postId) return
+
+  communityCommentVisibilityTimer = setTimeout(async () => {
+    communityCommentVisibilityTimer = null
+    const commentsInView = await isCommunityReaderCommentsInView()
+    if (
+      selectedCommunityPost.value?.id === postId
+      && !communityCommentInputFocused.value
+    ) {
+      communityCommentEntryReady.value = commentsInView
+    }
+  }, Math.max(0, Number(delay) || 0))
+}
+
+function handleCommunityCommentEntryTap() {
+  if (!selectedCommunityPost.value?.id || communityCommentSubmitting.value) return
+
+  if (communityCommentEntryReady.value) {
+    communityCommentInputFocused.value = true
+    return
+  }
+
+  hideCommunityCommentKeyboard()
+  focusCommunityReaderComments()
+}
+
+function handleCommunityCommentInputFocus() {
+  communityCommentInputFocused.value = true
+  communityCommentInputFocusStartedAt = Date.now()
+  clearCommunityCommentKeyboardResetTimer()
+  bindCommunityCommentVisualViewport()
+  captureCommunityReaderViewportBaseHeight()
+  scheduleCommunityCommentKeyboardSync()
+}
+
+function handleCommunityCommentInputBlur() {
+  communityCommentInputFocused.value = false
+  communityCommentInputFocusStartedAt = 0
+  communityCommentEntryReady.value = false
+  scheduleCommunityCommentVisibilityCheck(80)
+  scheduleCommunityCommentKeyboardReset()
+}
+
+function handleCommunityReaderScroll(event) {
+  const nextScrollTop = Math.max(0, Number(event?.detail?.scrollTop || 0))
+  const moved = Math.abs(nextScrollTop - communityReaderLastScrollTop) > 1
+  communityReaderLastScrollTop = nextScrollTop
+  if (!moved) return
+
+  if (communityCommentInputFocused.value) {
+    if (Date.now() - communityCommentInputFocusStartedAt > 220) {
+      resetCommunityCommentEntry({ hideKeyboard: true })
+    }
+  } else {
+    communityCommentEntryReady.value = false
+  }
+  scheduleCommunityCommentVisibilityCheck()
+}
+
+function handleCommunityReaderScrollTouchMove() {
+  if (communityCommentInputFocused.value) {
+    resetCommunityCommentEntry({ hideKeyboard: true })
+  } else {
+    communityCommentEntryReady.value = false
+  }
+}
+
+function scrollCommunityReaderToTop() {
+  resetCommunityCommentEntry({ hideKeyboard: true })
+  communityReaderTopZoneLastTapAt = 0
+  scrollCommunityReaderTo('community-reader-top')
+}
+
+function handleCommunityReaderTopZoneTap() {
+  const now = Date.now()
+  const elapsed = now - communityReaderTopZoneLastTapAt
+  if (communityReaderTopZoneLastTapAt > 0 && elapsed <= COMMUNITY_READER_DOUBLE_TAP_WINDOW) {
+    scrollCommunityReaderToTop()
+    return
+  }
+  communityReaderTopZoneLastTapAt = now
 }
 
 function handleCommunityReaderMediaChange(event) {
   communityReaderMediaIndex.value = Number(event?.detail?.current ?? 0)
 }
 
+function getCommunityReaderImageUrl(media) {
+  return String(media?.imageUrl || media?.image_url || '').trim()
+}
+
+function previewCommunityReaderImages(activeMedia) {
+  const mediaItems = Array.isArray(selectedCommunityPost.value?.media)
+    ? selectedCommunityPost.value.media
+    : []
+  const urls = mediaItems.map((media) => getCommunityReaderImageUrl(media)).filter(Boolean)
+  if (!urls.length) return
+
+  const activeUrl = getCommunityReaderImageUrl(activeMedia)
+  const currentIndex = Math.max(0, urls.indexOf(activeUrl))
+  uni.previewImage({
+    urls,
+    current: urls[currentIndex],
+    indicator: 'number',
+    loop: true
+  })
+}
+
 function openCommunityPostActions(post) {
   if (!post?.title) return
-  const actions = ['分享帖子']
-  if (isAuthed.value) actions.push('举报帖子', '我的举报')
+  if (isAuthed.value && !post.ownershipKnown) {
+    uni.showToast({ title: '正在确认帖子信息，请稍候', icon: 'none' })
+    return
+  }
+  const isOwnPost = Boolean(post.isMine)
+  const actions = isOwnPost
+    ? ['分享帖子', '编辑', '删除帖子']
+    : ['分享帖子', ...(isAuthed.value ? ['举报帖子', '我的举报'] : [])]
   uni.showActionSheet({
     itemList: actions,
     success(result) {
       const selected = actions[Number(result?.tapIndex || 0)]
+      if (selected === '编辑') {
+        openOwnCommunityPostEditor(post)
+        return
+      }
+      if (selected === '删除帖子') {
+        confirmDeleteOwnCommunityPost(post)
+        return
+      }
       if (selected === '举报帖子') {
         openCommunityReport(post)
         return
@@ -7687,6 +8430,80 @@ function openCommunityPostActions(post) {
   })
 }
 
+function openOwnCommunityPostEditor(post) {
+  if (!post?.id || !post.isMine) return
+  const postType = normalizeCircleCommunityPostType(post.postType || post.post_type)
+  const url = `/pages/circle/publish?type=${postType}&edit=${encodeURIComponent(post.id)}`
+  closeCommunityPost()
+  uni.navigateTo({
+    url,
+    fail() {
+      uni.showToast({ title: '编辑页打开失败，请重试', icon: 'none' })
+    }
+  })
+}
+
+function confirmDeleteOwnCommunityPost(post) {
+  if (!post?.id || !post.isMine) return
+  uni.showModal({
+    title: '删除帖子',
+    content: '删除后帖子、评论和点赞记录都会移除，请确认是否继续。',
+    confirmText: '删除',
+    confirmColor: '#d65f59',
+    cancelText: '取消',
+    success(result) {
+      if (result.confirm) void deleteOwnCommunityPost(post)
+    }
+  })
+}
+
+function removeCommunityPostFromFeeds(postId) {
+  if (!postId) return
+  const feedRefs = [
+    circleCommunityPosts,
+    circleFeaturedCommunityPosts,
+    circleHotCommunityPosts,
+    circleExperienceCommunityPosts,
+    circleFeaturedExperiencePosts,
+    circleHotExperienceCommunityPosts
+  ]
+  feedRefs.forEach((listRef) => {
+    listRef.value = listRef.value.filter((item) => item.id !== postId)
+  })
+  Object.keys(communityFeedPages).forEach((pageKey) => {
+    if (!Array.isArray(communityFeedPages[pageKey])) return
+    communityFeedPages[pageKey] = communityFeedPages[pageKey].filter((item) => item.id !== postId)
+  })
+  scheduleCircleCommunityFeedPersist('chat')
+  scheduleCircleCommunityFeedPersist('experience')
+}
+
+async function deleteOwnCommunityPost(post) {
+  const postId = String(post?.id || '')
+  if (!postId || !post.isMine) return
+  try {
+    const response = await deleteMyCommunityPosts([postId])
+    const deletedIds = Array.isArray(response?.deleted_post_ids) ? response.deleted_post_ids.map(String) : []
+    if (!deletedIds.includes(postId)) throw { detail: '帖子状态已变化，请刷新后重试' }
+    removeCommunityPostFromFeeds(postId)
+    try {
+      uni.setStorageSync(getCircleCommunityFeedRefreshKey(post.postType), Date.now())
+      if (communityReaderReturnsToMyPosts.value) {
+        uni.setStorageSync(MY_POSTS_REFRESH_REQUIRED_KEY, Date.now())
+      }
+    } catch (error) {
+      // 本地刷新标记失败不影响已完成的删除。
+    }
+    if (selectedCommunityPost.value?.id === postId) {
+      if (communityReaderReturnsToMyPosts.value) returnToMyPostsFromCommunityReader()
+      else closeCommunityPost()
+    }
+    uni.showToast({ title: '帖子已删除', icon: 'success' })
+  } catch (error) {
+    uni.showToast({ title: getSafeError(error, '帖子删除失败，请稍后重试'), icon: 'none' })
+  }
+}
+
 function shareCommunityPost() {
   openCommunityPostActions(selectedCommunityPost.value)
 }
@@ -7696,10 +8513,11 @@ async function loadMoreCircleCommunityPosts() {
   const sortBy = selectedCommunityPostSort.value
   const featuredOnly = sortBy === 'featured'
   const category = activeCommunityCategory.value === '全部' ? '' : activeCommunityCategory.value
-  const pageKey = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category })
+  const search = communityAppliedSearch[postType]
+  const pageKey = getCircleCommunityFeedPageKey(postType, { featuredOnly, sortBy, category, search })
   if (communityPostsLoadingTypes.has(pageKey)) return
   if (communityFeedHasMore[pageKey] === false || !communityFeedNextCursors[pageKey]) return
-  await loadCircleCommunityPosts(postType, { featuredOnly, sortBy })
+  await loadCircleCommunityPosts(postType, { featuredOnly, sortBy, search })
 }
 
 function copyCommunityPostShare(post) {
@@ -7787,44 +8605,164 @@ async function deleteOwnCommunityComment(post, comment) {
   }
 }
 
-function clearCommunityReaderCloseTimer() {
-  if (!communityReaderCloseTimer) return
-  clearTimeout(communityReaderCloseTimer)
-  communityReaderCloseTimer = null
+function clearCommunityReaderRouteTimers() {
+  if (communityReaderRouteFrameTimer) {
+    clearTimeout(communityReaderRouteFrameTimer)
+    communityReaderRouteFrameTimer = null
+  }
+  if (communityReaderRouteFinishTimer) {
+    clearTimeout(communityReaderRouteFinishTimer)
+    communityReaderRouteFinishTimer = null
+  }
+}
+
+function scheduleCommunityReaderRouteFinish(expectedMotion) {
+  if (communityReaderRouteFinishTimer) clearTimeout(communityReaderRouteFinishTimer)
+  const delay = prefersReducedCircleRouteMotion()
+    ? 0
+    : CIRCLE_DETAIL_ROUTE_DURATION + CIRCLE_DETAIL_ROUTE_FALLBACK_DELAY
+  communityReaderRouteFinishTimer = setTimeout(() => {
+    communityReaderRouteFinishTimer = null
+    if (communityReaderRouteMotion.value !== expectedMotion) return
+    if (expectedMotion === 'entering') finishCommunityReaderRouteEnter()
+    if (expectedMotion === 'leaving') finishCommunityPostClose()
+  }, delay)
+}
+
+function showCommunityReaderWithTransition() {
+  clearCommunityReaderRouteTimers()
+  communityReaderClosing.value = false
+
+  if (prefersReducedCircleRouteMotion()) {
+    communityReaderRouteMotion.value = 'idle'
+    return
+  }
+
+  communityReaderRouteMotion.value = 'enter-from'
+  nextTick(() => {
+    communityReaderRouteFrameTimer = setTimeout(() => {
+      communityReaderRouteFrameTimer = null
+      if (!selectedCommunityPost.value || communityReaderRouteMotion.value !== 'enter-from') return
+      communityReaderRouteMotion.value = 'entering'
+      scheduleCommunityReaderRouteFinish('entering')
+    }, CIRCLE_DETAIL_ROUTE_FRAME_DELAY)
+  })
+}
+
+function finishCommunityReaderRouteEnter() {
+  if (communityReaderRouteMotion.value !== 'entering') return
+  clearCommunityReaderRouteTimers()
+  communityReaderRouteMotion.value = 'idle'
+  communityReaderClosing.value = false
 }
 
 function finishCommunityPostClose() {
-  communityReaderCloseTimer = null
-  communityReaderClosing.value = false
-  selectedCommunityPost.value = null
-}
-
-function closeCommunityPost(options = {}) {
-  const keepTapGuard = options?.keepTapGuard === true && Boolean(selectedCommunityPost.value)
-  clearCommunityReaderCloseTimer()
+  clearCommunityReaderRouteTimers()
   clearCommunityViewTimer()
   clearCommunityLikeBurst()
   closeCommunityComments()
   communityReaderScrollTarget.value = ''
   communityReaderMediaIndex.value = 0
   communityReaderEdgeSwipeStart.value = null
+  communityReaderClosing.value = false
+  communityReaderRouteMotion.value = 'idle'
+  selectedCommunityPost.value = null
+  communityReaderOwnerPreview.value = false
+  communityReaderOwnerLoading.value = false
+  communityReaderInteractionsEnabled.value = true
+}
 
-  if (keepTapGuard) {
-    communityReaderClosing.value = true
-    communityReaderCloseTimer = setTimeout(finishCommunityPostClose, COMMUNITY_READER_TAP_GUARD_DELAY)
+function closeCommunityPost(options = {}) {
+  const animated = options?.animated === true && Boolean(selectedCommunityPost.value)
+  const currentMotion = communityReaderRouteMotion.value
+
+  if (!animated) {
+    finishCommunityPostClose()
+    return
+  }
+  if (
+    communityReaderClosing.value
+    || communityReaderRouteMotion.value === 'leave-preparing'
+    || communityReaderRouteMotion.value === 'leaving'
+  ) return
+
+  clearCommunityReaderRouteTimers()
+  clearCommunityViewTimer()
+  clearCommunityLikeBurst()
+  resetCommunityCommentEntry({ hideKeyboard: true })
+  communityReaderEdgeSwipeStart.value = null
+  communityReaderClosing.value = true
+
+  if (prefersReducedCircleRouteMotion()) {
+    communityReaderRouteMotion.value = 'leaving'
+    finishCommunityPostClose()
     return
   }
 
-  communityReaderClosing.value = false
-  selectedCommunityPost.value = null
+  if (currentMotion === 'enter-from') {
+    finishCommunityPostClose()
+    return
+  }
+
+  if (currentMotion === 'entering') {
+    communityReaderRouteMotion.value = 'leaving'
+    scheduleCommunityReaderRouteFinish('leaving')
+    return
+  }
+
+  communityReaderRouteMotion.value = 'leave-preparing'
+  nextTick(() => {
+    communityReaderRouteFrameTimer = setTimeout(() => {
+      communityReaderRouteFrameTimer = null
+      if (!selectedCommunityPost.value || communityReaderRouteMotion.value !== 'leave-preparing') return
+      communityReaderRouteMotion.value = 'leaving'
+      scheduleCommunityReaderRouteFinish('leaving')
+    }, CIRCLE_DETAIL_ROUTE_FRAME_DELAY)
+  })
 }
 
 function closeCommunityPostWithTapGuard() {
+  if (communityReaderReturnsToMyPosts.value) {
+    returnToMyPostsFromCommunityReader()
+    return
+  }
+  closeCommunityPost({ animated: true })
+}
+
+function returnToMyPostsFromCommunityReader() {
   if (communityReaderClosing.value) return
-  closeCommunityPost({ keepTapGuard: true })
+  clearCommunityReaderRouteTimers()
+  clearCommunityViewTimer()
+  clearCommunityLikeBurst()
+  resetCommunityCommentEntry({ hideKeyboard: true })
+  communityReaderEdgeSwipeStart.value = null
+  communityReaderClosing.value = true
+  uni.navigateBack({
+    delta: 1,
+    fail() {
+      uni.redirectTo({
+        url: '/pages/circle/my-posts',
+        fail() {
+          communityReaderClosing.value = false
+        }
+      })
+    }
+  })
+}
+
+function handleCommunityReaderRouteTransitionEnd(event) {
+  if (event?.target && event?.currentTarget && event.target !== event.currentTarget) return
+  const propertyName = event?.propertyName || event?.detail?.propertyName || ''
+  if (propertyName && propertyName !== 'transform') return
+  if (communityReaderRouteMotion.value === 'entering') {
+    finishCommunityReaderRouteEnter()
+  } else if (communityReaderRouteMotion.value === 'leaving') {
+    finishCommunityPostClose()
+  }
 }
 
 function beginCommunityReaderEdgeSwipe(event) {
+  if (communityReaderClosing.value || communityReaderRouteMotion.value !== 'idle') return
   const touch = getCircleTouchPoint(event)
   if (!touch) return
   communityReaderEdgeSwipeStart.value = {
@@ -7836,7 +8774,7 @@ function beginCommunityReaderEdgeSwipe(event) {
 function finishCommunityReaderEdgeSwipe(event) {
   const start = communityReaderEdgeSwipeStart.value
   communityReaderEdgeSwipeStart.value = null
-  if (!start || !selectedCommunityPost.value) return
+  if (!start || !selectedCommunityPost.value || communityReaderRouteMotion.value !== 'idle') return
 
   const touch = getCircleTouchPoint(event)
   if (!touch) return
@@ -7845,6 +8783,10 @@ function finishCommunityReaderEdgeSwipe(event) {
   if (start.x <= 28 && deltaX >= 72 && Math.abs(deltaX) > Math.abs(deltaY) * 1.35) {
     closeCommunityPostWithTapGuard()
   }
+}
+
+function cancelCommunityReaderEdgeSwipe() {
+  communityReaderEdgeSwipeStart.value = null
 }
 
 async function openCommunityComments(post) {
@@ -7862,6 +8804,9 @@ async function openCommunityComments(post) {
   communityCommentDraft.value = ''
   communityLikes.value = []
   communityLikesLoading.value = false
+  communityCommentsNextCursor.value = ''
+  communityCommentsHasMore.value = false
+  communityCommentsLoadError.value = ''
   communityComments.value = initialPost.commentPreviews.map((comment) => normalizeCommunityComment({
     id: comment.id,
     author: comment.author,
@@ -7872,22 +8817,72 @@ async function openCommunityComments(post) {
   communityCommentsLoading.value = true
 
   try {
-    const response = await fetchCommunityPost(initialPost.id)
+    const response = await fetchCommunityPost(initialPost.id, { comments_limit: 20 })
     if (response?.post && selectedCommunityCommentsPost.value?.id === initialPost.id) {
       const remotePost = normalizeCommunityPost(response.post)
       selectedCommunityCommentsPost.value = remotePost
       patchCommunityPost(initialPost.id, remotePost)
-      communityComments.value = Array.isArray(response.comments)
+      const remoteComments = Array.isArray(response.comments)
         ? response.comments.map((comment) => normalizeCommunityComment(comment))
         : []
+      const remoteIds = new Set(remoteComments.map((comment) => comment.id))
+      const recentLocalComments = communityComments.value.filter((comment) => {
+        if (remoteIds.has(comment.id)) return false
+        if (comment.deliveryStatus) return true
+        const createdAt = Date.parse(comment.createdAt) || 0
+        return comment.isMine && Date.now() - createdAt < 30000
+      })
+      communityComments.value = [...remoteComments, ...recentLocalComments]
+      communityCommentsNextCursor.value = String(response.comments_next_cursor || '')
+      communityCommentsHasMore.value = response.comments_has_more === true
     }
   } catch (error) {
-    // 接口暂不可用时保留帖子卡片带入的本地评论预览。
+    if (selectedCommunityCommentsPost.value?.id === initialPost.id) {
+      communityCommentsLoadError.value = getSafeError(error, '评论加载失败，请检查网络后重试')
+    }
   } finally {
     if (selectedCommunityCommentsPost.value?.id === initialPost.id) {
       communityCommentsLoading.value = false
     }
   }
+}
+
+async function loadMoreCommunityComments() {
+  const postId = selectedCommunityCommentsPost.value?.id
+  const cursor = communityCommentsNextCursor.value
+  if (!postId || !cursor || !communityCommentsHasMore.value || communityCommentsLoadingMore.value) return
+
+  communityCommentsLoadingMore.value = true
+  communityCommentsLoadError.value = ''
+  try {
+    const response = await fetchCommunityComments(postId, { limit: 20, cursor })
+    if (selectedCommunityCommentsPost.value?.id !== postId) return
+    const incoming = Array.isArray(response?.items)
+      ? response.items.map((comment) => normalizeCommunityComment(comment))
+      : []
+    const existingIds = new Set(communityComments.value.map((comment) => comment.id))
+    communityComments.value = [
+      ...incoming.filter((comment) => !existingIds.has(comment.id)),
+      ...communityComments.value
+    ]
+    communityCommentsNextCursor.value = String(response?.next_cursor || '')
+    communityCommentsHasMore.value = response?.has_more === true
+  } catch (error) {
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityCommentsLoadError.value = getSafeError(error, '更早评论加载失败，请重试')
+    }
+  } finally {
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityCommentsLoadingMore.value = false
+    }
+  }
+}
+
+function retryCommunityComments() {
+  const post = selectedCommunityCommentsPost.value
+  if (!post?.id || communityCommentsLoading.value) return
+  selectedCommunityCommentsPost.value = null
+  void openCommunityComments(post)
 }
 
 async function selectCommunityInteractionTab(tab) {
@@ -7930,9 +8925,16 @@ async function loadCommunityPostLikes(postId) {
 }
 
 function closeCommunityComments() {
+  resetCommunityCommentEntry({ hideKeyboard: true })
+  resetCommunityCommentKeyboardState()
+  communityReaderTopZoneLastTapAt = 0
   selectedCommunityCommentsPost.value = null
   communityComments.value = []
   communityCommentsLoading.value = false
+  communityCommentsLoadingMore.value = false
+  communityCommentsNextCursor.value = ''
+  communityCommentsHasMore.value = false
+  communityCommentsLoadError.value = ''
   communityInteractionTab.value = 'comments'
   communityLikes.value = []
   communityLikesLoading.value = false
@@ -8085,7 +9087,8 @@ async function flushCommunityPostLikeQueue(postId, queue) {
       }
       requestCount += 1
 
-      const response = await toggleCommunityPostLike(postId)
+      const requestedLiked = queue.desiredLiked
+      const response = await toggleCommunityPostLike(postId, requestedLiked)
       const confirmedLiked = Boolean(response?.is_liked)
       const confirmedCount = normalizeCommunityLikeCount(response?.like_count, queue.confirmedCount)
       queue.confirmedLiked = confirmedLiked
@@ -8191,7 +9194,8 @@ async function flushCommunityCommentLikeQueue(postId, commentId, key, queue) {
       }
       requestCount += 1
 
-      const response = await toggleCommunityCommentLikeRequest(postId, commentId)
+      const requestedLiked = queue.desiredLiked
+      const response = await toggleCommunityCommentLikeRequest(postId, commentId, requestedLiked)
       const confirmedLiked = Boolean(response?.is_liked)
       const confirmedCount = normalizeCommunityLikeCount(response?.like_count, queue.confirmedCount)
       queue.confirmedLiked = confirmedLiked
@@ -8224,7 +9228,7 @@ async function flushCommunityCommentLikeQueue(postId, commentId, key, queue) {
 
 function toggleCommunityCommentLike(comment) {
   const post = selectedCommunityCommentsPost.value
-  if (!post?.id || !comment?.id) return
+  if (!post?.id || !comment?.id || comment.deliveryStatus) return
   if (!isAuthed.value) {
     goLogin()
     return
@@ -8245,7 +9249,115 @@ function toggleCommunityCommentLike(comment) {
   void flushCommunityCommentLikeQueue(postId, commentId, key, queue)
 }
 
-async function submitCommunityComment() {
+function createCommunityInteractionRequestId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID()
+  }
+  return `xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx`.replace(/[xy]/g, (marker) => {
+    const random = Math.floor(Math.random() * 16)
+    return (marker === 'x' ? random : ((random & 0x3) | 0x8)).toString(16)
+  })
+}
+
+function patchCommunityComment(commentId, patch) {
+  communityComments.value = communityComments.value.map((comment) => (
+    comment.id === commentId ? { ...comment, ...patch } : comment
+  ))
+}
+
+function getOptimisticCommunityCommentAuthor() {
+  const name = getUserDisplayName(authUser.value, profile.value.userName || '研友') || '研友'
+  return {
+    author: name,
+    avatar: profileAvatarText.value || name.slice(0, 1) || '研',
+    avatarUrl: avatarImageUrl.value || ''
+  }
+}
+
+function updateCommunityCommentPreview(postId, comment, { remove = false } = {}) {
+  const post = selectedCommunityCommentsPost.value?.id === postId
+    ? selectedCommunityCommentsPost.value
+    : selectedCommunityPost.value?.id === postId
+      ? selectedCommunityPost.value
+      : null
+  if (!post) return
+  const filtered = (post.commentPreviews || []).filter((item) => item.id !== comment.id)
+  const commentPreviews = remove
+    ? filtered
+    : [{ id: comment.id, author: comment.author, text: comment.content }, ...filtered].slice(0, 3)
+  patchCommunityPost(postId, {
+    commentPreviews,
+    commentPreview: commentPreviews[0] || null
+  })
+}
+
+async function sendOptimisticCommunityComment(comment) {
+  const postId = String(comment?.postId || selectedCommunityCommentsPost.value?.id || '')
+  if (!postId || !comment?.content || communityCommentSubmitting.value) return
+
+  const currentPost = selectedCommunityCommentsPost.value?.id === postId
+    ? selectedCommunityCommentsPost.value
+    : selectedCommunityPost.value
+  const previousCommentCount = Math.max(0, Number(currentPost?.stats?.comments || 0))
+  patchCommunityComment(comment.id, {
+    deliveryStatus: 'sending',
+    errorMessage: '',
+    optimisticCounted: true,
+    previousCommentCount
+  })
+  patchCommunityPost(postId, { stats: { comments: previousCommentCount + 1 } }, { persist: false })
+  updateCommunityCommentPreview(postId, comment)
+  communityCommentSubmitting.value = true
+
+  try {
+    const response = await createCommunityComment(postId, {
+      content: comment.content,
+      client_request_id: comment.clientRequestId
+    })
+    if (!response?.comment) throw { detail: '评论返回数据不完整，请重试' }
+
+    const confirmedComment = normalizeCommunityComment(response.comment)
+    if (selectedCommunityCommentsPost.value?.id === postId) {
+      communityComments.value = communityComments.value.map((item) => (
+        item.id === comment.id ? confirmedComment : item
+      ))
+    }
+    const activePost = selectedCommunityCommentsPost.value?.id === postId
+      ? selectedCommunityCommentsPost.value
+      : selectedCommunityPost.value?.id === postId
+        ? selectedCommunityPost.value
+        : null
+    const commentPreviews = [
+      { id: confirmedComment.id, author: confirmedComment.author, text: confirmedComment.content },
+      ...(activePost?.commentPreviews || []).filter((item) => ![comment.id, confirmedComment.id].includes(item.id))
+    ].slice(0, 3)
+    patchCommunityPost(postId, {
+      commentPreviews,
+      commentPreview: commentPreviews[0] || null,
+      stats: { comments: Math.max(0, Number(response.comment_count || previousCommentCount + 1)) }
+    })
+  } catch (error) {
+    const message = getSafeError(error, '评论发布失败，请点击重试')
+    patchCommunityComment(comment.id, {
+      deliveryStatus: 'failed',
+      errorMessage: message,
+      optimisticCounted: false,
+      previousCommentCount
+    })
+    updateCommunityCommentPreview(postId, comment, { remove: true })
+    patchCommunityPost(postId, { stats: { comments: previousCommentCount } }, { persist: false })
+    uni.showToast({ title: message, icon: 'none' })
+  } finally {
+    communityCommentSubmitting.value = false
+  }
+}
+
+function retryCommunityComment(comment) {
+  if (!comment || comment.deliveryStatus !== 'failed') return
+  void sendOptimisticCommunityComment(comment)
+}
+
+function submitCommunityComment() {
   const post = selectedCommunityCommentsPost.value
   const content = communityCommentDraft.value.trim()
   if (!post?.id || !content || communityCommentSubmitting.value) return
@@ -8254,33 +9366,22 @@ async function submitCommunityComment() {
     return
   }
 
-  communityCommentSubmitting.value = true
-  try {
-    const response = await createCommunityComment(post.id, { content })
-    if (response?.comment) {
-      const comment = normalizeCommunityComment(response.comment)
-      const commentPreviews = [
-        {
-          id: comment.id,
-          author: comment.author,
-          text: comment.content
-        },
-        ...post.commentPreviews.filter((item) => item.id !== comment.id)
-      ].slice(0, 3)
-      communityComments.value.push(comment)
-      patchCommunityPost(post.id, {
-        commentPreviews,
-        commentPreview: commentPreviews[0] || null,
-        stats: { comments: Number(response.comment_count || 0) }
-      })
-      communityCommentDraft.value = ''
-      uni.showToast({ title: '评论已发布', icon: 'success' })
-    }
-  } catch (error) {
-    uni.showToast({ title: getSafeError(error, '评论发布失败，请稍后重试'), icon: 'none' })
-  } finally {
-    communityCommentSubmitting.value = false
-  }
+  const clientRequestId = createCommunityInteractionRequestId()
+  const author = getOptimisticCommunityCommentAuthor()
+  const optimisticComment = normalizeCommunityComment({
+    id: `pending-${clientRequestId}`,
+    postId: post.id,
+    ...author,
+    content,
+    createdAt: new Date().toISOString(),
+    isMine: true,
+    deliveryStatus: 'queued',
+    clientRequestId
+  })
+  optimisticComment.postId = post.id
+  communityComments.value.push(optimisticComment)
+  communityCommentDraft.value = ''
+  void sendOptimisticCommunityComment(optimisticComment)
 }
 
 function formatCommunityCommentTime(value) {
@@ -8408,9 +9509,10 @@ function selectCircleCommunityTab(tab) {
   const featuredOnly = sortBy === 'featured'
   if (!featuredOnly && sortBy !== 'hot') hydrateCircleCommunityFeed(tab)
   loadCircleCommunityPosts(tab, {
-    force: shouldRefreshTab || featuredOnly || sortBy === 'hot',
+    force: shouldRefreshTab,
     featuredOnly,
-    sortBy
+    sortBy,
+    search: communityAppliedSearch[normalizeCircleCommunityPostType(tab)]
   })
   resetCircleTabbar()
 }
@@ -8421,9 +9523,10 @@ function selectCircleCommunityCategory(category) {
   selectedCommunityCategory.value = category
   const sortBy = selectedCommunityPostSort.value
   void loadCircleCommunityPosts('chat', {
-    force: true,
+    force: false,
     featuredOnly: sortBy === 'featured',
-    sortBy
+    sortBy,
+    search: communityAppliedSearch.chat
   })
 }
 
@@ -10269,6 +11372,10 @@ function formatDateTime(value) {
   transform: translate3d(100%, 0, 0);
 }
 
+.circle-detail-route-layer.is-community-reader-underlay {
+  pointer-events: none;
+}
+
 .circle-detail-route-layer.is-route-dragging,
 .circle-detail-route-layer.is-route-settling {
   box-shadow: -18rpx 0 42rpx rgba(17, 31, 47, 0.2);
@@ -10783,16 +11890,16 @@ function formatDateTime(value) {
   height: 3px;
   margin-top: -1.5px;
   border-radius: 999px;
-  background: #16786f;
+  background: var(--gyt-primary, #3478f6);
   transform-origin: 0 50%;
 }
 
 .circle-score-mirror-point {
   position: absolute;
   box-sizing: border-box;
-  width: 9px;
-  height: 9px;
-  border: 3px solid #16786f;
+  width: 12px;
+  height: 12px;
+  border: 3px solid var(--gyt-primary, #3478f6);
   border-radius: 50%;
   background: #ffffff;
   transform: translate(-50%, -50%);
@@ -11059,7 +12166,7 @@ function formatDateTime(value) {
 
 .circle-score-total text {
   margin-left: 2px;
-  color: #16786f;
+  color: var(--gyt-primary, #3478f6);
   font-size: 17px;
   font-weight: 700;
 }
@@ -11114,7 +12221,7 @@ function formatDateTime(value) {
 
 .circle-score-line {
   fill: none;
-  stroke: #16786f;
+  stroke: var(--gyt-primary, #3478f6);
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 3;
@@ -11122,7 +12229,7 @@ function formatDateTime(value) {
 
 .circle-score-point {
   fill: #ffffff;
-  stroke: #16786f;
+  stroke: var(--gyt-primary, #3478f6);
   stroke-width: 3;
   transition: stroke-width 160ms ease, fill 160ms ease;
 }
@@ -13104,6 +14211,25 @@ function formatDateTime(value) {
   flex-shrink: 0;
 }
 
+.community-topic-list {
+  min-width: 0;
+  max-width: 292rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6rpx;
+}
+
+.community-topic-list .community-topic {
+  max-width: none;
+  flex: 0 0 auto;
+}
+
+.community-detail-topic-list {
+  margin-left: auto;
+}
+
 .community-stream .community-topic {
   max-width: 142rpx;
   padding: 7rpx 12rpx;
@@ -13355,8 +14481,30 @@ function formatDateTime(value) {
   position: fixed;
   z-index: 110;
   inset: 0;
+  box-sizing: border-box;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
   overflow: hidden;
   background: rgba(15, 48, 51, 0.42);
+  transform: translate3d(0, 0, 0);
+  -webkit-backface-visibility: hidden;
+  backface-visibility: hidden;
+}
+
+.community-reader.is-route-moving {
+  pointer-events: none;
+  transition: transform var(--gyt-route-duration, 380ms) var(--gyt-route-ease, cubic-bezier(0.25, 0.8, 0.25, 1));
+  box-shadow: -18rpx 0 42rpx rgba(17, 31, 47, 0.18);
+}
+
+.community-reader.is-route-moving,
+.community-reader.is-route-offscreen {
+  will-change: transform;
+}
+
+.community-reader.is-route-offscreen {
+  transform: translate3d(100%, 0, 0);
 }
 
 .community-reader-surface {
@@ -13467,6 +14615,15 @@ function formatDateTime(value) {
   min-width: 0;
 }
 
+.community-reader-top-hitbox {
+  min-width: 28rpx;
+  align-self: stretch;
+  flex: 1;
+  -webkit-user-select: none;
+  user-select: none;
+  touch-action: manipulation;
+}
+
 .community-reader-author-name {
   overflow: hidden;
   color: #1b2b2a;
@@ -13501,6 +14658,22 @@ function formatDateTime(value) {
   text-overflow: ellipsis;
   white-space: nowrap;
   flex: 0 1 auto;
+}
+
+.community-reader-tag-list {
+  min-width: 0;
+  max-width: 286rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+  gap: 6rpx;
+  flex: 0 1 auto;
+}
+
+.community-reader-tag-list .community-reader-category {
+  max-width: none;
+  flex: 0 0 auto;
 }
 
 .community-reader-scroll {
@@ -13564,6 +14737,29 @@ function formatDateTime(value) {
 .community-reader-media-slide image {
   width: 100%;
   height: 100%;
+  cursor: zoom-in;
+}
+
+.community-reader-owner-status {
+  width: fit-content;
+  margin-bottom: 20rpx;
+  padding: 10rpx 18rpx;
+  border-radius: 999rpx;
+  background: rgba(52, 120, 246, .1);
+  color: #3478f6;
+  font-size: 20rpx;
+  line-height: 1;
+  font-weight: 800;
+}
+
+.community-reader-owner-status.is-pending {
+  background: rgba(214, 151, 44, .12);
+  color: #a36d15;
+}
+
+.community-reader-owner-status.is-archived {
+  background: rgba(126, 136, 156, .12);
+  color: #69758a;
 }
 
 .community-reader-media-slide.tone-blue {
@@ -13736,6 +14932,25 @@ function formatDateTime(value) {
   margin-top: 16rpx;
 }
 
+.community-comments-page-action {
+  width: 100%;
+  min-height: 58rpx;
+  margin: 0 0 8rpx;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #5f7f7b;
+  font-size: 21rpx;
+  line-height: 58rpx;
+  font-weight: 700;
+  text-align: center;
+}
+
+.community-comments-page-action::after,
+.community-comment-retry::after {
+  border: 0;
+}
+
 .community-reader-comment-item,
 .community-reader-like-item {
   padding: 28rpx 0;
@@ -13743,6 +14958,15 @@ function formatDateTime(value) {
   display: flex;
   align-items: flex-start;
   gap: 16rpx;
+}
+
+.community-reader-comment-item.is-sending {
+  opacity: 0.72;
+}
+
+.community-reader-comment-item.is-failed {
+  border-radius: 18rpx;
+  background: rgba(235, 89, 100, 0.045);
 }
 
 .community-reader-comment-avatar {
@@ -13784,6 +15008,24 @@ function formatDateTime(value) {
   font-size: 20rpx;
   line-height: 1.2;
   font-weight: 600;
+}
+
+.community-comment-delivery-state {
+  color: #718c88;
+}
+
+.community-comment-retry {
+  display: inline-flex;
+  min-height: 36rpx;
+  margin: 0 0 0 8rpx;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #d84b58;
+  font-size: 20rpx;
+  line-height: 36rpx;
+  font-weight: 750;
+  vertical-align: middle;
 }
 
 .community-reader-comment-like {
@@ -13835,6 +15077,8 @@ function formatDateTime(value) {
 }
 
 .community-reader-actions {
+  position: relative;
+  z-index: 8;
   box-sizing: border-box;
   min-height: 104rpx;
   padding: 14rpx 24rpx calc(env(safe-area-inset-bottom) + 14rpx);
@@ -13846,6 +15090,20 @@ function formatDateTime(value) {
   flex: 0 0 auto;
   -webkit-backdrop-filter: blur(18px) saturate(120%);
   backdrop-filter: blur(18px) saturate(120%);
+  transition-property: transform;
+  transition-timing-function: cubic-bezier(0.22, 0.8, 0.28, 1);
+  will-change: transform;
+}
+
+.community-reader-actions.keyboard-open {
+  padding-bottom: 14rpx;
+  background: rgba(245, 250, 248, 0.98);
+  box-shadow: 0 -12rpx 30rpx rgba(36, 73, 69, 0.1);
+}
+
+.community-reader-actions.keyboard-open .community-reader-comment-entry {
+  background: #ffffff;
+  box-shadow: inset 0 0 0 2rpx rgba(45, 133, 128, 0.16);
 }
 
 .community-reader-comment-entry {
@@ -13878,6 +15136,18 @@ function formatDateTime(value) {
   color: #25413d;
   font-size: 23rpx;
   font-weight: 700;
+  flex: 1;
+}
+
+.community-reader-comment-prompt {
+  min-width: 0;
+  overflow: hidden;
+  color: #9aa9a6;
+  font-size: 23rpx;
+  line-height: 1.4;
+  font-weight: 700;
+  text-overflow: ellipsis;
+  white-space: nowrap;
   flex: 1;
 }
 
@@ -14041,6 +15311,10 @@ function formatDateTime(value) {
 @media (max-width: 340px) {
   .community-reader-topbar {
     gap: 10rpx;
+  }
+
+  .community-reader-tag-list {
+    max-width: 170rpx;
   }
 
   .community-reader-category {
@@ -20991,6 +22265,7 @@ function formatDateTime(value) {
 
 @media (prefers-reduced-motion: reduce) {
   .circle-detail-route-layer.is-route-moving,
+  .community-reader.is-route-moving,
   .subscription-sheet-mask,
   .subscription-sheet {
     transition-duration: 1ms !important;
@@ -21239,7 +22514,7 @@ function formatDateTime(value) {
 
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-card .circle-score-line,
 .home-page.circle-glass-page .circle-scoreline-section .scoreline-detail-card .circle-score-point {
-  stroke: #16786f;
+  stroke: var(--gyt-primary, #3478f6);
 }
 
 /* 顶部轮播数据卡与“我的”页分组卡使用同一层白色底。 */

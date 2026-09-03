@@ -147,7 +147,7 @@ import { onBackPress, onLoad, onUnload } from '@dcloudio/uni-app'
 import {
   createCommunityPost,
   fetchMyCommunityPost,
-  resubmitMyCommunityExperiencePost,
+  updateMyCommunityPost,
   uploadCommunityImage
 } from '../../api/community'
 import { fetchMyMentorProfile } from '../../api/mentorConsultation'
@@ -187,7 +187,7 @@ let draftReady = false
 let publishedSuccessfully = false
 
 const publishPageTitle = computed(() => {
-  if (editingPostId.value) return '修改经验贴'
+  if (editingPostId.value) return postType.value === 'experience' ? '修改经验贴' : '编辑帖子'
   return postType.value === 'experience' ? '发布经验贴' : '发布话题'
 })
 
@@ -203,13 +203,13 @@ const canPublish = computed(() => Boolean(
 const publishStatusText = computed(() => {
   const { phase, completed, total } = submitStatus.value
   if (phase === 'uploading') return `正在上传图片 ${completed}/${total}`
-  if (phase === 'posting') return editingPostId.value ? '图片已就绪，正在重新提交…' : '图片已就绪，正在提交…'
+  if (phase === 'posting') return editingPostId.value ? '图片已就绪，正在保存修改…' : '图片已就绪，正在提交…'
   if (phase === 'error') return `提交失败，草稿和图片已保留，可点击右上角“${headerIdleText.value}”重试`
   return ''
 })
 
 const headerIdleText = computed(() => {
-  if (editingPostId.value) return '重新提交'
+  if (editingPostId.value) return '保存'
   return '发布'
 })
 
@@ -232,7 +232,7 @@ watch(
 onLoad((options) => {
   draftReady = false
   postType.value = options?.type === 'experience' ? 'experience' : 'chat'
-  editingPostId.value = postType.value === 'experience' ? String(options?.edit || '').trim() : ''
+  editingPostId.value = String(options?.edit || '').trim()
   selectedTopic.value = ''
   selectedExperienceStages.value = []
   isLeaving.value = false
@@ -300,9 +300,13 @@ function hasDraftContent() {
 }
 
 function getDraftPayload() {
-  const uploadedImageUrls = selectedImages.value
-    .map((image) => String(image.uploadedUrl || '').trim())
-    .filter(Boolean)
+  const uploadedImages = selectedImages.value
+    .map((image) => ({
+      url: String(image.uploadedUrl || '').trim(),
+      thumbnailUrl: String(image.uploadedThumbnailUrl || '').trim()
+    }))
+    .filter((image) => image.url)
+  const uploadedImageUrls = uploadedImages.map((image) => image.url)
   return {
     version: DRAFT_STORAGE_VERSION,
     postType: postType.value,
@@ -313,6 +317,7 @@ function getDraftPayload() {
     title: title.value,
     content: content.value,
     selectedImageCount: selectedImages.value.length,
+    uploadedImages,
     uploadedImageUrls,
     editingPostId: editingPostId.value,
     clientRequestId: ensureClientRequestId(),
@@ -345,23 +350,30 @@ function restoreDraft() {
   selectedExperienceStages.value = postType.value === 'experience'
     ? normalizeExperienceStages(draft.experienceStages)
     : []
-  const uploadedImageUrls = [...new Set(Array.isArray(draft.uploadedImageUrls) ? draft.uploadedImageUrls : [])]
-    .map((url) => String(url || '').trim())
-    .filter((url) => /^https?:\/\//i.test(url))
+  const rawUploadedImages = Array.isArray(draft.uploadedImages)
+    ? draft.uploadedImages
+    : (Array.isArray(draft.uploadedImageUrls) ? draft.uploadedImageUrls : []).map((url) => ({ url }))
+  const uploadedImages = rawUploadedImages
+    .map((item) => ({
+      url: String(item?.url || '').trim(),
+      thumbnailUrl: String(item?.thumbnailUrl || item?.thumbnail_url || '').trim()
+    }))
+    .filter((item, index, items) => /^https?:\/\//i.test(item.url) && items.findIndex((candidate) => candidate.url === item.url) === index)
     .slice(0, MAX_IMAGE_COUNT)
-  selectedImages.value = uploadedImageUrls.map((url, index) => ({
+  selectedImages.value = uploadedImages.map((item, index) => ({
     id: `restored-image-${Date.now()}-${index}`,
-    path: url,
+    path: item.url,
     file: null,
     fileName: `community-image-${index + 1}`,
-    uploadedUrl: url,
+    uploadedUrl: item.url,
+    uploadedThumbnailUrl: item.thumbnailUrl || item.url,
     uploading: false
   }))
   const savedImageCount = Math.min(
     MAX_IMAGE_COUNT,
-    Math.max(uploadedImageUrls.length, Number(draft.selectedImageCount) || 0)
+    Math.max(uploadedImages.length, Number(draft.selectedImageCount) || 0)
   )
-  const hasMissingLocalImages = savedImageCount > uploadedImageUrls.length
+  const hasMissingLocalImages = savedImageCount > uploadedImages.length
   draftImageNotice.value = hasMissingLocalImages
     ? '部分尚未上传的本地图片需要重新选择'
     : ''
@@ -431,12 +443,9 @@ async function initializePublishPage(restoredDraft = false) {
   try {
     const response = await fetchMyCommunityPost(editingPostId.value)
     const post = response?.post || {}
-    if ((post.post_type || post.postType) !== 'experience') {
-      accessError.value = '该经验贴不存在或已被删除。'
-      return
-    }
-    if ((post.review_status || post.reviewStatus) !== 'rejected') {
-      accessError.value = '该经验贴状态已变化，只有审核未通过的内容可以修改后重新提交。'
+    const remotePostType = (post.post_type || post.postType) === 'experience' ? 'experience' : 'chat'
+    if (remotePostType !== postType.value) {
+      accessError.value = '帖子类型与当前编辑页面不一致，请返回后重试。'
       return
     }
     if (!restoredDraft) populateEditingPost(post)
@@ -450,23 +459,26 @@ async function initializePublishPage(restoredDraft = false) {
 function populateEditingPost(post = {}) {
   draftReady = false
   const media = Array.isArray(post.media) ? post.media.slice(0, MAX_IMAGE_COUNT) : []
-  selectedTopic.value = communityExperienceExamCodes.includes(String(post.category || ''))
-    ? String(post.category)
-    : ''
+  const allowedTopics = topicSets[postType.value]
+  selectedTopic.value = allowedTopics.includes(String(post.category || '')) ? String(post.category) : ''
   selectedExperienceStages.value = normalizeExperienceStages(
     post.experience_stages || post.experienceStages
   )
   title.value = String(post.title || '').slice(0, 80)
   content.value = String(post.content || post.summary || '').slice(0, 3000)
   selectedImages.value = media
-    .map((item, index) => String(item?.imageUrl || item?.image_url || '').trim())
-    .filter(Boolean)
-    .map((url, index) => ({
+    .map((item) => ({
+      url: String(item?.imageUrl || item?.image_url || '').trim(),
+      thumbnailUrl: String(item?.thumbnailUrl || item?.thumbnail_url || '').trim()
+    }))
+    .filter((item) => item.url)
+    .map((item, index) => ({
       id: `editing-image-${editingPostId.value}-${index}`,
-      path: url,
+      path: item.url,
       file: null,
       fileName: `community-image-${index + 1}`,
-      uploadedUrl: url,
+      uploadedUrl: item.url,
+      uploadedThumbnailUrl: item.thumbnailUrl || item.url,
       uploading: false
     }))
   clientRequestId.value = createClientRequestId()
@@ -587,6 +599,7 @@ function chooseImages() {
           file,
           fileName: tempFile?.name || file?.name || `community-image-${index + 1}`,
           uploadedUrl: '',
+          uploadedThumbnailUrl: '',
           uploading: false
         }
       }).filter((image) => image.path)
@@ -623,7 +636,10 @@ async function uploadSelectedImages() {
 
   images.forEach((image, index) => {
     if (image.uploadedUrl) {
-      media[index] = { imageUrl: image.uploadedUrl }
+      media[index] = {
+        imageUrl: image.uploadedUrl,
+        thumbnailUrl: image.uploadedThumbnailUrl || image.uploadedUrl
+      }
       completed += 1
       return
     }
@@ -647,7 +663,11 @@ async function uploadSelectedImages() {
         })
         if (!response?.url) throw { detail: '图片上传失败，请重试' }
         image.uploadedUrl = response.url
-        media[imageIndex] = { imageUrl: response.url }
+        image.uploadedThumbnailUrl = response.thumbnail_url || response.thumbnailUrl || response.url
+        media[imageIndex] = {
+          imageUrl: response.url,
+          thumbnailUrl: image.uploadedThumbnailUrl
+        }
         completed += 1
         submitStatus.value = { phase: 'uploading', completed, total: images.length }
         saveDraftNow()
@@ -679,22 +699,20 @@ async function publish() {
     const media = await uploadSelectedImages()
     submitStatus.value = { phase: 'posting', completed: media.length, total: media.length }
     const postPayload = {
+      post_type: postType.value,
       category: selectedTopic.value,
       experience_stages: postType.value === 'experience'
         ? normalizeExperienceStages(selectedExperienceStages.value)
         : [],
       title: title.value.trim(),
       content: content.value.trim(),
-      media
+      media,
+      client_request_id: ensureClientRequestId()
     }
     if (editingPostId.value) {
-      await resubmitMyCommunityExperiencePost(editingPostId.value, postPayload)
+      await updateMyCommunityPost(editingPostId.value, postPayload)
     } else {
-      await createCommunityPost({
-        post_type: postType.value,
-        ...postPayload,
-        client_request_id: ensureClientRequestId()
-      })
+      await createCommunityPost(postPayload)
     }
     uni.setStorageSync(`circle-community-feed-refresh-${postType.value}`, Date.now())
     published = true
@@ -702,8 +720,8 @@ async function publish() {
     clearDraft()
     submitStatus.value = { phase: 'idle', completed: 0, total: 0 }
     const successText = postType.value === 'experience'
-      ? editingPostId.value ? '已重新提交审核' : '已提交审核'
-      : '已发布到研友聊'
+      ? editingPostId.value ? '修改已提交审核' : '已提交审核'
+      : editingPostId.value ? '帖子已更新' : '已发布到研友聊'
     uni.showToast({ title: successText, icon: 'success' })
     setTimeout(goBack, 500)
   } catch (error) {

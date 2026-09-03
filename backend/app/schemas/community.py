@@ -28,6 +28,7 @@ class CommunityMediaItem(BaseModel):
     copy_text: str = Field(default="", alias="copy", serialization_alias="copy", max_length=96)
     tone: str = Field(default="sky", pattern="^(sky|mint|warm|paper)$")
     image_url: str | None = Field(default=None, alias="imageUrl", serialization_alias="imageUrl", max_length=2048)
+    thumbnail_url: str | None = Field(default=None, alias="thumbnailUrl", serialization_alias="thumbnailUrl", max_length=2048)
 
 
 class CommunityPostStats(BaseModel):
@@ -37,6 +38,7 @@ class CommunityPostStats(BaseModel):
 
 
 class CommunityCommentPreview(BaseModel):
+    id: str | None = None
     author: str
     text: str
 
@@ -55,11 +57,13 @@ class CommunityPostItem(BaseModel):
     summary: str
     content: str
     media: list[CommunityMediaItem] = Field(default_factory=list)
+    media_count: int = 0
     comment_preview: CommunityCommentPreview | None = None
     comment_previews: list[CommunityCommentPreview] = Field(default_factory=list)
     stats: CommunityPostStats = Field(default_factory=CommunityPostStats)
     is_featured: bool = False
     liked: bool = False
+    is_mine: bool = False
     author_verified: bool = False
     is_published: bool = True
     review_status: Literal["pending", "approved", "rejected"] = "approved"
@@ -119,6 +123,15 @@ class CommunityCommentItem(BaseModel):
 class CommunityPostDetailResponse(BaseModel):
     post: CommunityPostItem
     comments: list[CommunityCommentItem] = Field(default_factory=list)
+    comments_next_cursor: str | None = None
+    comments_has_more: bool = False
+
+
+class CommunityCommentListResponse(BaseModel):
+    items: list[CommunityCommentItem] = Field(default_factory=list)
+    count: int = 0
+    next_cursor: str | None = None
+    has_more: bool = False
 
 
 class CommunityExperienceReviewHistoryItem(BaseModel):
@@ -214,27 +227,36 @@ class CommunityResubmitExperiencePostRequest(BaseModel):
 
 class CommunityImageUploadResponse(BaseModel):
     url: str
+    thumbnail_url: str | None = None
 
 
 class CommunityLikeResponse(BaseModel):
     post_id: str
     is_liked: bool
     like_count: int
+    changed: bool = True
 
 
 class CommunityCommentLikeResponse(BaseModel):
     comment_id: str
     is_liked: bool
     like_count: int
+    changed: bool = True
+
+
+class CommunitySetLikeRequest(BaseModel):
+    is_liked: bool | None = None
 
 
 class CommunityCreateCommentRequest(BaseModel):
+    client_request_id: UUID = Field(default_factory=uuid4)
     content: str = Field(min_length=1, max_length=500)
 
 
 class CommunityCreateCommentResponse(BaseModel):
     comment: CommunityCommentItem
     comment_count: int
+    created: bool = True
 
 
 CommunityReportTargetType = Literal["post", "comment"]

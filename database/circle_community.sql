@@ -22,8 +22,13 @@ create table if not exists public.circle_community_posts (
   view_count integer not null default 0 check (view_count >= 0),
   is_published boolean not null default true,
   is_featured boolean not null default false,
+  author_deleted_at timestamptz,
   created_at timestamptz not null default now(),
-  updated_at timestamptz not null default now()
+  updated_at timestamptz not null default now(),
+  constraint circle_community_posts_author_deleted_hidden_check check (
+    author_deleted_at is null
+    or (is_published = false and is_featured = false)
+  )
 );
 
 create table if not exists public.circle_community_likes (
@@ -66,6 +71,10 @@ create index if not exists idx_circle_community_posts_type_published_created
 create index if not exists idx_circle_community_posts_featured_visible
   on public.circle_community_posts (post_type, created_at desc)
   where is_published = true and is_featured = true;
+
+create index if not exists idx_circle_community_posts_author_active_created
+  on public.circle_community_posts (author_id, created_at desc, id desc)
+  where author_deleted_at is null;
 
 create index if not exists idx_circle_community_likes_post
   on public.circle_community_likes (post_id, created_at desc);

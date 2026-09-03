@@ -32,6 +32,14 @@ export function fetchMyCommunityPost(postId) {
   })
 }
 
+export function updateMyCommunityPost(postId, payload) {
+  return request({
+    url: `/circle/community/my-posts/${encodeURIComponent(postId)}`,
+    method: 'PATCH',
+    data: payload
+  })
+}
+
 export function resubmitMyCommunityExperiencePost(postId, payload) {
   return request({
     url: `/circle/community/my-posts/${encodeURIComponent(postId)}/resubmit`,
@@ -72,10 +80,20 @@ export function createCommunityModerationAppeal(targetType, targetId, payload) {
   })
 }
 
-export function fetchCommunityPost(postId) {
+export function fetchCommunityPost(postId, params = {}) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}`,
     method: 'GET',
+    data: params,
+    authRedirect: false
+  })
+}
+
+export function fetchCommunityComments(postId, params = {}) {
+  return request({
+    url: `/circle/community/posts/${encodeURIComponent(postId)}/comments`,
+    method: 'GET',
+    data: params,
     authRedirect: false
   })
 }
@@ -99,19 +117,19 @@ export function uploadCommunityImage({ filePath, file, fileName }) {
   })
 }
 
-export function toggleCommunityPostLike(postId) {
+export function toggleCommunityPostLike(postId, isLiked) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}/like`,
     method: 'POST',
-    data: {}
+    data: typeof isLiked === 'boolean' ? { is_liked: isLiked } : {}
   })
 }
 
-export function toggleCommunityCommentLike(postId, commentId) {
+export function toggleCommunityCommentLike(postId, commentId, isLiked) {
   return request({
     url: `/circle/community/posts/${encodeURIComponent(postId)}/comments/${encodeURIComponent(commentId)}/like`,
     method: 'POST',
-    data: {}
+    data: typeof isLiked === 'boolean' ? { is_liked: isLiked } : {}
   })
 }
 

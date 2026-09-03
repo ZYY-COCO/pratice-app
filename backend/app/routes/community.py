@@ -3,10 +3,11 @@ from __future__ import annotations
 import logging
 from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Depends, File, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, BackgroundTasks, Depends, File, HTTPException, Query, UploadFile, status
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id, get_optional_current_user_id
@@ -14,6 +15,7 @@ from app.schemas.community import (
     COMMUNITY_EXPERIENCE_CATEGORIES,
     COMMUNITY_EXPERIENCE_STAGES,
     CommunityCommentItem,
+    CommunityCommentListResponse,
     CommunityCommentLikeResponse,
     CommunityCommentPreview,
     CommunityModerationAppealCreateRequest,
@@ -42,10 +44,15 @@ from app.schemas.community import (
     CommunityReportListResponse,
     CommunityResubmitExperiencePostRequest,
     CommunityPostStats,
+    CommunitySetLikeRequest,
     CommunityViewRequest,
     CommunityViewResponse,
 )
-from app.services.supabase_resilience import call_supabase, is_transient_supabase_error
+from app.services.supabase_resilience import (
+    call_supabase,
+    is_missing_supabase_relation_error,
+    is_transient_supabase_error,
+)
 from app.services.user_notifications import create_user_notification
 from app.utils.cursor_pagination import (
     build_keyset_filter,
@@ -60,6 +67,13 @@ from app.utils.cursor_pagination import (
 logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/circle/community", tags=["考研圈"])
 COMMUNITY_MEDIA_BUCKET = "circle-community-media"
+COMMUNITY_FEED_VIEW = "circle_community_feed_rows"
+COMMUNITY_FEED_VIEW_FIELDS = (
+    "id,author_id,author_name,author_avatar,author_tone,post_type,category,experience_stages,"
+    "title,content,media,media_count,like_count,comment_count,view_count,is_published,is_featured,"
+    "review_status,review_version,review_reason_code,review_note,reviewed_at,submitted_at,created_at"
+)
+COMMUNITY_FEED_TABLE_FIELDS = "*"
 MAX_COMMUNITY_IMAGE_BYTES = 8 * 1024 * 1024
 COMMUNITY_IMAGE_CONTENT_TYPES = {
     "image/jpeg": "jpg",
@@ -69,6 +83,7 @@ COMMUNITY_IMAGE_CONTENT_TYPES = {
 COMMUNITY_POST_TYPES = {"chat", "experience"}
 COMMUNITY_POST_TYPE_MARKER_KEY = "_circle_post_type"
 COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY = "_circle_experience_stages"
+COMMUNITY_AUTHOR_DELETED_MARKER_KEY = "_circle_author_deleted_at"
 COMMUNITY_EXPERIENCE_REVIEW_COLUMNS = {
     "review_status",
     "review_version",
@@ -116,6 +131,13 @@ _community_client_request_id_column_available: bool | None = None
 _community_experience_stages_column_available: bool | None = None
 _community_experience_review_columns_available: bool | None = None
 _community_comment_visibility_column_available: bool | None = None
+_community_feed_view_available: bool | None = None
+_community_comment_preview_rpc_available: bool | None = None
+_community_comment_create_rpc_available: bool | None = None
+_community_comment_client_request_id_column_available: bool | None = None
+_community_set_like_rpc_available: bool | None = None
+_community_set_comment_like_rpc_available: bool | None = None
+_community_author_deleted_column_available: bool | None = None
 
 
 def _relative_time(value: str | None) -> str:
@@ -203,6 +225,19 @@ def _matches_community_experience_stage(row: dict, stage: str) -> bool:
     return not normalized_stage or normalized_stage in _community_experience_stages(row)
 
 
+def _matches_community_search(row: dict, keyword: str) -> bool:
+    normalized_keyword = str(keyword or "").strip().casefold()
+    if not normalized_keyword:
+        return True
+    searchable = " ".join([
+        str(row.get("author_name") or ""),
+        str(row.get("category") or ""),
+        str(row.get("title") or ""),
+        str(row.get("content") or ""),
+    ]).casefold()
+    return normalized_keyword in searchable
+
+
 def _community_review_status(row: dict) -> str:
     if _community_post_type(row) != "experience":
         return "approved"
@@ -231,8 +266,70 @@ def _normalise_media(value: object) -> list[dict]:
             isinstance(item, dict)
             and COMMUNITY_POST_TYPE_MARKER_KEY not in item
             and COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY not in item
+            and COMMUNITY_AUTHOR_DELETED_MARKER_KEY not in item
         )
     ][:9]
+
+
+def _is_author_deleted_post(row: dict) -> bool:
+    if row.get("author_deleted_at"):
+        return True
+    media = row.get("media")
+    return isinstance(media, list) and any(
+        isinstance(item, dict) and item.get(COMMUNITY_AUTHOR_DELETED_MARKER_KEY)
+        for item in media
+    )
+
+
+def _legacy_author_delete_posts(
+    supabase,
+    *,
+    post_ids: list[str],
+    user_id: str,
+    deleted_at: str,
+) -> list[str]:
+    """Rolling-schema fallback that hides posts without breaking governance foreign keys."""
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_posts")
+            .select("id,media")
+            .in_("id", post_ids)
+            .eq("author_id", user_id)
+            .execute()
+        ),
+        operation_name="circle community legacy author delete lookup",
+    )
+    rows = [row for row in (response.data or []) if not _is_author_deleted_post(row)]
+    deleted_post_ids: list[str] = []
+    for row in rows:
+        post_id = str(row.get("id") or "")
+        if not post_id:
+            continue
+        media = [
+            item
+            for item in (row.get("media") or [])
+            if isinstance(item, dict) and COMMUNITY_AUTHOR_DELETED_MARKER_KEY not in item
+        ]
+        media = [{COMMUNITY_AUTHOR_DELETED_MARKER_KEY: deleted_at}, *media]
+        update_response = call_supabase(
+            lambda post_id=post_id, media=media: (
+                supabase.table("circle_community_posts")
+                .update({
+                    "media": media,
+                    "is_published": False,
+                    "is_featured": False,
+                    "updated_at": deleted_at,
+                })
+                .eq("id", post_id)
+                .eq("author_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community legacy author delete",
+        )
+        if update_response.data:
+            deleted_post_ids.append(post_id)
+    return deleted_post_ids
 
 
 def _is_missing_post_type_column_error(exc: Exception) -> bool:
@@ -253,6 +350,18 @@ def _is_missing_comment_visibility_column_error(exc: Exception) -> bool:
     return (
         "is_published" in message
         and ("circle_community_comments" in message or "42703" in message or "does not exist" in message)
+    )
+
+
+def _is_community_comment_rpc_compatibility_error(exc: Exception) -> bool:
+    """Whether the atomic comment RPC is absent or has a known migration defect."""
+
+    message = str(exc).lower()
+    provider_code = str(getattr(exc, "code", "") or "").strip()
+    return is_missing_supabase_relation_error(exc) or (
+        (provider_code == "42702" or "42702" in message)
+        and "ambiguous" in message
+        and ("author_id" in message or "client_request_id" in message)
     )
 
 
@@ -438,6 +547,28 @@ def _detect_community_image_content_type(data: bytes) -> tuple[str, str] | None:
     return None
 
 
+def _build_community_thumbnail(data: bytes) -> bytes | None:
+    """Create a compact feed image while preserving the separately stored original."""
+
+    try:
+        from PIL import Image, ImageOps
+
+        with Image.open(BytesIO(data)) as source:
+            image = ImageOps.exif_transpose(source)
+            image.thumbnail((720, 720), Image.Resampling.LANCZOS)
+            if image.mode not in {"RGB", "RGBA"}:
+                image = image.convert("RGBA" if "transparency" in image.info else "RGB")
+            output = BytesIO()
+            image.save(output, format="WEBP", quality=78, method=4)
+            thumbnail = output.getvalue()
+            return thumbnail if thumbnail else None
+    except ImportError:
+        logger.warning("Pillow is not installed; community thumbnail generation skipped")
+    except Exception as exc:
+        logger.warning("Community thumbnail generation skipped (error_type=%s)", type(exc).__name__)
+    return None
+
+
 def _ensure_community_media_bucket(storage) -> None:
     try:
         storage.get_bucket(COMMUNITY_MEDIA_BUCKET)
@@ -501,7 +632,7 @@ def _fetch_community_profiles(supabase, user_ids: list[str]) -> dict[str, dict]:
     response = call_supabase(
         lambda: (
             supabase.table("users")
-            .select("id,nickname,avatar_url")
+            .select("id,nickname,email,avatar_url")
             .in_("id", unique_user_ids)
             .execute()
         ),
@@ -544,15 +675,59 @@ def _community_avatar_url(row: dict, profiles: dict[str, dict]) -> str | None:
     return avatar_url or None
 
 
+def _community_author_display(row: dict, profiles: dict[str, dict]) -> tuple[str, str]:
+    """Resolve public community identity from the account profile, never mentor review data."""
+
+    profile = profiles.get(str(row.get("author_id") or ""), {})
+    nickname = str(profile.get("nickname") or "").strip()
+    email = str(profile.get("email") or "").strip()
+    email_name = email.split("@", 1)[0] if "@" in email else ""
+    account_name = nickname or email_name
+    stored_name = str(row.get("author_name") or "").strip()
+    author_name = account_name or ("研友" if _community_post_type(row) == "experience" else stored_name) or "研友"
+    avatar_source = author_name if account_name else (row.get("author_avatar") or author_name)
+    return author_name, _first_character(avatar_source)
+
+
 def _fetch_comment_previews(supabase, post_ids: list[str]) -> dict[str, list[CommunityCommentPreview]]:
-    global _community_comment_visibility_column_available
+    global _community_comment_preview_rpc_available, _community_comment_visibility_column_available
     if not post_ids:
         return {}
+
+    if _community_comment_preview_rpc_available is not False and hasattr(supabase, "rpc"):
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "circle_community_comment_previews",
+                    {
+                        "p_post_ids": post_ids,
+                        "p_limit_per_post": 3,
+                    },
+                ).execute(),
+                operation_name="circle community bounded comment preview lookup",
+            )
+            _community_comment_preview_rpc_available = True
+            previews: dict[str, list[CommunityCommentPreview]] = {}
+            for row in response.data or []:
+                post_id = str(row.get("post_id") or "")
+                if not post_id:
+                    continue
+                previews.setdefault(post_id, []).append(CommunityCommentPreview(
+                    id=str(row.get("id") or "") or None,
+                    author=str(row.get("author_name") or "研友"),
+                    text=str(row.get("content") or ""),
+                ))
+            return previews
+        except Exception as exc:
+            if not is_missing_supabase_relation_error(exc):
+                raise
+            _community_comment_preview_rpc_available = False
+            logger.info("Bounded community comment preview RPC unavailable; using compatibility query")
 
     def fetch_preview_rows(include_visibility: bool):
         query = (
             supabase.table("circle_community_comments")
-            .select("post_id,author_name,content,created_at")
+            .select("id,post_id,author_name,content,created_at")
             .in_("post_id", post_ids)
             .order("created_at", desc=True)
         )
@@ -583,6 +758,7 @@ def _fetch_comment_previews(supabase, post_ids: list[str]) -> dict[str, list[Com
         if len(post_previews) >= 3:
             continue
         post_previews.append(CommunityCommentPreview(
+            id=str(row.get("id") or "") or None,
             author=str(row.get("author_name") or "研友"),
             text=str(row.get("content") or ""),
         ))
@@ -595,24 +771,34 @@ def _post_item(
     previews: dict[str, list[CommunityCommentPreview]],
     profiles: dict[str, dict],
     verified_author_ids: set[str] | None = None,
+    *,
+    compact: bool = False,
+    current_user_id: str | None = None,
 ) -> CommunityPostItem:
     post_id = str(row.get("id"))
     content = str(row.get("content") or "")
+    normalized_media = _normalise_media(row.get("media"))
+    media_count = max(0, int(row.get("media_count") or len(normalized_media)))
+    if compact:
+        content = content[:320]
+        normalized_media = normalized_media[:2]
     comment_previews = previews.get(post_id, [])
+    author_name, author_avatar = _community_author_display(row, profiles)
     return CommunityPostItem(
         id=post_id,
         post_type=_community_post_type(row),
         category=str(row.get("category") or "备考日常"),
         experience_stages=_community_experience_stages(row),
-        author=str(row.get("author_name") or "研友"),
-        avatar=_first_character(row.get("author_avatar") or row.get("author_name")),
+        author=author_name,
+        avatar=author_avatar,
         avatar_url=_community_avatar_url(row, profiles),
         publish_time=_relative_time(row.get("created_at")),
         tone=str(row.get("author_tone") or "blue"),
         title=str(row.get("title") or ""),
         summary=content,
-        content=content,
-        media=_normalise_media(row.get("media")),
+        content="" if compact else content,
+        media=normalized_media,
+        media_count=media_count,
         comment_preview=comment_previews[0] if comment_previews else None,
         comment_previews=comment_previews,
         stats=CommunityPostStats(
@@ -622,6 +808,7 @@ def _post_item(
         ),
         is_featured=bool(row.get("is_featured")),
         liked=post_id in liked_post_ids,
+        is_mine=bool(current_user_id and str(row.get("author_id") or "") == current_user_id),
         author_verified=str(row.get("author_id") or "") in (verified_author_ids or set()),
         is_published=bool(row.get("is_published", True)),
         review_status=_community_review_status(row),
@@ -653,6 +840,91 @@ def _comment_item(
     )
 
 
+def _fetch_community_comment_page(
+    supabase,
+    *,
+    post_id: str,
+    limit: int,
+    cursor: str | None,
+) -> tuple[list[dict], str | None, bool]:
+    """Fetch one bounded page of comments, newest page first and chronological within the page."""
+
+    global _community_comment_visibility_column_available
+    cursor_context = {"post_id": post_id}
+    cursor_payload = decode_page_cursor(
+        cursor,
+        kind="community_comments",
+        context=cursor_context,
+    )
+
+    def fetch_rows(include_visibility: bool):
+        query = (
+            supabase.table("circle_community_comments")
+            .select("*")
+            .eq("post_id", post_id)
+        )
+        if include_visibility:
+            query = query.eq("is_published", True)
+        if cursor_payload:
+            query = query.or_(build_keyset_filter([
+                ("created_at", "desc", cursor_datetime(cursor_payload, "created_at")),
+                ("id", "desc", cursor_uuid(cursor_payload, "id")),
+            ]))
+        return call_supabase(
+            lambda: (
+                query.order("created_at", desc=True)
+                .order("id", desc=True)
+                .limit(limit + 1)
+                .execute()
+            ),
+            operation_name="circle community paged comment list",
+        )
+
+    if _community_comment_visibility_column_available is not False:
+        try:
+            response = fetch_rows(True)
+            _community_comment_visibility_column_available = True
+        except Exception as exc:
+            if not _is_missing_comment_visibility_column_error(exc):
+                raise
+            _community_comment_visibility_column_available = False
+            response = fetch_rows(False)
+    else:
+        response = fetch_rows(False)
+
+    rows_desc = list(response.data or [])
+    has_more = len(rows_desc) > limit
+    page_desc = rows_desc[:limit]
+    next_cursor = None
+    if has_more and page_desc:
+        oldest_row = page_desc[-1]
+        next_cursor = encode_page_cursor("community_comments", {
+            **cursor_context,
+            "created_at": str(oldest_row.get("created_at") or ""),
+            "id": str(oldest_row.get("id") or ""),
+        })
+    return list(reversed(page_desc)), next_cursor, has_more
+
+
+def _serialize_community_comment_page(
+    supabase,
+    *,
+    rows: list[dict],
+    user_id: str | None,
+) -> list[CommunityCommentItem]:
+    comment_ids = [str(row.get("id") or "") for row in rows if row.get("id")]
+    author_ids = [str(row.get("author_id") or "") for row in rows if row.get("author_id")]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        profiles_future = executor.submit(_fetch_community_profiles, supabase, author_ids)
+        liked_ids_future = executor.submit(_fetch_liked_comment_ids, supabase, user_id, comment_ids)
+        profiles = profiles_future.result()
+        liked_comment_ids = liked_ids_future.result()
+    return [
+        _comment_item(row, user_id, profiles, liked_comment_ids)
+        for row in rows
+    ]
+
+
 def _get_post_row(supabase, post_id: str) -> dict:
     if post_id in COMMUNITY_RETIRED_SEED_POST_IDS:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
@@ -668,7 +940,7 @@ def _get_post_row(supabase, post_id: str) -> dict:
         ),
         operation_name="circle community post lookup",
     )
-    if not response.data:
+    if not response.data or _is_author_deleted_post(response.data[0]):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
     return response.data[0]
 
@@ -795,6 +1067,52 @@ def _toggle_community_like_without_rpc(supabase, post_id: str, user_id: str) -> 
     return True, _adjust_community_post_stat(supabase, post_id, "like_count", 1)
 
 
+def _set_community_like(
+    supabase,
+    *,
+    post_id: str,
+    user_id: str,
+    desired_liked: bool,
+) -> tuple[bool, int, bool]:
+    """Set an explicit post-like target, using the atomic SQL path when deployed."""
+
+    global _community_set_like_rpc_available
+    if _community_set_like_rpc_available is not False and hasattr(supabase, "rpc"):
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "circle_community_set_like",
+                    {
+                        "p_post_id": post_id,
+                        "p_user_id": user_id,
+                        "p_is_liked": desired_liked,
+                    },
+                ).execute(),
+                operation_name="circle community atomic like target",
+            )
+            row = (response.data or [None])[0]
+            if not row:
+                raise RuntimeError("Circle community like target returned no row")
+            _community_set_like_rpc_available = True
+            return (
+                bool(row.get("is_liked")),
+                max(0, int(row.get("like_count") or 0)),
+                bool(row.get("changed")),
+            )
+        except Exception as exc:
+            if not is_missing_supabase_relation_error(exc):
+                raise
+            _community_set_like_rpc_available = False
+            logger.info("Atomic community like target RPC unavailable; using compatibility path")
+
+    current_liked = _get_community_like(supabase, post_id, user_id)
+    post = _get_post_row(supabase, post_id)
+    if current_liked == desired_liked:
+        return current_liked, max(0, int(post.get("like_count") or 0)), False
+    is_liked, like_count = _toggle_community_like_without_rpc(supabase, post_id, user_id)
+    return is_liked, like_count, is_liked != current_liked
+
+
 def _get_community_comment_like(supabase, comment_id: str, user_id: str) -> bool:
     response = call_supabase(
         lambda: (
@@ -881,6 +1199,59 @@ def _toggle_community_comment_like_without_rpc(
         return True, int(_get_comment_row(supabase, post_id, comment_id).get("like_count") or 0)
 
     return True, _adjust_community_comment_like_count(supabase, post_id, comment_id, 1)
+
+
+def _set_community_comment_like(
+    supabase,
+    *,
+    post_id: str,
+    comment_id: str,
+    user_id: str,
+    desired_liked: bool,
+) -> tuple[bool, int, bool]:
+    """Set an explicit comment-like target, using the atomic SQL path when deployed."""
+
+    global _community_set_comment_like_rpc_available
+    if _community_set_comment_like_rpc_available is not False and hasattr(supabase, "rpc"):
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "circle_community_set_comment_like",
+                    {
+                        "p_post_id": post_id,
+                        "p_comment_id": comment_id,
+                        "p_user_id": user_id,
+                        "p_is_liked": desired_liked,
+                    },
+                ).execute(),
+                operation_name="circle community atomic comment like target",
+            )
+            row = (response.data or [None])[0]
+            if not row:
+                raise RuntimeError("Circle community comment like target returned no row")
+            _community_set_comment_like_rpc_available = True
+            return (
+                bool(row.get("is_liked")),
+                max(0, int(row.get("like_count") or 0)),
+                bool(row.get("changed")),
+            )
+        except Exception as exc:
+            if not is_missing_supabase_relation_error(exc):
+                raise
+            _community_set_comment_like_rpc_available = False
+            logger.info("Atomic community comment-like target RPC unavailable; using compatibility path")
+
+    current_liked = _get_community_comment_like(supabase, comment_id, user_id)
+    comment = _get_comment_row(supabase, post_id, comment_id)
+    if current_liked == desired_liked:
+        return current_liked, max(0, int(comment.get("like_count") or 0)), False
+    is_liked, like_count = _toggle_community_comment_like_without_rpc(
+        supabase,
+        post_id,
+        comment_id,
+        user_id,
+    )
+    return is_liked, like_count, is_liked != current_liked
 
 
 def _find_community_view(supabase, post_id: str, user_id: str | None, anonymous_id: str | None) -> dict | None:
@@ -973,6 +1344,163 @@ def _current_author(supabase, user_id: str) -> tuple[str, str, str | None]:
     return name, _first_character(name), avatar_url
 
 
+def _find_community_comment_by_request_id(
+    supabase,
+    *,
+    author_id: str,
+    client_request_id: str,
+) -> dict | None:
+    response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_comments")
+            .select("*")
+            .eq("author_id", author_id)
+            .eq("client_request_id", client_request_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community comment idempotency lookup",
+    )
+    return (response.data or [None])[0]
+
+
+def _create_community_comment_record(
+    supabase,
+    *,
+    post_id: str,
+    user_id: str,
+    payload: CommunityCreateCommentRequest,
+) -> tuple[dict, int, bool, dict, str | None, str]:
+    """Create or recover one comment and return everything needed for the response."""
+
+    global _community_comment_client_request_id_column_available, _community_comment_create_rpc_available
+    client_request_id = str(payload.client_request_id)
+    content = payload.content.strip()
+
+    if _community_comment_create_rpc_available is not False and hasattr(supabase, "rpc"):
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "circle_community_create_comment",
+                    {
+                        "p_post_id": post_id,
+                        "p_user_id": user_id,
+                        "p_content": content,
+                        "p_client_request_id": client_request_id,
+                    },
+                ).execute(),
+                operation_name="circle community atomic comment create",
+            )
+            row = (response.data or [None])[0]
+            if not row:
+                raise RuntimeError("Circle community comment create RPC returned no row")
+            _community_comment_create_rpc_available = True
+            _community_comment_client_request_id_column_available = True
+            comment = {
+                "id": row.get("comment_id"),
+                "post_id": row.get("post_id") or post_id,
+                "author_id": row.get("author_id") or user_id,
+                "author_name": row.get("author_name") or "研友",
+                "author_avatar": row.get("author_avatar") or "研",
+                "content": row.get("content") or content,
+                "created_at": row.get("created_at"),
+                "like_count": row.get("like_count") or 0,
+            }
+            post = {
+                "id": row.get("post_id") or post_id,
+                "author_id": row.get("post_author_id"),
+                "title": row.get("post_title") or "",
+                "post_type": row.get("post_type") or "chat",
+                "is_published": True,
+            }
+            return (
+                comment,
+                max(0, int(row.get("comment_count") or 0)),
+                bool(row.get("created")),
+                post,
+                str(row.get("author_avatar_url") or "").strip() or None,
+                str(row.get("author_name") or "研友"),
+            )
+        except Exception as exc:
+            if not _is_community_comment_rpc_compatibility_error(exc):
+                raise
+            _community_comment_create_rpc_available = False
+            logger.warning(
+                "Atomic community comment RPC unavailable or incompatible; using compatibility path "
+                "(error_type=%s)",
+                type(exc).__name__,
+            )
+
+    post = _get_post_row(supabase, post_id)
+    author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
+    existing = None
+    if _community_comment_client_request_id_column_available is not False:
+        try:
+            existing = _find_community_comment_by_request_id(
+                supabase,
+                author_id=user_id,
+                client_request_id=client_request_id,
+            )
+            _community_comment_client_request_id_column_available = True
+        except Exception as exc:
+            if not _is_missing_community_post_column_error(exc, "client_request_id"):
+                raise
+            _community_comment_client_request_id_column_available = False
+
+    created = False
+    comment = existing
+    if comment is None:
+        insert_data = {
+            "post_id": post_id,
+            "author_id": user_id,
+            "author_name": author_name,
+            "author_avatar": author_avatar,
+            "content": content,
+        }
+        if _community_comment_client_request_id_column_available is not False:
+            insert_data["client_request_id"] = client_request_id
+        try:
+            comment_response = call_supabase(
+                lambda: supabase.table("circle_community_comments").insert(insert_data).execute(),
+                operation_name="circle community comment create",
+            )
+            comment = (comment_response.data or [None])[0]
+            created = comment is not None
+        except Exception as exc:
+            if (
+                "client_request_id" in insert_data
+                and _is_missing_community_post_column_error(exc, "client_request_id")
+            ):
+                _community_comment_client_request_id_column_available = False
+                insert_data.pop("client_request_id", None)
+                comment_response = call_supabase(
+                    lambda: supabase.table("circle_community_comments").insert(insert_data).execute(),
+                    operation_name="circle community legacy comment create",
+                )
+                comment = (comment_response.data or [None])[0]
+                created = comment is not None
+            elif _is_duplicate_community_interaction_error(exc):
+                comment = _find_community_comment_by_request_id(
+                    supabase,
+                    author_id=user_id,
+                    client_request_id=client_request_id,
+                )
+            else:
+                raise
+    if not comment:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Circle comment create failed")
+
+    updated_post = _get_post_row(supabase, post_id)
+    return (
+        comment,
+        max(0, int(updated_post.get("comment_count") or 0)),
+        created,
+        post,
+        author_avatar_url,
+        author_name,
+    )
+
+
 def _notify_community_post_interaction(
     supabase,
     *,
@@ -981,6 +1509,7 @@ def _notify_community_post_interaction(
     interaction: str,
     related_id: str,
     comment_content: str = "",
+    actor_name: str = "",
 ) -> None:
     """Write a recipient-scoped notice when someone interacts with another user's post."""
 
@@ -989,7 +1518,9 @@ def _notify_community_post_interaction(
     if not recipient_user_id or not post_id or recipient_user_id == str(actor_user_id or ""):
         return
 
-    actor_name, _, _ = _current_author(supabase, actor_user_id)
+    normalized_actor_name = str(actor_name or "").strip()
+    if not normalized_actor_name:
+        normalized_actor_name, _, _ = _current_author(supabase, actor_user_id)
     post_title = str(post.get("title") or "").strip() or "你的研圈帖子"
     route_path = (
         "/pages/home/index?tab=circle&section=community"
@@ -997,12 +1528,12 @@ def _notify_community_post_interaction(
     )
     if interaction == "comment":
         title = "你的帖子收到了新评论"
-        summary = f"{actor_name[:30]} 评论了“{post_title[:48]}”"
+        summary = f"{normalized_actor_name[:30]} 评论了“{post_title[:48]}”"
         content = comment_content.strip()[:180] or "对方在你的帖子下留下了一条评论。"
         notification_type = "community_post_comment"
     else:
         title = "你的帖子收到了新的赞"
-        summary = f"{actor_name[:30]} 赞了“{post_title[:48]}”"
+        summary = f"{normalized_actor_name[:30]} 赞了“{post_title[:48]}”"
         content = "点击查看帖子详情和最新互动。"
         notification_type = "community_post_like"
 
@@ -1027,8 +1558,37 @@ def _notify_community_post_interaction(
     )
 
 
+def _notify_community_post_interaction_background(
+    *,
+    post: dict,
+    actor_user_id: str,
+    interaction: str,
+    related_id: str,
+    comment_content: str = "",
+    actor_name: str = "",
+) -> None:
+    """Finish non-critical interaction notification work after the API response."""
+
+    try:
+        _notify_community_post_interaction(
+            get_supabase_admin(),
+            post=post,
+            actor_user_id=actor_user_id,
+            interaction=interaction,
+            related_id=related_id,
+            comment_content=comment_content,
+            actor_name=actor_name,
+        )
+    except Exception as exc:
+        logger.warning(
+            "Community interaction notification deferred (interaction=%s error_type=%s)",
+            interaction,
+            type(exc).__name__,
+        )
+
+
 def _current_verified_mentor_author(supabase, user_id: str) -> dict:
-    """Experience posts represent verified predecessors, not anonymous community claims."""
+    """Verify experience-post eligibility without replacing the account's public identity."""
 
     response = call_supabase(
         lambda: (
@@ -1062,9 +1622,40 @@ def _get_owned_post_row(supabase, post_id: str, user_id: str) -> dict:
         ),
         operation_name="circle community own post lookup",
     )
-    if not response.data:
+    row = (response.data or [None])[0]
+    if not row or _is_author_deleted_post(row):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在")
-    return response.data[0]
+    return row
+
+
+def _ensure_owned_post_editable(supabase, post_id: str) -> None:
+    """Preserve moderation evidence once a post has entered platform handling."""
+
+    report_response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_reports")
+            .select("id")
+            .eq("post_id", post_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community own post edit report protection lookup",
+    )
+    appeal_response = call_supabase(
+        lambda: (
+            supabase.table("circle_community_appeals")
+            .select("id")
+            .eq("post_id", post_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="circle community own post edit appeal protection lookup",
+    )
+    if report_response.data or appeal_response.data:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="该帖子已进入平台处理流程，为保留处理记录暂不能编辑",
+        )
 
 
 def _fetch_experience_review_history(
@@ -1476,22 +2067,25 @@ def list_community_posts(
     experience_stage: Literal["申请制", "初试", "复试"] | None = Query(default=None),
     featured_only: bool = Query(default=False),
     sort_by: Literal["latest", "hot"] = Query(default="latest"),
+    search: str | None = Query(default=None, max_length=80),
     limit: int = Query(default=12, ge=1, le=30),
     cursor: str | None = Query(default=None, max_length=2048),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostListResponse:
-    global _community_post_type_column_available
+    global _community_feed_view_available, _community_post_type_column_available
 
     normalized_category = str(category or "").strip()
     if normalized_category == "全部":
         normalized_category = ""
     normalized_experience_stage = str(experience_stage or "").strip() if post_type == "experience" else ""
+    normalized_search = str(search or "").strip().replace("%", "").replace("_", "")
     cursor_context = {
         "post_type": post_type,
         "category": normalized_category,
         "experience_stage": normalized_experience_stage,
         "featured_only": featured_only,
         "sort_by": sort_by,
+        "search": normalized_search,
     }
     initial_cursor = decode_page_cursor(
         cursor,
@@ -1529,10 +2123,18 @@ def list_community_posts(
                 })
             return payload
 
-        def build_post_list_query(include_post_type: bool, page_cursor: dict | None, query_limit: int):
+        def build_post_list_query(
+            include_post_type: bool,
+            page_cursor: dict | None,
+            query_limit: int,
+            *,
+            source_name: str,
+            select_fields: str,
+            search_in_database: bool,
+        ):
             query = (
-                supabase.table("circle_community_posts")
-                .select("*")
+                supabase.table(source_name)
+                .select(select_fields)
                 .eq("is_published", True)
             )
             if include_post_type:
@@ -1541,6 +2143,8 @@ def list_community_posts(
                 query = query.eq("is_featured", True)
             if normalized_category:
                 query = query.eq("category", normalized_category)
+            if normalized_search and search_in_database:
+                query = query.ilike("search_text", f"%{normalized_search}%")
             if page_cursor:
                 query = query.or_(build_keyset_filter(cursor_fields(page_cursor)))
             if sort_by == "hot":
@@ -1567,19 +2171,40 @@ def list_community_posts(
         exhausted = False
         while len(visible_rows) <= limit and not exhausted:
             include_post_type = _community_post_type_column_available is not False
+            use_feed_view = _community_feed_view_available is not False
             try:
                 response = call_supabase(
-                    lambda: build_post_list_query(include_post_type, scan_cursor, query_limit).execute(),
+                    lambda: build_post_list_query(
+                        include_post_type,
+                        scan_cursor,
+                        query_limit,
+                        source_name=COMMUNITY_FEED_VIEW if use_feed_view else "circle_community_posts",
+                        select_fields=COMMUNITY_FEED_VIEW_FIELDS if use_feed_view else COMMUNITY_FEED_TABLE_FIELDS,
+                        search_in_database=use_feed_view,
+                    ).execute(),
                     operation_name="circle community post list",
                 )
+                if use_feed_view:
+                    _community_feed_view_available = True
                 if include_post_type:
                     _community_post_type_column_available = True
             except Exception as exc:
+                if use_feed_view and is_missing_supabase_relation_error(exc):
+                    _community_feed_view_available = False
+                    logger.info("Compact community feed view unavailable; using compatibility table query")
+                    continue
                 if not include_post_type or not _is_missing_post_type_column_error(exc):
                     raise
                 _community_post_type_column_available = False
                 response = call_supabase(
-                    lambda: build_post_list_query(False, scan_cursor, query_limit).execute(),
+                    lambda: build_post_list_query(
+                        False,
+                        scan_cursor,
+                        query_limit,
+                        source_name="circle_community_posts",
+                        select_fields=COMMUNITY_FEED_TABLE_FIELDS,
+                        search_in_database=False,
+                    ).execute(),
                     operation_name="circle community post list legacy",
                 )
 
@@ -1594,6 +2219,8 @@ def list_community_posts(
                 for row in raw_rows
                 if (_community_post_type_column_available is not False or _community_post_type(row) == post_type)
                 and str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
+                and not _is_author_deleted_post(row)
+                and (_community_feed_view_available is True or _matches_community_search(row, normalized_search))
             ]
             if post_type == "experience" and candidate_rows:
                 verified_ids = _fetch_verified_mentor_owner_ids(
@@ -1636,7 +2263,15 @@ def list_community_posts(
             next_cursor = encode_page_cursor("community_posts", row_cursor_payload(rows[-1]))
         return CommunityPostListResponse(
             items=[
-                _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
+                _post_item(
+                    row,
+                    liked_post_ids,
+                    previews,
+                    profiles,
+                    verified_author_ids,
+                    compact=True,
+                    current_user_id=user_id,
+                )
                 for row in rows
             ],
             count=len(rows),
@@ -1710,7 +2345,9 @@ def list_liked_community_posts(
         rows = [
             rows_by_id[post_id]
             for post_id in ordered_post_ids
-            if post_id in rows_by_id and post_id not in COMMUNITY_RETIRED_SEED_POST_IDS
+            if post_id in rows_by_id
+            and post_id not in COMMUNITY_RETIRED_SEED_POST_IDS
+            and not _is_author_deleted_post(rows_by_id[post_id])
         ]
         post_ids = [str(row.get("id")) for row in rows]
 
@@ -1753,6 +2390,7 @@ def list_liked_community_posts(
                         previews,
                         profiles,
                         verified_author_ids,
+                        current_user_id=user_id,
                     ).model_dump(),
                     liked_at=liked_at_by_post_id.get(str(row.get("id"))),
                 )
@@ -1778,7 +2416,7 @@ def list_my_community_posts(
 ) -> CommunityPostListResponse:
     """Return all posts owned by the current user, including review states."""
 
-    global _community_post_type_column_available
+    global _community_author_deleted_column_available, _community_post_type_column_available
 
     supabase = get_supabase_admin()
     try:
@@ -1786,12 +2424,14 @@ def list_my_community_posts(
         cursor_payload = decode_page_cursor(cursor, kind="community_my_posts", context=cursor_context)
         query_limit = max(limit + 1 + len(COMMUNITY_RETIRED_SEED_POST_IDS), 32)
 
-        def build_my_post_query(include_post_type: bool):
+        def build_my_post_query(include_post_type: bool, include_author_deleted: bool):
             query = (
                 supabase.table("circle_community_posts")
                 .select("*")
                 .eq("author_id", user_id)
             )
+            if include_author_deleted:
+                query = query.is_("author_deleted_at", "null")
             if include_post_type and post_type != "all":
                 query = query.eq("post_type", post_type)
             if cursor_payload:
@@ -1818,34 +2458,36 @@ def list_my_community_posts(
                 )
             return query.order("created_at", desc=True).order("id", desc=True).limit(query_limit)
 
-        if _community_post_type_column_available is not False:
+        include_post_type = _community_post_type_column_available is not False
+        include_author_deleted = _community_author_deleted_column_available is not False
+        while True:
             try:
                 response = call_supabase(
-                    lambda: build_my_post_query(True).execute(),
+                    lambda: build_my_post_query(include_post_type, include_author_deleted).execute(),
                     operation_name="circle community own post list",
                 )
-                _community_post_type_column_available = True
+                if include_post_type:
+                    _community_post_type_column_available = True
+                if include_author_deleted:
+                    _community_author_deleted_column_available = True
                 rows = response.data or []
+                break
             except Exception as exc:
-                if not _is_missing_post_type_column_error(exc):
-                    raise
-                _community_post_type_column_available = False
-                response = call_supabase(
-                    lambda: build_my_post_query(False).execute(),
-                    operation_name="circle community own post list legacy",
-                )
-                rows = response.data or []
-        else:
-            response = call_supabase(
-                lambda: build_my_post_query(False).execute(),
-                operation_name="circle community own post list legacy",
-            )
-            rows = response.data or []
+                if include_author_deleted and _is_missing_community_post_column_error(exc, "author_deleted_at"):
+                    _community_author_deleted_column_available = False
+                    include_author_deleted = False
+                    continue
+                if include_post_type and _is_missing_post_type_column_error(exc):
+                    _community_post_type_column_available = False
+                    include_post_type = False
+                    continue
+                raise
 
         candidate_rows = [
             row
             for row in rows
             if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
+            and not _is_author_deleted_post(row)
             and (post_type == "all" or _community_post_type(row) == post_type)
         ]
         has_more = len(candidate_rows) > limit
@@ -1879,7 +2521,14 @@ def list_my_community_posts(
             next_cursor = encode_page_cursor("community_my_posts", cursor_data)
         return CommunityPostListResponse(
             items=[
-                _post_item(row, liked_post_ids, previews, profiles, verified_author_ids)
+                _post_item(
+                    row,
+                    liked_post_ids,
+                    previews,
+                    profiles,
+                    verified_author_ids,
+                    current_user_id=user_id,
+                )
                 for row in rows
             ],
             count=len(rows),
@@ -1908,13 +2557,98 @@ def get_my_community_post(
             else []
         )
         return CommunityOwnPostDetailResponse(
-            post=_post_item(row, set(), {}, profiles, verified_author_ids),
+            post=_post_item(
+                row,
+                set(),
+                {},
+                profiles,
+                verified_author_ids,
+                current_user_id=user_id,
+            ),
             review_history=review_history,
         )
     except HTTPException:
         raise
     except Exception as exc:
         _raise_community_service_error(exc)
+
+
+@router.patch("/my-posts/{post_id}", response_model=CommunityPostItem)
+def update_my_community_post(
+    post_id: str,
+    payload: CommunityCreatePostRequest,
+    user_id: str = Depends(get_current_user_id),
+) -> CommunityPostItem:
+    """Update an owned post; experience edits always return to platform review."""
+
+    supabase = get_supabase_admin()
+    try:
+        current = _get_owned_post_row(supabase, post_id, user_id)
+        _ensure_owned_post_editable(supabase, post_id)
+        current_post_type = _community_post_type(current)
+        if payload.post_type != current_post_type:
+            raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="帖子类型与原内容不一致")
+
+        if current_post_type == "experience":
+            _current_verified_mentor_author(supabase, user_id)
+
+        update_data = {
+            "category": payload.category.strip(),
+            "experience_stages": payload.experience_stages if current_post_type == "experience" else [],
+            "title": payload.title.strip(),
+            "content": payload.content.strip(),
+            "media": [item.model_dump(by_alias=True) for item in payload.media[:9]],
+            "is_featured": False,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        if current_post_type == "experience":
+            update_data.update({
+                "is_published": False,
+                "review_status": "pending",
+                "review_version": max(0, int(current.get("review_version") or 0)) + 1,
+                "review_reason_code": None,
+                "review_note": None,
+                "reviewed_by": None,
+                "reviewed_at": None,
+                "submitted_at": datetime.now(timezone.utc).isoformat(),
+            })
+
+        response = call_supabase(
+            lambda: (
+                supabase.table("circle_community_posts")
+                .update(update_data)
+                .eq("id", post_id)
+                .eq("author_id", user_id)
+                .execute()
+            ),
+            operation_name="circle community own post update",
+        )
+        row = (response.data or [None])[0]
+        if not row:
+            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在或已被删除")
+
+        profiles = _fetch_community_profiles(supabase, [user_id])
+        verified_author_ids = {user_id} if current_post_type == "experience" else set()
+        return _post_item(
+            row,
+            set(),
+            {},
+            profiles,
+            verified_author_ids,
+            current_user_id=user_id,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning(
+            "Circle community own post update failed (post_id=%s error_type=%s)",
+            post_id,
+            type(exc).__name__,
+        )
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="帖子更新失败，请稍后重试",
+        ) from exc
 
 
 @router.patch("/my-posts/{post_id}/resubmit", response_model=CommunityPostItem)
@@ -1957,7 +2691,7 @@ def resubmit_my_community_experience_post(
             )
         row = response.data[0]
         profiles = _fetch_community_profiles(supabase, [user_id])
-        return _post_item(row, set(), {}, profiles, {user_id})
+        return _post_item(row, set(), {}, profiles, {user_id}, current_user_id=user_id)
     except HTTPException:
         raise
     except Exception as exc:
@@ -1982,7 +2716,9 @@ def delete_my_community_posts(
     payload: CommunityDeletePostsRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityDeletePostsResponse:
-    """Delete only posts owned by the current user, including their cascaded interactions."""
+    """Hide author-deleted posts while retaining moderation and appeal evidence."""
+
+    global _community_author_deleted_column_available
 
     post_ids = list(dict.fromkeys(str(post_id) for post_id in payload.post_ids))
     if not post_ids:
@@ -1990,46 +2726,24 @@ def delete_my_community_posts(
 
     supabase = get_supabase_admin()
     try:
-        report_response = call_supabase(
-            lambda: (
-                supabase.table("circle_community_reports")
-                .select("post_id")
-                .in_("post_id", post_ids)
-                .limit(1)
-                .execute()
-            ),
-            operation_name="circle community own post report protection lookup",
-        )
-        if report_response.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="包含已进入平台处理的帖子，暂不能删除",
-            )
-        appeal_response = call_supabase(
-            lambda: (
-                supabase.table("circle_community_appeals")
-                .select("post_id")
-                .in_("post_id", post_ids)
-                .limit(1)
-                .execute()
-            ),
-            operation_name="circle community own post appeal protection lookup",
-        )
-        if appeal_response.data:
-            raise HTTPException(
-                status_code=status.HTTP_409_CONFLICT,
-                detail="包含已有内容申诉留档的帖子，为保留平台处理记录暂不能删除",
-            )
+        deleted_at = datetime.now(timezone.utc).isoformat()
         response = call_supabase(
             lambda: (
                 supabase.table("circle_community_posts")
-                .delete()
+                .update({
+                    "author_deleted_at": deleted_at,
+                    "is_published": False,
+                    "is_featured": False,
+                    "updated_at": deleted_at,
+                })
                 .in_("id", post_ids)
                 .eq("author_id", user_id)
+                .is_("author_deleted_at", "null")
                 .execute()
             ),
-            operation_name="circle community own post delete",
+            operation_name="circle community own post author delete",
         )
+        _community_author_deleted_column_available = True
         deleted_post_ids = [
             str(row.get("id"))
             for row in (response.data or [])
@@ -2042,6 +2756,18 @@ def delete_my_community_posts(
     except HTTPException:
         raise
     except Exception as exc:
+        if _is_missing_community_post_column_error(exc, "author_deleted_at"):
+            _community_author_deleted_column_available = False
+            deleted_post_ids = _legacy_author_delete_posts(
+                supabase,
+                post_ids=post_ids,
+                user_id=user_id,
+                deleted_at=deleted_at,
+            )
+            return CommunityDeletePostsResponse(
+                deleted_post_ids=deleted_post_ids,
+                deleted_count=len(deleted_post_ids),
+            )
         _raise_community_service_error(exc)
 
 
@@ -2162,68 +2888,94 @@ def create_community_moderation_appeal(
 @router.get("/posts/{post_id}", response_model=CommunityPostDetailResponse)
 def get_community_post(
     post_id: str,
+    comments_limit: int = Query(default=20, ge=1, le=50),
+    comments_cursor: str | None = Query(default=None, max_length=2048),
     user_id: str | None = Depends(get_optional_current_user_id),
 ) -> CommunityPostDetailResponse:
-    global _community_comment_visibility_column_available
     supabase = get_supabase_admin()
     try:
         row = _get_post_row(supabase, post_id)
-        liked_post_ids = _fetch_liked_post_ids(supabase, user_id, [post_id])
-        previews = _fetch_comment_previews(supabase, [post_id])
-        def fetch_comment_rows(include_visibility: bool):
-            query = (
-                supabase.table("circle_community_comments")
-                .select("*")
-                .eq("post_id", post_id)
-                .order("created_at", desc=False)
-                .limit(200)
+        comment_rows, comments_next_cursor, comments_has_more = _fetch_community_comment_page(
+            supabase,
+            post_id=post_id,
+            limit=comments_limit,
+            cursor=comments_cursor,
+        )
+        comment_ids = [str(item.get("id") or "") for item in comment_rows if item.get("id")]
+        author_ids = [str(item.get("author_id") or "") for item in [row, *comment_rows] if item.get("author_id")]
+        post_author_id = str(row.get("author_id") or "")
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            liked_posts_future = executor.submit(_fetch_liked_post_ids, supabase, user_id, [post_id])
+            liked_comments_future = executor.submit(_fetch_liked_comment_ids, supabase, user_id, comment_ids)
+            profiles_future = executor.submit(_fetch_community_profiles, supabase, author_ids)
+            verified_authors_future = executor.submit(
+                _fetch_verified_mentor_owner_ids,
+                supabase,
+                [post_author_id] if post_author_id else [],
             )
-            if include_visibility:
-                query = query.eq("is_published", True)
-            return call_supabase(
-                query.execute,
-                operation_name="circle community comment list",
-            )
-
-        if _community_comment_visibility_column_available is not False:
-            try:
-                comments_response = fetch_comment_rows(True)
-                _community_comment_visibility_column_available = True
-            except Exception as exc:
-                if not _is_missing_comment_visibility_column_error(exc):
-                    raise
-                _community_comment_visibility_column_available = False
-                comments_response = fetch_comment_rows(False)
-        else:
-            comments_response = fetch_comment_rows(False)
-        comment_rows = comments_response.data or []
-        liked_comment_ids = _fetch_liked_comment_ids(
-            supabase,
-            user_id,
-            [str(item.get("id") or "") for item in comment_rows],
-        )
-        profiles = _fetch_community_profiles(
-            supabase,
-            [
-                str(item.get("author_id") or "")
-                for item in [row, *comment_rows]
-            ],
-        )
-        verified_author_ids = _fetch_verified_mentor_owner_ids(
-            supabase,
-            [str(item.get("author_id") or "") for item in [row, *comment_rows]],
-        )
+            liked_post_ids = liked_posts_future.result()
+            liked_comment_ids = liked_comments_future.result()
+            profiles = profiles_future.result()
+            verified_author_ids = verified_authors_future.result()
         if (
             _community_post_type(row) == "experience"
             and not _is_public_verified_experience_post(row, verified_author_ids)
         ):
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="该经验贴当前未满足公开展示条件")
+        previews = {
+            post_id: [
+                CommunityCommentPreview(
+                    id=str(item.get("id") or "") or None,
+                    author=str(item.get("author_name") or "研友"),
+                    text=str(item.get("content") or ""),
+                )
+                for item in reversed(comment_rows[-3:])
+            ]
+        }
         return CommunityPostDetailResponse(
-            post=_post_item(row, liked_post_ids, previews, profiles, verified_author_ids),
+            post=_post_item(
+                row,
+                liked_post_ids,
+                previews,
+                profiles,
+                verified_author_ids,
+                current_user_id=user_id,
+            ),
             comments=[
                 _comment_item(item, user_id, profiles, liked_comment_ids)
                 for item in comment_rows
             ],
+            comments_next_cursor=comments_next_cursor,
+            comments_has_more=comments_has_more,
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        _raise_community_service_error(exc)
+
+
+@router.get("/posts/{post_id}/comments", response_model=CommunityCommentListResponse)
+def list_community_comments(
+    post_id: str,
+    limit: int = Query(default=20, ge=1, le=50),
+    cursor: str | None = Query(default=None, max_length=2048),
+    user_id: str | None = Depends(get_optional_current_user_id),
+) -> CommunityCommentListResponse:
+    supabase = get_supabase_admin()
+    try:
+        _get_post_row(supabase, post_id)
+        rows, next_cursor, has_more = _fetch_community_comment_page(
+            supabase,
+            post_id=post_id,
+            limit=limit,
+            cursor=cursor,
+        )
+        items = _serialize_community_comment_page(supabase, rows=rows, user_id=user_id)
+        return CommunityCommentListResponse(
+            items=items,
+            count=len(items),
+            next_cursor=next_cursor,
+            has_more=has_more,
         )
     except HTTPException:
         raise
@@ -2277,7 +3029,9 @@ async def upload_community_image(
         )
 
     content_type, extension = detected
-    storage_path = f"{user_id}/{uuid4().hex}.{extension}"
+    image_key = uuid4().hex
+    storage_path = f"{user_id}/{image_key}.{extension}"
+    thumbnail_path = f"{user_id}/thumbs/{image_key}.webp"
     supabase = get_supabase_admin()
 
     try:
@@ -2292,7 +3046,27 @@ async def upload_community_image(
                 "upsert": "false",
             },
         )
-        return CommunityImageUploadResponse(url=bucket.get_public_url(storage_path))
+        original_url = bucket.get_public_url(storage_path)
+        thumbnail_url = original_url
+        thumbnail = _build_community_thumbnail(data)
+        if thumbnail:
+            try:
+                bucket.upload(
+                    thumbnail_path,
+                    thumbnail,
+                    file_options={
+                        "content-type": "image/webp",
+                        "cache-control": "31536000",
+                        "upsert": "false",
+                    },
+                )
+                thumbnail_url = bucket.get_public_url(thumbnail_path)
+            except Exception as exc:
+                logger.warning(
+                    "Circle community thumbnail upload skipped (error_type=%s)",
+                    type(exc).__name__,
+                )
+        return CommunityImageUploadResponse(url=original_url, thumbnail_url=thumbnail_url)
     except HTTPException:
         raise
     except Exception as exc:
@@ -2316,11 +3090,7 @@ def create_community_post(
         author_verified = False
         if payload.post_type == "experience":
             stage = "mentor_verification"
-            mentor_author = _current_verified_mentor_author(supabase, user_id)
-            author_name = str(mentor_author.get("display_name") or author_name)
-            author_avatar = _first_character(mentor_author.get("avatar_label") or author_name)
-            author_tone = str(mentor_author.get("avatar_tone") or "blue")
-            author_avatar_url = str(mentor_author.get("avatar_url") or "").strip() or author_avatar_url
+            _current_verified_mentor_author(supabase, user_id)
             author_verified = True
 
         client_request_id = str(payload.client_request_id)
@@ -2373,8 +3143,9 @@ def create_community_post(
             post_row,
             set(),
             {},
-            {user_id: {"avatar_url": author_avatar_url}},
+            {user_id: {"nickname": author_name, "avatar_url": author_avatar_url}},
             {user_id} if author_verified else set(),
+            current_user_id=user_id,
         )
     except HTTPException:
         raise
@@ -2385,24 +3156,39 @@ def create_community_post(
 @router.post("/posts/{post_id}/like", response_model=CommunityLikeResponse)
 def toggle_community_like(
     post_id: str,
+    payload: CommunitySetLikeRequest,
     user_id: str = Depends(get_current_user_id),
+    background_tasks: BackgroundTasks = None,
 ) -> CommunityLikeResponse:
     supabase = get_supabase_admin()
     try:
         post = _get_post_row(supabase, post_id)
-        is_liked, like_count = _toggle_community_like_without_rpc(supabase, post_id, user_id)
-        if is_liked:
-            _notify_community_post_interaction(
+        if payload.is_liked is None:
+            is_liked, like_count = _toggle_community_like_without_rpc(supabase, post_id, user_id)
+            changed = True
+        else:
+            is_liked, like_count, changed = _set_community_like(
                 supabase,
-                post=post,
-                actor_user_id=user_id,
-                interaction="like",
-                related_id=f"{post_id}:like:{user_id}",
+                post_id=post_id,
+                user_id=user_id,
+                desired_liked=payload.is_liked,
             )
+        if is_liked and changed:
+            notification_kwargs = {
+                "post": dict(post),
+                "actor_user_id": user_id,
+                "interaction": "like",
+                "related_id": f"{post_id}:like:{user_id}",
+            }
+            if background_tasks is not None:
+                background_tasks.add_task(_notify_community_post_interaction_background, **notification_kwargs)
+            else:
+                _notify_community_post_interaction(supabase, **notification_kwargs)
         return CommunityLikeResponse(
             post_id=post_id,
             is_liked=is_liked,
             like_count=like_count,
+            changed=changed,
         )
     except HTTPException:
         raise
@@ -2417,20 +3203,32 @@ def toggle_community_like(
 def toggle_community_comment_like(
     post_id: str,
     comment_id: str,
+    payload: CommunitySetLikeRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> CommunityCommentLikeResponse:
     supabase = get_supabase_admin()
     try:
-        is_liked, like_count = _toggle_community_comment_like_without_rpc(
-            supabase,
-            post_id,
-            comment_id,
-            user_id,
-        )
+        if payload.is_liked is None:
+            is_liked, like_count = _toggle_community_comment_like_without_rpc(
+                supabase,
+                post_id,
+                comment_id,
+                user_id,
+            )
+            changed = True
+        else:
+            is_liked, like_count, changed = _set_community_comment_like(
+                supabase,
+                post_id=post_id,
+                comment_id=comment_id,
+                user_id=user_id,
+                desired_liked=payload.is_liked,
+            )
         return CommunityCommentLikeResponse(
             comment_id=comment_id,
             is_liked=is_liked,
             like_count=like_count,
+            changed=changed,
         )
     except HTTPException:
         raise
@@ -2492,36 +3290,29 @@ def create_community_comment(
     post_id: str,
     payload: CommunityCreateCommentRequest,
     user_id: str = Depends(get_current_user_id),
+    background_tasks: BackgroundTasks = None,
 ) -> CommunityCreateCommentResponse:
     supabase = get_supabase_admin()
     try:
-        post = _get_post_row(supabase, post_id)
-        author_name, author_avatar, author_avatar_url = _current_author(supabase, user_id)
-        comment_response = call_supabase(
-            lambda: supabase.table("circle_community_comments").insert(
-                {
-                    "post_id": post_id,
-                    "author_id": user_id,
-                    "author_name": author_name,
-                    "author_avatar": author_avatar,
-                    "content": payload.content.strip(),
-                }
-            ).execute(),
-            operation_name="circle community comment create",
-        )
-        if not comment_response.data:
-            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Circle comment create failed")
-
-        comment = comment_response.data[0]
-        _notify_community_post_interaction(
+        comment, comment_count, created, post, author_avatar_url, author_name = _create_community_comment_record(
             supabase,
-            post=post,
-            actor_user_id=user_id,
-            interaction="comment",
-            related_id=str(comment.get("id") or post_id),
-            comment_content=str(comment.get("content") or payload.content or ""),
+            post_id=post_id,
+            user_id=user_id,
+            payload=payload,
         )
-        updated_post = _get_post_row(supabase, post_id)
+        if created:
+            notification_kwargs = {
+                "post": dict(post),
+                "actor_user_id": user_id,
+                "interaction": "comment",
+                "related_id": str(comment.get("id") or post_id),
+                "comment_content": str(comment.get("content") or payload.content or ""),
+                "actor_name": author_name,
+            }
+            if background_tasks is not None:
+                background_tasks.add_task(_notify_community_post_interaction_background, **notification_kwargs)
+            else:
+                _notify_community_post_interaction(supabase, **notification_kwargs)
         return CommunityCreateCommentResponse(
             comment=_comment_item(
                 comment,
@@ -2529,7 +3320,8 @@ def create_community_comment(
                 {user_id: {"avatar_url": author_avatar_url}},
                 set(),
             ),
-            comment_count=int(updated_post.get("comment_count") or 0),
+            comment_count=comment_count,
+            created=created,
         )
     except HTTPException:
         raise

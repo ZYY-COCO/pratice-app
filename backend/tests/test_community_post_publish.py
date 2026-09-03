@@ -55,6 +55,11 @@ class _FakeQuery:
         self.payload = dict(payload)
         return self
 
+    def update(self, payload):
+        self.action = "update"
+        self.payload = dict(payload)
+        return self
+
     def execute(self):
         if self.action == "select":
             if "client_request_id" in self.filters and "client_request_id" in self.store.missing_columns:
@@ -84,6 +89,13 @@ class _FakeQuery:
             self.store.rows.append(inserted)
             return SimpleNamespace(data=[inserted])
 
+        if self.action == "update":
+            self.store.update_attempts.append(dict(self.payload))
+            current = self.store.rows[0] if self.store.rows else _post_row()
+            updated = {**current, **self.payload}
+            self.store.rows = [updated]
+            return SimpleNamespace(data=[updated])
+
         raise AssertionError("Unexpected fake query action")
 
 
@@ -94,6 +106,7 @@ class _FakeSupabase:
         self.duplicate_once = duplicate_once
         self.lookup_count = 0
         self.insert_attempts = []
+        self.update_attempts = []
 
     def table(self, table_name):
         if table_name != "circle_community_posts":
@@ -128,7 +141,7 @@ class CommunityPostPublishTests(unittest.TestCase):
         }
         with (
             patch.object(community, "get_supabase_admin", return_value=store),
-            patch.object(community, "_current_author", return_value=("研友", "研", None)),
+            patch.object(community, "_current_author", return_value=("账号昵称", "账", "https://example.com/account-avatar.png")),
             patch.object(community, "_current_verified_mentor_author", return_value=mentor),
         ):
             return community.create_community_post(payload, AUTHOR_ID)
@@ -151,7 +164,140 @@ class CommunityPostPublishTests(unittest.TestCase):
         inserted = store.insert_attempts[0]
         self.assertEqual(inserted["client_request_id"], str(REQUEST_ID))
         self.assertEqual(inserted["experience_stages"], ["申请制", "复试"])
+        self.assertEqual(inserted["author_name"], "账号昵称")
+        self.assertEqual(inserted["author_avatar"], "账")
+        self.assertEqual(inserted["author_tone"], "blue")
+        self.assertEqual(result.author, "账号昵称")
+        self.assertEqual(result.avatar_url, "https://example.com/account-avatar.png")
         self.assertNotIn(community.COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY, str(inserted["media"]))
+
+    def test_existing_experience_post_prefers_current_account_nickname(self):
+        row = _post_row(
+            post_type="experience",
+            author_name="审核档案姓名",
+            author_avatar="审",
+            category="Z001",
+        )
+
+        result = community._post_item(
+            row,
+            set(),
+            {},
+            {AUTHOR_ID: {"nickname": "当前账号昵称", "avatar_url": "https://example.com/current-avatar.png"}},
+            {AUTHOR_ID},
+        )
+
+        self.assertEqual(result.author, "当前账号昵称")
+        self.assertEqual(result.avatar, "当")
+        self.assertEqual(result.avatar_url, "https://example.com/current-avatar.png")
+        self.assertTrue(result.author_verified)
+
+    def test_existing_experience_post_never_falls_back_to_review_name(self):
+        row = _post_row(
+            post_type="experience",
+            author_name="审核档案姓名",
+            author_avatar="审",
+            category="Z001",
+        )
+
+        account_with_email = community._post_item(
+            row,
+            set(),
+            {},
+            {AUTHOR_ID: {"nickname": "", "email": "account-name@example.com"}},
+            {AUTHOR_ID},
+        )
+        account_without_public_name = community._post_item(
+            row,
+            set(),
+            {},
+            {AUTHOR_ID: {"nickname": "", "email": ""}},
+            {AUTHOR_ID},
+        )
+
+        self.assertEqual(account_with_email.author, "account-name")
+        self.assertEqual(account_without_public_name.author, "研友")
+        self.assertNotEqual(account_without_public_name.author, "审核档案姓名")
+
+    def test_owner_can_edit_chat_post_without_review_state(self):
+        current = _post_row()
+        store = _FakeSupabase(rows=[current])
+        payload = CommunityCreatePostRequest(
+            post_type="chat",
+            category="中华文化",
+            client_request_id=REQUEST_ID,
+            title="修改后的标题",
+            content="修改后的正文",
+        )
+
+        with (
+            patch.object(community, "get_supabase_admin", return_value=store),
+            patch.object(community, "_get_owned_post_row", return_value=current),
+            patch.object(community, "_ensure_owned_post_editable"),
+            patch.object(
+                community,
+                "_fetch_community_profiles",
+                return_value={AUTHOR_ID: {"nickname": "账号昵称"}},
+            ),
+        ):
+            result = community.update_my_community_post(current["id"], payload, AUTHOR_ID)
+
+        updated = store.update_attempts[0]
+        self.assertEqual(updated["category"], "中华文化")
+        self.assertNotIn("review_status", updated)
+        self.assertEqual(result.title, "修改后的标题")
+        self.assertTrue(result.is_mine)
+
+    def test_owner_experience_edit_returns_to_review(self):
+        current = _post_row(
+            post_type="experience",
+            category="Z001",
+            experience_stages=["初试"],
+            review_status="approved",
+            review_version=2,
+            is_published=True,
+        )
+        store = _FakeSupabase(rows=[current])
+        payload = CommunityCreatePostRequest(
+            post_type="experience",
+            category="Z002",
+            experience_stages=["申请制", "复试"],
+            client_request_id=REQUEST_ID,
+            title="修改后的经验",
+            content="修改后的经验正文",
+        )
+
+        with (
+            patch.object(community, "get_supabase_admin", return_value=store),
+            patch.object(community, "_get_owned_post_row", return_value=current),
+            patch.object(community, "_ensure_owned_post_editable"),
+            patch.object(community, "_current_verified_mentor_author", return_value={"verified": True}),
+            patch.object(
+                community,
+                "_fetch_community_profiles",
+                return_value={AUTHOR_ID: {"nickname": "账号昵称"}},
+            ),
+        ):
+            result = community.update_my_community_post(current["id"], payload, AUTHOR_ID)
+
+        updated = store.update_attempts[0]
+        self.assertFalse(updated["is_published"])
+        self.assertEqual(updated["review_status"], "pending")
+        self.assertEqual(updated["review_version"], 3)
+        self.assertEqual(result.experience_stages, ["申请制", "复试"])
+        self.assertTrue(result.is_mine)
+
+    def test_reported_post_cannot_be_edited(self):
+        with patch.object(
+            community,
+            "call_supabase",
+            side_effect=[SimpleNamespace(data=[{"id": "report-id"}]), SimpleNamespace(data=[])],
+        ):
+            with self.assertRaises(HTTPException) as raised:
+                community._ensure_owned_post_editable(object(), _post_row()["id"])
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertIn("暂不能编辑", raised.exception.detail)
 
     def test_chat_retry_returns_existing_post_and_keeps_empty_stages(self):
         store = _FakeSupabase()
