@@ -4,15 +4,16 @@
   "private": true,
   "scripts": {
     "dev:h5": "uni -p h5",
-    "prebuild:h5": "npm run icons:check",
+    "prebuild:h5": "npm run icons:check && npm run consultation-state:check",
     "build:h5": "uni build -p h5",
     "dev:mp-weixin": "uni -p mp-weixin",
-    "prebuild:mp-weixin": "npm run icons:check",
+    "prebuild:mp-weixin": "npm run icons:check && npm run consultation-state:check",
     "build:mp-weixin": "uni build -p mp-weixin && node scripts/fix-mp-weixin-config.cjs",
-    "prebuild:app": "npm run icons:check",
+    "prebuild:app": "npm run icons:check && npm run consultation-state:check",
     "build:app": "uni build -p app",
     "icons:build": "node scripts/generate-mobile-icons.cjs",
-    "icons:check": "node scripts/check-mobile-icons.cjs"
+    "icons:check": "node scripts/check-mobile-icons.cjs",
+    "consultation-state:check": "node scripts/check-mentor-consultation-state.mjs"
   },
   "uni-app": {
     "scripts": {

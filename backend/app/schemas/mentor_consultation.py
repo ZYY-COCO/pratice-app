@@ -494,6 +494,9 @@ class MentorConsultationOrderItem(BaseModel):
     accepted_at: str | None = None
     expires_at: str | None = None
     started_at: str | None = None
+    server_now: str | None = None
+    service_ends_at: str | None = None
+    auto_completion_blocked_by_dispute: bool = False
     ended_at: str | None = None
     applicant_completion_confirmed_at: str | None = None
     mentor_completion_confirmed_at: str | None = None

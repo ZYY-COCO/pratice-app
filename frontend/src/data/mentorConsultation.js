@@ -227,6 +227,12 @@ export function normalizeMentorConsultationOrder(rawOrder = {}) {
   const questionnaire = rawOrder.questionnaire && typeof rawOrder.questionnaire === 'object'
     ? rawOrder.questionnaire
     : {}
+  const serverNow = String(rawOrder.serverNow || rawOrder.server_now || '')
+  const parsedServerNow = Date.parse(serverNow)
+  const inheritedServerClockOffset = Number(rawOrder.serverClockOffsetMs ?? rawOrder.server_clock_offset_ms)
+  const serverClockOffsetMs = Number.isFinite(inheritedServerClockOffset)
+    ? inheritedServerClockOffset
+    : Number.isFinite(parsedServerNow) ? parsedServerNow - Date.now() : 0
   return {
     id: String(rawOrder.id || ''),
     orderNo: String(rawOrder.orderNo || rawOrder.order_no || ''),
@@ -247,6 +253,10 @@ export function normalizeMentorConsultationOrder(rawOrder = {}) {
     acceptedAt: String(rawOrder.acceptedAt || rawOrder.accepted_at || ''),
     expiresAt: String(rawOrder.expiresAt || rawOrder.expires_at || ''),
     startedAt: String(rawOrder.startedAt || rawOrder.started_at || ''),
+    serviceEndsAt: String(rawOrder.serviceEndsAt || rawOrder.service_ends_at || ''),
+    serverNow,
+    serverClockOffsetMs,
+    autoCompletionBlockedByDispute: Boolean(rawOrder.autoCompletionBlockedByDispute ?? rawOrder.auto_completion_blocked_by_dispute),
     endedAt: String(rawOrder.endedAt || rawOrder.ended_at || ''),
     applicantCompletionConfirmedAt: String(rawOrder.applicantCompletionConfirmedAt || rawOrder.applicant_completion_confirmed_at || ''),
     mentorCompletionConfirmedAt: String(rawOrder.mentorCompletionConfirmedAt || rawOrder.mentor_completion_confirmed_at || ''),
@@ -290,6 +300,10 @@ export function saveConsultationOrder(order = {}) {
     expiresAt: normalizedOrder.expiresAt,
     acceptedAt: normalizedOrder.acceptedAt,
     startedAt: normalizedOrder.startedAt,
+    serviceEndsAt: normalizedOrder.serviceEndsAt,
+    serverNow: normalizedOrder.serverNow,
+    serverClockOffsetMs: normalizedOrder.serverClockOffsetMs,
+    autoCompletionBlockedByDispute: normalizedOrder.autoCompletionBlockedByDispute,
     endedAt: normalizedOrder.endedAt,
     applicantCompletionConfirmedAt: normalizedOrder.applicantCompletionConfirmedAt,
     mentorCompletionConfirmedAt: normalizedOrder.mentorCompletionConfirmedAt,

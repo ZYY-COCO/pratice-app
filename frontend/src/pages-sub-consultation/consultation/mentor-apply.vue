@@ -207,7 +207,10 @@
 
           <view class="mentor-center-orders">
             <view class="mentor-center-orders-heading">
-              <view><strong>我的咨询记录</strong></view>
+              <view>
+                <strong>我的咨询记录</strong>
+                <text v-if="mentorOrdersSyncError">{{ mentorOrdersSyncError }}</text>
+              </view>
               <button :disabled="mentorOrdersLoading" @tap="loadReceivedOrders">
                 <view v-if="mentorOrdersLoading" class="mentor-center-button-spinner" aria-hidden="true"></view>
                 <text class="mentor-center-action-label">刷新</text>
@@ -242,7 +245,7 @@
                     </view>
                     <view class="mentor-center-order-badges">
                       <view v-if="isMentorOrderUnread(order)" class="mentor-center-order-unread">新动态</view>
-                      <view class="mentor-center-order-status" :class="order.orderStatus">{{ getOrderStatusLabel(order.orderStatus) }}</view>
+                      <view class="mentor-center-order-status" :class="getOrderUiState(order).statusClass">{{ getOrderStatusLabel(order) }}</view>
                     </view>
                   </view>
 
@@ -259,7 +262,7 @@
                   <view v-if="order.orderStatus === 'pending_accept'" class="mentor-center-order-actions">
                     <button :disabled="Boolean(centerActionId)" @tap.stop="openOrderDecision(order)"><text class="mentor-center-action-label">查看资料并处理</text></button>
                   </view>
-                  <view v-else-if="['accepted', 'booked', 'in_progress'].includes(order.orderStatus)" class="mentor-center-order-actions">
+                  <view v-else-if="canShowOrderServiceAction(order)" class="mentor-center-order-actions">
                     <button
                       v-if="canCancelReceivedOrder(order)"
                       class="light"
@@ -271,7 +274,7 @@
                     </button>
                     <button :disabled="Boolean(centerActionId)" @tap.stop="openMentorOrderChat(order)">
                       <view v-if="isCenterActionLoading(order, 'chat')" class="mentor-center-button-spinner" aria-hidden="true"></view>
-                      <text class="mentor-center-action-label">{{ isCenterActionLoading(order, 'chat') ? '进入中' : order.orderStatus === 'in_progress' ? '进入咨询' : '开始咨询' }}</text>
+                      <text class="mentor-center-action-label">{{ isCenterActionLoading(order, 'chat') ? '打开中' : getOrderActionLabel(order) }}</text>
                     </button>
                   </view>
                 </view>
@@ -331,6 +334,7 @@ import {
   cancelMentorConsultationOrder,
   createMentorVerificationApplication,
   decideMentorConsultationOrder,
+  fetchMentorConsultationOrder,
   fetchMyMentorProfile,
   fetchMyMentorVerificationApplication,
   fetchMyReceivedMentorOrders,
@@ -344,6 +348,7 @@ import {
 } from '../../api/notifications'
 import {
   MENTOR_SKILL_OPTIONS,
+  getConsultationDraft,
   getMentorApplication,
   getMentorVerificationStatus,
   maskMentorName,
@@ -355,6 +360,11 @@ import {
 } from '../../data/mentorConsultation'
 import { getAuthUser, isLoggedIn } from '../../utils/auth'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
+import {
+  getMentorConsultationOrderUiState,
+  isMentorConsultationServiceExpired,
+  mergeMentorConsultationStopState
+} from '../../utils/mentorConsultationState.mjs'
 
 const pageMode = ref('apply')
 const schoolKeyword = ref('')
@@ -382,6 +392,7 @@ const mentorOrdersLoading = ref(false)
 const mentorOrdersLoadingMore = ref(false)
 const mentorOrdersNextCursor = ref('')
 const mentorOrdersHasMore = ref(false)
+const mentorOrdersSyncError = ref('')
 const onlineStatusUpdating = ref(false)
 const centerActionId = ref('')
 const centerActionType = ref('')
@@ -399,7 +410,18 @@ const themeKey = ref(getStoredThemeKey())
 
 const MENTOR_CENTER_PROFILE_CACHE_PREFIX = 'circle-mentor-center-profile-v1'
 const MENTOR_CENTER_PROFILE_CACHE_MAX_AGE = 7 * 24 * 60 * 60 * 1000
+const MENTOR_ORDER_BACKGROUND_SYNC_INTERVAL_MS = 15000
+const MENTOR_ORDER_SYNC_STATUSES = new Set(['pending_accept', 'accepted', 'booked', 'in_progress'])
 let decisionCountdownTimer = null
+let mentorOrderBackgroundSyncTimer = null
+let mentorOrderBackgroundSyncing = false
+let mentorOrdersRefreshQueued = false
+let mentorCenterPageActive = false
+let mentorCenterPageDestroyed = false
+let mentorOrderOpenSequence = 0
+let mentorCenterVisibilityRevision = 0
+let mentorOrderDataRevision = 0
+const mentorOrderExpiryRefreshKeys = new Set()
 
 const pageTitle = computed(() => pageMode.value === 'pending' ? '认证审核中' : pageMode.value === 'center' ? '我的咨询主页' : '申请成为前辈')
 const applicationNoticeTitle = computed(() => applicationOutcomeStatus.value === 'revoked' ? '前辈资格已取消' : '上次认证未通过')
@@ -425,14 +447,17 @@ onLoad((options) => {
 })
 
 onShow(() => {
+  mentorCenterPageActive = true
   refreshYearOptions()
   themeKey.value = getStoredThemeKey()
   ownerUser.value = getAuthUser() || {}
+  syncMentorOrderFromDraft()
   startDecisionCountdown()
   if (pageMode.value === 'center' && mentorProfile.value) {
     void loadUnreadMentorOrderTargets()
     void loadReceivedOrders({ silent: true })
   }
+  openNotificationOrderIfNeeded()
 })
 
 async function loadUnreadMentorOrderTargets() {
@@ -470,8 +495,32 @@ function markMentorOrderNotificationsRead(order = {}) {
     .catch(() => loadUnreadMentorOrderTargets())
 }
 
-onHide(stopDecisionCountdown)
-onBeforeUnmount(stopDecisionCountdown)
+onHide(() => {
+  mentorOrderOpenSequence += 1
+  mentorCenterVisibilityRevision += 1
+  mentorCenterPageActive = false
+  mentorOrdersRefreshQueued = false
+  if (centerActionType.value === 'chat') {
+    centerActionId.value = ''
+    centerActionType.value = ''
+  }
+  stopDecisionCountdown()
+  stopMentorOrderBackgroundSync()
+})
+
+onBeforeUnmount(() => {
+  mentorOrderOpenSequence += 1
+  mentorCenterVisibilityRevision += 1
+  mentorCenterPageDestroyed = true
+  mentorCenterPageActive = false
+  mentorOrdersRefreshQueued = false
+  if (centerActionType.value === 'chat') {
+    centerActionId.value = ''
+    centerActionType.value = ''
+  }
+  stopDecisionCountdown()
+  stopMentorOrderBackgroundSync()
+})
 
 async function initializePage(options) {
   ownerUser.value = getAuthUser() || {}
@@ -512,6 +561,7 @@ async function initializePage(options) {
     if (profile) {
       applyMentorProfile(profile, { persist: true })
       pageMode.value = 'center'
+      scheduleMentorOrderBackgroundSync()
       return
     }
     clearCachedMentorCenterProfile()
@@ -854,31 +904,49 @@ function syncFormFromMentorProfile(profile) {
 }
 
 async function loadReceivedOrders({ silent = false } = {}) {
-  if (mentorOrdersLoading.value || mentorOrdersLoadingMore.value) return
+  if (mentorOrdersLoading.value || mentorOrdersLoadingMore.value || mentorOrderBackgroundSyncing) {
+    mentorOrdersRefreshQueued = true
+    return
+  }
+  stopMentorOrderBackgroundSync()
+  const requestVisibilityRevision = mentorCenterVisibilityRevision
+  const requestDataRevision = mentorOrderDataRevision
   mentorOrdersLoading.value = true
   mentorOrdersNextCursor.value = ''
   mentorOrdersHasMore.value = false
   try {
     const payload = await fetchMyReceivedMentorOrders({ limit: 20 })
-    mentorOrders.value = (Array.isArray(payload?.items) ? payload.items : [])
+    if (!isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) return
+    const existingById = new Map(mentorOrders.value.map((order) => [order.id, order]))
+    mentorOrders.value = mergeMentorOrdersWithDraft((Array.isArray(payload?.items) ? payload.items : [])
       .map((order) => normalizeMentorConsultationOrder(order))
+      .map((order) => mergeMentorConsultationStopState(order, existingById.get(order.id))))
+    mentorOrdersSyncError.value = ''
     mentorOrdersNextCursor.value = String(payload?.next_cursor || '')
     mentorOrdersHasMore.value = payload?.has_more === true
-    openNotificationOrderIfNeeded()
+    if (mentorCenterPageActive) openNotificationOrderIfNeeded()
   } catch (error) {
-    if (!silent) uni.showToast({ title: error?.detail || '咨询请求加载失败', icon: 'none' })
+    if (isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) {
+      mentorOrdersSyncError.value = '状态同步失败，请刷新重试'
+      if (!silent) uni.showToast({ title: error?.detail || '咨询请求加载失败', icon: 'none' })
+    }
   } finally {
     mentorOrdersLoading.value = false
+    flushQueuedReceivedOrdersRefresh()
+    scheduleMentorOrderBackgroundSync()
   }
 }
 
 async function loadMoreReceivedOrders() {
-  if (mentorOrdersLoading.value || mentorOrdersLoadingMore.value || !mentorOrdersHasMore.value || !mentorOrdersNextCursor.value) return
+  if (mentorOrdersLoading.value || mentorOrdersLoadingMore.value || mentorOrderBackgroundSyncing || !mentorOrdersHasMore.value || !mentorOrdersNextCursor.value) return
+  const requestVisibilityRevision = mentorCenterVisibilityRevision
+  const requestDataRevision = mentorOrderDataRevision
   mentorOrdersLoadingMore.value = true
   try {
     const payload = await fetchMyReceivedMentorOrders({ limit: 20, cursor: mentorOrdersNextCursor.value })
-    const nextOrders = (Array.isArray(payload?.items) ? payload.items : [])
-      .map((order) => normalizeMentorConsultationOrder(order))
+    if (!isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) return
+    const nextOrders = mergeMentorOrdersWithDraft((Array.isArray(payload?.items) ? payload.items : [])
+      .map((order) => normalizeMentorConsultationOrder(order)))
     mentorOrders.value = [
       ...mentorOrders.value,
       ...nextOrders.filter((item) => !mentorOrders.value.some((existing) => existing.id === item.id))
@@ -886,10 +954,161 @@ async function loadMoreReceivedOrders() {
     mentorOrdersNextCursor.value = String(payload?.next_cursor || '')
     mentorOrdersHasMore.value = payload?.has_more === true
   } catch (error) {
-    uni.showToast({ title: error?.detail || '更多咨询记录加载失败', icon: 'none' })
+    if (isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) {
+      uni.showToast({ title: error?.detail || '更多咨询记录加载失败', icon: 'none' })
+    }
   } finally {
     mentorOrdersLoadingMore.value = false
+    flushQueuedReceivedOrdersRefresh()
+    scheduleMentorOrderBackgroundSync()
   }
+}
+
+function flushQueuedReceivedOrdersRefresh() {
+  if (mentorCenterPageDestroyed || !mentorCenterPageActive) {
+    mentorOrdersRefreshQueued = false
+    return
+  }
+  if (!mentorOrdersRefreshQueued || mentorOrdersLoading.value || mentorOrdersLoadingMore.value || mentorOrderBackgroundSyncing) return
+  mentorOrdersRefreshQueued = false
+  void loadReceivedOrders({ silent: true })
+}
+
+function getMentorOrdersNeedingBackgroundSync() {
+  return mentorOrders.value.filter((order) => (
+    order?.id && MENTOR_ORDER_SYNC_STATUSES.has(String(order.orderStatus || ''))
+  ))
+}
+
+function mergeReceivedOrderSnapshot(incomingOrders = []) {
+  const draftMergedOrders = mergeMentorOrdersWithDraft(incomingOrders)
+  const incomingById = new Map(draftMergedOrders.map((order) => [order.id, order]))
+  const existingIds = new Set(mentorOrders.value.map((order) => order.id))
+  mentorOrders.value = [
+    ...draftMergedOrders.filter((order) => order.id && !existingIds.has(order.id)),
+    ...mentorOrders.value.map((order) => {
+      const incomingOrder = incomingById.get(order.id)
+      return incomingOrder ? mergeMentorConsultationStopState(incomingOrder, order) : order
+    })
+  ]
+}
+
+function applyAuthoritativeMentorOrderSnapshot(order) {
+  if (!order?.id) return order
+  mentorOrderDataRevision += 1
+  const draftMergedOrder = mergeMentorOrdersWithDraft([order])[0] || order
+  let appliedOrder = draftMergedOrder
+  mentorOrders.value = mentorOrders.value.map((item) => (
+    item.id === draftMergedOrder.id
+      ? (appliedOrder = mergeMentorConsultationStopState(draftMergedOrder, item))
+      : item
+  ))
+  return appliedOrder
+}
+
+function mergeMentorOrdersWithDraft(incomingOrders = []) {
+  const draft = getConsultationDraft()
+  const draftOrderId = String(draft?.orderId || '')
+  if (!draftOrderId) return incomingOrders
+  const cachedOrder = normalizeMentorConsultationOrder({ ...draft, id: draftOrderId })
+  return incomingOrders.map((order) => (
+    order.id === draftOrderId ? mergeMentorConsultationStopState(order, cachedOrder) : order
+  ))
+}
+
+function syncMentorOrderFromDraft() {
+  const draft = getConsultationDraft()
+  const draftOrderId = String(draft?.orderId || '')
+  if (!draftOrderId || !mentorOrders.value.some((order) => order.id === draftOrderId)) return
+  const cachedOrder = normalizeMentorConsultationOrder({ ...draft, id: draftOrderId })
+  const existingOrder = mentorOrders.value.find((order) => order.id === draftOrderId)
+  const mergedOrder = mergeMentorConsultationStopState(existingOrder, cachedOrder)
+  if (mergedOrder === existingOrder) return
+  applyAuthoritativeMentorOrderSnapshot(mergedOrder)
+  decisionClock.value = Date.now()
+}
+
+function isCurrentMentorOrderRead(visibilityRevision, dataRevision) {
+  return (
+    !mentorCenterPageDestroyed
+    && mentorCenterPageActive
+    && visibilityRevision === mentorCenterVisibilityRevision
+    && dataRevision === mentorOrderDataRevision
+  )
+}
+
+async function syncVisibleMentorOrderStates() {
+  if (
+    mentorCenterPageDestroyed
+    || !mentorCenterPageActive
+    || pageMode.value !== 'center'
+    || mentorOrderBackgroundSyncing
+    || mentorOrdersLoading.value
+    || mentorOrdersLoadingMore.value
+  ) {
+    scheduleMentorOrderBackgroundSync()
+    return
+  }
+  const watchedOrders = getMentorOrdersNeedingBackgroundSync()
+  if (!watchedOrders.length) return
+
+  const requestVisibilityRevision = mentorCenterVisibilityRevision
+  const requestDataRevision = mentorOrderDataRevision
+  mentorOrderBackgroundSyncing = true
+  try {
+    const payload = await fetchMyReceivedMentorOrders({ limit: 20 })
+    if (!isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) return
+    const incomingOrders = (Array.isArray(payload?.items) ? payload.items : [])
+      .map((order) => normalizeMentorConsultationOrder(order))
+    const incomingIds = new Set(incomingOrders.map((order) => order.id))
+    const missingOrders = watchedOrders.filter((order) => !incomingIds.has(order.id))
+    if (missingOrders.length) {
+      const detailResults = await Promise.allSettled(
+        missingOrders.map((order) => fetchMentorConsultationOrder(order.id))
+      )
+      if (!isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) return
+      for (const result of detailResults) {
+        if (result.status === 'fulfilled') {
+          incomingOrders.push(normalizeMentorConsultationOrder(result.value))
+        }
+      }
+    }
+    if (isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) {
+      mergeReceivedOrderSnapshot(incomingOrders)
+      mentorOrdersSyncError.value = ''
+      if (mentorCenterPageActive) openNotificationOrderIfNeeded()
+    }
+  } catch (error) {
+    if (isCurrentMentorOrderRead(requestVisibilityRevision, requestDataRevision)) {
+      mentorOrdersSyncError.value = '状态同步失败，请刷新重试'
+    }
+  } finally {
+    mentorOrderBackgroundSyncing = false
+    flushQueuedReceivedOrdersRefresh()
+    scheduleMentorOrderBackgroundSync()
+  }
+}
+
+function scheduleMentorOrderBackgroundSync() {
+  stopMentorOrderBackgroundSync()
+  if (
+    mentorCenterPageDestroyed
+    || !mentorCenterPageActive
+    || pageMode.value !== 'center'
+    || mentorOrdersLoading.value
+    || mentorOrdersLoadingMore.value
+    || mentorOrderBackgroundSyncing
+    || !getMentorOrdersNeedingBackgroundSync().length
+  ) return
+  mentorOrderBackgroundSyncTimer = setTimeout(() => {
+    mentorOrderBackgroundSyncTimer = null
+    void syncVisibleMentorOrderStates()
+  }, MENTOR_ORDER_BACKGROUND_SYNC_INTERVAL_MS)
+}
+
+function stopMentorOrderBackgroundSync() {
+  if (mentorOrderBackgroundSyncTimer) clearTimeout(mentorOrderBackgroundSyncTimer)
+  mentorOrderBackgroundSyncTimer = null
 }
 
 async function handleOnlineStatusChange(event) {
@@ -916,7 +1135,7 @@ async function handleOrderDecision(order, decision, reason = '') {
   centerActionType.value = 'decision'
   try {
     const updated = normalizeMentorConsultationOrder(await decideMentorConsultationOrder(order.id, decision, reason))
-    mentorOrders.value = mentorOrders.value.map((item) => item.id === updated.id ? updated : item)
+    applyAuthoritativeMentorOrderSnapshot(updated)
     uni.showToast({ title: decision === 'accept' ? '已确认接单，咨询已开始' : '已通知考生本次暂不接受', icon: 'none' })
     return updated
   } catch (error) {
@@ -988,7 +1207,7 @@ async function cancelReceivedMentorOrder(order) {
   centerActionType.value = 'cancel'
   try {
     const updated = normalizeMentorConsultationOrder(await cancelMentorConsultationOrder(order.id))
-    mentorOrders.value = mentorOrders.value.map((item) => item.id === updated.id ? updated : item)
+    applyAuthoritativeMentorOrderSnapshot(updated)
     uni.showToast({ title: '已取消，平台将同步处理退款', icon: 'none' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '取消服务失败，请稍后重试', icon: 'none' })
@@ -1003,21 +1222,62 @@ async function openMentorOrderChat(order) {
   if (!order?.id || !mentorProfile.value || centerActionId.value || !canEnterOrderService(order)) return
   centerActionId.value = order.id
   centerActionType.value = 'chat'
+  const openSequence = ++mentorOrderOpenSequence
+  let navigationPending = false
   try {
     let activeOrder = order
-    if (['accepted', 'booked'].includes(order.orderStatus)) {
-      activeOrder = normalizeMentorConsultationOrder(await startMentorConsultationOrder(order.id))
-      mentorOrders.value = mentorOrders.value.map((item) => item.id === activeOrder.id ? activeOrder : item)
+    if (getOrderUiState(order).isLiveChat) {
+      activeOrder = normalizeMentorConsultationOrder(await fetchMentorConsultationOrder(order.id))
+      if (!isCurrentMentorOrderOpen(openSequence, order.id)) return
+      activeOrder = applyAuthoritativeMentorOrderSnapshot(activeOrder)
     }
+    const activeState = getOrderUiState(activeOrder)
+    if (!activeState.canStartService && !activeState.canOpenChat) {
+      uni.showToast({ title: '咨询状态已更新，请查看最新记录', icon: 'none' })
+      return
+    }
+    if (activeState.canStartService) {
+      activeOrder = normalizeMentorConsultationOrder(await startMentorConsultationOrder(order.id))
+      if (!isCurrentMentorOrderOpen(openSequence, order.id)) return
+      activeOrder = applyAuthoritativeMentorOrderSnapshot(activeOrder)
+    }
+    if (!isCurrentMentorOrderOpen(openSequence, order.id)) return
+    navigationPending = true
     uni.navigateTo({
-      url: `/pages-sub-consultation/consultation/mentor-chat?mentorId=${encodeURIComponent(mentorProfile.value.id)}&orderId=${encodeURIComponent(activeOrder.id)}&role=mentor&from=mentor-center`
+      url: `/pages-sub-consultation/consultation/mentor-chat?mentorId=${encodeURIComponent(mentorProfile.value.id)}&orderId=${encodeURIComponent(activeOrder.id)}&role=mentor&from=mentor-center`,
+      fail: () => uni.showToast({ title: '咨询页面打开失败，请稍后重试', icon: 'none' }),
+      complete: () => {
+        if (
+          openSequence === mentorOrderOpenSequence
+          && centerActionId.value === order.id
+          && centerActionType.value === 'chat'
+        ) {
+          centerActionId.value = ''
+          centerActionType.value = ''
+        }
+      }
     })
   } catch (error) {
-    uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
+    navigationPending = false
+    if (isCurrentMentorOrderOpen(openSequence, order.id)) {
+      uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
+    }
   } finally {
-    centerActionId.value = ''
-    centerActionType.value = ''
+    if (!navigationPending && openSequence === mentorOrderOpenSequence) {
+      centerActionId.value = ''
+      centerActionType.value = ''
+    }
   }
+}
+
+function isCurrentMentorOrderOpen(sequence, orderId) {
+  return (
+    !mentorCenterPageDestroyed
+    && mentorCenterPageActive
+    && sequence === mentorOrderOpenSequence
+    && centerActionId.value === orderId
+    && centerActionType.value === 'chat'
+  )
 }
 
 function isCenterActionLoading(order, actionType) {
@@ -1081,11 +1341,16 @@ function clearCachedMentorCenterProfile() {
 }
 
 function canOpenOrderChat(order = {}) {
-  return ['in_progress', 'completed'].includes(order.orderStatus)
+  return getOrderUiState(order).canOpenChat
 }
 
 function canEnterOrderService(order = {}) {
-  return ['accepted', 'booked', 'in_progress', 'completed'].includes(order.orderStatus)
+  const state = getOrderUiState(order)
+  return state.canStartService || state.canOpenChat
+}
+
+function canShowOrderServiceAction(order = {}) {
+  return canEnterOrderService(order)
 }
 
 function canCancelReceivedOrder(order = {}) {
@@ -1110,17 +1375,19 @@ function getOrderTypeLabel(order = {}) {
   return order.consultationType === 'booking' ? '预约咨询' : '即时咨询'
 }
 
-function getOrderStatusLabel(orderStatus) {
-  return ({
-    pending_accept: '待接单',
-    accepted: '已接受',
-    in_progress: '咨询中',
-    completed: '已完成',
-    rejected: '已拒绝',
-    timeout: '已超时',
-    refunded: '已退款',
-    booked: '已预约'
-  })[orderStatus] || '处理中'
+function getOrderUiState(order = {}) {
+  return getMentorConsultationOrderUiState(order, {
+    viewerRole: 'mentor',
+    now: decisionClock.value
+  })
+}
+
+function getOrderStatusLabel(order = {}) {
+  return getOrderUiState(order).statusLabel
+}
+
+function getOrderActionLabel(order = {}) {
+  return getOrderUiState(order).actionLabel || '查看咨询状态'
 }
 
 function getDecisionCountdownText(order = {}) {
@@ -1137,7 +1404,19 @@ function startDecisionCountdown() {
   decisionClock.value = Date.now()
   decisionCountdownTimer = setInterval(() => {
     decisionClock.value = Date.now()
+    refreshOrdersAtServiceDeadline()
   }, 1000)
+}
+
+function refreshOrdersAtServiceDeadline() {
+  for (const order of mentorOrders.value) {
+    if (!order?.id || !isMentorConsultationServiceExpired(order, decisionClock.value)) continue
+    const refreshKey = `${order.id}:${order.serviceEndsAt || order.startedAt || order.acceptedAt || order.createdAt}`
+    if (mentorOrderExpiryRefreshKeys.has(refreshKey)) continue
+    mentorOrderExpiryRefreshKeys.add(refreshKey)
+    void syncVisibleMentorOrderStates()
+    break
+  }
 }
 
 function stopDecisionCountdown() {
@@ -1693,6 +1972,28 @@ function goBack() {
   font-size: 23rpx;
   line-height: 1.2;
   font-weight: 650;
+}
+
+.mentor-center-order-status.completed,
+.mentor-center-order-status.viewer_confirmed {
+  background: #e6f7f1;
+  color: #238a57;
+}
+
+.mentor-center-order-status.awaiting_viewer_confirmation,
+.mentor-center-order-status.ending {
+  background: #fff4df;
+  color: #a97425;
+}
+
+.mentor-center-order-status.platform_processing {
+  background: #eaf2fc;
+  color: #4d78a6;
+}
+
+.mentor-center-order-status.cancelled {
+  background: #fff0ee;
+  color: #cf675e;
 }
 
 @media (prefers-reduced-motion: reduce) {

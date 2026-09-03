@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from typing import Iterable
 
 from app.services.supabase_resilience import call_supabase
@@ -211,6 +211,10 @@ def serialize_mentor_slot(row: dict) -> dict:
 def serialize_mentor_order(row: dict) -> dict:
     questionnaire = row.get("questionnaire") if isinstance(row.get("questionnaire"), dict) else {}
     rejection_reason = str(questionnaire.get("mentor_rejection_reason") or "").strip() or None
+    server_now = datetime.now(timezone.utc)
+    started_at = _as_utc_datetime(row.get("started_at"))
+    consultation_minutes = max(15, min(180, int(row.get("consultation_window_minutes") or 60)))
+    service_ends_at = started_at + timedelta(minutes=consultation_minutes) if started_at else None
     return {
         "id": str(row.get("id") or ""),
         "order_no": str(row.get("order_no") or ""),
@@ -237,6 +241,9 @@ def serialize_mentor_order(row: dict) -> dict:
         "accepted_at": row.get("accepted_at") or None,
         "expires_at": row.get("expires_at") or None,
         "started_at": row.get("started_at") or None,
+        "server_now": server_now.isoformat(),
+        "service_ends_at": service_ends_at.isoformat() if service_ends_at else None,
+        "auto_completion_blocked_by_dispute": bool(row.get("auto_completion_blocked_by_dispute")),
         "ended_at": row.get("ended_at") or None,
         "applicant_completion_confirmed_at": row.get("applicant_completion_confirmed_at") or None,
         "mentor_completion_confirmed_at": row.get("mentor_completion_confirmed_at") or None,
@@ -246,6 +253,16 @@ def serialize_mentor_order(row: dict) -> dict:
         "created_at": row.get("created_at") or None,
         "updated_at": row.get("updated_at") or None,
     }
+
+
+def _as_utc_datetime(value: object) -> datetime | None:
+    if value is None:
+        return None
+    try:
+        parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+    except (TypeError, ValueError):
+        return None
+    return parsed.replace(tzinfo=timezone.utc) if parsed.tzinfo is None else parsed.astimezone(timezone.utc)
 
 
 def serialize_mentor_message(row: dict) -> dict:

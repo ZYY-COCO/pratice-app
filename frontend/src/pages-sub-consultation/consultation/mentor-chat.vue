@@ -118,7 +118,8 @@
         <strong>{{ completionTitle }}</strong>
         <text>{{ completionCopy }}</text>
       </view>
-      <button v-if="!currentViewerCompletionConfirmed" :loading="finishing" @tap="requestFinishConsultation">确认结束</button>
+      <button v-if="serviceWindowExpired" class="light" @tap="openSupport">查看处理进度</button>
+      <button v-else-if="!currentViewerCompletionConfirmed" :loading="finishing" @tap="requestFinishConsultation">确认结束</button>
       <button v-else class="light" @tap="openSupport">查看处理进度</button>
     </view>
 
@@ -131,7 +132,7 @@
         ref="messageInputRef"
         :value="messageInput"
         :focus="composerFocusRequested"
-        :disabled="!consultationActive"
+        :disabled="!consultationActive || !serviceClockReady"
         :placeholder="chatInputPlaceholder"
         placeholder-class="mentor-chat-placeholder"
         confirm-type="send"
@@ -200,10 +201,12 @@ import {
   cacheMentors,
   getConsultationDraft,
   getMentorById,
+  normalizeMentorConsultationOrder,
   normalizeMentorDetailResponse,
   saveConsultationOrder
 } from '../../data/mentorConsultation'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import { mergeMentorConsultationStopState } from '../../utils/mentorConsultationState.mjs'
 
 const CHAT_MESSAGE_POLL_INTERVAL = 1500
 const CHAT_POLL_RETRY_INTERVAL = 3200
@@ -237,6 +240,7 @@ const orderId = ref('')
 const orderStatus = ref('in_progress')
 const acceptedAt = ref('')
 const startedAt = ref('')
+const serviceEndsAt = ref('')
 const paymentStatus = ref('unpaid')
 const paymentReference = ref('')
 const refundReference = ref('')
@@ -246,6 +250,9 @@ const consultationEnded = ref(false)
 const applicantCompletionConfirmedAt = ref('')
 const mentorCompletionConfirmedAt = ref('')
 const remainingServiceSeconds = ref(0)
+const orderLoaded = ref(false)
+const currentOrderSnapshot = ref({})
+const autoCompletionBlockedByDispute = ref(false)
 const scrollTarget = ref('mentor-chat-bottom')
 const reviewVisible = ref(false)
 const reviewRating = ref(5)
@@ -295,6 +302,9 @@ let sendDispatchUnlockTimer = null
 let keyboardViewportSyncTimer = null
 let keyboardViewportTransitionActive = false
 let keyboardTransitionShouldPinBottom = true
+let serviceClockOffsetMs = 0
+let serviceExpirySyncOrderId = ''
+let serviceExpirySyncPending = false
 
 const reviewTags = ['解答清晰', '回复及时', '很有帮助', '经验丰富', '建议具体']
 const isMentorViewer = computed(() => viewerRole.value === 'mentor')
@@ -309,44 +319,60 @@ const currentViewerCompletionConfirmed = computed(() => Boolean(
 const otherPartyCompletionConfirmed = computed(() => Boolean(
   isMentorViewer.value ? applicantCompletionConfirmedAt.value : mentorCompletionConfirmedAt.value
 ))
-const consultationActive = computed(() => orderStatus.value === 'in_progress')
+const consultationActive = computed(() => orderLoaded.value && orderStatus.value === 'in_progress')
 const isLocalRehearsalOrder = computed(() => isLocalRehearsalMode && paymentReference.value.toUpperCase().startsWith('DEMO-'))
 const canReview = computed(() => !isMentorViewer.value && orderStatus.value === 'completed')
 const autoRefundedOrder = computed(() => ['timeout', 'refunded'].includes(orderStatus.value))
 const acceptedStartTimedOut = computed(() => orderStatus.value === 'timeout' && Boolean(acceptedAt.value) && !startedAt.value)
+const serviceClockReady = computed(() => Number.isFinite(resolveServiceEndsTimestamp()))
 const serviceWindowExpired = computed(() => (
-  consultationActive.value && remainingServiceSeconds.value <= 0
+  consultationActive.value && serviceClockReady.value && remainingServiceSeconds.value <= 0
 ))
 const shouldShowCompletionBar = computed(() => (
-  !consultationEnded.value
+  orderLoaded.value
+  && !consultationEnded.value
   && orderStatus.value === 'in_progress'
   && (serviceWindowExpired.value || currentViewerCompletionConfirmed.value || otherPartyCompletionConfirmed.value)
 ))
 const completionTitle = computed(() => {
+  if (serviceWindowExpired.value && autoCompletionBlockedByDispute.value) return '平台处理中'
+  if (serviceWindowExpired.value) return '服务时间已结束'
   if (currentViewerCompletionConfirmed.value) return '已提交结束确认'
   return otherPartyCompletionConfirmed.value ? '对方已确认结束本次咨询' : '服务时间已结束'
 })
 const completionCopy = computed(() => {
-  if (currentViewerCompletionConfirmed.value) return '等待对方确认后，本次咨询才会正式结束。'
-  if (otherPartyCompletionConfirmed.value) return '请核对本次沟通内容后确认结束；如有问题可先从右上角举报。'
-  return '双方确认后才会正式结束，本次聊天记录会继续保留。'
+  if (serviceWindowExpired.value && autoCompletionBlockedByDispute.value) return '本次咨询存在未处理异议，自动完成已暂停；聊天记录会继续保留。'
+  if (serviceWindowExpired.value) return '系统正在完成本次咨询；如有未处理异议，将转由平台继续处理。'
+  if (currentViewerCompletionConfirmed.value) return '对方确认后会提前完成；未确认时，服务到期也会由系统自动结束。'
+  if (otherPartyCompletionConfirmed.value) return '你可提前确认结束；未操作时，服务到期也会由系统自动结束。'
+  return '服务到期后系统会自动结束，本次聊天记录会继续保留。'
 })
 const chatTitle = computed(() => {
   if (!mentor.value) return '咨询聊天'
+  if (!orderLoaded.value) return `${mentor.value.maskedName} · 同步中`
+  if (serviceWindowExpired.value && autoCompletionBlockedByDispute.value) return `${mentor.value.maskedName} · 平台处理中`
+  if (serviceWindowExpired.value) return `${mentor.value.maskedName} · 已到期`
   if (shouldShowCompletionBar.value) return `${mentor.value.maskedName} · 待确认`
   if (!consultationActive.value && !consultationEnded.value) return `${mentor.value.maskedName} · 等待开始`
   return consultationEnded.value ? `${mentor.value.maskedName} · 聊天记录` : `${mentor.value.maskedName} · 咨询中`
 })
 const serviceTipText = computed(() => {
+  if (!orderLoaded.value) return '正在同步咨询状态'
   if (consultationEnded.value) return '历史聊天记录'
-  if (shouldShowCompletionBar.value) return currentViewerCompletionConfirmed.value ? '已提交结束确认' : '等待双方确认结束'
+  if (serviceWindowExpired.value) return '服务时间已结束'
+  if (shouldShowCompletionBar.value) return currentViewerCompletionConfirmed.value ? '已提交结束确认' : '对方已确认结束'
   if (!consultationActive.value) return isMentorViewer.value ? '请从咨询主页开始本次服务' : '等待认证前辈开始咨询'
+  if (!serviceClockReady.value) return '本次咨询正在进行'
   return `本次咨询窗口剩余 ${serviceCountdownText.value}`
 })
 const serviceTipDetail = computed(() => {
+  if (!orderLoaded.value) return '请稍候'
   if (consultationEnded.value) return '本次咨询已结束 · 仅供查阅'
-  if (shouldShowCompletionBar.value) return currentViewerCompletionConfirmed.value ? '对方确认后即可完成订单' : '确认前可通过右上角发起平台介入'
+  if (serviceWindowExpired.value && autoCompletionBlockedByDispute.value) return '存在未处理异议，订单已转平台处理'
+  if (serviceWindowExpired.value) return '系统将自动结束；存在异议时转由平台处理'
+  if (shouldShowCompletionBar.value) return currentViewerCompletionConfirmed.value ? '对方确认后可提前完成，最晚于服务到期自动结束' : '可确认结束，也可通过右上角发起平台介入'
   if (!consultationActive.value) return '服务开始后会开放文字聊天'
+  if (!serviceClockReady.value) return '服务截止时间正在同步'
   return `服务时间：${consultationWindowMinutes.value}分钟`
 })
 const endedTitle = computed(() => {
@@ -374,11 +400,14 @@ const waitingChatHint = computed(() => (
     : '认证前辈开始服务后会自动开放文字聊天；你可返回订单页取消订单或查看平台处理进度。'
 ))
 const chatInputPlaceholder = computed(() => {
+  if (!orderLoaded.value) return '正在同步咨询状态'
   if (!consultationActive.value) return isMentorViewer.value ? '请先从咨询主页开始服务' : '等待认证前辈开始咨询'
+  if (!serviceClockReady.value) return '正在同步服务截止时间'
   return isMentorViewer.value ? '输入文字回复' : '输入想继续咨询的问题'
 })
 const canSendText = computed(() => (
   consultationActive.value
+  && serviceClockReady.value
   && !consultationEnded.value
   && !shouldShowCompletionBar.value
   && Boolean(messageInput.value.trim())
@@ -394,6 +423,9 @@ onLoad((options) => {
   returnSource = String(options?.from || '')
   viewerRole.value = options?.role === 'mentor' ? 'mentor' : 'applicant'
   orderId.value = String(options?.orderId || draft?.orderId || '')
+  if (draft && String(draft.orderId || '') === orderId.value) {
+    currentOrderSnapshot.value = normalizeMentorConsultationOrder({ ...draft, id: orderId.value })
+  }
   const mentorId = options?.mentorId || draft?.mentorId
   mentor.value = getMentorById(mentorId)
   historyStartReached = false
@@ -482,6 +514,9 @@ async function loadChatData({ silent = false } = {}) {
       const incoming = Array.isArray(messagePayload?.items) ? messagePayload.items : []
       if (!historyStartReached) hasMoreHistoryMessages.value = incoming.length >= CHAT_HISTORY_PAGE_SIZE
       const mergeResult = mergeRemoteMessages(incoming)
+      if (consultationEnded.value) {
+        await refreshMessagesAfterCompletion(requestedLifecycleRevision, requestedOrderId)
+      }
       if (!initialChatPositioned) {
         initialChatPositioned = true
         scrollToBottom({ animated: false })
@@ -536,7 +571,11 @@ async function loadMentor(mentorId) {
 }
 
 function applyOrder(order) {
-  const draft = saveConsultationOrder(order)
+  const incomingOrder = normalizeMentorConsultationOrder(order)
+  const normalizedOrder = mergeMentorConsultationStopState(incomingOrder, currentOrderSnapshot.value)
+  currentOrderSnapshot.value = normalizedOrder
+  const draft = saveConsultationOrder(normalizedOrder)
+  orderLoaded.value = true
   questionnaire.value = draft.questionnaire || {}
   orderStatus.value = draft.orderStatus || 'in_progress'
   paymentStatus.value = draft.paymentStatus || 'unpaid'
@@ -545,6 +584,10 @@ function applyOrder(order) {
   rejectionReason.value = draft.rejectionReason || ''
   acceptedAt.value = draft.acceptedAt || ''
   startedAt.value = draft.startedAt || ''
+  serviceEndsAt.value = draft.serviceEndsAt || ''
+  const parsedServerNow = Date.parse(draft.serverNow || '')
+  serviceClockOffsetMs = Number.isFinite(parsedServerNow) ? parsedServerNow - Date.now() : 0
+  autoCompletionBlockedByDispute.value = Boolean(draft.autoCompletionBlockedByDispute)
   consultationWindowMinutes.value = Number(draft.consultationWindowMinutes) || 60
   applicantCompletionConfirmedAt.value = draft.applicantCompletionConfirmedAt || ''
   mentorCompletionConfirmedAt.value = draft.mentorCompletionConfirmedAt || ''
@@ -559,7 +602,16 @@ function applyOrder(order) {
     stopServiceTimer()
     return
   }
-  syncServiceRemainingSeconds()
+  if (!syncServiceRemainingSeconds()) {
+    stopServiceTimer()
+    return
+  }
+  if (remainingServiceSeconds.value <= 0) {
+    stopServiceTimer()
+    void syncOrderAtServiceWindowEnd()
+    return
+  }
+  serviceExpirySyncOrderId = ''
   startServiceTimer()
 }
 
@@ -668,23 +720,60 @@ function isOwnMessage(message = {}) {
     : message.sender === 'user'
 }
 
-function syncServiceRemainingSeconds() {
+function resolveServiceEndsTimestamp() {
+  const explicitServiceEnd = Date.parse(serviceEndsAt.value || '')
+  if (Number.isFinite(explicitServiceEnd)) return explicitServiceEnd
   const startedTimestamp = Date.parse(startedAt.value || '')
-  const windowSeconds = consultationWindowMinutes.value * 60
-  remainingServiceSeconds.value = Number.isFinite(startedTimestamp)
-    ? Math.max(0, Math.ceil((startedTimestamp + windowSeconds * 1000 - Date.now()) / 1000))
-    : windowSeconds
+  if (!Number.isFinite(startedTimestamp)) return Number.NaN
+  return startedTimestamp + consultationWindowMinutes.value * 60 * 1000
+}
+
+function syncServiceRemainingSeconds() {
+  const serviceEndsTimestamp = resolveServiceEndsTimestamp()
+  if (!Number.isFinite(serviceEndsTimestamp)) {
+    remainingServiceSeconds.value = 0
+    return false
+  }
+  remainingServiceSeconds.value = Math.max(
+    0,
+    Math.ceil((serviceEndsTimestamp - (Date.now() + serviceClockOffsetMs)) / 1000)
+  )
+  return true
 }
 
 function startServiceTimer() {
-  if (serviceTimer || consultationEnded.value || !consultationActive.value) return
+  if (serviceTimer || consultationEnded.value || !consultationActive.value || !serviceClockReady.value) return
   serviceTimer = setInterval(() => {
-    syncServiceRemainingSeconds()
+    if (!syncServiceRemainingSeconds()) {
+      stopServiceTimer()
+      return
+    }
     if (remainingServiceSeconds.value <= 0 && serviceTimer) {
       clearInterval(serviceTimer)
       serviceTimer = null
+      void syncOrderAtServiceWindowEnd()
     }
   }, 1000)
+}
+
+async function syncOrderAtServiceWindowEnd() {
+  const requestedOrderId = orderId.value
+  if (
+    !requestedOrderId
+    || consultationEnded.value
+    || !serviceWindowExpired.value
+    || serviceExpirySyncOrderId === requestedOrderId
+  ) return
+  if (orderPollInFlight) {
+    serviceExpirySyncPending = true
+    return
+  }
+  serviceExpirySyncOrderId = requestedOrderId
+  const synced = await syncCurrentOrder()
+  if (!synced && orderId.value === requestedOrderId && !consultationEnded.value) {
+    serviceExpirySyncOrderId = ''
+    scheduleNextOrderPoll(CHAT_POLL_RETRY_INTERVAL)
+  }
 }
 
 function stopServiceTimer() {
@@ -703,7 +792,10 @@ function scheduleNextMessagePoll(delay) {
   messagePollTimer = setTimeout(async () => {
     messagePollTimer = null
     const synced = await syncLatestMessages()
-    scheduleNextMessagePoll(synced ? CHAT_MESSAGE_POLL_INTERVAL : CHAT_POLL_RETRY_INTERVAL)
+    const nextDelay = serviceWindowExpired.value
+      ? CHAT_ORDER_POLL_INTERVAL
+      : synced ? CHAT_MESSAGE_POLL_INTERVAL : CHAT_POLL_RETRY_INTERVAL
+    scheduleNextMessagePoll(nextDelay)
   }, delay)
 }
 
@@ -786,14 +878,38 @@ async function syncCurrentOrder() {
   const requestedOrderId = orderId.value
   orderPollInFlight = true
   try {
+    const wasConsultationEnded = consultationEnded.value
     const order = await fetchMentorConsultationOrder(requestedOrderId)
     if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return false
     applyOrder(order)
+    if (!wasConsultationEnded && consultationEnded.value) {
+      await refreshMessagesAfterCompletion(requestedLifecycleRevision, requestedOrderId)
+    }
     return true
   } catch (error) {
     return false
   } finally {
     orderPollInFlight = false
+    if (serviceExpirySyncPending) {
+      serviceExpirySyncPending = false
+      if (serviceClockReady.value) syncServiceRemainingSeconds()
+      if (serviceWindowExpired.value && !consultationEnded.value) {
+        serviceExpirySyncOrderId = ''
+        void syncOrderAtServiceWindowEnd()
+      }
+    }
+  }
+}
+
+async function refreshMessagesAfterCompletion(requestedLifecycleRevision, requestedOrderId) {
+  try {
+    const payload = await fetchMentorConsultationMessages(requestedOrderId, { limit: CHAT_HISTORY_PAGE_SIZE })
+    if (!isCurrentPageSnapshot(requestedLifecycleRevision, requestedOrderId)) return
+    const incoming = Array.isArray(payload?.items) ? payload.items : []
+    const mergeResult = mergeRemoteMessages(incoming)
+    if (mergeResult.changed && isNearChatBottom.value) scrollToBottom({ animated: false })
+  } catch (error) {
+    // 订单终态已经同步成功；系统消息可在再次进入页面时继续加载。
   }
 }
 
@@ -812,6 +928,7 @@ function stopChatTimers() {
   keyboardViewportSyncTimer = null
   keyboardViewportTransitionActive = false
   viewportRefreshQueued = false
+  serviceExpirySyncPending = false
   sendDispatchLocked = false
   scrollRequestSequence += 1
   scrollWithAnimation.value = true
@@ -1013,8 +1130,8 @@ function sendText(source = 'tap', event) {
     if (shouldRetainComposerFocus) keepComposerFocusedAfterSend()
     return
   }
-  if (!consultationActive.value) {
-    uni.showToast({ title: '请等待认证前辈开始咨询', icon: 'none' })
+  if (!consultationActive.value || !serviceClockReady.value) {
+    uni.showToast({ title: consultationActive.value ? '正在同步服务状态，请稍候' : '请等待认证前辈开始咨询', icon: 'none' })
     return
   }
 
@@ -1057,6 +1174,14 @@ function sendText(source = 'tap', event) {
 async function sendPendingMessage(localMessageId) {
   const pendingMessage = messages.value.find((item) => item.id === localMessageId)
   if (!pendingMessage || pendingMessage.deliveryState !== 'sending') return
+  if (serviceClockReady.value) syncServiceRemainingSeconds()
+  if (!consultationActive.value || !serviceClockReady.value || consultationEnded.value || shouldShowCompletionBar.value) {
+    messages.value = messages.value.map((item) => item.id === localMessageId
+      ? { ...item, deliveryState: 'failed' }
+      : item)
+    if (serviceWindowExpired.value) void syncOrderAtServiceWindowEnd()
+    return
+  }
   try {
     const message = await createMentorConsultationMessage(orderId.value, {
       message_type: 'text',
@@ -1073,6 +1198,11 @@ async function sendPendingMessage(localMessageId) {
     messages.value = messages.value.map((item) => item.id === localMessageId
       ? { ...item, deliveryState: 'failed' }
       : item)
+    const detail = String(error?.detail || '')
+    if (detail.includes('服务时间已到') || detail.includes('咨询已结束')) {
+      remainingServiceSeconds.value = 0
+      void syncOrderAtServiceWindowEnd()
+    }
   }
 }
 
@@ -1083,8 +1213,14 @@ function createClientMessageId() {
 
 async function retryMessage(message) {
   if (!message || message.deliveryState !== 'failed') return
-  if (!consultationActive.value) {
-    uni.showToast({ title: '本次咨询暂未开始或已结束', icon: 'none' })
+  if (!consultationActive.value || !serviceClockReady.value || consultationEnded.value || shouldShowCompletionBar.value) {
+    if (serviceWindowExpired.value) void syncOrderAtServiceWindowEnd()
+    uni.showToast({
+      title: serviceWindowExpired.value
+        ? '服务时间已结束，消息已停止发送'
+        : consultationActive.value ? '正在同步服务状态，请稍候' : '本次咨询暂未开始或已结束',
+      icon: 'none'
+    })
     return
   }
   messages.value = messages.value.map((item) => item.id === message.id
@@ -1092,8 +1228,21 @@ async function retryMessage(message) {
     : item)
   const synced = await syncLatestMessages({ full: true })
   const pendingMessage = messages.value.find((item) => item.id === message.id)
-  if (synced && pendingMessage?.deliveryState === 'sending') {
+  if (serviceClockReady.value) syncServiceRemainingSeconds()
+  if (
+    synced
+    && pendingMessage?.deliveryState === 'sending'
+    && consultationActive.value
+    && serviceClockReady.value
+    && !consultationEnded.value
+    && !shouldShowCompletionBar.value
+  ) {
     void sendPendingMessage(message.id)
+  } else if (shouldShowCompletionBar.value) {
+    messages.value = messages.value.map((item) => item.id === message.id
+      ? { ...item, deliveryState: 'failed' }
+      : item)
+    if (serviceWindowExpired.value) void syncOrderAtServiceWindowEnd()
   } else if (!synced) {
     messages.value = messages.value.map((item) => item.id === message.id
       ? { ...item, deliveryState: 'failed' }
@@ -1108,7 +1257,7 @@ function requestFinishConsultation() {
     title: '确认结束本次咨询？',
     content: canCompleteLocalRehearsal
       ? '结束后会进入评价阶段；聊天、举报和后台处理记录会继续保留。'
-      : '提交后需要等待对方确认；双方确认后订单才会正式结束。',
+      : '对方确认后会提前完成；若对方未操作，服务到期且无未处理异议时，系统会自动结束。',
     confirmText: canCompleteLocalRehearsal ? '结束并评价' : '确认结束',
     success(result) {
       if (result.confirm) void finishConsultation()
@@ -1128,7 +1277,7 @@ async function finishConsultation() {
     await loadChatData({ silent: true })
     scrollToBottom()
     const completed = String(order?.order_status || order?.orderStatus || '') === 'completed'
-    uni.showToast({ title: completed ? (canCompleteLocalRehearsal ? '咨询已结束，可以评价' : '双方已确认，咨询已结束') : '已确认结束，等待对方确认', icon: 'none' })
+    uni.showToast({ title: completed ? (canCompleteLocalRehearsal ? '咨询已结束，可以评价' : '双方已确认，咨询已结束') : '已确认，等待对方确认或服务到期', icon: 'none' })
   } catch (error) {
     uni.showToast({ title: error?.detail || '结束咨询确认失败', icon: 'none' })
   } finally {
@@ -1268,7 +1417,7 @@ function showMore() {
     { label: '查看咨询规则', key: 'rules' },
     { label: '举报此咨询', key: 'report' }
   ]
-  if (orderStatus.value === 'in_progress' && !currentViewerCompletionConfirmed.value) {
+  if (orderStatus.value === 'in_progress' && !currentViewerCompletionConfirmed.value && !serviceWindowExpired.value) {
     actions.push({ label: isLocalRehearsalOrder.value && !isMentorViewer.value ? '结束并评价' : '确认结束本次咨询', key: 'complete' })
   }
   uni.showActionSheet({
@@ -1285,7 +1434,7 @@ function showMore() {
 function showConsultationRules() {
   uni.showModal({
     title: '咨询规则',
-    content: '请在站内完成沟通，不要泄露隐私或进行私下交易；服务结束后需双方确认，如有争议可提交平台介入。',
+    content: '请在站内完成沟通，不要泄露隐私或进行私下交易；双方可提前确认结束，服务到期且无未处理异议时系统会自动结束。如有争议，请及时提交平台介入。',
     showCancel: false,
     confirmText: '我知道了'
   })

@@ -35,6 +35,12 @@
           <view class="mentor-waiting-copy">{{ failureCopy }}</view>
         </view>
 
+        <view v-else-if="isChatReadOnly" class="mentor-waiting-main mentor-booked-main">
+          <view class="mentor-waiting-icon booked">✓</view>
+          <view class="mentor-waiting-title">{{ waitingTitle }}</view>
+          <view class="mentor-waiting-copy">{{ waitingCopy }}</view>
+        </view>
+
         <view v-else-if="isBooking && status === 'booked'" class="mentor-waiting-main mentor-booked-main">
           <view class="mentor-waiting-icon booked">✓</view>
           <view class="mentor-waiting-title">预约成功</view>
@@ -93,9 +99,12 @@
         <button class="secondary" @tap="requestPlatformIntervention">申请平台介入</button>
         <button @tap="openSupport">查看退款进度</button>
       </view>
+      <view v-else-if="isChatReadOnly" class="mentor-waiting-footer-actions">
+        <button @tap="openChat">{{ currentOrderUiState.actionLabel }}</button>
+      </view>
       <view v-else class="mentor-waiting-footer-actions">
         <button v-if="canCancel" class="secondary" :loading="cancelling" @tap="confirmCancel">取消订单</button>
-        <button v-if="isBooking || status === 'in_progress'" :loading="openingChat" @tap="openChat">{{ isBooking && status === 'booked' ? '进入等待室' : '进入咨询' }}</button>
+        <button v-if="isBooking || currentOrderUiState.isLiveChat" :loading="openingChat" @tap="openChat">{{ isBooking && status === 'booked' ? '进入等待室' : currentOrderUiState.actionLabel }}</button>
         <button v-else class="secondary" @tap="goBack">返回前辈详情</button>
       </view>
     </view>
@@ -117,10 +126,16 @@ import {
   cacheMentors,
   getConsultationDraft,
   getMentorById,
+  normalizeMentorConsultationOrder,
   normalizeMentorDetailResponse,
   saveConsultationOrder
 } from '../../data/mentorConsultation'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
+import {
+  getMentorConsultationOrderUiState,
+  isMentorConsultationServiceExpired,
+  mergeMentorConsultationStopState
+} from '../../utils/mentorConsultationState.mjs'
 
 const mentor = ref(null)
 const mode = ref('instant')
@@ -140,12 +155,15 @@ const paymentCheckoutUrl = ref('')
 const paymentMessage = ref('')
 const remainingSeconds = ref(0)
 const consultationWindowMinutes = ref(60)
+const currentOrder = ref({})
+const serviceUiClock = ref(Date.now())
 const openingChat = ref(false)
 const cancelling = ref(false)
 const skippingPayment = ref(false)
 const preparingPayment = ref(false)
 const themeKey = ref(getStoredThemeKey())
 let countdownTimer = null
+let serviceUiTimer = null
 let orderPollTimer = null
 let orderLoadPromise = null
 let orderStateRevision = 0
@@ -154,6 +172,8 @@ let countdownRefreshDeadline = ''
 let pageActive = false
 let pageDestroyed = false
 let hasShown = false
+let serviceExpiryRefreshKey = ''
+let chatOpenSequence = 0
 
 const isBooking = computed(() => mode.value === 'booking')
 const isFailed = computed(() => ['timeout', 'rejected', 'refunded'].includes(status.value))
@@ -166,10 +186,16 @@ const isNoPaymentOrder = computed(() => isDemoOrder.value && paymentReference.va
 const hasPaymentCheckout = computed(() => Boolean(paymentCheckoutUrl.value))
 const acceptedStartTimedOut = computed(() => status.value === 'timeout' && Boolean(acceptedAt.value))
 const canCancel = computed(() => ['pending_payment', 'pending_accept', 'accepted', 'booked'].includes(status.value))
+const currentOrderUiState = computed(() => getMentorConsultationOrderUiState(currentOrder.value, {
+  viewerRole: 'applicant',
+  now: serviceUiClock.value
+}))
+const isChatReadOnly = computed(() => currentOrderUiState.value.action === 'history')
 const pageTitle = computed(() => {
   if (isPaymentPending.value) return isDemoOrder.value ? '确认咨询' : '支付确认'
   if (isRefunding.value || isRefundFailed.value) return '退款进度'
   if (isFailed.value || isCancelled.value) return isBooking.value ? '预约服务状态' : '咨询状态'
+  if (isChatReadOnly.value) return '咨询状态'
   if (status.value === 'accepted') return '等待服务开始'
   return isBooking.value ? '预约成功' : '等待前辈接单'
 })
@@ -187,11 +213,21 @@ const countdownLabel = computed(() => {
   return status.value === 'accepted' ? '开始服务倒计时' : '接单倒计时'
 })
 const waitingTitle = computed(() => {
+  if (currentOrderUiState.value.phase === 'platform_processing') return '本次咨询正在由平台处理'
+  if (currentOrderUiState.value.phase === 'ending') return '本次咨询服务时间已结束'
+  if (currentOrderUiState.value.phase === 'awaiting_viewer_confirmation') return '前辈已确认结束本次咨询'
+  if (currentOrderUiState.value.phase === 'viewer_confirmed') return '你已确认结束本次咨询'
+  if (currentOrderUiState.value.phase === 'completed') return '本次咨询已完成'
   if (status.value === 'in_progress') return '咨询服务已开始'
   if (status.value === 'accepted') return '前辈已接单，等待开始服务'
   return '等待前辈确认接单'
 })
 const waitingCopy = computed(() => {
+  if (currentOrderUiState.value.phase === 'platform_processing') return '服务窗口已经结束，因存在未处理异议，订单已转入平台处理；聊天记录会继续保留。'
+  if (currentOrderUiState.value.phase === 'ending') return '系统正在完成本次咨询；聊天输入已经关闭，历史沟通记录会继续保留。'
+  if (currentOrderUiState.value.phase === 'awaiting_viewer_confirmation') return '聊天输入已经停止，你可以查看沟通记录并处理结束确认。'
+  if (currentOrderUiState.value.phase === 'viewer_confirmed') return '聊天输入已经停止；对方确认后会提前完成，最晚在服务到期时由系统处理。'
+  if (currentOrderUiState.value.phase === 'completed') return '本次咨询已经结束，聊天记录已保留，可随时返回查看。'
   if (status.value === 'in_progress') return '咨询窗口已打开，你可以进入站内聊天继续沟通。'
   if (status.value === 'accepted') return '服务开始后会自动开放文字聊天；若前辈未在保护时间内开始，本次咨询将自动取消并进入退款处理。'
   return '你的咨询资料和问题已发送给前辈，前辈将在 10 分钟内确认是否接单。'
@@ -231,6 +267,8 @@ onShow(() => {
   const silent = hasShown
   hasShown = true
   pageActive = true
+  syncOrderFromDraft()
+  startServiceUiClock()
   themeKey.value = getStoredThemeKey()
   if (orderId.value) {
     if (['pending_payment', 'pending_accept', 'accepted'].includes(status.value)) {
@@ -243,13 +281,19 @@ onShow(() => {
 })
 
 onHide(() => {
+  chatOpenSequence += 1
   pageActive = false
+  openingChat.value = false
+  orderStateRevision += 1
+  orderRefreshQueued = false
   stopOrderTimers()
 })
 
 onBeforeUnmount(() => {
+  chatOpenSequence += 1
   pageDestroyed = true
   pageActive = false
+  openingChat.value = false
   orderStateRevision += 1
   orderRefreshQueued = false
   stopOrderTimers()
@@ -268,6 +312,7 @@ async function loadOrder({ silent = false, queueIfBusy = false } = {}) {
       const order = await fetchMentorConsultationOrder(requestedOrderId)
       if (
         pageDestroyed ||
+        !pageActive ||
         requestedOrderId !== orderId.value ||
         requestedRevision !== orderStateRevision
       ) return null
@@ -316,7 +361,10 @@ async function loadMentor(mentorId) {
 
 function applyOrder(order, { fromLoad = false } = {}) {
   if (!fromLoad) orderStateRevision += 1
-  const draft = saveConsultationOrder(order)
+  const incomingOrder = normalizeMentorConsultationOrder(order)
+  const normalizedOrder = mergeMentorConsultationStopState(incomingOrder, currentOrder.value)
+  const draft = saveConsultationOrder(normalizedOrder)
+  currentOrder.value = normalizedOrder
   status.value = draft.orderStatus || 'pending_accept'
   mode.value = draft.consultationType === 'booking' ? 'booking' : 'instant'
   paymentStatus.value = draft.paymentStatus || 'unpaid'
@@ -337,11 +385,23 @@ function applyOrder(order, { fromLoad = false } = {}) {
   } else {
     stopCountdown()
   }
-  if (['pending_payment', 'pending_accept', 'accepted', 'booked'].includes(status.value) || isRefunding.value) {
+  if (['pending_payment', 'pending_accept', 'accepted', 'booked', 'in_progress'].includes(status.value) || isRefunding.value) {
     scheduleOrderPolling({ restart: true })
   } else {
     stopOrderPolling()
   }
+}
+
+function syncOrderFromDraft() {
+  const draft = getConsultationDraft()
+  if (!draft || String(draft.orderId || '') !== orderId.value) return
+  const cachedOrder = normalizeMentorConsultationOrder({ ...draft, id: orderId.value })
+  if (!currentOrder.value?.id) {
+    applyOrder(cachedOrder)
+    return
+  }
+  const mergedOrder = mergeMentorConsultationStopState(currentOrder.value, cachedOrder)
+  if (mergedOrder !== currentOrder.value) applyOrder(mergedOrder)
 }
 
 function getCountdownDeadline() {
@@ -376,7 +436,7 @@ function stopCountdown() {
 }
 
 function shouldPollOrder() {
-  return ['pending_payment', 'pending_accept', 'accepted', 'booked'].includes(status.value) || isRefunding.value
+  return ['pending_payment', 'pending_accept', 'accepted', 'booked', 'in_progress'].includes(status.value) || isRefunding.value
 }
 
 function stopOrderPolling() {
@@ -391,7 +451,7 @@ function scheduleOrderPolling({ restart = false } = {}) {
   }
   if (restart) stopOrderPolling()
   if (orderPollTimer) return
-  const delay = status.value === 'booked' ? 30000 : 5000
+  const delay = status.value === 'booked' || isChatReadOnly.value ? 30000 : status.value === 'in_progress' ? 12000 : 5000
   orderPollTimer = setTimeout(async () => {
     orderPollTimer = null
     if (!pageActive || pageDestroyed) return
@@ -403,24 +463,74 @@ function scheduleOrderPolling({ restart = false } = {}) {
 function stopOrderTimers() {
   stopCountdown()
   stopOrderPolling()
+  stopServiceUiClock()
+}
+
+function startServiceUiClock() {
+  if (serviceUiTimer) return
+  serviceUiClock.value = Date.now()
+  serviceUiTimer = setInterval(() => {
+    serviceUiClock.value = Date.now()
+    refreshOrderAtServiceDeadline()
+  }, 1000)
+}
+
+function stopServiceUiClock() {
+  if (serviceUiTimer) clearInterval(serviceUiTimer)
+  serviceUiTimer = null
+}
+
+function refreshOrderAtServiceDeadline() {
+  if (!currentOrder.value?.id || !isMentorConsultationServiceExpired(currentOrder.value, serviceUiClock.value)) return
+  const refreshKey = `${currentOrder.value.id}:${currentOrder.value.serviceEndsAt || currentOrder.value.startedAt || currentOrder.value.acceptedAt || currentOrder.value.createdAt}`
+  if (serviceExpiryRefreshKey === refreshKey) return
+  serviceExpiryRefreshKey = refreshKey
+  void loadOrder({ silent: true, queueIfBusy: true })
 }
 
 async function openChat() {
   if (!mentor.value || !orderId.value || openingChat.value) return
-  if (status.value !== 'in_progress' && !(isBooking.value && status.value === 'booked')) {
+  if (!currentOrderUiState.value.canOpenChat && !(isBooking.value && status.value === 'booked')) {
     uni.showToast({ title: '请等待前辈确认接单后进入咨询', icon: 'none' })
     return
   }
   openingChat.value = true
+  const openSequence = ++chatOpenSequence
+  let navigationPending = false
   try {
+    if (currentOrderUiState.value.isLiveChat) {
+      const syncedOrder = await loadOrder({ silent: true, queueIfBusy: true })
+      if (!isCurrentChatOpen(openSequence)) return
+      if (!syncedOrder) {
+        uni.showToast({ title: '咨询状态同步失败，请稍后重试', icon: 'none' })
+        return
+      }
+    }
+    if (!currentOrderUiState.value.canOpenChat && !(isBooking.value && status.value === 'booked')) {
+      uni.showToast({ title: '咨询状态已更新，请查看最新状态', icon: 'none' })
+      return
+    }
+    if (!isCurrentChatOpen(openSequence)) return
+    navigationPending = true
     uni.navigateTo({
-      url: `/pages-sub-consultation/consultation/mentor-chat?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}&orderId=${encodeURIComponent(orderId.value)}`
+      url: `/pages-sub-consultation/consultation/mentor-chat?mentorId=${encodeURIComponent(mentor.value.id)}&mode=${mode.value}&orderId=${encodeURIComponent(orderId.value)}`,
+      fail: () => uni.showToast({ title: '咨询页面打开失败，请稍后重试', icon: 'none' }),
+      complete: () => {
+        if (openSequence === chatOpenSequence) openingChat.value = false
+      }
     })
   } catch (error) {
-    uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
+    navigationPending = false
+    if (isCurrentChatOpen(openSequence)) {
+      uni.showToast({ title: error?.detail || '暂时无法进入咨询', icon: 'none' })
+    }
   } finally {
-    openingChat.value = false
+    if (!navigationPending && openSequence === chatOpenSequence) openingChat.value = false
   }
+}
+
+function isCurrentChatOpen(sequence) {
+  return !pageDestroyed && pageActive && sequence === chatOpenSequence && openingChat.value
 }
 
 function confirmCancel() {

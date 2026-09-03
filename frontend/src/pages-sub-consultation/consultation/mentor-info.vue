@@ -144,8 +144,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onLoad, onShow } from '@dcloudio/uni-app'
+import { computed, onBeforeUnmount, ref } from 'vue'
+import { onHide, onLoad, onShow } from '@dcloudio/uni-app'
 import MentorPageHeader from '../../components/MentorPageHeader.vue'
 import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
 import {
@@ -156,6 +156,10 @@ import {
 } from '../../api/mentorConsultation'
 import { MENTOR_SKILL_OPTIONS, normalizeMentorConsultationOrder, normalizeMentorDetailResponse } from '../../data/mentorConsultation'
 import { getAuthUser } from '../../utils/auth'
+import {
+  getMentorConsultationOrderUiState,
+  mergeMentorConsultationStopState
+} from '../../utils/mentorConsultationState.mjs'
 import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 
 const mentor = ref(null)
@@ -176,11 +180,27 @@ const profileEditExamOptions = [
 ]
 const profileEditExamLabels = profileEditExamOptions.map((item) => item.label)
 const profileEditSkillOptions = MENTOR_SKILL_OPTIONS
+const MENTOR_ORDER_COUNT_SYNC_INTERVAL_MS = 15000
+const MENTOR_ORDER_COUNT_SYNC_STATUSES = new Set(['pending_accept', 'accepted', 'booked', 'in_progress'])
+const mentorOrderClock = ref(Date.now())
+let mentorOrderCountSyncTimer = null
+let mentorOrderCountSyncing = false
+let mentorInfoPageActive = false
+let mentorInfoPageDestroyed = false
+let mentorInfoVisibilityRevision = 0
+let mentorInfoRefreshQueued = false
+let mentorInfoLoadVisibilityRevision = -1
 
 const mentorAvatarUrl = computed(() => getUserAvatarUrl(ownerUser.value) || mentor.value?.avatarUrl || '')
 const themeInlineStyle = computed(() => buildThemeStyle(themeKey.value))
 const pendingOrderCount = computed(() => mentorOrders.value.filter((order) => order.orderStatus === 'pending_accept').length)
-const activeOrderCount = computed(() => mentorOrders.value.filter((order) => ['accepted', 'in_progress'].includes(order.orderStatus)).length)
+const activeOrderCount = computed(() => mentorOrders.value.filter((order) => (
+  order.orderStatus === 'accepted'
+  || getMentorConsultationOrderUiState(order, {
+    viewerRole: 'mentor',
+    now: mentorOrderClock.value
+  }).isLiveChat
+)).length)
 const examTypeLabel = computed(() => mentor.value?.examType === 'application' ? '申请制' : (mentor.value?.examType || '未填写'))
 const scoreLabel = computed(() => {
   if (mentor.value?.examType === 'application') return '无需填写'
@@ -198,54 +218,158 @@ onLoad(() => {
 })
 
 onShow(() => {
+  mentorInfoPageActive = true
+  mentorOrderClock.value = Date.now()
   themeKey.value = getStoredThemeKey()
   ownerUser.value = getAuthUser() || {}
   void loadMentorInfo({ silent: true })
 })
 
+onHide(() => {
+  mentorInfoVisibilityRevision += 1
+  mentorInfoPageActive = false
+  mentorInfoRefreshQueued = false
+  stopMentorOrderCountSync()
+})
+
+onBeforeUnmount(() => {
+  mentorInfoVisibilityRevision += 1
+  mentorInfoPageDestroyed = true
+  mentorInfoPageActive = false
+  mentorInfoRefreshQueued = false
+  stopMentorOrderCountSync()
+})
+
 async function loadMentorInfo({ silent = false } = {}) {
-  if (infoLoading.value) return
+  if (infoLoading.value) {
+    if (
+      mentorInfoPageActive
+      && mentorInfoLoadVisibilityRevision !== mentorInfoVisibilityRevision
+    ) mentorInfoRefreshQueued = true
+    return
+  }
+  const requestVisibilityRevision = mentorInfoVisibilityRevision
+  mentorInfoLoadVisibilityRevision = requestVisibilityRevision
   infoLoading.value = true
 
-  const [profileResult, ordersResult, profileChangeRequestResult] = await Promise.allSettled([
-    fetchMyMentorProfile(),
-    fetchMyReceivedMentorOrders({ limit: 50 }),
-    fetchMyMentorProfileChangeRequest()
-  ])
+  try {
+    const [profileResult, ordersResult, profileChangeRequestResult] = await Promise.allSettled([
+      fetchMyMentorProfile(),
+      fetchMyReceivedMentorOrders({ limit: 50 }),
+      fetchMyMentorProfileChangeRequest()
+    ])
+    if (!isCurrentMentorInfoRead(requestVisibilityRevision)) return
 
-  if (profileResult.status === 'fulfilled') {
-    const profile = normalizeMentorDetailResponse(profileResult.value)
-    if (profile) {
-      mentor.value = profile
-      if (!isProfileEditing.value && !profileEditPending.value) profileEditDraft.value = createProfileEditDraft(profile)
+    if (profileResult.status === 'fulfilled') {
+      const profile = normalizeMentorDetailResponse(profileResult.value)
+      if (profile) {
+        mentor.value = profile
+        if (!isProfileEditing.value && !profileEditPending.value) profileEditDraft.value = createProfileEditDraft(profile)
+      }
+    } else if (!mentor.value && !silent) {
+      uni.showToast({ title: profileResult.reason?.detail || '我的信息加载失败', icon: 'none' })
     }
-  } else if (!mentor.value && !silent) {
-    uni.showToast({ title: profileResult.reason?.detail || '我的信息加载失败', icon: 'none' })
-  }
 
-  if (ordersResult.status === 'fulfilled') {
-    mentorOrders.value = (Array.isArray(ordersResult.value?.items) ? ordersResult.value.items : [])
-      .map((order) => normalizeMentorConsultationOrder(order))
-  } else if (!silent && mentor.value) {
-    uni.showToast({ title: ordersResult.reason?.detail || '咨询数据加载失败', icon: 'none' })
-  }
-
-  if (profileChangeRequestResult.status === 'fulfilled') {
-    const request = profileChangeRequestResult.value?.request || null
-    profileEditPending.value = request?.request_status === 'pending'
-    if (request?.request_status === 'pending' && !isProfileEditing.value) {
-      profileEditDraft.value = normalizeProfileEditDraft({
-        ...request,
-        price: request.price
-      })
-    } else if (!isProfileEditing.value && mentor.value) {
-      profileEditDraft.value = createProfileEditDraft(mentor.value)
+    if (ordersResult.status === 'fulfilled') {
+      const existingById = new Map(mentorOrders.value.map((order) => [order.id, order]))
+      mentorOrders.value = (Array.isArray(ordersResult.value?.items) ? ordersResult.value.items : [])
+        .map((order) => normalizeMentorConsultationOrder(order))
+        .map((order) => mergeMentorConsultationStopState(order, existingById.get(order.id)))
+    } else if (!silent && mentor.value) {
+      uni.showToast({ title: ordersResult.reason?.detail || '咨询数据加载失败', icon: 'none' })
     }
-  } else if (!silent && mentor.value) {
-    uni.showToast({ title: profileChangeRequestResult.reason?.detail || '资料修改审核状态加载失败', icon: 'none' })
-  }
 
-  infoLoading.value = false
+    if (profileChangeRequestResult.status === 'fulfilled') {
+      const request = profileChangeRequestResult.value?.request || null
+      profileEditPending.value = request?.request_status === 'pending'
+      if (request?.request_status === 'pending' && !isProfileEditing.value) {
+        profileEditDraft.value = normalizeProfileEditDraft({
+          ...request,
+          price: request.price
+        })
+      } else if (!isProfileEditing.value && mentor.value) {
+        profileEditDraft.value = createProfileEditDraft(mentor.value)
+      }
+    } else if (!silent && mentor.value) {
+      uni.showToast({ title: profileChangeRequestResult.reason?.detail || '资料修改审核状态加载失败', icon: 'none' })
+    }
+
+    mentorOrderClock.value = Date.now()
+  } finally {
+    infoLoading.value = false
+    mentorInfoLoadVisibilityRevision = -1
+    if (mentorInfoRefreshQueued && mentorInfoPageActive && !mentorInfoPageDestroyed) {
+      mentorInfoRefreshQueued = false
+      void loadMentorInfo({ silent: true })
+    } else {
+      if (!mentorInfoPageActive) mentorInfoRefreshQueued = false
+      scheduleMentorOrderCountSync()
+    }
+  }
+}
+
+function isCurrentMentorInfoRead(visibilityRevision) {
+  return (
+    !mentorInfoPageDestroyed
+    && mentorInfoPageActive
+    && visibilityRevision === mentorInfoVisibilityRevision
+  )
+}
+
+function hasMentorOrdersNeedingCountSync() {
+  return mentorOrders.value.some((order) => (
+    order?.id && MENTOR_ORDER_COUNT_SYNC_STATUSES.has(String(order.orderStatus || ''))
+  ))
+}
+
+async function syncMentorOrderCounts() {
+  if (
+    mentorInfoPageDestroyed
+    || !mentorInfoPageActive
+    || infoLoading.value
+    || mentorOrderCountSyncing
+  ) {
+    scheduleMentorOrderCountSync()
+    return
+  }
+  const requestVisibilityRevision = mentorInfoVisibilityRevision
+  mentorOrderCountSyncing = true
+  try {
+    const payload = await fetchMyReceivedMentorOrders({ limit: 50 })
+    if (isCurrentMentorInfoRead(requestVisibilityRevision)) {
+      const existingById = new Map(mentorOrders.value.map((order) => [order.id, order]))
+      mentorOrders.value = (Array.isArray(payload?.items) ? payload.items : [])
+        .map((order) => normalizeMentorConsultationOrder(order))
+        .map((order) => mergeMentorConsultationStopState(order, existingById.get(order.id)))
+      mentorOrderClock.value = Date.now()
+    }
+  } catch (error) {
+    // 计数后台同步失败时保留上次成功数据，下一轮继续重试。
+  } finally {
+    mentorOrderCountSyncing = false
+    mentorOrderClock.value = Date.now()
+    scheduleMentorOrderCountSync()
+  }
+}
+
+function scheduleMentorOrderCountSync() {
+  stopMentorOrderCountSync()
+  if (
+    mentorInfoPageDestroyed
+    || !mentorInfoPageActive
+    || infoLoading.value
+    || mentorOrderCountSyncing
+    || !hasMentorOrdersNeedingCountSync()
+  ) return
+  mentorOrderCountSyncTimer = setTimeout(() => {
+    mentorOrderCountSyncTimer = null
+    void syncMentorOrderCounts()
+  }, MENTOR_ORDER_COUNT_SYNC_INTERVAL_MS)
+}
+
+function stopMentorOrderCountSync() {
+  if (mentorOrderCountSyncTimer) clearTimeout(mentorOrderCountSyncTimer)
+  mentorOrderCountSyncTimer = null
 }
 
 function formatSkillLabel(skill) {

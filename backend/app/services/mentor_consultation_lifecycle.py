@@ -14,8 +14,9 @@ from typing import Any
 
 from app.db import get_supabase_admin
 from app.services.mentor_consultation_sla import normalize_case_priority
-from app.services.supabase_resilience import call_supabase
+from app.services.supabase_resilience import call_supabase, is_missing_supabase_relation_error
 from app.services.user_notifications import create_user_notification
+from app.services.wallet_ledger import record_consultation_income_pending
 
 
 logger = logging.getLogger(__name__)
@@ -134,6 +135,46 @@ def _notify_applicant_of_lifecycle_timeout(
             timeout_reason,
             type(exc).__name__,
         )
+
+
+def _has_open_consultation_dispute(supabase: Any, order_id: str) -> bool:
+    """Resolve the UX-only block reason after the atomic RPC declines."""
+
+    try:
+        report_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_reports")
+                .select("id,status")
+                .eq("order_id", order_id)
+                .execute()
+            ),
+            operation_name="consultation auto completion dispute lookup",
+        )
+        reports = report_response.data or []
+        if any(str(report.get("status") or "") in {"pending", "reviewing"} for report in reports):
+            return True
+        report_ids = [str(report.get("id") or "") for report in reports if report.get("id")]
+        if not report_ids:
+            return False
+        appeal_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_report_appeals")
+                .select("id")
+                .in_("report_id", report_ids)
+                .in_("status", ["pending", "reviewing"])
+                .limit(1)
+                .execute()
+            ),
+            operation_name="consultation auto completion appeal lookup",
+        )
+        return bool(appeal_response.data)
+    except Exception as exc:
+        logger.warning(
+            "Consultation auto completion dispute reason unavailable (order_id=%s error_type=%s)",
+            order_id,
+            type(exc).__name__,
+        )
+        return False
 
 
 def _is_demo_payment_reference(reference: object) -> bool:
@@ -406,6 +447,67 @@ def refresh_expired_mentor_consultation_order(
     if not order_id:
         return order
 
+    if order_status == "in_progress":
+        started_at = _as_utc_datetime(order.get("started_at"))
+        consultation_minutes = max(15, min(180, int(order.get("consultation_window_minutes") or 60)))
+        if started_at is None:
+            return order
+        service_ends_at = started_at + timedelta(minutes=consultation_minutes)
+        if service_ends_at > current_time:
+            return order
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "auto_complete_expired_mentor_consultation_order",
+                    {"p_order_id": order_id, "p_now": current_time.isoformat()},
+                ).execute(),
+                operation_name="consultation service window auto completion",
+            )
+        except Exception as exc:
+            if is_missing_supabase_relation_error(exc):
+                # During a rolling release, order reads stay available until the
+                # required database migration reaches this environment.
+                logger.warning(
+                    "Consultation auto completion RPC unavailable; migration pending "
+                    "(order_id=%s error_type=%s)",
+                    order_id,
+                    type(exc).__name__,
+                )
+                return order
+            raise
+        if not response.data:
+            # An open report/appeal intentionally leaves the order in progress;
+            # a concurrent completion is returned when one already won.
+            current_order = _get_order_or_existing(supabase, order_id, order)
+            if str(current_order.get("order_status") or "") == "in_progress":
+                current_order = {
+                    **current_order,
+                    "auto_completion_blocked_by_dispute": _has_open_consultation_dispute(
+                        supabase,
+                        order_id,
+                    ),
+                }
+            return current_order
+
+        completed_order = response.data[0]
+        if str(completed_order.get("order_status") or "") != "completed":
+            return completed_order
+        # The RPC owns the order transition, system message, audit event and
+        # both notification-outbox rows in one transaction. Python only starts
+        # the idempotent wallet write; the periodic reconciler is its retry path.
+        try:
+            record_consultation_income_pending(supabase, completed_order)
+        except Exception as exc:
+            # The regular ledger reconciler retries idempotently in the same
+            # background loop, so settlement accounting is never coupled to UX.
+            logger.warning(
+                "Consultation auto completion ledger write deferred "
+                "(order_id=%s error_type=%s)",
+                order_id,
+                type(exc).__name__,
+            )
+        return completed_order
+
     if order_status == "pending_payment":
         payment_expires_at = _as_utc_datetime(order.get("payment_expires_at"))
         if payment_expires_at is None or payment_expires_at > current_time:
@@ -665,6 +767,40 @@ def settle_expired_mentor_consultation_orders(*, limit: int = DEFAULT_SWEEP_LIMI
     supabase = get_supabase_admin()
     changed = 0
 
+    # The batch RPC filters on the stored service deadline after excluding open
+    # reports/appeals, so a long-running dispute cannot occupy the page and
+    # starve later eligible orders. Each transition and its visible side effects
+    # still commit in one database transaction.
+    try:
+        in_progress_response = call_supabase(
+            lambda: supabase.rpc(
+                "auto_complete_expired_mentor_consultation_orders",
+                {"p_limit": batch_size, "p_now": now.isoformat()},
+            ).execute(),
+            operation_name="consultation lifecycle in-progress batch completion",
+        )
+    except Exception as exc:
+        if is_missing_supabase_relation_error(exc):
+            logger.warning(
+                "Consultation auto completion batch RPC unavailable; migration pending "
+                "(error_type=%s)",
+                type(exc).__name__,
+            )
+            in_progress_response = None
+        else:
+            raise
+    for completed_order in ((in_progress_response.data if in_progress_response else []) or []):
+        changed += 1
+        try:
+            record_consultation_income_pending(supabase, completed_order)
+        except Exception as exc:
+            logger.warning(
+                "Consultation auto completion ledger write deferred "
+                "(order_id=%s error_type=%s)",
+                str(completed_order.get("id") or ""),
+                type(exc).__name__,
+            )
+
     unpaid_response = call_supabase(
         lambda: (
             supabase.table("mentor_consultation_orders")
@@ -746,6 +882,26 @@ def settle_expired_mentor_consultation_orders(*, limit: int = DEFAULT_SWEEP_LIMI
             updated = refresh_expired_mentor_consultation_order(supabase, order, now=now)
             if str(updated.get("order_status") or "") != str(order.get("order_status") or ""):
                 changed += 1
+
+        # A booking can finish from an already-started consultation. Once its
+        # slot end has passed, converge any remaining `booked` slot to
+        # `expired`; the legacy cleanup below intentionally targets orders that
+        # never started and therefore does not cover this case.
+        started_terminal_response = call_supabase(
+            lambda: (
+                supabase.table("mentor_consultation_orders")
+                .select("id,consultation_type,slot_id,started_at")
+                .eq("consultation_type", "booking")
+                .in_("order_status", ["cancelled", "refunded", "timeout", "completed"])
+                .in_("slot_id", slot_ids)
+                .not_.is_("started_at", "null")
+                .limit(batch_size)
+                .execute()
+            ),
+            operation_name="consultation lifecycle started terminal booking cleanup list",
+        )
+        for order in started_terminal_response.data or []:
+            release_terminal_mentor_booking_slot(supabase, order, now=now)
 
     # A user/admin cancellation updates the order first, then releases the
     # slot.  Retry terminal booking releases here so an interrupted request

@@ -3592,23 +3592,22 @@ def create_mentor_consultation_message(
                     status_code=status.HTTP_409_CONFLICT,
                     detail="同一消息标识已用于不同内容，请生成新的消息标识后重试",
                 )
+        order = _refresh_pending_accept_status(supabase, order)
         _assert_order_status(order, {"in_progress"}, "本次咨询已结束，暂不能继续发送消息")
-        confirmation_field = (
-            "mentor_completion_confirmed_at"
-            if participant_role == "mentor"
-            else "applicant_completion_confirmed_at"
-        )
-        if order.get(confirmation_field):
+        if (
+            order.get("applicant_completion_confirmed_at")
+            or order.get("mentor_completion_confirmed_at")
+        ):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="你已确认结束本次咨询，正在等待对方确认",
+                detail="本次咨询已进入结束确认，暂不能继续发送消息",
             )
         started_at = _as_utc_datetime(order.get("started_at"))
         consultation_minutes = max(15, min(180, int(order.get("consultation_window_minutes") or 60)))
         if started_at and started_at + timedelta(minutes=consultation_minutes) <= _utc_now():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="本次服务时间已到，请双方确认结束或发起平台介入",
+                detail="本次服务时间已到，系统将自动结束；如有异议请查看平台处理进度",
             )
         message = {
             "order_id": normalized_order_id,
@@ -3624,6 +3623,11 @@ def create_mentor_consultation_message(
                 operation_name="consultation message create",
             )
         except Exception as insert_error:
+            if "consultation_message_window_closed" in str(insert_error).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="本次咨询已停止发送；如有异议请查看平台处理进度",
+                ) from insert_error
             # 请求可能在服务端写入成功后于网络响应阶段失败；唯一键冲突时回读并比对正文。
             if not client_message_id:
                 raise
