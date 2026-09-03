@@ -273,6 +273,38 @@ export function bulkUpdateQuestionAdminCommunityPostFeatured(payload) {
   })
 }
 
+export function trashQuestionAdminCommunityPosts(payload) {
+  return request({
+    url: '/admin/question-portal/community/posts/trash',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function fetchQuestionAdminCommunityTrash(params = {}) {
+  return request({
+    url: '/admin/question-portal/community/trash',
+    method: 'GET',
+    data: params
+  })
+}
+
+export function restoreQuestionAdminCommunityTrash(payload) {
+  return request({
+    url: '/admin/question-portal/community/trash/restore',
+    method: 'POST',
+    data: payload
+  })
+}
+
+export function purgeQuestionAdminCommunityTrash(payload) {
+  return request({
+    url: '/admin/question-portal/community/trash/purge',
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function fetchAdminQuestionBanks() {
   return request({
     url: '/admin/question-banks',

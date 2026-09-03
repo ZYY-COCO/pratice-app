@@ -23,11 +23,33 @@ create table if not exists public.circle_community_posts (
   is_published boolean not null default true,
   is_featured boolean not null default false,
   author_deleted_at timestamptz,
+  admin_deleted_at timestamptz,
+  admin_deleted_by uuid references public.users(id) on delete set null,
+  admin_purge_after timestamptz,
+  admin_restore_is_published boolean,
+  admin_restore_is_featured boolean,
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now(),
   constraint circle_community_posts_author_deleted_hidden_check check (
     author_deleted_at is null
     or (is_published = false and is_featured = false)
+  ),
+  constraint circle_community_posts_admin_trash_state_check check (
+    (
+      admin_deleted_at is null
+      and admin_purge_after is null
+      and admin_restore_is_published is null
+      and admin_restore_is_featured is null
+    )
+    or (
+      admin_deleted_at is not null
+      and admin_purge_after is not null
+      and admin_purge_after > admin_deleted_at
+      and admin_restore_is_published is not null
+      and admin_restore_is_featured is not null
+      and is_published = false
+      and is_featured = false
+    )
   )
 );
 
@@ -75,6 +97,14 @@ create index if not exists idx_circle_community_posts_featured_visible
 create index if not exists idx_circle_community_posts_author_active_created
   on public.circle_community_posts (author_id, created_at desc, id desc)
   where author_deleted_at is null;
+
+create index if not exists idx_circle_community_posts_admin_trash_deleted
+  on public.circle_community_posts (admin_deleted_at desc, id desc)
+  where admin_deleted_at is not null;
+
+create index if not exists idx_circle_community_posts_admin_trash_purge
+  on public.circle_community_posts (admin_purge_after, id)
+  where admin_deleted_at is not null;
 
 create index if not exists idx_circle_community_likes_post
   on public.circle_community_likes (post_id, created_at desc);

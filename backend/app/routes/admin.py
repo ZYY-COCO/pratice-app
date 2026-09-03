@@ -40,6 +40,9 @@ from app.schemas.admin import (
     AdminCommunityPostItem,
     AdminCommunityPostListResponse,
     AdminCommunityPostVisibilityRequest,
+    AdminCommunityTrashListResponse,
+    AdminCommunityTrashMutationRequest,
+    AdminCommunityTrashMutationResponse,
     AdminCommunityReportItem,
     AdminCommunityReportListResponse,
     AdminCommunityReportStatusUpdateRequest,
@@ -146,6 +149,11 @@ COMMUNITY_ADMIN_POST_SORTS = {
     "views": ("view_count", True),
     "likes": ("like_count", True),
     "comments": ("comment_count", True),
+}
+COMMUNITY_ADMIN_TRASH_SORTS = {
+    "deleted_newest": ("admin_deleted_at", True),
+    "deleted_oldest": ("admin_deleted_at", False),
+    "expiring_soon": ("admin_purge_after", False),
 }
 COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STATUSES = {"all", "pending", "approved", "rejected"}
 COMMUNITY_ADMIN_EXPERIENCE_REVIEW_CATEGORIES = {"all", "Z001", "Z002"}
@@ -662,6 +670,9 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
         reviewed_by=str(row.get("reviewed_by") or "").strip() or None,
         reviewed_at=row.get("reviewed_at"),
         submitted_at=row.get("submitted_at"),
+        admin_deleted_at=row.get("admin_deleted_at"),
+        admin_deleted_by=str(row.get("admin_deleted_by") or "").strip() or None,
+        admin_purge_after=row.get("admin_purge_after"),
         created_at=row.get("created_at"),
         updated_at=row.get("updated_at"),
     )
@@ -702,9 +713,66 @@ def _community_post_detail_row(supabase, post_id: str) -> dict:
         ),
         operation_name="admin community post detail",
     )
-    if not response.data:
+    if not response.data or response.data[0].get("admin_deleted_at"):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Community post not found")
     return response.data[0]
+
+
+def _community_admin_rpc_affected_ids(response) -> list[str]:
+    return [
+        str(row.get("post_id") or row.get("id") or "")
+        for row in (response.data or [])
+        if isinstance(row, dict) and (row.get("post_id") or row.get("id"))
+    ]
+
+
+def _purge_expired_community_admin_trash(supabase) -> int:
+    response = call_supabase(
+        lambda: (
+            supabase.rpc("circle_community_purge_expired_admin_trash", {}).execute()
+        ),
+        operation_name="admin community expired trash purge",
+    )
+    if isinstance(response.data, int):
+        return max(0, response.data)
+    if isinstance(response.data, list) and response.data:
+        value = response.data[0]
+        if isinstance(value, dict):
+            value = next(iter(value.values()), 0)
+        return max(0, _safe_int(value, 0))
+    return 0
+
+
+def _normalize_community_admin_post_ids(post_ids: list[str]) -> list[str]:
+    normalized = list(dict.fromkeys(str(post_id).strip() for post_id in post_ids if str(post_id).strip()))
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="至少选择一条帖子")
+    return normalized
+
+
+def _execute_community_admin_trash_mutation(
+    supabase,
+    *,
+    admin_profile: dict,
+    rpc_name: str,
+    rpc_args: dict,
+    operation_name: str,
+    action: str,
+) -> AdminCommunityTrashMutationResponse:
+    response = call_supabase(
+        lambda: supabase.rpc(rpc_name, rpc_args).execute(),
+        operation_name=operation_name,
+    )
+    affected_ids = _community_admin_rpc_affected_ids(response)
+    _log_admin_action(
+        supabase,
+        admin_profile,
+        action=action,
+        target_type="community_post",
+        target_id=None,
+        details={"post_ids": affected_ids, "affected_count": len(affected_ids)},
+    )
+    return AdminCommunityTrashMutationResponse(affected_count=len(affected_ids))
 
 
 def _fetch_community_report_users(supabase, user_ids: list[str]) -> dict[str, dict]:
@@ -4211,34 +4279,53 @@ def question_admin_community_overview(
     supabase = get_supabase_admin()
     local_now = datetime.now(CHINA_STANDARD_TIME)
     today_start = local_now.replace(hour=0, minute=0, second=0, microsecond=0).astimezone(timezone.utc)
-    try:
+
+    def active_post_query(query, *, include_admin_deleted: bool):
+        return query.is_("admin_deleted_at", "null") if include_admin_deleted else query
+
+    def build_overview(*, include_admin_deleted: bool) -> AdminCommunityOverviewResponse:
         try:
             pending_experience_reviews = _count_query(
-                supabase.table("circle_community_posts")
-                .select("id", count="exact")
-                .eq("post_type", "experience")
-                .eq("review_status", "pending")
+                active_post_query(
+                    supabase.table("circle_community_posts")
+                    .select("id", count="exact")
+                    .eq("post_type", "experience")
+                    .eq("review_status", "pending"),
+                    include_admin_deleted=include_admin_deleted,
+                )
             )
         except Exception as review_exc:
             if not _is_missing_community_post_column_error(review_exc, "review_status"):
                 raise
             pending_experience_reviews = 0
         return AdminCommunityOverviewResponse(
-            total_posts=_count_table(supabase, "circle_community_posts"),
+            total_posts=_count_query(active_post_query(
+                supabase.table("circle_community_posts").select("id", count="exact"),
+                include_admin_deleted=include_admin_deleted,
+            )),
             published_posts=_count_query(
-                supabase.table("circle_community_posts")
-                .select("id", count="exact")
-                .eq("is_published", True)
+                active_post_query(
+                    supabase.table("circle_community_posts")
+                    .select("id", count="exact")
+                    .eq("is_published", True),
+                    include_admin_deleted=include_admin_deleted,
+                )
             ),
             archived_posts=_count_query(
-                supabase.table("circle_community_posts")
-                .select("id", count="exact")
-                .eq("is_published", False)
+                active_post_query(
+                    supabase.table("circle_community_posts")
+                    .select("id", count="exact")
+                    .eq("is_published", False),
+                    include_admin_deleted=include_admin_deleted,
+                )
             ),
             today_posts=_count_query(
-                supabase.table("circle_community_posts")
-                .select("id", count="exact")
-                .gte("created_at", _to_iso(today_start))
+                active_post_query(
+                    supabase.table("circle_community_posts")
+                    .select("id", count="exact")
+                    .gte("created_at", _to_iso(today_start)),
+                    include_admin_deleted=include_admin_deleted,
+                )
             ),
             total_reports=_count_table(supabase, "circle_community_reports"),
             pending_reports=_count_query(
@@ -4253,6 +4340,14 @@ def question_admin_community_overview(
             ),
             pending_experience_reviews=pending_experience_reviews,
         )
+
+    try:
+        try:
+            return build_overview(include_admin_deleted=True)
+        except Exception as migration_exc:
+            if not _is_missing_community_post_column_error(migration_exc, "admin_deleted_at"):
+                raise
+            return build_overview(include_admin_deleted=False)
     except Exception as exc:
         logger.warning("Admin community overview unavailable (error_type=%s)", type(exc).__name__)
         raise HTTPException(
@@ -4294,12 +4389,15 @@ def question_admin_community_experience_reviews(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="开始日期不能晚于结束日期")
 
     supabase = get_supabase_admin()
-    try:
+
+    def build_review_query(*, include_admin_deleted: bool):
         query = (
             supabase.table("circle_community_posts")
             .select("*", count="exact")
             .eq("post_type", "experience")
         )
+        if include_admin_deleted and hasattr(query, "is_"):
+            query = query.is_("admin_deleted_at", "null")
         if normalized_status != "all":
             query = query.eq("review_status", normalized_status)
         if normalized_category != "all":
@@ -4322,30 +4420,40 @@ def question_admin_community_experience_reviews(
                 tzinfo=CHINA_STANDARD_TIME,
             )
             query = query.lt("submitted_at", _to_iso(end_at.astimezone(timezone.utc)))
-        response = call_supabase(
-            lambda: (
-                query.order("submitted_at", desc=normalized_sort == "newest")
-                .order("id", desc=normalized_sort == "newest")
-                .range(offset, offset + limit - 1)
-                .execute()
-            ),
-            operation_name="admin community experience review list",
-        )
-        return AdminCommunityExperienceReviewListResponse(
-            items=[_build_admin_community_post_item(row) for row in (response.data or [])],
-            count=int(response.count or 0),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning(
-            "Admin community experience review list unavailable (error_type=%s)",
-            type(exc).__name__,
-        )
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="经验贴审核数据暂时不可用，请确认已执行审核数据库迁移",
-        ) from exc
+        return query
+
+    include_admin_deleted = True
+    while True:
+        try:
+            query = build_review_query(include_admin_deleted=include_admin_deleted)
+            response = call_supabase(
+                lambda: (
+                    query.order("submitted_at", desc=normalized_sort == "newest")
+                    .order("id", desc=normalized_sort == "newest")
+                    .range(offset, offset + limit - 1)
+                    .execute()
+                ),
+                operation_name="admin community experience review list",
+            )
+            rows = [row for row in (response.data or []) if not row.get("admin_deleted_at")]
+            return AdminCommunityExperienceReviewListResponse(
+                items=[_build_admin_community_post_item(row) for row in rows],
+                count=int(response.count or 0),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if include_admin_deleted and _is_missing_community_post_column_error(exc, "admin_deleted_at"):
+                include_admin_deleted = False
+                continue
+            logger.warning(
+                "Admin community experience review list unavailable (error_type=%s)",
+                type(exc).__name__,
+            )
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="经验贴审核数据暂时不可用，请确认已执行审核数据库迁移",
+            ) from exc
 
 
 @router.get(
@@ -4490,6 +4598,156 @@ def question_admin_review_community_experience_post(
         ) from exc
 
 
+@router.post(
+    "/question-portal/community/posts/trash",
+    response_model=AdminCommunityTrashMutationResponse,
+)
+def question_admin_trash_community_posts(
+    payload: AdminCommunityTrashMutationRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityTrashMutationResponse:
+    post_ids = _normalize_community_admin_post_ids(payload.ids)
+    supabase = get_supabase_admin()
+    try:
+        return _execute_community_admin_trash_mutation(
+            supabase,
+            admin_profile=admin_profile,
+            rpc_name="circle_community_admin_trash_posts",
+            rpc_args={
+                "p_post_ids": post_ids,
+                "p_admin_user_id": admin_profile.get("id"),
+            },
+            operation_name="admin community trash posts",
+            action="trash_community_posts",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community trash operation failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="帖子删除失败，请确认已执行回收站数据库迁移",
+        ) from exc
+
+
+@router.get(
+    "/question-portal/community/trash",
+    response_model=AdminCommunityTrashListResponse,
+)
+def question_admin_community_trash(
+    post_type: str = Query(default="all", max_length=20),
+    sort_by: str = Query(default="deleted_newest", max_length=30),
+    search: str | None = Query(default=None, max_length=80),
+    limit: int = Query(default=COMMUNITY_ADMIN_POST_LIMIT, ge=1, le=COMMUNITY_ADMIN_POST_MAX_LIMIT),
+    offset: int = Query(default=0, ge=0),
+    _: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityTrashListResponse:
+    normalized_type = post_type.strip().lower() or "all"
+    normalized_sort = sort_by.strip().lower() or "deleted_newest"
+    if normalized_type not in COMMUNITY_ADMIN_POST_TYPES:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的帖子类型")
+    if normalized_sort not in COMMUNITY_ADMIN_TRASH_SORTS:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的回收站排序方式")
+
+    order_field, order_desc = COMMUNITY_ADMIN_TRASH_SORTS[normalized_sort]
+    supabase = get_supabase_admin()
+    try:
+        _purge_expired_community_admin_trash(supabase)
+        query = (
+            supabase.table("circle_community_posts")
+            .select("*", count="exact")
+            .not_.is_("admin_deleted_at", "null")
+        )
+        if normalized_type != "all":
+            query = query.eq("post_type", normalized_type)
+        if search:
+            term = search.strip().replace(",", " ").replace("(", " ").replace(")", " ")
+            if term:
+                query = query.or_(
+                    f"title.ilike.%{term}%,content.ilike.%{term}%,author_name.ilike.%{term}%"
+                )
+        response = call_supabase(
+            lambda: (
+                query.order(order_field, desc=order_desc)
+                .order("id", desc=order_desc)
+                .range(offset, offset + limit - 1)
+                .execute()
+            ),
+            operation_name="admin community trash list",
+        )
+        return AdminCommunityTrashListResponse(
+            items=[_build_admin_community_post_item(row) for row in (response.data or [])],
+            count=int(response.count or 0),
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community trash list unavailable (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="回收站加载失败，请确认已执行回收站数据库迁移",
+        ) from exc
+
+
+@router.post(
+    "/question-portal/community/trash/restore",
+    response_model=AdminCommunityTrashMutationResponse,
+)
+def question_admin_restore_community_trash(
+    payload: AdminCommunityTrashMutationRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityTrashMutationResponse:
+    post_ids = _normalize_community_admin_post_ids(payload.ids)
+    supabase = get_supabase_admin()
+    try:
+        _purge_expired_community_admin_trash(supabase)
+        return _execute_community_admin_trash_mutation(
+            supabase,
+            admin_profile=admin_profile,
+            rpc_name="circle_community_admin_restore_posts",
+            rpc_args={"p_post_ids": post_ids},
+            operation_name="admin community trash restore",
+            action="restore_community_trash",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community trash restore failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="帖子恢复失败，请稍后重试",
+        ) from exc
+
+
+@router.post(
+    "/question-portal/community/trash/purge",
+    response_model=AdminCommunityTrashMutationResponse,
+)
+def question_admin_purge_community_trash(
+    payload: AdminCommunityTrashMutationRequest,
+    admin_profile: dict = Depends(require_question_admin_portal_user),
+) -> AdminCommunityTrashMutationResponse:
+    post_ids = _normalize_community_admin_post_ids(payload.ids)
+    supabase = get_supabase_admin()
+    try:
+        return _execute_community_admin_trash_mutation(
+            supabase,
+            admin_profile=admin_profile,
+            rpc_name="circle_community_admin_purge_posts",
+            rpc_args={"p_post_ids": post_ids},
+            operation_name="admin community trash permanent purge",
+            action="purge_community_trash",
+        )
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.warning("Admin community trash purge failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="帖子永久删除失败，请稍后重试",
+        ) from exc
+
+
 @router.get("/question-portal/community/posts", response_model=AdminCommunityPostListResponse)
 def question_admin_community_posts(
     post_status: str = Query(default="all", alias="status", max_length=20),
@@ -4512,9 +4770,12 @@ def question_admin_community_posts(
 
     order_field, order_desc = COMMUNITY_ADMIN_POST_SORTS[normalized_sort]
     supabase = get_supabase_admin()
-    def build_query(*, include_post_type: bool, include_count: bool):
+
+    def build_query(*, include_post_type: bool, include_admin_deleted: bool, include_count: bool):
         query = supabase.table("circle_community_posts")
         query = query.select("*", count="exact") if include_count else query.select("*")
+        if include_admin_deleted:
+            query = query.is_("admin_deleted_at", "null")
         query = _apply_admin_community_post_filters(
             query,
             post_status=normalized_status,
@@ -4523,47 +4784,60 @@ def question_admin_community_posts(
         )
         return query.order(order_field, desc=order_desc).order("created_at", desc=True)
 
-    query = build_query(include_post_type=True, include_count=True)
-    try:
-        response = call_supabase(
-            lambda: query.range(offset, offset + limit - 1).execute(),
-            operation_name="admin community post list",
-        )
-        return AdminCommunityPostListResponse(
-            items=[_build_admin_community_post_item(row) for row in (response.data or [])],
-            count=int(response.count or 0),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        if normalized_type != "all" and _is_missing_community_post_type_column_error(exc):
-            try:
-                legacy_response = call_supabase(
-                    lambda: build_query(include_post_type=False, include_count=False)
-                    .range(0, COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT - 1)
-                    .execute(),
+    include_post_type = True
+    include_admin_deleted = True
+    legacy_post_type_mode = False
+    while True:
+        try:
+            query = build_query(
+                include_post_type=include_post_type,
+                include_admin_deleted=include_admin_deleted,
+                include_count=not legacy_post_type_mode,
+            )
+            if legacy_post_type_mode:
+                response = call_supabase(
+                    lambda: query.range(0, COMMUNITY_ADMIN_LEGACY_POST_SCAN_LIMIT - 1).execute(),
                     operation_name="admin community post legacy list",
                 )
                 legacy_rows = [
                     row
-                    for row in (legacy_response.data or [])
+                    for row in (response.data or [])
                     if _community_admin_post_type(row) == normalized_type
+                    and not row.get("admin_deleted_at")
                 ]
                 page_rows = legacy_rows[offset:offset + limit]
                 return AdminCommunityPostListResponse(
                     items=[_build_admin_community_post_item(row) for row in page_rows],
                     count=len(legacy_rows),
                 )
-            except Exception as legacy_exc:
-                logger.warning(
-                    "Admin community legacy post list unavailable (error_type=%s)",
-                    type(legacy_exc).__name__,
-                )
-        logger.warning("Admin community post list unavailable (error_type=%s)", type(exc).__name__)
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="社区帖子列表暂时不可用",
-        ) from exc
+
+            response = call_supabase(
+                lambda: query.range(offset, offset + limit - 1).execute(),
+                operation_name="admin community post list",
+            )
+            return AdminCommunityPostListResponse(
+                items=[_build_admin_community_post_item(row) for row in (response.data or [])],
+                count=int(response.count or 0),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if include_admin_deleted and _is_missing_community_post_column_error(exc, "admin_deleted_at"):
+                include_admin_deleted = False
+                continue
+            if (
+                normalized_type != "all"
+                and include_post_type
+                and _is_missing_community_post_type_column_error(exc)
+            ):
+                include_post_type = False
+                legacy_post_type_mode = True
+                continue
+            logger.warning("Admin community post list unavailable (error_type=%s)", type(exc).__name__)
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="社区帖子列表暂时不可用",
+            ) from exc
 
 
 @router.get("/question-portal/community/posts/{post_id}", response_model=AdminCommunityPostDetailResponse)

@@ -138,6 +138,7 @@ _community_comment_client_request_id_column_available: bool | None = None
 _community_set_like_rpc_available: bool | None = None
 _community_set_comment_like_rpc_available: bool | None = None
 _community_author_deleted_column_available: bool | None = None
+_community_admin_deleted_column_available: bool | None = None
 
 
 def _relative_time(value: str | None) -> str:
@@ -279,6 +280,10 @@ def _is_author_deleted_post(row: dict) -> bool:
         isinstance(item, dict) and item.get(COMMUNITY_AUTHOR_DELETED_MARKER_KEY)
         for item in media
     )
+
+
+def _is_admin_deleted_post(row: dict) -> bool:
+    return bool(row.get("admin_deleted_at"))
 
 
 def _legacy_author_delete_posts(
@@ -940,7 +945,11 @@ def _get_post_row(supabase, post_id: str) -> dict:
         ),
         operation_name="circle community post lookup",
     )
-    if not response.data or _is_author_deleted_post(response.data[0]):
+    if (
+        not response.data
+        or _is_author_deleted_post(response.data[0])
+        or _is_admin_deleted_post(response.data[0])
+    ):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Circle post not found")
     return response.data[0]
 
@@ -1623,7 +1632,7 @@ def _get_owned_post_row(supabase, post_id: str, user_id: str) -> dict:
         operation_name="circle community own post lookup",
     )
     row = (response.data or [None])[0]
-    if not row or _is_author_deleted_post(row):
+    if not row or _is_author_deleted_post(row) or _is_admin_deleted_post(row):
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="帖子不存在")
     return row
 
@@ -2220,6 +2229,7 @@ def list_community_posts(
                 if (_community_post_type_column_available is not False or _community_post_type(row) == post_type)
                 and str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
                 and not _is_author_deleted_post(row)
+                and not _is_admin_deleted_post(row)
                 and (_community_feed_view_available is True or _matches_community_search(row, normalized_search))
             ]
             if post_type == "experience" and candidate_rows:
@@ -2348,6 +2358,7 @@ def list_liked_community_posts(
             if post_id in rows_by_id
             and post_id not in COMMUNITY_RETIRED_SEED_POST_IDS
             and not _is_author_deleted_post(rows_by_id[post_id])
+            and not _is_admin_deleted_post(rows_by_id[post_id])
         ]
         post_ids = [str(row.get("id")) for row in rows]
 
@@ -2416,6 +2427,7 @@ def list_my_community_posts(
 ) -> CommunityPostListResponse:
     """Return all posts owned by the current user, including review states."""
 
+    global _community_admin_deleted_column_available
     global _community_author_deleted_column_available, _community_post_type_column_available
 
     supabase = get_supabase_admin()
@@ -2424,7 +2436,11 @@ def list_my_community_posts(
         cursor_payload = decode_page_cursor(cursor, kind="community_my_posts", context=cursor_context)
         query_limit = max(limit + 1 + len(COMMUNITY_RETIRED_SEED_POST_IDS), 32)
 
-        def build_my_post_query(include_post_type: bool, include_author_deleted: bool):
+        def build_my_post_query(
+            include_post_type: bool,
+            include_author_deleted: bool,
+            include_admin_deleted: bool,
+        ):
             query = (
                 supabase.table("circle_community_posts")
                 .select("*")
@@ -2432,6 +2448,8 @@ def list_my_community_posts(
             )
             if include_author_deleted:
                 query = query.is_("author_deleted_at", "null")
+            if include_admin_deleted:
+                query = query.is_("admin_deleted_at", "null")
             if include_post_type and post_type != "all":
                 query = query.eq("post_type", post_type)
             if cursor_payload:
@@ -2460,19 +2478,30 @@ def list_my_community_posts(
 
         include_post_type = _community_post_type_column_available is not False
         include_author_deleted = _community_author_deleted_column_available is not False
+        include_admin_deleted = _community_admin_deleted_column_available is not False
         while True:
             try:
                 response = call_supabase(
-                    lambda: build_my_post_query(include_post_type, include_author_deleted).execute(),
+                    lambda: build_my_post_query(
+                        include_post_type,
+                        include_author_deleted,
+                        include_admin_deleted,
+                    ).execute(),
                     operation_name="circle community own post list",
                 )
                 if include_post_type:
                     _community_post_type_column_available = True
                 if include_author_deleted:
                     _community_author_deleted_column_available = True
+                if include_admin_deleted:
+                    _community_admin_deleted_column_available = True
                 rows = response.data or []
                 break
             except Exception as exc:
+                if include_admin_deleted and _is_missing_community_post_column_error(exc, "admin_deleted_at"):
+                    _community_admin_deleted_column_available = False
+                    include_admin_deleted = False
+                    continue
                 if include_author_deleted and _is_missing_community_post_column_error(exc, "author_deleted_at"):
                     _community_author_deleted_column_available = False
                     include_author_deleted = False
@@ -2488,6 +2517,7 @@ def list_my_community_posts(
             for row in rows
             if str(row.get("id") or "") not in COMMUNITY_RETIRED_SEED_POST_IDS
             and not _is_author_deleted_post(row)
+            and not _is_admin_deleted_post(row)
             and (post_type == "all" or _community_post_type(row) == post_type)
         ]
         has_more = len(candidate_rows) > limit

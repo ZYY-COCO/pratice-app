@@ -300,6 +300,9 @@ class AdminCommunityPostItem(BaseModel):
     reviewed_by: str | None = None
     reviewed_at: str | None = None
     submitted_at: str | None = None
+    admin_deleted_at: str | None = None
+    admin_deleted_by: str | None = None
+    admin_purge_after: str | None = None
     created_at: str | None = None
     updated_at: str | None = None
 
@@ -307,6 +310,22 @@ class AdminCommunityPostItem(BaseModel):
 class AdminCommunityPostListResponse(BaseModel):
     items: list[AdminCommunityPostItem] = Field(default_factory=list)
     count: int = 0
+
+
+class AdminCommunityTrashListResponse(BaseModel):
+    items: list[AdminCommunityPostItem] = Field(default_factory=list)
+    count: int = 0
+    retention_days: int = 7
+
+
+class AdminCommunityTrashMutationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[str] = Field(min_length=1, max_length=200)
+
+
+class AdminCommunityTrashMutationResponse(BaseModel):
+    affected_count: int
 
 
 class AdminCommunityPostDetailResponse(BaseModel):

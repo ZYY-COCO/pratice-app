@@ -355,6 +355,12 @@
                 <button v-if="communityHasFilters" class="clear-filter-button" @tap="clearCommunityFilters">清空</button>
                 <button
                   v-if="communitySelectedIds.length"
+                  class="community-delete-button"
+                  :disabled="communitySaving"
+                  @tap="bulkTrashCommunityPosts"
+                >删除</button>
+                <button
+                  v-if="communitySelectedIds.length"
                   class="community-archive-button"
                   :disabled="communitySaving"
                   @tap="bulkChangeCommunityVisibility(false)"
@@ -1069,6 +1075,10 @@
             @preview-mode-change="handleImportPreviewModeChange"
           />
         </section>
+
+        <section v-if="activeSection === 'recycleBin'" class="content-section recycle-bin-section">
+          <AdminCommunityRecycleBin ref="communityRecycleBinRef" :preview="devPreviewMode" />
+        </section>
       </template>
     </main>
 
@@ -1576,6 +1586,7 @@ import { computed, nextTick, onUnmounted, reactive, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import AdminCommunityExperienceReview from '../../components/AdminCommunityExperienceReview.vue'
 import AdminCommunityGovernance from '../../components/AdminCommunityGovernance.vue'
+import AdminCommunityRecycleBin from '../../components/AdminCommunityRecycleBin.vue'
 import AdminConsultationManagement from '../../components/AdminConsultationManagement.vue'
 import AdminMembershipPageManager from '../../components/AdminMembershipPageManager.vue'
 import AdminMockExamManagement from '../../components/AdminMockExamManagement.vue'
@@ -1615,6 +1626,7 @@ import {
   publishAdminQuestionBankPendingQuestions,
   renameAdminQuestionBank,
   renewQuestionAdminPortalUserMembership,
+  trashQuestionAdminCommunityPosts,
   updateQuestionAdminAnnouncementRecord,
   updateQuestionAdminMajorCatalogRecord,
   updateQuestionAdminHomeContent,
@@ -1666,6 +1678,7 @@ const mockExamManagementRef = ref(null)
 const resourceManagementRef = ref(null)
 const communityExperienceReviewRef = ref(null)
 const communityGovernanceRef = ref(null)
+const communityRecycleBinRef = ref(null)
 const sidebarCollapsed = ref(false)
 const sidebarToggleTitle = computed(() => (sidebarCollapsed.value ? '打开边栏' : '关闭边栏'))
 const authUser = ref(getAuthUser() || {})
@@ -2006,7 +2019,8 @@ const navItems = [
   { key: 'resources', label: '资料管理', icon: '/static/ui-icons/circle-materials.svg' },
   { key: 'homeOps', label: '首页运营', icon: '/static/ui-icons/tab-home.svg' },
   { key: 'questions', label: '题目管理', icon: '/static/admin-icons/nav-question-management.svg' },
-  { key: 'import', label: '批量导入', icon: '/static/admin-icons/nav-batch-import.svg' }
+  { key: 'import', label: '批量导入', icon: '/static/admin-icons/nav-batch-import.svg' },
+  { key: 'recycleBin', label: '回收站', icon: '/static/admin-icons/nav-recycle-bin.svg' }
 ]
 const visibleNavItems = computed(() => navItems.filter((item) => canAccessSection(item.key)))
 
@@ -2330,7 +2344,8 @@ const pageTitle = computed(() => {
     questions: '题目管理',
     mockExams: '模拟卷',
     review: '审核队列',
-    import: '批量导入'
+    import: '批量导入',
+    recycleBin: '回收站'
   }
   if (activeSection.value === 'questions' && activeQuestionBank.value) {
     return activeQuestionBank.value.name
@@ -2703,7 +2718,7 @@ onLoad(async (options = {}) => {
     activeSection.value = 'consultation'
     consultationInitialView.value = legacyConsultationSections[options.section].view
     consultationInitialCaseView.value = legacyConsultationSections[options.section].caseView
-  } else if (['dashboard', 'users', 'consultation', 'admission', 'resources', 'homeOps', 'questions', 'mockExams', 'import'].includes(options.section)) {
+  } else if (['dashboard', 'users', 'consultation', 'admission', 'resources', 'homeOps', 'questions', 'mockExams', 'import', 'recycleBin'].includes(options.section)) {
     activeSection.value = options.section
   }
   requestedQuestionBankId.value = String(options.question_bank_id || '')
@@ -2756,6 +2771,9 @@ async function bootstrap() {
       await Promise.all([loadOperationsOverview(), loadHomeContent()])
     } else if (activeSection.value === 'mockExams') {
       await nextTick()
+    } else if (activeSection.value === 'recycleBin') {
+      await nextTick()
+      await communityRecycleBinRef.value?.refresh?.()
     } else if (activeSection.value === 'questions') {
       await loadQuestionBanks()
       const requestedBank = questionBanks.value.find((item) => item.id === requestedQuestionBankId.value)
@@ -3012,6 +3030,8 @@ async function switchSection(section) {
       await resourceManagementRef.value?.refresh?.()
     } else if (section === 'homeOps') {
       await Promise.all([loadOperationsOverview(), loadHomeContent()])
+    } else if (section === 'recycleBin') {
+      await communityRecycleBinRef.value?.refresh?.()
     }
     return
   }
@@ -3046,6 +3066,9 @@ async function switchSection(section) {
     await resourceManagementRef.value?.refresh?.()
   } else if (section === 'homeOps') {
     await Promise.all([loadOperationsOverview(), loadHomeContent()])
+  } else if (section === 'recycleBin') {
+    await nextTick()
+    await communityRecycleBinRef.value?.refresh?.()
   }
 }
 
@@ -3096,6 +3119,8 @@ async function refreshCurrentSection() {
       await Promise.all([loadOperationsOverview(), loadHomeContent()])
     } else if (activeSection.value === 'mockExams') {
       await mockExamManagementRef.value?.refresh?.()
+    } else if (activeSection.value === 'recycleBin') {
+      await communityRecycleBinRef.value?.refresh?.()
     } else if (activeSection.value === 'questions' && !activeQuestionBank.value && !showGlobalQuestionList.value) {
       await loadQuestionBanks()
     } else if (activeSection.value === 'questions' || activeSection.value === 'review') {
@@ -3677,6 +3702,39 @@ async function bulkChangeCommunityVisibility(isPublished) {
     await loadCommunityData()
   } catch (error) {
     uni.showToast({ title: '批量操作失败', icon: 'none' })
+  } finally {
+    communitySaving.value = false
+  }
+}
+
+async function bulkTrashCommunityPosts() {
+  if (!communitySelectedIds.value.length || communitySaving.value) return
+  const targetIds = [...communitySelectedIds.value]
+  const confirmed = await confirmAction(
+    `确认删除 ${targetIds.length} 条帖子？`,
+    '帖子会立即从内容管理和用户端消失，并在回收站保留 7 天。',
+    '删除'
+  )
+  if (!confirmed) return
+  communitySaving.value = true
+  try {
+    let affectedCount = 0
+    if (devPreviewMode.value) {
+      const targets = new Set(targetIds)
+      for (let index = previewCommunityPosts.length - 1; index >= 0; index -= 1) {
+        if (!targets.has(previewCommunityPosts[index].id)) continue
+        previewCommunityPosts.splice(index, 1)
+        affectedCount += 1
+      }
+    } else {
+      const response = await trashQuestionAdminCommunityPosts({ ids: targetIds })
+      affectedCount = Number(response?.affected_count || 0)
+    }
+    communitySelectedIds.value = []
+    uni.showToast({ title: affectedCount ? `已删除 ${affectedCount} 条` : '帖子已被处理', icon: affectedCount ? 'success' : 'none' })
+    await loadCommunityData()
+  } catch (error) {
+    uni.showToast({ title: '删除失败，请稍后重试', icon: 'none' })
   } finally {
     communitySaving.value = false
   }
@@ -7536,7 +7594,8 @@ button {
   margin: 0;
 }
 
-.community-archive-button {
+.community-archive-button,
+.community-delete-button {
   width: 88px;
   height: 37px;
   margin: 0;
@@ -7560,7 +7619,19 @@ button {
   background: #fee8e5;
 }
 
-.community-archive-button[disabled] {
+.community-delete-button {
+  border-color: #e9b8b3;
+  color: #a9443e;
+  background: #fde9e7;
+}
+
+.community-delete-button:hover:not([disabled]) {
+  border-color: #db958e;
+  background: #fbdedb;
+}
+
+.community-archive-button[disabled],
+.community-delete-button[disabled] {
   opacity: 0.58;
 }
 
