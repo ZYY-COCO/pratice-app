@@ -869,7 +869,13 @@
                 </view>
               </scroll-view>
 
-              <view class="community-feed community-stream">
+              <view
+                class="community-feed community-stream"
+                :class="{
+                  'is-empty': !activeCommunityLoadError
+                    && filteredActiveCommunityPosts.length === 0
+                }"
+              >
                 <view
                   v-for="post in filteredActiveCommunityPosts"
                   :key="post.id"
@@ -983,9 +989,6 @@
                 <AppEmptyState
                   v-else-if="filteredActiveCommunityPosts.length === 0"
                   class="community-feed-state"
-                  :label="selectedCircleCommunityTab === 'experience' ? '暂无经验贴' : '暂无交流内容'"
-                  :title="selectedCircleCommunityTab === 'experience' ? '' : '暂无匹配的交流内容'"
-                  :description="selectedCircleCommunityTab === 'experience' ? '' : '换个关键词或分类试试。'"
                 />
                 <view
                   v-if="(activeCommunityLoading && filteredActiveCommunityPosts.length > 0) || activeCommunityLoadError || activeCommunityHasMore"
@@ -2980,6 +2983,7 @@ const examOptions = EXAM_OPTIONS
 const ENABLE_CIRCLE = true
 const CIRCLE_DETAIL_ROUTE_DURATION = 380
 const MY_POSTS_REFRESH_REQUIRED_KEY = 'circle-my-posts-refresh-required'
+const COMMUNITY_POST_EDIT_RESULT_KEY = 'circle-community-post-edit-result'
 const CIRCLE_DETAIL_ROUTE_FRAME_DELAY = 32
 const CIRCLE_DETAIL_ROUTE_FALLBACK_DELAY = 80
 const CIRCLE_EDGE_SWIPE_START_WIDTH = 28
@@ -3676,7 +3680,12 @@ const filteredCircleExperiencePosts = computed(() => {
     // Also guard cached/legacy feed data on the client.  The API enforces the
     // same rule, while this keeps an old offline cache from impersonating an
     // authenticated predecessor after the policy is rolled out.
-    if (!item.authorVerified || !circleExperienceExamCodes.includes(String(item.examCode || '').trim())) return false
+    if (
+      !item.authorVerified
+      || item.isPublished === false
+      || item.reviewStatus !== 'approved'
+      || !circleExperienceExamCodes.includes(String(item.examCode || '').trim())
+    ) return false
     const matchesCategory = matchesExperienceFilter(item, selectedExperienceCategory.value)
     if (!matchesCategory || !keyword) return matchesCategory
     return [
@@ -5064,6 +5073,7 @@ onShow(() => {
   // #endif
   authUser.value = getAuthUser()
   authed.value = isLoggedIn()
+  consumeCommunityPostEditResult()
   mentorFavoriteIds.value = getMentorFavoriteIds()
   if (authed.value) void loadMentorFavoriteIds({ silent: true })
   refreshLearningData()
@@ -7802,6 +7812,43 @@ function persistCircleCommunityFeed(postType) {
   }
 }
 
+function consumeCommunityPostEditResult() {
+  let storedResult = null
+  try {
+    storedResult = uni.getStorageSync(COMMUNITY_POST_EDIT_RESULT_KEY)
+    if (storedResult) uni.removeStorageSync(COMMUNITY_POST_EDIT_RESULT_KEY)
+  } catch (error) {
+    return false
+  }
+
+  const editedPost = normalizeCommunityPost(storedResult?.post || {})
+  if (!editedPost.id) return false
+
+  const isSelectedPost = selectedCommunityPost.value?.id === editedPost.id
+  const keepOwnerPreview = isSelectedPost && communityReaderOwnerPreview.value
+  const editedContentPatch = { ...editedPost }
+  delete editedContentPatch.liked
+  delete editedContentPatch.stats
+  delete editedContentPatch.commentPreviews
+  delete editedContentPatch.commentPreview
+  patchCommunityPost(editedPost.id, editedContentPatch)
+
+  if (isSelectedPost) {
+    const interactionsEnabled = editedPost.isPublished && editedPost.reviewStatus === 'approved'
+    communityReaderOwnerPreview.value = keepOwnerPreview || !interactionsEnabled
+    communityReaderOwnerLoading.value = false
+    communityReaderInteractionsEnabled.value = interactionsEnabled
+    if (!interactionsEnabled) {
+      resetCommunityCommentEntry({ hideKeyboard: true })
+      closeCommunityComments()
+    }
+  }
+  if (editedPost.postType === 'experience' && (!editedPost.isPublished || editedPost.reviewStatus !== 'approved')) {
+    removeCommunityPostFromFeeds(editedPost.id)
+  }
+  return true
+}
+
 function scheduleCircleCommunityFeedPersist(postType) {
   pendingCommunityFeedPersistTypes.add(normalizeCircleCommunityPostType(postType))
   if (communityFeedPersistTimerId !== null) return
@@ -8434,7 +8481,6 @@ function openOwnCommunityPostEditor(post) {
   if (!post?.id || !post.isMine) return
   const postType = normalizeCircleCommunityPostType(post.postType || post.post_type)
   const url = `/pages/circle/publish?type=${postType}&edit=${encodeURIComponent(post.id)}`
-  closeCommunityPost()
   uni.navigateTo({
     url,
     fail() {
@@ -13851,12 +13897,12 @@ function formatDateTime(value) {
   overflow: hidden;
 }
 
-.community-feed .circle-empty-card {
-  box-sizing: border-box;
-  width: 100%;
+.community-feed.is-empty {
   border: 0;
   border-radius: 0;
+  background: transparent;
   box-shadow: none;
+  overflow: visible;
 }
 
 .community-load-state {

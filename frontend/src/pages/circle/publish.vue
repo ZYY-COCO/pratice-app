@@ -1,7 +1,11 @@
 <template>
   <view
     class="publish-page"
-    :class="{ 'is-leaving': isLeaving }"
+    :class="{
+      'is-leaving': isLeaving,
+      'is-editor-expanded': contentEditorExpanded
+    }"
+    :style="mpLayoutStyle"
     @touchstart="beginPublishEdgeSwipe"
     @touchend="finishPublishEdgeSwipe"
   >
@@ -26,14 +30,51 @@
       <button @tap="initializePublishPage(hasDraftContent())">重新验证</button>
     </view>
 
-    <scroll-view v-else class="publish-scroll" scroll-y>
+    <scroll-view
+      v-else
+      class="publish-scroll"
+      :class="{ 'is-editor-expanded': contentEditorExpanded }"
+      :scroll-y="!contentEditorExpanded"
+    >
       <view class="publish-content">
         <view class="publish-card">
-          <view class="publish-field-label">{{ postType === 'experience' ? '考试类别' : '话题分类' }}</view>
-          <template v-if="postType === 'experience'">
-            <view class="publish-topic-grid">
+          <view v-show="!contentEditorExpanded" class="publish-form-before-editor">
+            <view class="publish-field-label">{{ postType === 'experience' ? '考试类别' : '话题分类' }}</view>
+            <template v-if="postType === 'experience'">
+              <view class="publish-topic-grid">
+                <button
+                  v-for="topic in communityExperienceExamCodes"
+                  :key="topic"
+                  class="publish-topic"
+                  :class="{ active: selectedTopic === topic }"
+                  :aria-pressed="selectedTopic === topic"
+                  :disabled="submitting"
+                  @tap="selectedTopic = topic"
+                >
+                  {{ topic }}
+                </button>
+              </view>
+              <view class="publish-field-label publish-stage-label">备考阶段</view>
+              <view class="publish-stage-grid">
+                <button
+                  v-for="stage in communityExperienceStages"
+                  :key="stage"
+                  class="publish-topic"
+                  :class="{ active: selectedExperienceStages.includes(stage) }"
+                  :aria-pressed="selectedExperienceStages.includes(stage)"
+                  :disabled="submitting"
+                  @tap="toggleExperienceStage(stage)"
+                >
+                  {{ stage }}
+                </button>
+              </view>
+              <view class="publish-review-note">
+                {{ editingPostId ? '修改完成后将重新进入平台审核' : '提交后进入平台审核，通过后公开展示' }}
+              </view>
+            </template>
+            <view v-else class="publish-topic-grid">
               <button
-                v-for="topic in communityExperienceExamCodes"
+                v-for="topic in topics"
                 :key="topic"
                 class="publish-topic"
                 :class="{ active: selectedTopic === topic }"
@@ -44,66 +85,83 @@
                 {{ topic }}
               </button>
             </view>
-            <view class="publish-field-label publish-stage-label">备考阶段</view>
-            <view class="publish-stage-grid">
-              <button
-                v-for="stage in communityExperienceStages"
-                :key="stage"
-                class="publish-topic"
-                :class="{ active: selectedExperienceStages.includes(stage) }"
-                :aria-pressed="selectedExperienceStages.includes(stage)"
-                :disabled="submitting"
-                @tap="toggleExperienceStage(stage)"
-              >
-                {{ stage }}
-              </button>
+
+            <view class="publish-field-row">
+              <view class="publish-field-label">标题</view>
+              <text class="publish-counter">{{ title.length }}/80</text>
             </view>
-            <view class="publish-review-note">
-              {{ editingPostId ? '修改完成后将重新进入平台审核' : '提交后进入平台审核，通过后公开展示' }}
-            </view>
-          </template>
-          <view v-else class="publish-topic-grid">
-            <button
-              v-for="topic in topics"
-              :key="topic"
-              class="publish-topic"
-              :class="{ active: selectedTopic === topic }"
-              :aria-pressed="selectedTopic === topic"
+            <input
+              v-model="title"
+              class="publish-input"
+              maxlength="80"
+              placeholder="给你的话题起个标题"
+              placeholder-class="publish-placeholder"
               :disabled="submitting"
-              @tap="selectedTopic = topic"
-            >
-              {{ topic }}
-            </button>
+            />
           </view>
 
-          <view class="publish-field-row">
-            <view class="publish-field-label">标题</view>
-            <text class="publish-counter">{{ title.length }}/80</text>
+          <view class="publish-editor-anchor" :class="{ 'is-expanded': contentEditorExpanded }">
+            <view class="publish-editor-shell" :class="{ 'is-expanded': contentEditorExpanded }">
+              <view v-if="contentEditorExpanded" class="publish-editor-expanded-header">
+                <button
+                  class="publish-editor-collapse"
+                  aria-label="缩小正文编辑框"
+                  :disabled="submitting"
+                  @touchstart="rememberContentEditorFocus"
+                  @mousedown="rememberContentEditorFocus"
+                  @tap="collapseContentEditor"
+                >
+                  <image
+                    src="/static/ui-icons/png/original/major-catalog-shrink.png"
+                    mode="aspectFit"
+                  />
+                </button>
+                <text class="publish-editor-expanded-title">编辑内容</text>
+                <text class="publish-editor-expanded-counter">{{ content.length }}/3000</text>
+              </view>
+              <view v-else class="publish-field-row publish-content-field-row">
+                <view class="publish-field-label">内容</view>
+                <text class="publish-counter">{{ content.length }}/3000</text>
+              </view>
+              <view class="publish-editor-frame">
+                <textarea
+                  v-model="content"
+                  class="publish-textarea"
+                  maxlength="3000"
+                  placeholder="分享你的问题、计划或心得"
+                  placeholder-class="publish-placeholder"
+                  :auto-height="false"
+                  :disabled="submitting"
+                  :focus="contentEditorShouldFocus"
+                  :fixed="contentEditorExpanded"
+                  :selection-start="contentSelectionStart"
+                  :selection-end="contentSelectionEnd"
+                  :cursor-spacing="contentEditorExpanded ? 20 : 12"
+                  :adjust-position="true"
+                  @focus="handleContentEditorFocus"
+                  @blur="handleContentEditorBlur"
+                  @input="handleContentEditorInput"
+                />
+                <view v-if="!contentEditorExpanded" class="publish-editor-toolbar">
+                  <button
+                    class="publish-editor-expand"
+                    aria-label="放大正文编辑框"
+                    :disabled="submitting"
+                    @touchstart="rememberContentEditorFocus"
+                    @mousedown="rememberContentEditorFocus"
+                    @tap="expandContentEditor"
+                  >
+                    <image
+                      src="/static/ui-icons/png/original/major-catalog-fullscreen.png"
+                      mode="aspectFit"
+                    />
+                  </button>
+                </view>
+              </view>
+            </view>
           </view>
-          <input
-            v-model="title"
-            class="publish-input"
-            maxlength="80"
-            placeholder="给你的话题起个标题"
-            placeholder-class="publish-placeholder"
-            :disabled="submitting"
-          />
 
-          <view class="publish-field-row">
-            <view class="publish-field-label">内容</view>
-            <text class="publish-counter">{{ content.length }}/3000</text>
-          </view>
-          <textarea
-            v-model="content"
-            class="publish-textarea"
-            maxlength="3000"
-            placeholder="分享你的问题、计划或心得"
-            placeholder-class="publish-placeholder"
-            :auto-height="false"
-            :disabled="submitting"
-          />
-
-          <view class="publish-image-field">
+          <view v-show="!contentEditorExpanded" class="publish-image-field">
             <view class="publish-field-row publish-image-field-row">
               <view class="publish-field-label">图片</view>
               <text class="publish-counter">{{ selectedImages.length }}/{{ MAX_IMAGE_COUNT }}</text>
@@ -128,7 +186,7 @@
           </view>
 
           <view
-            v-if="publishStatusText"
+            v-if="publishStatusText && !contentEditorExpanded"
             class="publish-status"
             :class="{ 'is-error': submitStatus.phase === 'error' }"
             role="status"
@@ -142,8 +200,8 @@
 </template>
 
 <script setup>
-import { computed, ref, watch } from 'vue'
-import { onBackPress, onLoad, onUnload } from '@dcloudio/uni-app'
+import { computed, nextTick, ref, watch } from 'vue'
+import { onBackPress, onLoad, onShow, onUnload } from '@dcloudio/uni-app'
 import {
   createCommunityPost,
   fetchMyCommunityPost,
@@ -152,6 +210,7 @@ import {
 } from '../../api/community'
 import { fetchMyMentorProfile } from '../../api/mentorConsultation'
 import { getAuthUser, isLoggedIn } from '../../utils/auth'
+import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 
@@ -166,6 +225,9 @@ const MAX_IMAGE_COUNT = 9
 const MAX_UPLOAD_CONCURRENCY = 2
 const DRAFT_SAVE_DELAY_MS = 650
 const DRAFT_STORAGE_VERSION = 2
+const COMMUNITY_POST_EDIT_RESULT_KEY = 'circle-community-post-edit-result'
+const MY_POSTS_REFRESH_REQUIRED_KEY = 'circle-my-posts-refresh-required'
+const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const postType = ref('chat')
 const topics = computed(() => topicSets[postType.value])
 const selectedTopic = ref('')
@@ -182,7 +244,14 @@ const editingPostId = ref('')
 const clientRequestId = ref('')
 const submitStatus = ref({ phase: 'idle', completed: 0, total: 0 })
 const draftImageNotice = ref('')
+const contentEditorExpanded = ref(false)
+const contentEditorShouldFocus = ref(false)
+const contentEditorFocused = ref(false)
+const contentSelectionStart = ref(-1)
+const contentSelectionEnd = ref(-1)
 let draftSaveTimer = null
+let contentEditorFocusTimer = null
+let resumeContentEditorFocus = false
 let draftReady = false
 let publishedSuccessfully = false
 
@@ -236,13 +305,27 @@ onLoad((options) => {
   selectedTopic.value = ''
   selectedExperienceStages.value = []
   isLeaving.value = false
+  contentEditorExpanded.value = false
+  contentEditorShouldFocus.value = false
+  contentEditorFocused.value = false
+  contentSelectionStart.value = -1
+  contentSelectionEnd.value = -1
+  resumeContentEditorFocus = false
   publishedSuccessfully = false
   const restoredDraft = restoreDraft()
   draftReady = true
   void initializePublishPage(restoredDraft)
 })
 
+onShow(() => {
+  mpLayoutStyle.value = buildMpPageSafeStyle()
+})
+
 onUnload(() => {
+  if (contentEditorFocusTimer) {
+    clearTimeout(contentEditorFocusTimer)
+    contentEditorFocusTimer = null
+  }
   if (publishedSuccessfully) {
     clearDraft()
     return
@@ -251,10 +334,82 @@ onUnload(() => {
 })
 
 onBackPress(() => {
+  if (contentEditorExpanded.value) {
+    collapseContentEditor()
+    return true
+  }
   if (!submitting.value || publishedSuccessfully) return false
   showPublishingWaitToast()
   return true
 })
+
+function updateContentSelection(event) {
+  const detailCursor = Number(event?.detail?.cursor)
+  const targetStart = Number(event?.target?.selectionStart)
+  const targetEnd = Number(event?.target?.selectionEnd)
+  const nextStart = Number.isFinite(targetStart) && targetStart >= 0
+    ? targetStart
+    : detailCursor
+  const nextEnd = Number.isFinite(targetEnd) && targetEnd >= 0
+    ? targetEnd
+    : nextStart
+  if (!Number.isFinite(nextStart) || nextStart < 0) return
+  contentSelectionStart.value = nextStart
+  contentSelectionEnd.value = Number.isFinite(nextEnd) && nextEnd >= nextStart ? nextEnd : nextStart
+}
+
+function handleContentEditorFocus(event) {
+  contentEditorFocused.value = true
+  contentEditorShouldFocus.value = true
+  updateContentSelection(event)
+}
+
+function handleContentEditorBlur(event) {
+  updateContentSelection(event)
+  contentEditorFocused.value = false
+  contentEditorShouldFocus.value = false
+}
+
+function handleContentEditorInput(event) {
+  updateContentSelection(event)
+}
+
+function rememberContentEditorFocus() {
+  resumeContentEditorFocus = contentEditorFocused.value || contentEditorShouldFocus.value
+}
+
+function restoreContentEditorFocus(shouldRestore) {
+  if (contentEditorFocusTimer) {
+    clearTimeout(contentEditorFocusTimer)
+    contentEditorFocusTimer = null
+  }
+  contentEditorShouldFocus.value = false
+  if (!shouldRestore) return
+  nextTick(() => {
+    contentEditorFocusTimer = setTimeout(() => {
+      contentEditorFocusTimer = null
+      if (!submitting.value) contentEditorShouldFocus.value = true
+    }, 32)
+  })
+}
+
+function setContentEditorExpanded(expanded) {
+  if (submitting.value || contentEditorExpanded.value === expanded) return
+  const shouldRestoreFocus = resumeContentEditorFocus
+    || contentEditorFocused.value
+    || contentEditorShouldFocus.value
+  resumeContentEditorFocus = false
+  contentEditorExpanded.value = expanded
+  restoreContentEditorFocus(shouldRestoreFocus)
+}
+
+function expandContentEditor() {
+  setContentEditorExpanded(true)
+}
+
+function collapseContentEditor() {
+  setContentEditorExpanded(false)
+}
 
 function toggleExperienceStage(stage) {
   if (submitting.value || !communityExperienceStages.includes(stage)) return
@@ -526,6 +681,10 @@ async function verifyPublishAccess() {
 
 function goBack() {
   if (isLeaving.value) return
+  if (contentEditorExpanded.value) {
+    collapseContentEditor()
+    return
+  }
   if (submitting.value && !publishedSuccessfully) {
     showPublishingWaitToast()
     return
@@ -710,7 +869,16 @@ async function publish() {
       client_request_id: ensureClientRequestId()
     }
     if (editingPostId.value) {
-      await updateMyCommunityPost(editingPostId.value, postPayload)
+      const updatedPost = await updateMyCommunityPost(editingPostId.value, postPayload)
+      try {
+        uni.setStorageSync(COMMUNITY_POST_EDIT_RESULT_KEY, {
+          post: updatedPost,
+          updatedAt: Date.now()
+        })
+        uni.setStorageSync(MY_POSTS_REFRESH_REQUIRED_KEY, Date.now())
+      } catch (error) {
+        // 跨页即时同步失败不影响服务端已经完成的帖子更新。
+      }
     } else {
       await createCommunityPost(postPayload)
     }
@@ -765,16 +933,37 @@ function getSafeError(error, fallback) {
   pointer-events: none;
 }
 
+.publish-page.is-editor-expanded {
+  overflow: hidden;
+}
+
 .publish-header-submit::after,
 .publish-topic::after,
 .publish-image-add::after,
-.publish-image-remove::after {
+.publish-image-remove::after,
+.publish-editor-expand::after,
+.publish-editor-collapse::after {
   border: 0;
 }
 
 .publish-scroll {
   min-height: 0;
   flex: 1;
+}
+
+.publish-scroll.is-editor-expanded {
+  position: fixed;
+  inset: 0;
+  z-index: 160;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
+  background: var(--gyt-page-bg, #f4f8ff);
+  overflow: hidden;
+}
+
+.publish-scroll.is-editor-expanded :deep(.uni-scroll-view-content) {
+  height: 100%;
 }
 
 .publish-header-submit {
@@ -816,6 +1005,14 @@ function getSafeError(error, fallback) {
   box-sizing: border-box;
 }
 
+.publish-scroll.is-editor-expanded .publish-content {
+  width: 100%;
+  max-width: none;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 .publish-card {
   padding: 30rpx;
   border: 2rpx solid rgba(255, 255, 255, 0.86);
@@ -824,6 +1021,18 @@ function getSafeError(error, fallback) {
   box-shadow: 0 18rpx 44rpx rgba(37, 63, 60, 0.1);
   -webkit-backdrop-filter: blur(18px) saturate(112%);
   backdrop-filter: blur(18px) saturate(112%);
+}
+
+.publish-scroll.is-editor-expanded .publish-card {
+  width: 100%;
+  height: 100%;
+  padding: 0;
+  border: 0;
+  border-radius: 0;
+  background: var(--gyt-page-bg, #f4f8ff);
+  box-shadow: none;
+  -webkit-backdrop-filter: none;
+  backdrop-filter: none;
 }
 
 .publish-field-row {
@@ -917,12 +1126,160 @@ function getSafeError(error, fallback) {
   padding: 0 22rpx;
 }
 
+.publish-editor-anchor {
+  width: 100%;
+}
+
+.publish-editor-anchor.is-expanded,
+.publish-editor-shell.is-expanded {
+  height: 100%;
+  min-height: 0;
+}
+
+.publish-editor-shell.is-expanded {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--gyt-page-bg, #f4f8ff);
+}
+
+.publish-content-field-row {
+  margin-top: 32rpx;
+}
+
+.publish-editor-frame {
+  width: 100%;
+  margin-top: 14rpx;
+  box-sizing: border-box;
+  border: 2rpx solid #e3edf1;
+  border-radius: 20rpx;
+  background: #ffffff;
+  overflow: hidden;
+}
+
 .publish-textarea {
   height: 360rpx;
   min-height: 360rpx;
   max-height: 360rpx;
+  margin-top: 0;
   padding: 20rpx 22rpx;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
   overflow-y: auto;
+}
+
+.publish-editor-toolbar {
+  box-sizing: border-box;
+  min-height: 58rpx;
+  padding: 2rpx 12rpx 10rpx;
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+}
+
+.publish-editor-expand,
+.publish-editor-collapse {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.publish-editor-expand {
+  width: 52rpx;
+  min-width: 52rpx;
+  height: 52rpx;
+  min-height: 52rpx;
+  border-radius: 15rpx;
+  background: #f1f5f9;
+}
+
+.publish-editor-expand image {
+  width: 34rpx;
+  height: 34rpx;
+  opacity: 0.74;
+}
+
+.publish-editor-expanded-header {
+  box-sizing: border-box;
+  width: 100%;
+  min-height: calc(var(--status-bar-height, env(safe-area-inset-top)) + 112rpx);
+  padding: calc(var(--status-bar-height, env(safe-area-inset-top)) + 12rpx) 24rpx 12rpx;
+  display: grid;
+  grid-template-columns: 76rpx minmax(0, 1fr) 110rpx;
+  align-items: center;
+  border-bottom: 2rpx solid rgba(218, 229, 239, 0.72);
+  background: rgba(248, 252, 255, 0.96);
+}
+
+.publish-editor-collapse {
+  width: 68rpx;
+  min-width: 68rpx;
+  height: 68rpx;
+  min-height: 68rpx;
+  border-radius: 20rpx;
+  background: #eef3f8;
+}
+
+.publish-editor-collapse image {
+  width: 38rpx;
+  height: 38rpx;
+  opacity: 0.78;
+}
+
+.publish-editor-expanded-title {
+  overflow: hidden;
+  color: #1f2d3d;
+  font-size: 30rpx;
+  line-height: 1.25;
+  font-weight: 900;
+  text-align: center;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.publish-editor-expanded-counter {
+  color: #94a4b7;
+  font-size: 20rpx;
+  line-height: 1.2;
+  font-weight: 700;
+  text-align: right;
+  white-space: nowrap;
+}
+
+/* #ifdef MP-WEIXIN */
+.publish-editor-expanded-header {
+  min-height: calc(var(--mp-page-content-top, 96px) + var(--mp-page-header-height, 40px) + 20rpx);
+  padding-top: var(--mp-page-content-top, 96px);
+}
+/* #endif */
+
+.publish-editor-shell.is-expanded .publish-editor-frame {
+  width: calc(100% - 48rpx);
+  max-width: 860rpx;
+  min-height: 0;
+  flex: 1;
+  margin: 20rpx auto calc(env(safe-area-inset-bottom) + 18rpx);
+  border-color: rgba(216, 228, 239, 0.88);
+  border-radius: 26rpx;
+  background: rgba(255, 255, 255, 0.96);
+}
+
+.publish-editor-shell.is-expanded .publish-textarea {
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  padding: 28rpx 26rpx;
+  border-radius: 26rpx;
+  color: #21313f;
+  font-size: 29rpx;
+  line-height: 1.72;
+  font-weight: 600;
 }
 
 .publish-image-field {
@@ -1076,7 +1433,9 @@ function getSafeError(error, fallback) {
 .publish-header-submit:active,
 .publish-topic:active,
 .publish-image-add:active,
-.publish-image-remove:active {
+.publish-image-remove:active,
+.publish-editor-expand:active,
+.publish-editor-collapse:active {
   transform: scale(0.98);
 }
 

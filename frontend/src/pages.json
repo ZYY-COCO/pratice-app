@@ -20,7 +20,10 @@
       "style": {
         "navigationBarTitleText": "发布话题",
         "navigationStyle": "custom",
-        "backgroundColor": "#f5f3f7"
+        "backgroundColor": "#f5f3f7",
+        "app-plus": {
+          "softinputMode": "adjustResize"
+        }
       }
     },
     {

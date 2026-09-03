@@ -306,6 +306,9 @@ onShow(() => {
     return
   }
   const refreshRequired = consumeMyPostsRefreshRequirement()
+  if (refreshRequired && reviewDetailVisible.value && reviewDetailPostId.value) {
+    void loadReviewDetail(reviewDetailPostId.value)
+  }
   const shouldPreserveList = preserveListOnNextShow && posts.value.length > 0 && !refreshRequired
   preserveListOnNextShow = false
   void loadUnreadPostTargets()
@@ -841,7 +844,6 @@ function editRejectedPost(post) {
   const postId = String(post?.id || '').trim()
   const reviewStatus = String(post?.reviewStatus || post?.review_status || '')
   if (!postId || reviewStatus !== 'rejected') return
-  closeReviewDetail()
   uni.navigateTo({
     url: `/pages/circle/publish?type=experience&edit=${encodeURIComponent(postId)}`
   })
