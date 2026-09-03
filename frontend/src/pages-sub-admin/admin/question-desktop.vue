@@ -351,7 +351,15 @@
                 :disabled="!communityBulkFeaturedAction || communitySaving"
                 @tap="handleCommunityBulkFeaturedAction"
               >{{ communityBulkFeaturedAction?.label || '加入精选' }}</button>
-              <button v-if="communityHasFilters" class="clear-filter-button" @tap="clearCommunityFilters">清空</button>
+              <view v-if="communityHasFilters || communitySelectedIds.length" class="community-toolbar-actions">
+                <button v-if="communityHasFilters" class="clear-filter-button" @tap="clearCommunityFilters">清空</button>
+                <button
+                  v-if="communitySelectedIds.length"
+                  class="community-archive-button"
+                  :disabled="communitySaving"
+                  @tap="bulkChangeCommunityVisibility(false)"
+                >下架</button>
+              </view>
             </view>
 
             <view class="question-table-wrap">
@@ -366,7 +374,7 @@
                     <view class="bulk-copy">已选择 <text>{{ communitySelectedIds.length }}</text> 条帖子</view>
                     <view class="bulk-actions">
                       <button
-                        v-if="communityBulkVisibilityAction"
+                        v-if="communityBulkVisibilityAction?.isPublished"
                         class="bulk-button"
                         :class="communityBulkVisibilityAction.tone"
                         @tap="bulkChangeCommunityVisibility(communityBulkVisibilityAction.isPublished)"
@@ -3629,10 +3637,20 @@ async function toggleCommunityCommentVisibility(post, comment) {
 
 async function bulkChangeCommunityVisibility(isPublished) {
   if (!communitySelectedIds.value.length || communitySaving.value) return
+  const targetIds = isPublished
+    ? [...communitySelectedIds.value]
+    : selectedCommunityPosts.value.filter((item) => Boolean(item.is_published)).map((item) => item.id)
+  if (!targetIds.length) {
+    uni.showToast({ title: '所选帖子均未公开，无需下架', icon: 'none' })
+    return
+  }
   const actionText = isPublished ? '恢复展示' : '下架'
+  const skippedCount = communitySelectedIds.value.length - targetIds.length
   const confirmed = await confirmAction(
     `确认批量${actionText}？`,
-    `将对已选择的 ${communitySelectedIds.value.length} 条帖子执行${actionText}。`,
+    !isPublished && skippedCount > 0
+      ? `已选择 ${communitySelectedIds.value.length} 条帖子，其中 ${targetIds.length} 条正在公开展示；本次只下架这 ${targetIds.length} 条。`
+      : `将对已选择的 ${targetIds.length} 条帖子执行${actionText}。`,
     actionText
   )
   if (!confirmed) return
@@ -3640,7 +3658,7 @@ async function bulkChangeCommunityVisibility(isPublished) {
   try {
     let updatedCount = 0
     if (devPreviewMode.value) {
-      const selected = new Set(communitySelectedIds.value)
+      const selected = new Set(targetIds)
       previewCommunityPosts.forEach((item) => {
         if (!selected.has(item.id)) return
         item.is_published = isPublished
@@ -3649,12 +3667,13 @@ async function bulkChangeCommunityVisibility(isPublished) {
       })
     } else {
       const response = await bulkUpdateQuestionAdminCommunityPostVisibility({
-        ids: communitySelectedIds.value,
+        ids: targetIds,
         is_published: isPublished
       })
       updatedCount = Number(response?.updated_count || 0)
     }
-    uni.showToast({ title: `已处理 ${updatedCount} 条`, icon: 'success' })
+    communitySelectedIds.value = []
+    uni.showToast({ title: `${isPublished ? '已恢复' : '已下架'} ${updatedCount} 条`, icon: 'success' })
     await loadCommunityData()
   } catch (error) {
     uni.showToast({ title: '批量操作失败', icon: 'none' })
@@ -7503,6 +7522,46 @@ button {
   border-color: #e1e8eb;
   color: #a3afb9;
   background: #f6f8f9;
+}
+
+.community-toolbar-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+}
+
+.community-toolbar-actions .clear-filter-button {
+  margin: 0;
+}
+
+.community-archive-button {
+  width: 88px;
+  height: 37px;
+  margin: 0;
+  padding: 0 14px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #efc3be;
+  border-radius: 8px;
+  box-sizing: border-box;
+  color: #a24e48;
+  background: #fff1ef;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  white-space: nowrap;
+}
+
+.community-archive-button:hover:not([disabled]) {
+  border-color: #e2aaa4;
+  background: #fee8e5;
+}
+
+.community-archive-button[disabled] {
+  opacity: 0.58;
 }
 
 .community-table {
