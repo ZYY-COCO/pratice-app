@@ -48,27 +48,39 @@
           <text>至</text>
           <input v-model="filters.date_to" type="date" aria-label="提交结束日期" @change="applyFilters" />
         </view>
-        <AdminSelect
-          class="experience-review-select sort"
-          :options="sortOptions.map((item) => item.label)"
-          :value-index="sortIndex"
-          aria-label="提交时间排序"
-          @change="selectSort"
-        />
         <button v-if="hasFilters" class="experience-review-clear" @tap="clearFilters">清空</button>
-        <button class="experience-review-refresh" :disabled="loading" @tap="refresh">
+        <button class="experience-review-refresh" :disabled="loading || deleting" @tap="refresh">
           {{ loading ? '刷新中…' : '刷新' }}
         </button>
+        <view v-if="selectedReviewIds.length" class="experience-review-selection-actions">
+          <text>已选 <strong>{{ selectedReviewIds.length }}</strong> 条</text>
+          <button class="experience-review-delete" :disabled="deleting" @tap="openDeleteConfirmation">删除所选</button>
+          <button class="experience-review-selection-clear" :disabled="deleting" @tap="clearReviewSelection">取消选择</button>
+        </view>
       </view>
 
       <view class="experience-review-table-wrap">
         <view class="experience-review-table">
-          <view class="experience-review-grid experience-review-head">
+          <view class="experience-review-grid experience-review-head" :class="{ selecting: selectedReviewIds.length }">
+            <view class="experience-review-check-cell">
+              <button class="experience-review-check" :class="{ checked: allReviewsOnPageSelected, partial: someReviewsOnPageSelected }" :disabled="!reviews.length || loading || deleting" aria-label="选择本页经验贴" @tap="toggleSelectReviewPage">{{ allReviewsOnPageSelected ? '✓' : someReviewsOnPageSelected ? '−' : '' }}</button>
+            </view>
             <view>经验贴</view>
             <view>发布人</view>
             <view>考试 / 阶段</view>
             <view>审核状态</view>
-            <view>提交时间</view>
+            <view class="experience-review-sort-cell">
+              <button
+                class="experience-review-sort-trigger"
+                :disabled="loading || deleting"
+                :aria-label="submittedAtSortAriaLabel"
+                :title="submittedAtSortAriaLabel"
+                @tap="toggleSubmittedAtSort"
+              >
+                <text>提交时间</text>
+                <text class="experience-review-sort-direction" aria-hidden="true">{{ filters.sort_by === 'newest' ? '↓' : '↑' }}</text>
+              </button>
+            </view>
             <view>审核版本</view>
             <view>操作</view>
           </view>
@@ -84,8 +96,12 @@
             v-else
             :key="item.id"
             class="experience-review-grid experience-review-row"
+            :class="{ selected: isReviewSelected(item.id) }"
             @tap="openReview(item)"
           >
+            <view class="experience-review-check-cell">
+              <button class="experience-review-check" :class="{ checked: isReviewSelected(item.id) }" :disabled="deleting" :aria-label="`选择经验贴：${item.title || '未填写标题'}`" @tap.stop="toggleReviewSelection(item.id)">{{ isReviewSelected(item.id) ? '✓' : '' }}</button>
+            </view>
             <view class="experience-review-post">
               <strong>{{ item.title || '未填写标题' }}</strong>
               <view class="experience-review-excerpt">{{ tableExcerpt(item.content) }}</view>
@@ -135,7 +151,7 @@
           </view>
           <view v-else-if="detail?.post" class="experience-review-dialog-content">
             <view class="experience-review-meta">
-              <view><text>发布人</text><strong>{{ detail.post.author_name || '前辈' }}</strong><small>ID {{ shortId(detail.post.author_id) }}</small></view>
+              <view><text>发布人（实名）</text><strong>{{ detail.author_legal_name || '未记录实名' }}</strong><small>昵称 {{ detail.post.author_name || '前辈' }} · ID {{ shortId(detail.post.author_id) }}</small></view>
               <view><text>考试类别</text><strong>{{ detail.post.category }}</strong><small>{{ formatStages(detail.post.experience_stages) }}</small></view>
               <view><text>当前状态</text><strong :class="`status-${detail.post.review_status}`">{{ statusText(detail.post.review_status) }}</strong><small>第 {{ detail.post.review_version }} 次提交</small></view>
               <view><text>提交时间</text><strong>{{ formatDateTime(detail.post.submitted_at || detail.post.created_at) }}</strong><small>{{ detail.post.media?.length || 0 }} 张图片</small></view>
@@ -236,6 +252,17 @@
         </view>
       </view>
     </view>
+
+    <view v-if="deleteConfirmationVisible" class="experience-review-confirm-backdrop" @tap="closeDeleteConfirmation">
+      <view class="experience-review-confirm-dialog" role="dialog" aria-modal="true" aria-label="删除所选经验贴" @tap.stop>
+        <strong>删除所选经验贴？</strong>
+        <text>{{ selectedReviewIds.length }} 条经验贴会立即从审核列表和用户端移除，并在后台回收站保留 7 天。</text>
+        <view class="experience-review-confirm-actions">
+          <button class="cancel" :disabled="deleting" @tap="closeDeleteConfirmation">取消</button>
+          <button class="reject" :disabled="deleting" @tap="deleteSelectedReviews">{{ deleting ? '删除中…' : '确认删除' }}</button>
+        </view>
+      </view>
+    </view>
   </view>
 </template>
 
@@ -244,7 +271,8 @@ import { computed, onBeforeUnmount, reactive, ref } from 'vue'
 import {
   fetchQuestionAdminCommunityExperienceReviewDetail,
   fetchQuestionAdminCommunityExperienceReviews,
-  reviewQuestionAdminCommunityExperiencePost
+  reviewQuestionAdminCommunityExperiencePost,
+  trashQuestionAdminCommunityPosts
 } from '../api/admin'
 import AdminSelect from './AdminSelect.vue'
 import CloseIcon from './CloseIcon.vue'
@@ -268,10 +296,6 @@ const stageOptions = [
   { label: '申请制', value: '申请制' },
   { label: '初试', value: '初试' },
   { label: '复试', value: '复试' }
-]
-const sortOptions = [
-  { label: '提交时间：新到旧', value: 'newest' },
-  { label: '提交时间：旧到新', value: 'oldest' }
 ]
 const reasonOptions = [
   { label: '请选择官方理由', value: '' },
@@ -311,6 +335,10 @@ const reviewNote = ref('')
 const saving = ref(false)
 const decisionConfirmationVisible = ref(false)
 const decisionConfirmationAction = ref('approved')
+const selectedReviewIds = ref([])
+const previewTrashedReviewIds = ref([])
+const deleteConfirmationVisible = ref(false)
+const deleting = ref(false)
 let searchTimer = null
 
 const summaryCards = computed(() => [
@@ -322,9 +350,22 @@ const summaryCards = computed(() => [
 const statusIndex = computed(() => Math.max(0, statusOptions.findIndex((item) => item.value === filters.review_status)))
 const categoryIndex = computed(() => Math.max(0, categoryOptions.findIndex((item) => item.value === filters.category)))
 const stageIndex = computed(() => Math.max(0, stageOptions.findIndex((item) => item.value === filters.experience_stage)))
-const sortIndex = computed(() => Math.max(0, sortOptions.findIndex((item) => item.value === filters.sort_by)))
 const reasonIndex = computed(() => Math.max(0, reasonOptions.findIndex((item) => item.value === reasonCode.value)))
 const totalPages = computed(() => Math.max(1, Math.ceil(reviewCount.value / pageSize)))
+const selectedReviewSet = computed(() => new Set(selectedReviewIds.value))
+const allReviewsOnPageSelected = computed(() => (
+  reviews.value.length > 0
+  && reviews.value.every((item) => selectedReviewSet.value.has(item.id))
+))
+const someReviewsOnPageSelected = computed(() => (
+  !allReviewsOnPageSelected.value
+  && reviews.value.some((item) => selectedReviewSet.value.has(item.id))
+))
+const submittedAtSortAriaLabel = computed(() => (
+  filters.sort_by === 'newest'
+    ? '提交时间当前按新到旧排列，点击切换为旧到新'
+    : '提交时间当前按旧到新排列，点击切换为新到旧'
+))
 const hasFilters = computed(() => Boolean(
   filters.review_status !== 'all'
   || filters.category !== 'all'
@@ -332,7 +373,6 @@ const hasFilters = computed(() => Boolean(
   || filters.search
   || filters.date_from
   || filters.date_to
-  || filters.sort_by !== 'newest'
 ))
 
 refresh()
@@ -350,6 +390,8 @@ async function refresh() {
     ])
     reviews.value = Array.isArray(listResponse?.items) ? listResponse.items : []
     reviewCount.value = Number(listResponse?.count || 0)
+    const visibleIds = new Set(reviews.value.map((item) => item.id))
+    selectedReviewIds.value = selectedReviewIds.value.filter((id) => visibleIds.has(id))
     Object.assign(counts, summary)
     emit('pending-count', counts.pending)
     if (reviewCount.value > 0 && reviews.value.length === 0 && page.value > totalPages.value) {
@@ -384,7 +426,8 @@ function fetchReviewPage() {
 
 async function fetchReviewSummary() {
   if (props.preview) {
-    const source = previewReviews()
+    const trashedIds = new Set(previewTrashedReviewIds.value)
+    const source = previewReviews().filter((item) => !trashedIds.has(item.id))
     return {
       all: source.length,
       pending: source.filter((item) => item.review_status === 'pending').length,
@@ -403,22 +446,93 @@ function scheduleSearch() {
   if (searchTimer) clearTimeout(searchTimer)
   searchTimer = setTimeout(() => { page.value = 1; refresh() }, 360)
 }
-function applyFilters() { page.value = 1; refresh() }
+function applyFilters() { clearReviewSelection(); page.value = 1; refresh() }
 function clearSearch() { filters.search = ''; applyFilters() }
 function selectStatus(event) { filters.review_status = statusOptions[Number(event?.detail?.value || 0)]?.value || 'all'; applyFilters() }
 function selectCategory(event) { filters.category = categoryOptions[Number(event?.detail?.value || 0)]?.value || 'all'; applyFilters() }
 function selectStage(event) { filters.experience_stage = stageOptions[Number(event?.detail?.value || 0)]?.value || ''; applyFilters() }
-function selectSort(event) { filters.sort_by = sortOptions[Number(event?.detail?.value || 0)]?.value || 'newest'; applyFilters() }
+function toggleSubmittedAtSort() {
+  if (loading.value || deleting.value) return
+  filters.sort_by = filters.sort_by === 'newest' ? 'oldest' : 'newest'
+  applyFilters()
+}
 function selectReason(event) { reasonCode.value = reasonOptions[Number(event?.detail?.value || 0)]?.value || '' }
 function clearFilters() {
-  Object.assign(filters, { review_status: 'all', category: 'all', experience_stage: '', search: '', date_from: '', date_to: '', sort_by: 'newest' })
+  Object.assign(filters, { review_status: 'all', category: 'all', experience_stage: '', search: '', date_from: '', date_to: '' })
   applyFilters()
 }
 function changePage(next) {
   const target = Math.max(1, Math.min(totalPages.value, Number(next) || 1))
   if (target === page.value) return
+  clearReviewSelection()
   page.value = target
   refresh()
+}
+
+function isReviewSelected(postId) {
+  return selectedReviewSet.value.has(postId)
+}
+
+function toggleReviewSelection(postId) {
+  if (!postId || deleting.value) return
+  selectedReviewIds.value = isReviewSelected(postId)
+    ? selectedReviewIds.value.filter((id) => id !== postId)
+    : [...selectedReviewIds.value, postId]
+}
+
+function toggleSelectReviewPage() {
+  if (!reviews.value.length || deleting.value) return
+  const pageIds = new Set(reviews.value.map((item) => item.id))
+  if (allReviewsOnPageSelected.value) {
+    selectedReviewIds.value = selectedReviewIds.value.filter((id) => !pageIds.has(id))
+    return
+  }
+  selectedReviewIds.value = Array.from(new Set([
+    ...selectedReviewIds.value,
+    ...pageIds
+  ]))
+}
+
+function clearReviewSelection() {
+  if (deleting.value) return
+  selectedReviewIds.value = []
+}
+
+function openDeleteConfirmation() {
+  if (!selectedReviewIds.value.length || deleting.value) return
+  deleteConfirmationVisible.value = true
+}
+
+function closeDeleteConfirmation() {
+  if (deleting.value) return
+  deleteConfirmationVisible.value = false
+}
+
+async function deleteSelectedReviews() {
+  const postIds = [...selectedReviewIds.value]
+  if (!postIds.length || deleting.value) return
+  deleting.value = true
+  try {
+    let affectedCount = 0
+    if (props.preview) {
+      previewTrashedReviewIds.value = Array.from(new Set([
+        ...previewTrashedReviewIds.value,
+        ...postIds
+      ]))
+      affectedCount = postIds.length
+    } else {
+      const response = await trashQuestionAdminCommunityPosts({ ids: postIds })
+      affectedCount = Number(response?.affected_count || 0)
+    }
+    deleteConfirmationVisible.value = false
+    selectedReviewIds.value = []
+    uni.showToast({ title: affectedCount ? `已删除 ${affectedCount} 条经验贴` : '所选经验贴已被处理', icon: affectedCount ? 'success' : 'none' })
+    await refresh()
+  } catch (error) {
+    uni.showToast({ title: error?.detail || '经验贴删除失败', icon: 'none' })
+  } finally {
+    deleting.value = false
+  }
 }
 
 async function openReview(item) {
@@ -526,7 +640,9 @@ async function fetchAndApplySummary() {
 
 function buildPreviewPage() {
   const keyword = filters.search.trim().toLowerCase()
+  const trashedIds = new Set(previewTrashedReviewIds.value)
   const source = previewReviews().filter((item) => {
+    if (trashedIds.has(item.id)) return false
     if (filters.review_status !== 'all' && item.review_status !== filters.review_status) return false
     if (filters.category !== 'all' && item.category !== filters.category) return false
     if (filters.experience_stage && !item.experience_stages.includes(filters.experience_stage)) return false
@@ -547,6 +663,7 @@ function buildPreviewDetail(postId) {
   const post = previewReviews().find((item) => item.id === postId)
   return {
     post,
+    author_legal_name: post?.author_legal_name || null,
     review_history: [
       { id: `${postId}-history-1`, submission_version: post.review_version, action: 'submitted', from_status: post.review_version > 1 ? 'rejected' : null, to_status: 'pending', actor_user_id: post.author_id, created_at: post.submitted_at }
     ]
@@ -555,9 +672,9 @@ function buildPreviewDetail(postId) {
 
 function previewReviews() {
   return [
-    { id: 'preview-experience-review-001', author_id: '8fc21c09-1111-4444-8888-111111111111', author_name: '陈学姐', author_avatar: '陈', post_type: 'experience', category: 'Z001', experience_stages: ['申请制', '初试'], title: '从材料准备到初试复盘：我的 Z001 备考方法', content: '我把申请材料、公共课和专业课拆成三个阶段，每周固定复盘一次。这里整理了时间安排、错题归档和复试准备的具体方法。', media: [], review_status: 'pending', review_version: 1, is_published: false, submitted_at: '2026-09-01T02:30:00Z', created_at: '2026-09-01T02:30:00Z' },
-    { id: 'preview-experience-review-002', author_id: '311b32a6-2222-4444-8888-222222222222', author_name: '林前辈', author_avatar: '林', post_type: 'experience', category: 'Z002', experience_stages: ['初试'], title: '数学基础错题复盘的四步法', content: '按概念、计算、审题和时间分配记录错因，再安排隔日与一周后的二次练习。', media: [], review_status: 'approved', review_version: 1, is_published: true, submitted_at: '2026-08-30T08:15:00Z', reviewed_at: '2026-08-30T09:20:00Z', created_at: '2026-08-30T08:15:00Z' },
-    { id: 'preview-experience-review-003', author_id: '7a6123e4-3333-4444-8888-333333333333', author_name: '周学长', author_avatar: '周', post_type: 'experience', category: 'Z001', experience_stages: ['复试'], title: '复试资料分享与交流', content: '正文包含需要进一步核对的外部联系方式和资料说明。', media: [], review_status: 'rejected', review_version: 1, review_reason_code: 'advertising_or_diversion', review_note: '请删除站外付费引流和联系方式，补充本人真实复试经历后重新提交。', is_published: false, submitted_at: '2026-08-28T03:10:00Z', reviewed_at: '2026-08-28T05:00:00Z', created_at: '2026-08-28T03:10:00Z' }
+    { id: 'preview-experience-review-001', author_id: '8fc21c09-1111-4444-8888-111111111111', author_name: '陈学姐', author_legal_name: '陈晓宁', author_avatar: '陈', post_type: 'experience', category: 'Z001', experience_stages: ['申请制', '初试'], title: '从材料准备到初试复盘：我的 Z001 备考方法', content: '我把申请材料、公共课和专业课拆成三个阶段，每周固定复盘一次。这里整理了时间安排、错题归档和复试准备的具体方法。', media: [], review_status: 'pending', review_version: 1, is_published: false, submitted_at: '2026-09-01T02:30:00Z', created_at: '2026-09-01T02:30:00Z' },
+    { id: 'preview-experience-review-002', author_id: '311b32a6-2222-4444-8888-222222222222', author_name: '林前辈', author_legal_name: '林博文', author_avatar: '林', post_type: 'experience', category: 'Z002', experience_stages: ['初试'], title: '数学基础错题复盘的四步法', content: '按概念、计算、审题和时间分配记录错因，再安排隔日与一周后的二次练习。', media: [], review_status: 'approved', review_version: 1, is_published: true, submitted_at: '2026-08-30T08:15:00Z', reviewed_at: '2026-08-30T09:20:00Z', created_at: '2026-08-30T08:15:00Z' },
+    { id: 'preview-experience-review-003', author_id: '7a6123e4-3333-4444-8888-333333333333', author_name: '周学长', author_legal_name: '周凯', author_avatar: '周', post_type: 'experience', category: 'Z001', experience_stages: ['复试'], title: '复试资料分享与交流', content: '正文包含需要进一步核对的外部联系方式和资料说明。', media: [], review_status: 'rejected', review_version: 1, review_reason_code: 'advertising_or_diversion', review_note: '请删除站外付费引流和联系方式，补充本人真实复试经历后重新提交。', is_published: false, submitted_at: '2026-08-28T03:10:00Z', reviewed_at: '2026-08-28T05:00:00Z', created_at: '2026-08-28T03:10:00Z' }
   ]
 }
 
@@ -596,6 +713,106 @@ function formatDateTime(value) {
   padding: 0 18px;
   line-height: 1;
   text-align: center;
+}
+
+.experience-review-table {
+  min-width: 1190px;
+}
+
+.experience-review-grid {
+  grid-template-columns: 36px 2.2fr 1.15fr 1fr .72fr .9fr .64fr 60px;
+}
+
+.experience-review-check-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.experience-review-check {
+  width: 17px;
+  height: 17px;
+  min-height: 17px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd6dc;
+  border-radius: 5px;
+  box-sizing: border-box;
+  color: #ffffff;
+  background: #ffffff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.experience-review-check.checked,
+.experience-review-check.partial {
+  border-color: #45bea3;
+  background: #4fcdb1;
+}
+
+.experience-review-check:disabled {
+  opacity: .58;
+}
+
+.experience-review-check::after {
+  border: 0;
+}
+
+.experience-review-head.selecting,
+.experience-review-row.selected {
+  background: #f2faf7;
+}
+
+.experience-review-selection-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #718194;
+  font-size: 10px;
+}
+
+.experience-review-selection-actions text,
+.experience-review-selection-actions strong {
+  white-space: nowrap;
+}
+
+.experience-review-selection-actions strong {
+  color: #258873;
+}
+
+.experience-review-selection-actions button {
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.experience-review-delete {
+  border: 1px solid #efc3be;
+  color: #a24e48;
+  background: #fff1ef;
+}
+
+.experience-review-selection-clear {
+  border: 1px solid #d9e5e8;
+  color: #7d8998;
+  background: #ffffff;
+}
+
+.experience-review-selection-actions button::after {
+  border: 0;
 }
 
 .experience-review-confirm-backdrop {
@@ -683,6 +900,61 @@ function formatDateTime(value) {
 
 .experience-review-confirm-actions button::after {
   border: 0;
+}
+
+.experience-review-sort-cell {
+  display: flex;
+  align-items: center;
+}
+
+.experience-review-sort-trigger {
+  min-width: 0;
+  height: 30px;
+  margin: 0;
+  padding: 0 5px;
+  border: 0;
+  border-radius: 5px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 5px;
+  box-sizing: border-box;
+  color: inherit;
+  background: transparent;
+  font-size: inherit;
+  font-weight: inherit;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.experience-review-sort-trigger:hover,
+.experience-review-sort-trigger:focus-visible {
+  color: #258b76;
+  background: #eaf7f3;
+}
+
+.experience-review-sort-trigger:disabled {
+  cursor: default;
+  opacity: 0.58;
+}
+
+.experience-review-sort-trigger::after {
+  border: 0;
+}
+
+.experience-review-sort-direction {
+  width: 16px;
+  height: 16px;
+  border-radius: 4px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  color: #258b76;
+  background: #e4f5f0;
+  font-size: 11px;
+  font-weight: 900;
+  line-height: 1;
 }
 
 @media (max-width: 820px) {

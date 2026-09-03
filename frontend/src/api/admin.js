@@ -696,6 +696,14 @@ export function revokeAdminMentorQualification(applicationId, payload) {
   })
 }
 
+export function archiveAdminRevokedMentorApplications(payload) {
+  return request({
+    url: '/admin/mentor-consultation/applications/archive',
+    method: 'POST',
+    data: payload
+  })
+}
+
 export function fetchAdminMentorConsultationReports(params = {}) {
   return request({
     url: '/admin/mentor-consultation/reports',

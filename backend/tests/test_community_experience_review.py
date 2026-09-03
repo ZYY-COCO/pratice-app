@@ -91,6 +91,23 @@ class CommunityExperienceReviewTests(unittest.TestCase):
         self.assertEqual(result.count, 0)
         self.assertEqual(result.items, [])
 
+    def test_admin_review_detail_includes_verified_author_legal_name(self):
+        supabase = object()
+        with (
+            patch.object(admin, "get_supabase_admin", return_value=supabase),
+            patch.object(admin, "_community_post_detail_row", return_value=_experience_row()),
+            patch.object(
+                admin,
+                "_fetch_admin_experience_author_legal_name",
+                return_value="张三",
+            ) as fetch_legal_name,
+            patch.object(admin, "_fetch_admin_experience_review_history", return_value=[]),
+        ):
+            result = admin.question_admin_community_experience_review_detail(POST_ID, _={})
+
+        self.assertEqual(result.author_legal_name, "张三")
+        fetch_legal_name.assert_called_once_with(supabase, AUTHOR_ID)
+
     def test_new_experience_post_is_inserted_as_pending_and_hidden(self):
         payload = CommunityCreatePostRequest(
             post_type="experience",

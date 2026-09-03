@@ -8,14 +8,15 @@
     </view>
 
     <view v-if="activeMailbox === 'applications'" class="application-workspace">
-      <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="filters.keyword" placeholder="搜索申请人、院校或专业" @input="handleSearch" /><button v-if="filters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="statusOptions.map((item) => item.label)" :value-index="statusIndex" aria-label="申请状态" @change="selectStatus" /><button class="refresh-button" :disabled="loading" @tap="refresh">{{ loading ? '刷新中…' : '刷新' }}</button><button v-if="showMailboxSwitch" class="mailbox-button" @tap="openReportMailbox">举报信箱</button></view>
+      <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="filters.keyword" placeholder="搜索申请人、院校或专业" @input="handleSearch" /><button v-if="filters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="statusOptions.map((item) => item.label)" :value-index="statusIndex" aria-label="申请状态" @change="selectStatus" /><button class="refresh-button" :disabled="loading || archiving" @tap="refresh">{{ loading ? '刷新中…' : '刷新' }}</button><button v-if="showMailboxSwitch" class="mailbox-button" @tap="openReportMailbox">举报信箱</button><view v-if="selectedApplicationIds.length" class="mentor-selection-actions"><text>已选 <strong>{{ selectedApplicationIds.length }}</strong> 条</text><button class="mentor-selection-delete" :disabled="archiving" @tap="openArchiveDialog">删除所选</button><button class="mentor-selection-clear" :disabled="archiving" @tap="clearApplicationSelection">取消选择</button></view></view>
 
       <view class="table-wrap"><view class="table">
-        <view class="grid table-head"><view>申请人</view><view>申请信息</view><view>申请留言</view><view>证明材料</view><view>提交时间</view><view>状态</view><view>操作</view></view>
+        <view class="grid table-head" :class="{ selecting: selectedApplicationIds.length }"><view class="check-cell"><button class="check-box" :class="{ checked: allRevokedApplicationsSelected, partial: someRevokedApplicationsSelected }" :disabled="!revokedApplicationsOnPage.length || loading || archiving" aria-label="选择本页已取消资格记录" @tap="toggleSelectRevokedApplicationPage">{{ allRevokedApplicationsSelected ? '✓' : someRevokedApplicationsSelected ? '−' : '' }}</button></view><view>申请人</view><view>申请信息</view><view>申请留言</view><view>证明材料</view><view>提交时间</view><view>状态</view><view>操作</view></view>
         <view v-if="loading" class="table-state">正在加载前辈申请…</view>
         <view v-else-if="loadError" class="table-state error"><text>前辈申请加载失败，请检查网络和后台权限。</text><button @tap="refresh">重新加载</button></view>
         <view v-else-if="applications.length === 0" class="table-state">当前筛选下没有前辈申请</view>
-        <view v-for="item in applications" v-else :key="item.id" class="grid row" @tap="openApplication(item)">
+        <view v-for="item in applications" v-else :key="item.id" class="grid row" :class="{ selected: isApplicationSelected(item.id) }" @tap="openApplication(item)">
+          <view class="check-cell"><button class="check-box" :class="{ checked: isApplicationSelected(item.id) }" :disabled="item.application_status !== 'revoked' || archiving" :aria-label="item.application_status === 'revoked' ? `选择 ${item.legal_name || '该申请人'}` : '仅已取消资格记录可删除'" @tap.stop="toggleApplicationSelection(item)">{{ isApplicationSelected(item.id) ? '✓' : '' }}</button></view>
           <view class="applicant"><view class="avatar">{{ item.legal_name?.slice(0, 1) || '前' }}</view><view><strong>{{ item.legal_name || '未填写姓名' }}</strong><text>申请成为前辈</text></view></view>
           <view><strong>{{ item.school }}</strong><text>{{ item.major }} · {{ item.admission_year }}级</text><text class="consultation-request" :class="{ 'is-verification-only': !isConsultationEnabled(item) }">{{ consultationServiceText(item) }}</text></view>
           <view class="message">{{ item.bio || (isConsultationEnabled(item) ? '未填写申请留言' : '仅申请前辈认证，暂无咨询服务说明') }}</view>
@@ -127,6 +128,18 @@
       </view>
     </view>
 
+    <view v-if="archiveDialogVisible" class="approval-dialog-backdrop" @tap="closeArchiveDialog">
+      <view class="approval-dialog" role="dialog" aria-modal="true" aria-label="删除已取消资格记录" @tap.stop>
+        <strong>删除所选记录？</strong>
+        <text>将从前辈审核列表移除 {{ selectedApplicationIds.length }} 条“已取消资格”记录。登录账号、前辈档案、咨询订单和历次审核记录都会保留。</text>
+        <view v-if="archiveError" class="approval-dialog-error" role="alert">{{ archiveError }}</view>
+        <view class="approval-dialog-actions">
+          <button class="approval-dialog-cancel" :disabled="archiving" @tap="closeArchiveDialog">取消</button>
+          <button class="approval-dialog-confirm archive-confirm" :disabled="archiving" @tap="archiveSelectedApplications">{{ archiving ? '删除中…' : '确认删除' }}</button>
+        </view>
+      </view>
+    </view>
+
     <view v-if="activeMailbox === 'reports'" class="report-mailbox-page">
       <view v-if="!compact" class="summary-grid report-summary-grid">
         <view class="summary-card report-total"><text>全部举报</text><strong>{{ reportCount }}</strong><small>来自咨询双方的举报</small></view>
@@ -185,6 +198,7 @@
 <script setup>
 import { computed, onBeforeUnmount, reactive, ref, watch } from 'vue'
 import {
+  archiveAdminRevokedMentorApplications,
   decideAdminMentorVerificationApplication,
   fetchAdminMentorConsultationReport,
   fetchAdminMentorConsultationReports,
@@ -224,6 +238,11 @@ const revocationTarget = ref(null)
 const revocationReason = ref('')
 const revocationReasonError = ref('')
 const revoking = ref(false)
+const selectedApplicationIds = ref([])
+const previewArchivedApplicationIds = ref([])
+const archiveDialogVisible = ref(false)
+const archiving = ref(false)
+const archiveError = ref('')
 const filters = reactive({ keyword: '', application_status: '' })
 const reports = ref([])
 const reportCount = ref(0)
@@ -260,6 +279,16 @@ const reportDetailPriorityIndex = computed(() => Math.max(0, reportPriorityOptio
 const reportDetailResolutionIndex = computed(() => Math.max(0, reportResolutionOptions.findIndex((item) => item.value === reportResolution.value)))
 const applicationTotalPages = computed(() => Math.max(1, Math.ceil(applicationCount.value / applicationPageSize)))
 const reportTotalPages = computed(() => Math.max(1, Math.ceil(reportCount.value / reportPageSize)))
+const selectedApplicationSet = computed(() => new Set(selectedApplicationIds.value))
+const revokedApplicationsOnPage = computed(() => applications.value.filter((item) => item.application_status === 'revoked'))
+const allRevokedApplicationsSelected = computed(() => (
+  revokedApplicationsOnPage.value.length > 0
+  && revokedApplicationsOnPage.value.every((item) => selectedApplicationSet.value.has(item.id))
+))
+const someRevokedApplicationsSelected = computed(() => (
+  !allRevokedApplicationsSelected.value
+  && revokedApplicationsOnPage.value.some((item) => selectedApplicationSet.value.has(item.id))
+))
 const pendingCount = computed(() => applications.value.filter((item) => item.application_status === 'pending').length)
 const approvedCount = computed(() => applications.value.filter((item) => item.application_status === 'approved').length)
 const rejectedCount = computed(() => applications.value.filter((item) => item.application_status === 'rejected').length)
@@ -296,6 +325,8 @@ async function refreshApplications() {
     })
     applications.value = response?.items || []
     applicationCount.value = Number(response?.count || 0)
+    const selectableIds = new Set(revokedApplicationsOnPage.value.map((item) => item.id))
+    selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => selectableIds.has(id))
     if (applicationCount.value > 0 && applications.value.length === 0 && applicationPage.value > applicationTotalPages.value) {
       applicationPage.value = applicationTotalPages.value
       await refresh()
@@ -331,12 +362,12 @@ async function refreshReports() {
   } finally { reportLoading.value = false }
 }
 
-function applyApplicationFilters() { applicationPage.value = 1; refresh() }
+function applyApplicationFilters() { clearApplicationSelection(); applicationPage.value = 1; refresh() }
 function applyReportFilters() { reportPage.value = 1; refresh() }
 function handleSearch() { if (searchTimer) clearTimeout(searchTimer); searchTimer = setTimeout(() => (activeMailbox.value === 'reports' ? applyReportFilters() : applyApplicationFilters()), 360) }
 function clearSearch() { if (activeMailbox.value === 'reports') { reportFilters.keyword = ''; applyReportFilters(); return }; filters.keyword = ''; applyApplicationFilters() }
 function selectStatus(event) { filters.application_status = statusOptions[Number(event?.detail?.value || 0)]?.value || ''; applyApplicationFilters() }
-function changeApplicationPage(page) { const next = Math.max(1, Math.min(applicationTotalPages.value, Number(page) || 1)); if (next !== applicationPage.value) { applicationPage.value = next; refresh() } }
+function changeApplicationPage(page) { const next = Math.max(1, Math.min(applicationTotalPages.value, Number(page) || 1)); if (next !== applicationPage.value) { clearApplicationSelection(); applicationPage.value = next; refresh() } }
 function selectReportStatus(event) { reportFilters.status = reportStatusOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
 function selectReportTarget(event) { reportFilters.target_role = reportTargetOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
 function selectReportSla(event) { reportFilters.sla_state = reportSlaOptions[Number(event?.detail?.value || 0)]?.value || ''; applyReportFilters() }
@@ -498,6 +529,75 @@ function resetQualificationRevocationDialog() {
   revocationReasonError.value = ''
 }
 
+function isApplicationSelected(applicationId) {
+  return selectedApplicationSet.value.has(applicationId)
+}
+
+function toggleApplicationSelection(application) {
+  if (!application?.id || application.application_status !== 'revoked' || archiving.value) return
+  selectedApplicationIds.value = isApplicationSelected(application.id)
+    ? selectedApplicationIds.value.filter((id) => id !== application.id)
+    : [...selectedApplicationIds.value, application.id]
+}
+
+function toggleSelectRevokedApplicationPage() {
+  if (!revokedApplicationsOnPage.value.length || archiving.value) return
+  const pageIds = new Set(revokedApplicationsOnPage.value.map((item) => item.id))
+  if (allRevokedApplicationsSelected.value) {
+    selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => !pageIds.has(id))
+    return
+  }
+  selectedApplicationIds.value = Array.from(new Set([
+    ...selectedApplicationIds.value,
+    ...pageIds
+  ]))
+}
+
+function clearApplicationSelection() {
+  if (archiving.value) return
+  selectedApplicationIds.value = []
+}
+
+function openArchiveDialog() {
+  if (!selectedApplicationIds.value.length || archiving.value) return
+  archiveError.value = ''
+  archiveDialogVisible.value = true
+}
+
+function closeArchiveDialog() {
+  if (archiving.value) return
+  archiveDialogVisible.value = false
+  archiveError.value = ''
+}
+
+async function archiveSelectedApplications() {
+  const applicationIds = [...selectedApplicationIds.value]
+  if (!applicationIds.length || archiving.value) return
+  archiveError.value = ''
+  archiving.value = true
+  try {
+    let affectedCount = 0
+    if (props.preview) {
+      previewArchivedApplicationIds.value = Array.from(new Set([
+        ...previewArchivedApplicationIds.value,
+        ...applicationIds
+      ]))
+      affectedCount = applicationIds.length
+    } else {
+      const response = await archiveAdminRevokedMentorApplications({ ids: applicationIds })
+      affectedCount = Number(response?.affected_count || 0)
+    }
+    archiveDialogVisible.value = false
+    selectedApplicationIds.value = []
+    uni.showToast({ title: affectedCount ? `已删除 ${affectedCount} 条记录` : '所选记录已被处理', icon: affectedCount ? 'success' : 'none' })
+    await refreshApplications()
+  } catch (error) {
+    archiveError.value = error?.detail || '已取消资格记录删除失败，请稍后重试'
+  } finally {
+    archiving.value = false
+  }
+}
+
 function clearRevocationReasonError() {
   if (revocationReasonError.value && revocationReason.value.trim().length >= 5) revocationReasonError.value = ''
 }
@@ -625,7 +725,9 @@ async function saveReportStatus() {
 function confirmDecision(title, content, confirmText) { return new Promise((resolve) => uni.showModal({ title, content, confirmText, success: (result) => resolve(Boolean(result.confirm)) })) }
 function buildPreviewApplicationPage() {
   const keyword = filters.keyword.trim().toLowerCase()
+  const archivedIds = new Set(previewArchivedApplicationIds.value)
   const filtered = previewApplications().filter((item) => {
+    if (archivedIds.has(item.id)) return false
     if (filters.application_status && item.application_status !== filters.application_status) return false
     if (!keyword) return true
     return [item.legal_name, item.school, item.major].some((value) => String(value || '').toLowerCase().includes(keyword))
@@ -636,7 +738,8 @@ function buildPreviewApplicationPage() {
 function previewApplications() { return [
   { id: 'preview-mentor-application-001', applicant_user_id: 'preview-user-001', legal_name: '陈同学', school: '暨南大学', major: '应用经济学', admission_year: 2025, graduation_year: 2027, exam_type: 'Z001', score: 110, consultation_enabled: true, skills: ['院校选择', '初试备考', '复试经验'], bio: '我已录取暨南大学应用经济学，希望帮助同样准备 Z001 的同学梳理院校选择和备考节奏。', price: 39, application_status: 'pending', document_count: 2, created_at: '2026-08-21T02:30:00Z' },
   { id: 'preview-mentor-application-002', applicant_user_id: 'preview-user-002', legal_name: '林同学', school: '中山大学', major: '金融学', admission_year: 2024, graduation_year: 2026, exam_type: 'Z002', score: 122, consultation_enabled: false, skills: [], bio: '', price: 0, application_status: 'approved', document_count: 1, created_at: '2026-08-18T09:20:00Z', admin_note: '认证材料核验通过。' },
-  { id: 'preview-mentor-application-003', applicant_user_id: 'preview-user-003', legal_name: '周同学', school: '华南理工大学', major: '工商管理', admission_year: 2025, graduation_year: 2027, exam_type: 'application', score: null, consultation_enabled: true, skills: ['院校选择'], bio: '希望分享申请制项目的准备经历。', price: 39, application_status: 'rejected', document_count: 0, created_at: '2026-08-16T03:10:00Z', admin_note: '请补充录取证明后重新申请。' }
+  { id: 'preview-mentor-application-003', applicant_user_id: 'preview-user-003', legal_name: '周同学', school: '华南理工大学', major: '工商管理', admission_year: 2025, graduation_year: 2027, exam_type: 'application', score: null, consultation_enabled: true, skills: ['院校选择'], bio: '希望分享申请制项目的准备经历。', price: 39, application_status: 'rejected', document_count: 0, created_at: '2026-08-16T03:10:00Z', admin_note: '请补充录取证明后重新申请。' },
+  { id: 'preview-mentor-application-004', applicant_user_id: 'preview-user-004', legal_name: '杨同学', school: '南方科技大学', major: '金融学', admission_year: 2024, graduation_year: 2026, exam_type: 'Z002', score: 118, consultation_enabled: false, skills: [], bio: '历史资格已由平台取消。', price: 0, application_status: 'revoked', document_count: 1, created_at: '2026-08-14T06:20:00Z', revocation_reason: '认证材料复核未通过。', revoked_at: '2026-08-20T03:00:00Z' }
 ] }
 function previewApplicationDetail(application) { return { application: { ...application }, applicant: { nickname: application.legal_name, email: 'mentor-applicant@example.com' }, documents: Array.from({ length: application.document_count || 0 }, (_, index) => ({ id: `preview-document-${index}`, file_url: '/static/ui-icons/circle-community.svg', file_name: index ? '学生证照片' : '录取通知书', document_type: index ? 'student_card' : 'admission_notice', created_at: application.created_at })) } }
 function buildPreviewReportPage() {
@@ -721,11 +824,110 @@ function formatDateTime(value) { const date = new Date(value); return Number.isN
 }
 
 .table {
-  min-width: 1140px;
+  min-width: 1210px;
 }
 
 .grid {
-  grid-template-columns: 1.1fr 1.3fr 1.8fr .7fr .85fr .75fr 150px;
+  grid-template-columns: 36px 1.1fr 1.3fr 1.8fr .7fr .85fr .75fr 150px;
+}
+
+.check-cell {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.check-box {
+  width: 17px;
+  height: 17px;
+  min-height: 17px;
+  margin: 0;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #cbd6dc;
+  border-radius: 5px;
+  box-sizing: border-box;
+  color: #ffffff;
+  background: #ffffff;
+  font-size: 9px;
+  line-height: 1;
+}
+
+.check-box.checked,
+.check-box.partial {
+  border-color: #45bea3;
+  background: #4fcdb1;
+}
+
+.check-box:disabled {
+  border-color: #e1e7ea;
+  background: #f7f9fa;
+  opacity: .72;
+}
+
+.check-box::after {
+  border: 0;
+}
+
+.table-head.selecting,
+.row.selected {
+  background: #f2faf7;
+}
+
+.mentor-selection-actions {
+  margin-left: auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  color: #718194;
+  font-size: 10px;
+}
+
+.mentor-selection-actions text,
+.mentor-selection-actions strong {
+  white-space: nowrap;
+}
+
+.mentor-selection-actions strong {
+  color: #258873;
+}
+
+.mentor-selection-actions button {
+  height: 32px;
+  min-height: 32px;
+  margin: 0;
+  padding: 0 12px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  box-sizing: border-box;
+  font-size: 10px;
+  font-weight: 800;
+  line-height: 1;
+}
+
+.mentor-selection-delete {
+  border: 1px solid #efc3be;
+  color: #a24e48;
+  background: #fff1ef;
+}
+
+.mentor-selection-clear {
+  border: 1px solid #d9e5e8;
+  color: #7d8998;
+  background: #ffffff;
+}
+
+.mentor-selection-actions button::after {
+  border: 0;
+}
+
+.archive-confirm {
+  border-color: #c96f66;
+  background: #c96f66;
 }
 
 .application-actions {
@@ -1589,5 +1791,18 @@ function formatDateTime(value) { const date = new Date(value); return Number.isN
 
 .mentor-application-page.is-compact .application-workspace {
   margin-top: 0;
+}
+
+.approval-dialog-confirm.archive-confirm {
+  border-color: #c96f66;
+  background: #c96f66;
+}
+
+@media (max-width: 820px) {
+  .mentor-selection-actions {
+    width: 100%;
+    margin-left: 0;
+    justify-content: flex-end;
+  }
 }
 </style>

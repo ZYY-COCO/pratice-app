@@ -678,6 +678,26 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
     )
 
 
+def _fetch_admin_experience_author_legal_name(supabase, author_id: object) -> str | None:
+    normalized_author_id = str(author_id or "").strip()
+    if not normalized_author_id:
+        return None
+
+    response = call_supabase(
+        lambda: (
+            supabase.table("mentor_profiles")
+            .select("legal_name")
+            .eq("owner_user_id", normalized_author_id)
+            .limit(1)
+            .execute()
+        ),
+        operation_name="admin community experience author legal name lookup",
+    )
+    if not response.data:
+        return None
+    return str(response.data[0].get("legal_name") or "").strip() or None
+
+
 def _apply_admin_community_post_filters(
     query,
     *,
@@ -4471,6 +4491,10 @@ def question_admin_community_experience_review_detail(
             raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="经验贴不存在")
         return AdminCommunityExperienceReviewDetailResponse(
             post=_build_admin_community_post_item(post),
+            author_legal_name=_fetch_admin_experience_author_legal_name(
+                supabase,
+                post.get("author_id"),
+            ),
             review_history=_fetch_admin_experience_review_history(supabase, post_id),
         )
     except HTTPException:

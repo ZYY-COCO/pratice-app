@@ -295,6 +295,16 @@ class AdminMentorQualificationRevocationRequest(BaseModel):
     reason: str = Field(min_length=5, max_length=1000)
 
 
+class AdminMentorVerificationArchiveRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    ids: list[UUID] = Field(min_length=1, max_length=100)
+
+
+class AdminMentorVerificationArchiveResponse(BaseModel):
+    affected_count: int = Field(ge=0)
+
+
 class AdminMentorProfileCreateRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 

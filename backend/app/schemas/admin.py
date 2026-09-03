@@ -352,6 +352,7 @@ class AdminCommunityExperienceReviewListResponse(BaseModel):
 
 class AdminCommunityExperienceReviewDetailResponse(BaseModel):
     post: AdminCommunityPostItem
+    author_legal_name: str | None = None
     review_history: list[AdminCommunityExperienceReviewHistoryItem] = Field(default_factory=list)
 
 

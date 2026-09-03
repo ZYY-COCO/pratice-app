@@ -36,6 +36,8 @@ from app.schemas.mentor_consultation import (
     AdminMentorProfileListResponse,
     AdminMentorProfileUpdateRequest,
     AdminMentorQualificationRevocationRequest,
+    AdminMentorVerificationArchiveRequest,
+    AdminMentorVerificationArchiveResponse,
     AdminMentorVerificationApplicationDetailResponse,
     AdminMentorVerificationApplicationListResponse,
     AdminMentorVerificationDecisionRequest,
@@ -290,7 +292,7 @@ def _log_admin_action(supabase, admin_profile: dict, action: str, mentor_id: str
         logger.warning("Mentor admin action log skipped (error_type=%s)", type(exc).__name__)
 
 
-def _log_application_action(supabase, admin_profile: dict, action: str, application_id: str, details: dict | None = None) -> None:
+def _log_application_action(supabase, admin_profile: dict, action: str, application_id: str | None, details: dict | None = None) -> None:
     try:
         call_supabase(
             lambda: supabase.table("admin_action_logs").insert({
@@ -304,6 +306,39 @@ def _log_application_action(supabase, admin_profile: dict, action: str, applicat
         )
     except Exception as exc:
         logger.warning("Mentor application admin action log skipped (error_type=%s)", type(exc).__name__)
+
+
+def _is_missing_mentor_application_column_error(exc: Exception, column_name: str) -> bool:
+    message = str(exc).lower()
+    normalized_column = str(column_name or "").strip().lower()
+    return bool(normalized_column) and normalized_column in message and any(
+        marker in message
+        for marker in ("does not exist", "could not find", "schema cache", "42703", "pgrst204")
+    )
+
+
+def _normalize_mentor_application_ids(application_ids: list[object]) -> list[str]:
+    normalized = list(dict.fromkeys(
+        str(application_id).strip()
+        for application_id in application_ids
+        if str(application_id).strip()
+    ))
+    if not normalized:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="至少选择一条已取消资格记录")
+    return normalized
+
+
+def _mentor_application_archive_affected_ids(response: object) -> list[str]:
+    rows = getattr(response, "data", None)
+    if not isinstance(rows, list):
+        return []
+    affected_ids: list[str] = []
+    for row in rows:
+        value = row.get("application_id") if isinstance(row, dict) else row
+        normalized = str(value or "").strip()
+        if normalized:
+            affected_ids.append(normalized)
+    return list(dict.fromkeys(affected_ids))
 
 
 def _log_consultation_report_action(supabase, admin_profile: dict, action: str, report_id: str, details: dict | None = None) -> None:
@@ -1616,50 +1651,57 @@ def list_admin_mentor_verification_applications(
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的申请状态")
 
     supabase = get_supabase_admin()
-    try:
-        query = supabase.table("mentor_verification_applications").select(MENTOR_APPLICATION_FIELDS, count="exact")
-        if normalized_status:
-            query = query.eq("application_status", normalized_status)
-        response = call_supabase(
-            lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
-            operation_name="admin mentor application list",
-        )
-        rows = response.data or []
-        users_by_id = _fetch_application_users(supabase, [str(row.get("applicant_user_id") or "") for row in rows])
-        if normalized_keyword:
-            rows = [
-                row for row in rows
-                if normalized_keyword in " ".join(
-                    str(value or "")
-                    for value in (
-                        row.get("legal_name"),
-                        row.get("school"),
-                        row.get("major"),
-                        row.get("phone"),
-                        users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("nickname"),
-                        users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("email"),
-                        users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("phone"),
+    include_admin_archived = True
+    while True:
+        try:
+            query = supabase.table("mentor_verification_applications").select(MENTOR_APPLICATION_FIELDS, count="exact")
+            if include_admin_archived and hasattr(query, "is_"):
+                query = query.is_("admin_archived_at", "null")
+            if normalized_status:
+                query = query.eq("application_status", normalized_status)
+            response = call_supabase(
+                lambda: query.order("created_at", desc=True).range(offset, offset + limit - 1).execute(),
+                operation_name="admin mentor application list",
+            )
+            rows = response.data or []
+            users_by_id = _fetch_application_users(supabase, [str(row.get("applicant_user_id") or "") for row in rows])
+            if normalized_keyword:
+                rows = [
+                    row for row in rows
+                    if normalized_keyword in " ".join(
+                        str(value or "")
+                        for value in (
+                            row.get("legal_name"),
+                            row.get("school"),
+                            row.get("major"),
+                            row.get("phone"),
+                            users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("nickname"),
+                            users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("email"),
+                            users_by_id.get(str(row.get("applicant_user_id") or ""), {}).get("phone"),
+                        )
+                    ).lower()
+                ]
+            document_counts = _fetch_application_document_counts(supabase, [str(row.get("id") or "") for row in rows])
+            return AdminMentorVerificationApplicationListResponse(
+                items=[
+                    MentorVerificationApplicationItem(
+                        **_serialize_mentor_application(
+                            row,
+                            document_count=document_counts.get(str(row.get("id") or ""), 0),
+                        )
                     )
-                ).lower()
-            ]
-        document_counts = _fetch_application_document_counts(supabase, [str(row.get("id") or "") for row in rows])
-        return AdminMentorVerificationApplicationListResponse(
-            items=[
-                MentorVerificationApplicationItem(
-                    **_serialize_mentor_application(
-                        row,
-                        document_count=document_counts.get(str(row.get("id") or ""), 0),
-                    )
-                )
-                for row in rows
-            ],
-            count=len(rows) if normalized_keyword else int(response.count or len(rows)),
-        )
-    except HTTPException:
-        raise
-    except Exception as exc:
-        logger.warning("Admin mentor application list unavailable (error_type=%s)", type(exc).__name__)
-        raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请数据暂时不可用") from exc
+                    for row in rows
+                ],
+                count=len(rows) if normalized_keyword else int(response.count or len(rows)),
+            )
+        except HTTPException:
+            raise
+        except Exception as exc:
+            if include_admin_archived and _is_missing_mentor_application_column_error(exc, "admin_archived_at"):
+                include_admin_archived = False
+                continue
+            logger.warning("Admin mentor application list unavailable (error_type=%s)", type(exc).__name__)
+            raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈申请数据暂时不可用") from exc
 
 
 @router.get("/applications/{application_id}", response_model=AdminMentorVerificationApplicationDetailResponse)
@@ -2089,6 +2131,56 @@ def revoke_admin_mentor_qualification(
             ) from exc
         logger.warning("Admin mentor qualification revocation failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(status_code=status.HTTP_503_SERVICE_UNAVAILABLE, detail="前辈资格取消失败，请稍后重试") from exc
+
+
+@router.post(
+    "/applications/archive",
+    response_model=AdminMentorVerificationArchiveResponse,
+)
+def archive_admin_revoked_mentor_applications(
+    payload: AdminMentorVerificationArchiveRequest,
+    admin_profile: dict = Depends(require_question_admin_user),
+) -> AdminMentorVerificationArchiveResponse:
+    application_ids = _normalize_mentor_application_ids(payload.ids)
+    supabase = get_supabase_admin()
+    try:
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "archive_revoked_mentor_applications",
+                {
+                    "p_application_ids": application_ids,
+                    "p_admin_user_id": admin_profile.get("id"),
+                },
+            ).execute(),
+            operation_name="admin revoked mentor application archive",
+        )
+        affected_ids = _mentor_application_archive_affected_ids(response)
+        if len(affected_ids) != len(application_ids):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="所选记录中包含尚未取消资格或已删除的申请，请刷新后重试",
+            )
+        _log_application_action(
+            supabase,
+            admin_profile,
+            "archive_revoked_mentor_applications",
+            None,
+            {"application_ids": affected_ids, "affected_count": len(affected_ids)},
+        )
+        return AdminMentorVerificationArchiveResponse(affected_count=len(affected_ids))
+    except HTTPException:
+        raise
+    except Exception as exc:
+        if "MENTOR_APPLICATION_ARCHIVE_INELIGIBLE" in str(exc).upper():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="所选记录中包含尚未取消资格或已删除的申请，请刷新后重试",
+            ) from exc
+        logger.warning("Admin revoked mentor application archive failed (error_type=%s)", type(exc).__name__)
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="已取消资格记录删除失败，请确认已执行前辈申请归档数据库迁移",
+        ) from exc
 
 
 @router.get("/profile-change-requests", response_model=AdminMentorProfileChangeRequestListResponse)
