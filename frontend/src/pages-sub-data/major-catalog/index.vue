@@ -139,6 +139,8 @@
           scroll-y
           show-scrollbar="false"
           :scroll-top="resultScrollTop"
+          :scroll-into-view="resultScrollIntoView"
+          @scroll="handleResultsScroll"
         >
           <view class="catalog-results-content">
             <view v-if="!hasActiveCatalogYearData" class="catalog-inline-state">
@@ -188,7 +190,7 @@
                 title="该筛选条件下暂未找到院校"
               />
               <view v-else class="catalog-school-list">
-                <button
+                <view
                   v-for="school in schoolItems"
                   :key="school.id"
                   class="catalog-school-card"
@@ -202,8 +204,29 @@
                       <text v-for="code in school.exam_codes" :key="code" class="catalog-code-tag">{{ code }}</text>
                     </view>
                   </view>
-                  <text class="catalog-card-action">查看专业</text>
-                </button>
+                  <view class="catalog-school-actions">
+                    <button
+                      class="catalog-favorite-button"
+                      :class="{
+                        active: isCatalogFavorited('school', school.id),
+                        pending: isCatalogFavoritePending('school', school.id)
+                      }"
+                      hover-class="none"
+                      :disabled="isCatalogFavoritePending('school', school.id)"
+                      :aria-label="isCatalogFavorited('school', school.id) ? '取消收藏院校' : '收藏院校'"
+                      :aria-pressed="isCatalogFavorited('school', school.id)"
+                      @tap.stop="toggleCatalogFavorite('school', school)"
+                    >
+                      <image
+                        class="catalog-favorite-icon"
+                        :src="catalogFavoriteIconSrc('school', school.id)"
+                        mode="aspectFit"
+                        aria-hidden="true"
+                      />
+                    </button>
+                    <text class="catalog-card-action">查看专业</text>
+                  </view>
+                </view>
               </view>
             </template>
 
@@ -222,7 +245,7 @@
                     <text>{{ searchResults.school_count }} 所</text>
                   </view>
                   <view class="catalog-school-list">
-                    <button
+                    <view
                       v-for="school in searchResults.schools"
                       :key="school.id"
                       class="catalog-school-card"
@@ -234,8 +257,29 @@
                         <text class="catalog-school-name">{{ school.name }}</text>
                         <text class="catalog-school-meta">{{ school.department_count }} 个院系 · {{ school.program_count }} 个专业</text>
                       </view>
-                      <text class="catalog-card-action">查看目录</text>
-                    </button>
+                      <view class="catalog-school-actions">
+                        <button
+                          class="catalog-favorite-button"
+                          :class="{
+                            active: isCatalogFavorited('school', school.id),
+                            pending: isCatalogFavoritePending('school', school.id)
+                          }"
+                          hover-class="none"
+                          :disabled="isCatalogFavoritePending('school', school.id)"
+                          :aria-label="isCatalogFavorited('school', school.id) ? '取消收藏院校' : '收藏院校'"
+                          :aria-pressed="isCatalogFavorited('school', school.id)"
+                          @tap.stop="toggleCatalogFavorite('school', school)"
+                        >
+                          <image
+                            class="catalog-favorite-icon"
+                            :src="catalogFavoriteIconSrc('school', school.id)"
+                            mode="aspectFit"
+                            aria-hidden="true"
+                          />
+                        </button>
+                        <text class="catalog-card-action">查看目录</text>
+                      </view>
+                    </view>
                   </view>
                 </view>
 
@@ -245,7 +289,7 @@
                     <text>{{ searchResults.program_count }} 个</text>
                   </view>
                   <view class="catalog-search-program-list">
-                    <button
+                    <view
                       v-for="item in searchResults.programs"
                       :key="`${item.school_id}-${item.program_id}`"
                       class="catalog-search-program-card"
@@ -257,7 +301,28 @@
                           <text class="catalog-search-program-name">{{ item.program_name }}</text>
                           <text v-if="item.program_code" class="catalog-search-program-code">{{ item.program_code }}</text>
                         </view>
-                        <text class="catalog-card-action">查看</text>
+                        <view class="catalog-search-program-actions">
+                          <button
+                            class="catalog-favorite-button"
+                            :class="{
+                              active: isCatalogFavorited('program', item.program_id),
+                              pending: isCatalogFavoritePending('program', item.program_id)
+                            }"
+                            hover-class="none"
+                            :disabled="isCatalogFavoritePending('program', item.program_id)"
+                            :aria-label="isCatalogFavorited('program', item.program_id) ? '取消收藏专业' : '收藏专业'"
+                            :aria-pressed="isCatalogFavorited('program', item.program_id)"
+                            @tap.stop="toggleCatalogFavorite('program', item)"
+                          >
+                            <image
+                              class="catalog-favorite-icon"
+                              :src="catalogFavoriteIconSrc('program', item.program_id)"
+                              mode="aspectFit"
+                              aria-hidden="true"
+                            />
+                          </button>
+                          <text class="catalog-card-action">查看</text>
+                        </view>
                       </view>
                       <text class="catalog-search-program-school">{{ item.school_name }} · {{ item.department_name }}</text>
                       <view class="catalog-search-match-row">
@@ -265,7 +330,7 @@
                         <text v-for="code in item.exam_codes" :key="code" class="catalog-code-tag">{{ code }}</text>
                       </view>
                       <text v-if="item.matched_directions.length" class="catalog-search-direction">{{ item.matched_directions.join('、') }}</text>
-                    </button>
+                    </view>
                   </view>
                 </view>
 
@@ -274,17 +339,6 @@
             </template>
 
             <template v-else-if="currentView === 'programs'">
-              <view class="catalog-school-summary">
-                <view>
-                  <text class="catalog-school-summary-eyebrow">{{ selectedSchool?.region }} · 招生单位</text>
-                  <text class="catalog-school-summary-name">{{ selectedSchool?.name }}</text>
-                  <text class="catalog-school-summary-meta">{{ selectedSchool?.department_count || 0 }} 个院系 · {{ selectedSchool?.program_count || 0 }} 个专业</text>
-                </view>
-                <view class="catalog-exam-tag-row is-summary">
-                  <text v-for="code in selectedSchool?.exam_codes || []" :key="code" class="catalog-code-tag">{{ code }}</text>
-                </view>
-              </view>
-
               <AppEmptyState
                 v-if="departments.length === 0"
                 compact
@@ -300,9 +354,10 @@
                   </view>
 
                   <view class="catalog-program-list">
-                    <button
+                    <view
                       v-for="program in department.programs"
                       :key="program.id"
+                      :id="catalogProgramAnchorId(program.id)"
                       class="catalog-program-card"
                       :class="{ expanded: expandedProgramId === program.id }"
                       hover-class="none"
@@ -310,14 +365,35 @@
                     >
                       <view class="catalog-program-head">
                         <view class="catalog-program-copy">
-                          <text class="catalog-program-name">{{ program.name }}</text>
+                          <view class="catalog-program-title-row">
+                            <text class="catalog-program-name">{{ program.name }}</text>
+                            <view class="catalog-exam-tag-row is-program-title">
+                              <text v-for="code in program.exam_codes" :key="code" class="catalog-code-tag">{{ code }}</text>
+                            </view>
+                          </view>
                           <text v-if="program.code" class="catalog-program-code">{{ program.code }}</text>
                           <text class="catalog-program-meta">{{ program.direction_count }} 个研究方向</text>
                         </view>
                         <view class="catalog-program-right">
-                          <view class="catalog-exam-tag-row is-program">
-                            <text v-for="code in program.exam_codes" :key="code" class="catalog-code-tag">{{ code }}</text>
-                          </view>
+                          <button
+                            class="catalog-favorite-button"
+                            :class="{
+                              active: isCatalogFavorited('program', program.id),
+                              pending: isCatalogFavoritePending('program', program.id)
+                            }"
+                            hover-class="none"
+                            :disabled="isCatalogFavoritePending('program', program.id)"
+                            :aria-label="isCatalogFavorited('program', program.id) ? '取消收藏专业' : '收藏专业'"
+                            :aria-pressed="isCatalogFavorited('program', program.id)"
+                            @tap.stop="toggleCatalogFavorite('program', program)"
+                          >
+                            <image
+                              class="catalog-favorite-icon"
+                              :src="catalogFavoriteIconSrc('program', program.id)"
+                              mode="aspectFit"
+                              aria-hidden="true"
+                            />
+                          </button>
                           <text class="catalog-expand-mark">{{ expandedProgramId === program.id ? '收起' : '展开' }}</text>
                         </view>
                       </view>
@@ -336,7 +412,7 @@
                           </view>
                         </view>
                       </view>
-                    </button>
+                    </view>
                   </view>
                 </view>
               </view>
@@ -353,8 +429,8 @@
 </template>
 
 <script setup>
-import { computed, ref } from 'vue'
-import { onBackPress, onShow } from '@dcloudio/uni-app'
+import { computed, nextTick, ref } from 'vue'
+import { onBackPress, onLoad, onShow } from '@dcloudio/uni-app'
 import IcpFooter from '../../components/IcpFooter.vue'
 import AppEmptyState from '../../components/ui/AppEmptyState.vue'
 import AppPageLoadingState from '../../components/ui/AppPageLoadingState.vue'
@@ -364,7 +440,13 @@ import {
   fetchMajorCatalogSchools,
   searchMajorCatalog
 } from '../../api/majorCatalog'
+import {
+  deleteMajorCatalogFavorite,
+  getMajorCatalogFavoriteStatuses,
+  saveMajorCatalogFavorite
+} from '../../api/majorCatalogFavorites'
 import AppSearchIcon from '../../components/ui/AppSearchIcon.vue'
+import { isLoggedIn } from '../../utils/auth'
 import { getThemeIconSrc, getToneIconSrc } from '../../utils/iconAssets'
 import { buildMpPageSafeStyle } from '../../utils/mpSafeLayout'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
@@ -408,9 +490,20 @@ const loading = ref(false)
 const error = ref('')
 const expandedProgramId = ref('')
 const resultScrollTop = ref(0)
+const resultScrollIntoView = ref('')
+const resultScrollPosition = ref(0)
+const schoolReturnScrollTop = ref(0)
 const isResultsExpanded = ref(false)
+const resolvedCatalogYear = ref('2026')
+const favoriteStatusKeys = ref([])
+const favoritePendingKeys = ref([])
+const catalogRouteSource = ref('')
 let requestSequence = 0
 let schoolOptionsSequence = 0
+let favoriteStatusSequence = 0
+let routeInitializationStarted = false
+
+const MAJOR_FAVORITES_ROUTE = '/pages-sub-data/major-favorites/index'
 
 const pageInlineStyle = computed(() => [
   buildThemeStyle(themeKey.value),
@@ -426,6 +519,9 @@ const catalogExpandIconSrc = computed(() => (
 ))
 
 const isGlassTheme = computed(() => getThemePreset(themeKey.value).circleGlass === true)
+const catalogYearForFavorites = computed(() => (
+  String(resolvedCatalogYear.value || activeCatalogYear.value || '2026').trim() || '2026'
+))
 
 const hasActiveCatalogYearData = computed(() => {
   return !activeCatalogYear.value || availableCatalogYears.has(activeCatalogYear.value)
@@ -487,27 +583,241 @@ const resultTitle = computed(() => {
 const resultCountText = computed(() => {
   if (loading.value || hasPendingFilters.value || !hasActiveCatalogYearData.value) return ''
   if (currentView.value === 'schools') return `${schoolItems.value.length} 所`
-  if (currentView.value === 'programs') return `${departments.value.length} 个院系`
+  if (currentView.value === 'programs') {
+    const programCount = Number(selectedSchool.value?.program_count)
+      || departments.value.reduce((total, department) => total + Number(department?.program_count || 0), 0)
+    return `${departments.value.length} 个院系 · ${programCount} 个专业`
+  }
   if (currentView.value === 'search') return `${searchResults.value.total_count} 项`
   return `${regions.value.length} 个地区`
+})
+
+onLoad((options = {}) => {
+  routeInitializationStarted = true
+  catalogRouteSource.value = String(options.source || '').trim()
+  const routeCatalogYear = String(options.catalogYear || '').trim()
+  if (routeCatalogYear) {
+    activeCatalogYear.value = routeCatalogYear
+    resolvedCatalogYear.value = routeCatalogYear
+  }
+  void initializeCatalogRoute(options)
 })
 
 onShow(() => {
   themeKey.value = getStoredThemeKey()
   mpLayoutStyle.value = buildMpPageSafeStyle()
-  if (!regions.value.length && !loading.value) {
+  if (!routeInitializationStarted && !regions.value.length && !loading.value) {
     loadRegions()
+    return
   }
+  if (isLoggedIn()) void refreshVisibleFavoriteStatuses()
+  else favoriteStatusKeys.value = []
 })
 
 onBackPress(() => {
-  if (!isResultsExpanded.value) return false
-  isResultsExpanded.value = false
+  if (isResultsExpanded.value) {
+    isResultsExpanded.value = false
+    return true
+  }
+  if (catalogRouteSource.value !== 'favorites' || canNavigateBackFromCatalog()) return false
+  exitCatalogToFavorites()
   return true
 })
 
 function toggleResultsExpanded() {
   isResultsExpanded.value = !isResultsExpanded.value
+}
+
+async function initializeCatalogRoute(options = {}) {
+  const schoolId = String(options.schoolId || '').trim()
+  if (!schoolId || !hasActiveCatalogYearData.value) {
+    await loadRegions()
+    return
+  }
+
+  currentView.value = 'programs'
+  selectedSchool.value = { id: schoolId }
+  await loadRegions()
+  await loadPrograms()
+
+  const resolvedRegion = String(selectedSchool.value?.region || '').trim()
+  if (resolvedRegion) {
+    selectedRegion.value = { name: resolvedRegion }
+    void loadSchoolOptions()
+  }
+
+  const programId = String(options.programId || '').trim()
+  if (programId && findLoadedProgram(programId)) {
+    expandedProgramId.value = programId
+    nextTick(() => {
+      resultScrollIntoView.value = catalogProgramAnchorId(programId)
+    })
+  }
+}
+
+function findLoadedProgram(programId) {
+  const normalizedId = String(programId || '').trim()
+  if (!normalizedId) return null
+  for (const department of departments.value) {
+    const program = (department?.programs || []).find((item) => String(item?.id || '') === normalizedId)
+    if (program) return program
+  }
+  return null
+}
+
+function catalogProgramAnchorId(programId) {
+  return `catalog-program-${String(programId || '').replace(/[^a-zA-Z0-9_-]/g, '-')}`
+}
+
+function catalogFavoriteKey(targetType, targetId, catalogYear = catalogYearForFavorites.value) {
+  return `${String(catalogYear || '2026')}::${String(targetType || '')}::${String(targetId || '')}`
+}
+
+function isCatalogFavorited(targetType, targetId) {
+  return favoriteStatusKeys.value.includes(catalogFavoriteKey(targetType, targetId))
+}
+
+function isCatalogFavoritePending(targetType, targetId) {
+  return favoritePendingKeys.value.includes(catalogFavoriteKey(targetType, targetId))
+}
+
+function catalogFavoriteIconSrc(targetType, targetId) {
+  return isCatalogFavorited(targetType, targetId)
+    ? '/static/ui-icons/png/gold/favorite.png'
+    : '/static/ui-icons/png/neutral/favorite-outline.png'
+}
+
+function setCatalogFavoriteState(key, isFavorited) {
+  const nextKeys = new Set(favoriteStatusKeys.value)
+  if (isFavorited) nextKeys.add(key)
+  else nextKeys.delete(key)
+  favoriteStatusKeys.value = [...nextKeys]
+}
+
+function setCatalogFavoritePending(key, pending) {
+  const nextKeys = new Set(favoritePendingKeys.value)
+  if (pending) nextKeys.add(key)
+  else nextKeys.delete(key)
+  favoritePendingKeys.value = [...nextKeys]
+}
+
+function normalizeFavoriteRefs(refs = []) {
+  const catalogYear = catalogYearForFavorites.value
+  const uniqueRefs = new Map()
+  for (const refItem of refs) {
+    const targetType = String(refItem?.targetType || '').trim()
+    const targetId = String(refItem?.targetId || '').trim()
+    if (!targetType || !targetId) continue
+    const refValue = { catalogYear, targetType, targetId }
+    uniqueRefs.set(catalogFavoriteKey(targetType, targetId, catalogYear), refValue)
+  }
+  return [...uniqueRefs.values()]
+}
+
+function visibleFavoriteRefs() {
+  if (currentView.value === 'schools') {
+    return schoolItems.value.map((school) => ({ targetType: 'school', targetId: school.id }))
+  }
+  if (currentView.value === 'search') {
+    return [
+      ...searchResults.value.schools.map((school) => ({ targetType: 'school', targetId: school.id })),
+      ...searchResults.value.programs.map((program) => ({ targetType: 'program', targetId: program.program_id }))
+    ]
+  }
+  if (currentView.value === 'programs') {
+    return departments.value.flatMap((department) => (
+      (department?.programs || []).map((program) => ({ targetType: 'program', targetId: program.id }))
+    ))
+  }
+  return []
+}
+
+async function refreshVisibleFavoriteStatuses() {
+  if (!isLoggedIn()) {
+    favoriteStatusKeys.value = []
+    return
+  }
+  const refs = normalizeFavoriteRefs(visibleFavoriteRefs())
+  if (!refs.length) return
+
+  const sequence = ++favoriteStatusSequence
+  try {
+    const chunks = []
+    for (let index = 0; index < refs.length; index += 200) {
+      chunks.push(refs.slice(index, index + 200))
+    }
+    const responses = await Promise.all(chunks.map((chunk) => getMajorCatalogFavoriteStatuses(chunk)))
+    if (sequence !== favoriteStatusSequence) return
+    const requestedKeys = new Set(refs.map((item) => catalogFavoriteKey(item.targetType, item.targetId, item.catalogYear)))
+    const pendingKeys = new Set(favoritePendingKeys.value)
+    const nextKeys = new Set(favoriteStatusKeys.value.filter((key) => !requestedKeys.has(key) || pendingKeys.has(key)))
+    const statusItems = responses.flatMap((response) => response?.items || [])
+    for (const item of statusItems) {
+      const targetType = String(item?.target_type ?? item?.targetType ?? '').trim()
+      const targetId = String(item?.target_id ?? item?.targetId ?? '').trim()
+      const catalogYear = String(item?.catalog_year ?? item?.catalogYear ?? catalogYearForFavorites.value).trim()
+      const key = catalogFavoriteKey(targetType, targetId, catalogYear)
+      if (!targetType || !targetId || pendingKeys.has(key)) continue
+      if (item?.is_favorited ?? item?.isFavorited ?? true) nextKeys.add(key)
+      else nextKeys.delete(key)
+    }
+    favoriteStatusKeys.value = [...nextKeys]
+  } catch {
+    // 目录浏览是公开能力；收藏状态失败时保持页面可用，并在用户主动操作时再反馈错误。
+  }
+}
+
+function buildCatalogLoginRedirect(targetType, targetId, schoolIdHint = '') {
+  const params = [`catalogYear=${encodeURIComponent(catalogYearForFavorites.value)}`]
+  const schoolId = targetType === 'school'
+    ? String(targetId || '')
+    : String(schoolIdHint || selectedSchool.value?.id || '')
+  if (schoolId) params.push(`schoolId=${encodeURIComponent(schoolId)}`)
+  if (targetType === 'program' && targetId) params.push(`programId=${encodeURIComponent(targetId)}`)
+  if (catalogRouteSource.value) params.push(`source=${encodeURIComponent(catalogRouteSource.value)}`)
+  return `/pages-sub-data/major-catalog/index?${params.join('&')}`
+}
+
+function goToLoginForCatalogFavorite(targetType, target) {
+  const targetId = String(target?.id || target?.program_id || '').trim()
+  const redirect = buildCatalogLoginRedirect(targetType, targetId, target?.school_id)
+  uni.showToast({ title: '请先登录后再收藏', icon: 'none' })
+  setTimeout(() => {
+    uni.navigateTo({
+      url: `/pages/login/index?redirect=${encodeURIComponent(redirect)}`
+    })
+  }, 260)
+}
+
+async function toggleCatalogFavorite(targetType, target) {
+  const targetId = String(target?.id || target?.program_id || '').trim()
+  if (!targetId) return
+  if (!isLoggedIn()) {
+    goToLoginForCatalogFavorite(targetType, target)
+    return
+  }
+
+  const catalogYear = catalogYearForFavorites.value
+  const key = catalogFavoriteKey(targetType, targetId, catalogYear)
+  if (favoritePendingKeys.value.includes(key)) return
+  const wasFavorited = favoriteStatusKeys.value.includes(key)
+  setCatalogFavoriteState(key, !wasFavorited)
+  setCatalogFavoritePending(key, true)
+
+  try {
+    const payload = { catalogYear, targetType, targetId }
+    const response = wasFavorited
+      ? await deleteMajorCatalogFavorite(payload)
+      : await saveMajorCatalogFavorite(payload)
+    const confirmedState = response?.is_favorited ?? response?.isFavorited ?? !wasFavorited
+    setCatalogFavoriteState(key, Boolean(confirmedState))
+    uni.showToast({ title: confirmedState ? '已收藏' : '已取消收藏', icon: 'none' })
+  } catch (requestError) {
+    setCatalogFavoriteState(key, wasFavorited)
+    uni.showToast({ title: requestError?.detail || '收藏操作失败，请稍后重试', icon: 'none' })
+  } finally {
+    setCatalogFavoritePending(key, false)
+  }
 }
 
 function createEmptySearchResults() {
@@ -534,7 +844,8 @@ function createSearchReturnState() {
       schools: [...searchResults.value.schools],
       programs: [...searchResults.value.programs]
     },
-    isResultsExpanded: isResultsExpanded.value
+    isResultsExpanded: isResultsExpanded.value,
+    scrollTop: resultScrollPosition.value
   }
 }
 
@@ -559,7 +870,7 @@ function restoreSearchReturnState() {
   error.value = ''
   expandedProgramId.value = ''
   isResultsExpanded.value = state.isResultsExpanded
-  scrollResultsToTop()
+  restoreResultsScrollPosition(state.scrollTop)
   searchReturnState.value = null
   return true
 }
@@ -584,8 +895,23 @@ function setRequestError(sequence, requestError) {
   error.value = requestError?.detail || requestError?.message || '请检查网络后重试'
 }
 
+function handleResultsScroll(event) {
+  resultScrollPosition.value = Math.max(0, Number(event?.detail?.scrollTop) || 0)
+  if (resultScrollIntoView.value) resultScrollIntoView.value = ''
+}
+
+function restoreResultsScrollPosition(scrollTop = 0) {
+  const target = Math.max(0, Number(scrollTop) || 0)
+  resultScrollIntoView.value = ''
+  resultScrollTop.value = resultScrollPosition.value
+  nextTick(() => {
+    resultScrollTop.value = target
+    resultScrollPosition.value = target
+  })
+}
+
 function scrollResultsToTop() {
-  resultScrollTop.value = 0
+  restoreResultsScrollPosition(0)
 }
 
 function clearResultData({ keepRegions = true } = {}) {
@@ -605,6 +931,7 @@ async function loadRegions() {
       catalog_year: activeCatalogYear.value
     })
     if (!isCurrentRequest(sequence)) return
+    resolvedCatalogYear.value = String(response?.catalog_year || activeCatalogYear.value || '2026')
     regions.value = response?.items || []
   } catch (requestError) {
     setRequestError(sequence, requestError)
@@ -643,7 +970,9 @@ async function loadSchools() {
       catalog_year: activeCatalogYear.value
     })
     if (!isCurrentRequest(sequence)) return
+    resolvedCatalogYear.value = String(response?.catalog_year || activeCatalogYear.value || '2026')
     schoolItems.value = response?.items || []
+    void refreshVisibleFavoriteStatuses()
   } catch (requestError) {
     setRequestError(sequence, requestError)
   } finally {
@@ -661,8 +990,10 @@ async function loadPrograms() {
       catalog_year: activeCatalogYear.value
     })
     if (!isCurrentRequest(sequence)) return
+    resolvedCatalogYear.value = String(response?.catalog_year || activeCatalogYear.value || '2026')
     selectedSchool.value = response?.school || selectedSchool.value
     departments.value = response?.departments || []
+    void refreshVisibleFavoriteStatuses()
   } catch (requestError) {
     setRequestError(sequence, requestError)
   } finally {
@@ -680,10 +1011,12 @@ async function loadSearchResults() {
       catalog_year: activeCatalogYear.value
     })
     if (!isCurrentRequest(sequence)) return
+    resolvedCatalogYear.value = String(response?.catalog_year || activeCatalogYear.value || '2026')
     searchResults.value = {
       ...createEmptySearchResults(),
       ...(response || {})
     }
+    void refreshVisibleFavoriteStatuses()
   } catch (requestError) {
     setRequestError(sequence, requestError)
   } finally {
@@ -768,6 +1101,8 @@ async function onCatalogYearPickerChange(event) {
   const option = catalogYearOptions[Number(event.detail.value)] || catalogYearOptions[0]
   if (option.value === activeCatalogYear.value) return
   activeCatalogYear.value = option.value
+  resolvedCatalogYear.value = option.value || '2026'
+  favoriteStatusKeys.value = []
   await resetFilterContext()
 }
 
@@ -847,6 +1182,7 @@ async function selectRegionFromResult(region) {
 async function openSchoolCatalog(school, { preserveKeyword, focusProgramId = '' } = {}) {
   const openedFromSearch = currentView.value === 'search'
   const shouldPreserveKeyword = preserveKeyword ?? openedFromSearch
+  if (!openedFromSearch) schoolReturnScrollTop.value = resultScrollPosition.value
   searchReturnState.value = openedFromSearch ? createSearchReturnState() : null
   selectedRegion.value = { name: school.region }
   selectedSchool.value = { ...school }
@@ -861,7 +1197,12 @@ async function openSchoolCatalog(school, { preserveKeyword, focusProgramId = '' 
   scrollResultsToTop()
   void loadSchoolOptions()
   await loadPrograms()
-  if (!error.value && focusProgramId) expandedProgramId.value = focusProgramId
+  if (!error.value && focusProgramId) {
+    expandedProgramId.value = focusProgramId
+    nextTick(() => {
+      resultScrollIntoView.value = catalogProgramAnchorId(focusProgramId)
+    })
+  }
 }
 
 async function openProgramResult(item) {
@@ -893,12 +1234,37 @@ function exitCatalogToHome() {
   })
 }
 
+function exitCatalogToFavorites() {
+  uni.redirectTo({
+    url: MAJOR_FAVORITES_ROUTE,
+    fail() {
+      uni.reLaunch({ url: MAJOR_FAVORITES_ROUTE })
+    }
+  })
+}
+
+function returnToCatalogFavorites() {
+  if (!canNavigateBackFromCatalog()) {
+    exitCatalogToFavorites()
+    return
+  }
+  uni.navigateBack({
+    delta: 1,
+    fail: exitCatalogToFavorites
+  })
+}
+
 function canNavigateBackFromCatalog() {
   if (typeof getCurrentPages !== 'function') return false
   return getCurrentPages().length > 1
 }
 
 async function goBack() {
+  if (catalogRouteSource.value === 'favorites') {
+    returnToCatalogFavorites()
+    return
+  }
+
   if (currentView.value === 'programs') {
     if (restoreSearchReturnState()) return
     selectedSchool.value = null
@@ -910,6 +1276,7 @@ async function goBack() {
       departments.value = []
       scrollResultsToTop()
       await loadSchools()
+      restoreResultsScrollPosition(schoolReturnScrollTop.value)
       return
     }
   }
@@ -1440,6 +1807,65 @@ function getExamLabel(code) {
   flex: 1;
 }
 
+.catalog-school-main {
+  align-self: center;
+}
+
+.catalog-school-actions {
+  display: flex;
+  min-width: 86rpx;
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-self: stretch;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 10rpx;
+}
+
+.catalog-search-program-actions {
+  min-width: 72rpx;
+  flex: 0 0 72rpx;
+  align-self: stretch;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 8rpx;
+}
+
+.catalog-favorite-button {
+  display: flex;
+  width: 54rpx;
+  height: 54rpx;
+  min-width: 54rpx;
+  min-height: 54rpx;
+  align-items: center;
+  justify-content: center;
+  margin: 0;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: transparent;
+  box-shadow: none;
+  line-height: 1;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.catalog-favorite-button::after {
+  border: 0;
+}
+
+.catalog-favorite-button.pending {
+  opacity: 0.52;
+  pointer-events: none;
+}
+
+.catalog-favorite-icon {
+  display: block;
+  width: 30rpx;
+  height: 30rpx;
+}
+
 .catalog-school-region,
 .catalog-school-summary-eyebrow {
   color: var(--gyt-primary);
@@ -1533,6 +1959,7 @@ function getExamLabel(code) {
 
 .catalog-search-program-card {
   width: 100%;
+  box-sizing: border-box;
   padding: 17rpx;
   border-bottom: 1rpx solid #e8edf3;
   border-radius: 0;
@@ -1541,9 +1968,18 @@ function getExamLabel(code) {
 .catalog-search-program-head,
 .catalog-program-head {
   display: flex;
-  align-items: flex-start;
+  align-items: stretch;
   justify-content: space-between;
   gap: 16rpx;
+}
+
+.catalog-program-title-row {
+  display: flex;
+  min-width: 0;
+  max-width: 100%;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 7rpx 10rpx;
 }
 
 .catalog-search-program-name,
@@ -1552,6 +1988,19 @@ function getExamLabel(code) {
   font-size: 23rpx;
   line-height: 1.36;
   font-weight: 900;
+}
+
+.catalog-program-title-row .catalog-program-name {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.catalog-exam-tag-row.is-program-title {
+  display: inline-flex;
+  flex: 0 0 auto;
+  margin-top: 0;
 }
 
 .catalog-search-program-code,
@@ -1646,6 +2095,7 @@ function getExamLabel(code) {
 
 .catalog-program-card {
   width: 100%;
+  box-sizing: border-box;
   padding: 17rpx;
   border-bottom: 1rpx solid #e8edf3;
   border-radius: 0;
@@ -1669,12 +2119,8 @@ function getExamLabel(code) {
   flex: 0 0 auto;
   flex-direction: column;
   align-items: flex-end;
-  gap: 8rpx;
-}
-
-.catalog-exam-tag-row.is-program {
-  justify-content: flex-end;
-  margin-top: 0;
+  justify-content: space-between;
+  gap: 10rpx;
 }
 
 .catalog-expand-mark {

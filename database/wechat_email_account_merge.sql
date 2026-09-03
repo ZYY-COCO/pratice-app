@@ -88,6 +88,46 @@ begin
 
   delete from public.favorite_questions where user_id = p_source_user_id;
 
+  -- 专业目录收藏按年份、类型和目录目标合并；保留更新较新的展示快照。
+  if to_regclass('public.major_catalog_favorites') is not null then
+    execute $sql$
+      insert into public.major_catalog_favorites (
+        user_id,
+        catalog_year,
+        target_type,
+        target_id,
+        school_id,
+        snapshot,
+        created_at,
+        updated_at
+      )
+      select
+        $1,
+        catalog_year,
+        target_type,
+        target_id,
+        school_id,
+        snapshot,
+        created_at,
+        updated_at
+      from public.major_catalog_favorites
+      where user_id = $2
+      on conflict (user_id, catalog_year, target_type, target_id) do update
+      set school_id = case
+            when excluded.updated_at >= major_catalog_favorites.updated_at then excluded.school_id
+            else major_catalog_favorites.school_id
+          end,
+          snapshot = case
+            when excluded.updated_at >= major_catalog_favorites.updated_at then excluded.snapshot
+            else major_catalog_favorites.snapshot
+          end,
+          created_at = least(major_catalog_favorites.created_at, excluded.created_at),
+          updated_at = greatest(major_catalog_favorites.updated_at, excluded.updated_at)
+    $sql$ using p_target_user_id, p_source_user_id;
+    execute 'delete from public.major_catalog_favorites where user_id = $1'
+      using p_source_user_id;
+  end if;
+
   -- 能力统计按同一考点累计并重新计算正确率。
   insert into public.ability_stats (
     user_id,

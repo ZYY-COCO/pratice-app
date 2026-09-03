@@ -374,6 +374,13 @@
           }
         },
         {
+          "path": "major-favorites/index",
+          "style": {
+            "navigationBarTitleText": "院校专业收藏",
+            "navigationStyle": "custom"
+          }
+        },
+        {
           "path": "school-announcements/index",
           "style": {
             "navigationBarTitleText": "院校公告",

@@ -8,7 +8,7 @@ import json
 import re
 from functools import lru_cache
 from pathlib import Path
-from typing import Any, Callable, Iterable, Iterator
+from typing import Any, Callable, Iterable, Iterator, Literal
 
 from app.db import get_supabase_admin
 from app.services.supabase_resilience import is_missing_supabase_relation_error
@@ -1171,3 +1171,230 @@ def get_school_programs(
                 catalog_year=catalog_year,
             )
         raise
+
+
+MajorCatalogFavoriteTargetType = Literal["school", "program"]
+MajorCatalogFavoriteTargetKey = tuple[str, MajorCatalogFavoriteTargetType, str]
+
+
+def _fetch_catalog_rows_by_ids(
+    *,
+    supabase: Any,
+    table_name: str,
+    fields: str,
+    sync_run_id: str,
+    row_ids: Iterable[str],
+) -> list[dict[str, Any]]:
+    """Fetch a bounded set of catalogue rows without relying on PostgREST's row cap."""
+
+    normalized_ids = list(dict.fromkeys(str(row_id or "").strip() for row_id in row_ids if str(row_id or "").strip()))
+    rows: list[dict[str, Any]] = []
+    for start in range(0, len(normalized_ids), 150):
+        batch_ids = normalized_ids[start : start + 150]
+        rows.extend(
+            _fetch_all(
+                lambda batch_ids=batch_ids: (
+                    supabase.table(table_name)
+                    .select(fields)
+                    .eq("sync_run_id", sync_run_id)
+                    .in_("id", batch_ids)
+                )
+            )
+        )
+    return rows
+
+
+def _school_favorite_snapshot(
+    school: dict[str, Any],
+    *,
+    catalog_year: str,
+) -> dict[str, Any]:
+    return {
+        "catalog_year": catalog_year,
+        "target_type": "school",
+        "school_id": str(school.get("id") or ""),
+        "school_name": str(school.get("name") or ""),
+        "region": _display_region_name(catalog_year, str(school.get("region_name") or school.get("region") or "")),
+        "department_count": int(school.get("department_count") or 0),
+        "program_count": int(school.get("program_count") or 0),
+        "exam_codes": _ordered_exam_codes(school.get("exam_codes") or []),
+    }
+
+
+def _program_favorite_snapshot(
+    program: dict[str, Any],
+    *,
+    school: dict[str, Any],
+    department_name: str,
+    catalog_year: str,
+) -> dict[str, Any]:
+    return {
+        "catalog_year": catalog_year,
+        "target_type": "program",
+        "school_id": str(school.get("id") or program.get("school_id") or ""),
+        "school_name": str(school.get("name") or ""),
+        "region": _display_region_name(catalog_year, str(school.get("region_name") or school.get("region") or "")),
+        "department_id": str(program.get("department_id") or ""),
+        "department_name": department_name or "未区分院系所",
+        "program_id": str(program.get("id") or ""),
+        "program_name": str(program.get("name") or ""),
+        "program_code": str(program.get("code") or ""),
+        "exam_codes": _ordered_exam_codes(program.get("exam_codes") or []),
+        "degree_options": list(program.get("degree_options") or []),
+        "study_mode_options": list(program.get("study_mode_options") or []),
+        "direction_count": int(program.get("direction_count") or 0),
+    }
+
+
+def _resolve_major_catalog_favorite_targets_from_database(
+    catalog_year: str,
+    references: list[tuple[MajorCatalogFavoriteTargetType, str]],
+) -> dict[MajorCatalogFavoriteTargetKey, dict[str, Any]]:
+    current_import = _current_import(catalog_year)
+    sync_run_id = str(current_import.get("id") or "")
+    visible_year = _response_catalog_year(catalog_year, current_import.get("source_statistics"))
+    supabase = _get_supabase()
+
+    school_target_ids = [target_id for target_type, target_id in references if target_type == "school"]
+    program_target_ids = [target_id for target_type, target_id in references if target_type == "program"]
+    programs = _fetch_catalog_rows_by_ids(
+        supabase=supabase,
+        table_name="major_catalog_programs",
+        fields=(
+            "id,school_id,department_id,name,code,exam_codes,degree_options,"
+            "study_mode_options,direction_count"
+        ),
+        sync_run_id=sync_run_id,
+        row_ids=program_target_ids,
+    )
+    school_ids = [*school_target_ids, *(str(program.get("school_id") or "") for program in programs)]
+    schools = _fetch_catalog_rows_by_ids(
+        supabase=supabase,
+        table_name="major_catalog_schools",
+        fields="id,region_name,name,exam_codes,department_count,program_count",
+        sync_run_id=sync_run_id,
+        row_ids=school_ids,
+    )
+    departments = _fetch_catalog_rows_by_ids(
+        supabase=supabase,
+        table_name="major_catalog_departments",
+        fields="id,name",
+        sync_run_id=sync_run_id,
+        row_ids=(str(program.get("department_id") or "") for program in programs),
+    )
+    schools_by_id = {str(school.get("id") or ""): school for school in schools if school.get("id")}
+    departments_by_id = {
+        str(department.get("id") or ""): str(department.get("name") or "")
+        for department in departments
+        if department.get("id")
+    }
+
+    resolved: dict[MajorCatalogFavoriteTargetKey, dict[str, Any]] = {}
+    for target_type, target_id in references:
+        if target_type != "school" or target_id not in schools_by_id:
+            continue
+        resolved[(catalog_year, target_type, target_id)] = _school_favorite_snapshot(
+            schools_by_id[target_id],
+            catalog_year=visible_year,
+        )
+    for program in programs:
+        program_id = str(program.get("id") or "")
+        school = schools_by_id.get(str(program.get("school_id") or ""))
+        if not program_id or school is None:
+            continue
+        resolved[(catalog_year, "program", program_id)] = _program_favorite_snapshot(
+            program,
+            school=school,
+            department_name=departments_by_id.get(str(program.get("department_id") or ""), ""),
+            catalog_year=visible_year,
+        )
+    return resolved
+
+
+def _resolve_major_catalog_favorite_targets_from_file(
+    catalog_year: str,
+    references: list[tuple[MajorCatalogFavoriteTargetType, str]],
+) -> dict[MajorCatalogFavoriteTargetKey, dict[str, Any]]:
+    catalog = get_major_catalog()
+    schools = _catalog_schools(catalog)
+    # The empty catalogue filter and explicit 2026 both represent the complete
+    # current baseline. Historical years retain their published year filter.
+    allowed_school_ids = None if catalog_year == "2026" else _catalog_year_school_ids(catalog_year)
+    wanted_school_ids = {target_id for target_type, target_id in references if target_type == "school"}
+    wanted_program_ids = {target_id for target_type, target_id in references if target_type == "program"}
+    resolved: dict[MajorCatalogFavoriteTargetKey, dict[str, Any]] = {}
+    for school_id, school in schools.items():
+        if allowed_school_ids is not None and school_id not in allowed_school_ids:
+            continue
+        if school_id in wanted_school_ids:
+            school_summary = _file_school_summary(school)
+            resolved[(catalog_year, "school", school_id)] = _school_favorite_snapshot(
+                school_summary,
+                catalog_year=catalog_year,
+            )
+        if not wanted_program_ids:
+            continue
+        school_summary = _file_school_summary(school)
+        for department in school.get("departments") or []:
+            department_name = str(department.get("name") or "未区分院系所")
+            for program in department.get("programs") or []:
+                program_id = str(program.get("id") or "")
+                if program_id not in wanted_program_ids:
+                    continue
+                resolved[(catalog_year, "program", program_id)] = _program_favorite_snapshot(
+                    program,
+                    school=school_summary,
+                    department_name=department_name,
+                    catalog_year=catalog_year,
+                )
+    return resolved
+
+
+def resolve_major_catalog_favorite_targets(
+    references: Iterable[dict[str, str]],
+) -> dict[MajorCatalogFavoriteTargetKey, dict[str, Any]]:
+    """Resolve catalogue favorite identities and server-owned display snapshots.
+
+    References are grouped by their explicit catalogue year so a 2025 target
+    can never accidentally resolve against the comprehensive 2026 directory.
+    Missing targets are omitted; catalogue availability errors are preserved for
+    the API layer to distinguish from a genuine not-found result.
+    """
+
+    grouped: dict[str, list[tuple[MajorCatalogFavoriteTargetType, str]]] = defaultdict(list)
+    for reference in references:
+        catalog_year = normalize_catalog_year(reference.get("catalog_year"))
+        target_type = str(reference.get("target_type") or "").strip()
+        target_id = str(reference.get("target_id") or "").strip()
+        if catalog_year in {"", "__invalid__"}:
+            raise ValueError("catalog_year must be an explicit four-digit year")
+        if target_type not in {"school", "program"}:
+            raise ValueError("target_type must be school or program")
+        if not target_id:
+            raise ValueError("target_id is required")
+        grouped[catalog_year].append((target_type, target_id))  # type: ignore[arg-type]
+
+    resolved: dict[MajorCatalogFavoriteTargetKey, dict[str, Any]] = {}
+    for catalog_year, year_references in grouped.items():
+        unique_references = list(dict.fromkeys(year_references))
+        try:
+            resolved.update(
+                _resolve_major_catalog_favorite_targets_from_database(catalog_year, unique_references)
+            )
+        except MajorCatalogDatabaseUnavailableError as error:
+            if not _can_use_catalog_file_fallback(error):
+                raise
+            resolved.update(_resolve_major_catalog_favorite_targets_from_file(catalog_year, unique_references))
+    return resolved
+
+
+def resolve_major_catalog_favorite_target(
+    *,
+    catalog_year: str,
+    target_type: MajorCatalogFavoriteTargetType,
+    target_id: str,
+) -> dict[str, Any] | None:
+    key: MajorCatalogFavoriteTargetKey = (catalog_year, target_type, target_id)
+    return resolve_major_catalog_favorite_targets(
+        [{"catalog_year": catalog_year, "target_type": target_type, "target_id": target_id}]
+    ).get(key)

@@ -4208,6 +4208,14 @@ const practiceTools = computed(() => {
       action: 'mistakes',
       locked: proLocked
     },
+    {
+      label: '院校专业收藏',
+      desc: '查看收藏的院校与招生专业',
+      icon: '',
+      iconSrc: '/static/ui-icons/png/original/menu-major-favorite.png',
+      tone: 'blue',
+      action: 'major-favorites'
+    },
   ]
   // #ifndef MP-WEIXIN
   items.push({
@@ -9641,6 +9649,15 @@ function handleMenu(item) {
   }
   if (item.action === 'favorites') {
     uni.navigateTo({ url: '/pages/favorites/index' })
+    return
+  }
+  if (item.action === 'major-favorites') {
+    const destination = '/pages-sub-data/major-favorites/index'
+    if (!isAuthed.value) {
+      uni.navigateTo({ url: `/pages/login/index?redirect=${encodeURIComponent(destination)}` })
+      return
+    }
+    uni.navigateTo({ url: destination })
     return
   }
   if (item.action === 'my-consultations') {
