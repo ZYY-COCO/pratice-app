@@ -9771,6 +9771,7 @@ async function loadWrongQuestions({ reset = true } = {}) {
   wrongError.value = ''
   try {
     const response = await fetchWrongQuestions({
+      exam_code: examCode.value,
       limit: 30,
       subject: wrongFilters.value.subject || undefined,
       module: wrongFilters.value.module || undefined,
@@ -10020,7 +10021,7 @@ async function openWrongDetail(item) {
   reviewMastered.value = false
   reviewSubmissionId.value = ''
   try {
-    selectedWrongDetail.value = await fetchWrongQuestionDetail(item.id)
+    selectedWrongDetail.value = await fetchWrongQuestionDetail(item.id, { exam_code: examCode.value })
     reviewSubmissionId.value = createAnswerSubmissionId(getDetailQuestionId(selectedWrongDetail.value), 'review')
   } catch (error) {
     uni.showToast({ title: getSafeError(error, '错题详情读取失败'), icon: 'none' })
@@ -10158,7 +10159,7 @@ async function loadRetestQuestion() {
   retestAnswer.value = ''
   retestResultText.value = ''
   try {
-    retestDetail.value = await fetchWrongQuestionDetail(item.id)
+    retestDetail.value = await fetchWrongQuestionDetail(item.id, { exam_code: examCode.value })
   } catch (error) {
     uni.showToast({ title: getSafeError(error, '重测题目读取失败'), icon: 'none' })
   } finally {

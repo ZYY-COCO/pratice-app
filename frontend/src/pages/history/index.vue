@@ -207,6 +207,7 @@ import { buildThemeStyle, getStoredThemeKey } from '../../utils/theme'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const pageInlineStyle = computed(() => [themeInlineStyle, mpLayoutStyle.value].filter(Boolean).join(';'))
+const examCode = ref(uni.getStorageSync('examCode') || 'Z001')
 const filters = [
   { key: 'all', label: '全部' },
   { key: 'correct', label: '答对' },
@@ -277,6 +278,7 @@ const filteredItems = computed(() => {
 
 onShow(() => {
   mpLayoutStyle.value = buildMpPageSafeStyle()
+  examCode.value = uni.getStorageSync('examCode') || 'Z001'
   loadHistory()
 })
 
@@ -291,6 +293,7 @@ async function loadHistory() {
   error.value = ''
   try {
     const response = await fetchAnswerHistory({
+      exam_code: examCode.value,
       status: activeFilter.value,
       limit: 100
     })

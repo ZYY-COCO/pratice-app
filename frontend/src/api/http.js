@@ -139,7 +139,11 @@ function createHttpError(data, statusCode) {
 }
 
 function shouldRetryTransientReadRequest(options, error) {
-  return String(options.method || 'GET').toUpperCase() === 'GET' && error?.retryable === true
+  return (
+    options.retryTransientRead !== false &&
+    String(options.method || 'GET').toUpperCase() === 'GET' &&
+    error?.retryable === true
+  )
 }
 
 function wait(milliseconds) {

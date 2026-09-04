@@ -14,9 +14,10 @@ export function fetchWrongQuestions(params = {}) {
   })
 }
 
-export function fetchWrongQuestionDetail(questionId) {
+export function fetchWrongQuestionDetail(questionId, params = {}) {
+  const query = buildQuery(params)
   return request({
-    url: `/wrong-questions/${encodeURIComponent(questionId)}`
+    url: `/wrong-questions/${encodeURIComponent(questionId)}${query ? `?${query}` : ''}`
   })
 }
 

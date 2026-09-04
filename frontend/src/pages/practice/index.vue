@@ -12,7 +12,7 @@
       :class="{ 'scope-top-nav': usesScopeHeader }"
       :style="usesScopeHeader ? scopeHeaderStyle : undefined"
     >
-      <button class="back-btn" @tap="goBack">
+      <button class="back-btn" :disabled="practiceFlowLocked" @tap="goBack">
         <image class="back-icon" src="/static/ui-icons/png/original/back.png" mode="aspectFit" />
       </button>
       <view class="top-copy" :class="{ 'scope-top-copy': usesScopeHeader }">
@@ -128,14 +128,38 @@
           </button>
           <button
             class="sticky-btn start-sticky-btn"
-            :disabled="loading"
+            :disabled="loading || quizStartInProgress"
             hover-class="sticky-btn--pressed"
             :hover-stay-time="60"
             @tap="startQuiz"
           >
-            <text class="start-sticky-label">{{ loading ? '加载中...' : startButtonText }}</text>
+            <text class="start-sticky-label">{{ quizStartBackgrounded ? '后台准备中...' : (loading || quizStartInProgress ? '加载中...' : startButtonText) }}</text>
           </button>
         </view>
+      </view>
+
+      <view v-if="practiceMode === 'special'" class="adaptive-preference-card">
+        <view class="adaptive-preference-head">
+          <view>
+            <view class="adaptive-preference-title">练习节奏</view>
+            <view class="adaptive-preference-sub">只影响本轮题目节奏，不会改变系统对你能力的判断。</view>
+          </view>
+          <view class="adaptive-preference-badge">智能出题</view>
+        </view>
+        <view class="adaptive-preference-options">
+          <button
+            v-for="item in adaptivePreferenceOptions"
+            :key="item.value"
+            class="adaptive-preference-option"
+            :class="{ active: adaptivePreference === item.value }"
+            hover-class="none"
+            @tap="selectAdaptivePreference(item.value)"
+          >
+            <text class="adaptive-preference-option-title">{{ item.label }}</text>
+            <text class="adaptive-preference-option-sub">{{ item.description }}</text>
+          </button>
+        </view>
+        <view class="adaptive-preference-tip">能力按 {{ examCode }} / {{ subject }} 独立计算；首次练习会自动进入 8 题智能热身。</view>
       </view>
     </template>
 
@@ -187,9 +211,9 @@
           <view class="result-overview-main">
             <view class="summary-card-copy">
               <view class="summary-kicker">{{ summaryKicker }}</view>
-              <view class="summary-score" :aria-label="mockExamMode ? `${mockExamScore} 分，共 ${mockExamTotalScore} 分` : `答对 ${correctCount} 题，共 ${reviewResults.length} 题`">
+              <view class="summary-score" :aria-label="mockExamMode ? `${mockExamScore} 分，共 ${mockExamTotalScore} 分` : `答对 ${correctCount} 题，共 ${summaryQuestionCount} 题`">
                 <text class="summary-score-main">{{ mockExamMode ? mockExamScore : correctCount }}</text>
-                <text class="summary-score-total">/ {{ mockExamMode ? mockExamTotalScore : reviewResults.length }}</text>
+                <text class="summary-score-total">/ {{ mockExamMode ? mockExamTotalScore : summaryQuestionCount }}</text>
               </view>
             </view>
             <view class="summary-stat-stack" aria-label="本轮练习统计">
@@ -219,6 +243,17 @@
               </view>
             </view>
           </view>
+        </view>
+
+        <view v-if="adaptivePracticeActive && !mockExamMode" class="adaptive-summary-card">
+          <view class="adaptive-summary-head">
+            <view>
+              <view class="adaptive-summary-eyebrow">{{ adaptiveWarmupCompleted ? '智能热身定位' : '本轮个性化反馈' }}</view>
+              <view class="adaptive-summary-level">{{ adaptiveSummaryLevel }}</view>
+            </view>
+            <view class="adaptive-summary-confidence">{{ adaptiveSummaryConfidence }}</view>
+          </view>
+          <view class="adaptive-summary-copy">{{ adaptiveSummaryDescription }}</view>
         </view>
 
         <view v-if="mockExamMode" class="mock-section-card">
@@ -260,18 +295,18 @@
             mode="aspectFit"
             aria-hidden="true"
           />
-          <text>建议先查看错题解析，弄清错误原因后再练一组。</text>
+          <text>{{ summaryAdviceText }}</text>
         </view>
 
         <view class="summary-actions result-summary-actions">
-          <button class="summary-action-primary" @tap="openFirstReviewQuestion">
+          <button class="summary-action-primary" :disabled="loading || quizStartInProgress" @tap="openFirstReviewQuestion">
             <text>查看错题解析</text>
             <text class="summary-action-arrow" aria-hidden="true">→</text>
           </button>
-          <button class="summary-action-secondary" @tap="retryPractice">
-            <text>再练一组</text>
+          <button class="summary-action-secondary" :disabled="loading || quizStartInProgress" @tap="retryPractice">
+            <text>{{ loading || quizStartInProgress ? '正在准备...' : '再练一组' }}</text>
           </button>
-          <button class="summary-action-secondary" @tap="handleSummaryBack">
+          <button class="summary-action-secondary" :disabled="loading || quizStartInProgress" @tap="handleSummaryBack">
             <text>{{ mockExamMode ? '返回模拟卷' : '返回刷题范围' }}</text>
           </button>
         </view>
@@ -339,16 +374,16 @@
       <view v-else class="state-box warning">{{ currentQuestionIssueText }}</view>
 
       <view v-if="currentQuestionHasBlockingIssue" class="primary-action-row">
-        <button class="prev-btn" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
-        <button class="submit-btn" @tap="handleInvalidQuestionNext">
-          {{ hasNextQuestion ? '跳过异常题' : '结束本轮' }}
+        <button class="prev-btn" :disabled="!hasPrevQuestion || practiceMutationLocked" @tap="goPrevQuestion">上一题</button>
+        <button class="submit-btn" :disabled="practiceMutationLocked" @tap="handleInvalidQuestionNext">
+          {{ canAdvanceQuestion ? '跳过异常题' : '结束本轮' }}
         </button>
       </view>
       <view v-else-if="!reviewMode && !submitted" class="primary-action-row">
-        <button class="prev-btn" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
+        <button class="prev-btn" :disabled="!hasPrevQuestion || practiceMutationLocked" @tap="goPrevQuestion">上一题</button>
         <button
           class="submit-btn"
-          :disabled="!selectedOption || submitting || markingUnfamiliar || currentQuestionHasBlockingIssue"
+          :disabled="!selectedOption || practiceMutationLocked || currentQuestionHasBlockingIssue"
           hover-class="submit-btn--pressed"
           :hover-stay-time="80"
           @tap="handlePrimaryAction"
@@ -359,17 +394,30 @@
       <button
         v-if="showUnfamiliarShortcut"
         class="unfamiliar-btn"
-        :disabled="markingUnfamiliar"
+        :disabled="practiceMutationLocked"
         @tap="markCurrentUnfamiliarAndNext"
       >
-        {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习' }}
+          {{ adaptiveNavigationQueued ? '保存后自动继续' : (markingUnfamiliar ? '正在加入复习...' : '不熟悉，加入复习') }}
       </button>
 
       <view v-if="submitted && !reviewMode" class="action-row">
         <view class="review-nav-row">
-          <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
-          <button v-if="hasNextQuestion" class="next-btn" @tap="goNextQuestion">下一题</button>
-          <button v-else class="next-btn done" @tap="finishQuiz">{{ isAiTrainingMode ? '查看 AI 总结' : '完成本轮' }}</button>
+          <button
+            class="next-btn secondary"
+            :disabled="!hasPrevQuestion || practiceMutationLocked"
+            @tap="goPrevQuestion"
+          >上一题</button>
+          <button
+            v-if="canAdvanceQuestion"
+            class="next-btn"
+            :disabled="adaptiveForwardNavigationLocked"
+            @tap="goNextQuestion"
+          >
+            {{ adaptiveNavigationQueued ? (adaptiveAnswerSyncing ? '保存后自动继续' : '匹配后自动继续') : (adaptiveAnswerSyncing ? '同步中，点此继续' : (adaptiveNextLoading ? '正在匹配...' : (adaptiveNextPrefetching ? '后台匹配中，可继续' : '下一题'))) }}
+          </button>
+          <button v-else class="next-btn done" :disabled="adaptiveForwardNavigationLocked" @tap="finishQuiz">
+            {{ adaptiveNavigationQueued ? '保存后自动完成' : (adaptiveNextLoading ? '正在同步...' : (adaptiveAnswerSyncing ? '同步中，点此完成' : (isAiTrainingMode ? '查看 AI 总结' : '完成本轮'))) }}
+          </button>
         </view>
       </view>
 
@@ -377,12 +425,16 @@
         <button
           v-if="showUnfamiliarAfterCorrect"
           class="unfamiliar-btn post-submit-unfamiliar-btn"
-          :disabled="markingUnfamiliar"
+          :disabled="practiceMutationLocked"
           @tap="markCurrentUnfamiliarAndNext"
         >
-          {{ markingUnfamiliar ? '正在加入复习...' : '不熟悉' }}
+          {{ adaptiveNavigationQueued ? '保存后自动继续' : (markingUnfamiliar ? '正在加入复习...' : '不熟悉') }}
         </button>
-        <button class="explanation-toggle-btn" @tap="toggleExplanation">
+        <button
+          class="explanation-toggle-btn"
+          :disabled="questionNavigationLocked"
+          @tap="toggleExplanation"
+        >
           {{ explanationToggleText }}
         </button>
       </view>
@@ -397,8 +449,8 @@
 
       <view v-if="reviewMode" class="action-row">
         <view class="review-nav-row">
-          <button class="next-btn secondary" :disabled="!hasPrevQuestion" @tap="goPrevQuestion">上一题</button>
-          <button class="next-btn" :disabled="!hasNextQuestion" @tap="goNextQuestion">下一题</button>
+          <button class="next-btn secondary" :disabled="!hasPrevQuestion || questionNavigationLocked" @tap="goPrevQuestion">上一题</button>
+          <button class="next-btn" :disabled="!hasNextQuestion || questionNavigationLocked" @tap="goNextQuestion">下一题</button>
         </view>
         <button class="next-btn outline" @tap="isAiTrainingMode ? showAiSummary() : showSummary()">
           {{ isAiTrainingMode ? '返回 AI 总结' : '查看结果总览' }}
@@ -505,6 +557,13 @@
 import { computed, nextTick, ref, watch } from 'vue'
 import { buildThemeStyle, getStoredThemeKey, getThemePreset } from '../../utils/theme'
 import { onBackPress, onHide, onLoad, onPageScroll, onShow, onUnload } from '@dcloudio/uni-app'
+import {
+  completeAdaptivePracticeSession,
+  createAdaptivePracticeSession,
+  fetchNextAdaptivePracticeItem,
+  recordAdaptivePracticeItemEvent,
+  submitAdaptiveComprehensivePracticeSession
+} from '../../api/adaptivePractice'
 import { fetchAiTrainingSession, fetchAiTrainingSummary } from '../../api/ai'
 import { fetchAnswerHistory, markQuestionUnfamiliar } from '../../api/answers'
 import { fetchFavoriteStatus, toggleFavorite } from '../../api/favorites'
@@ -521,12 +580,28 @@ import OptionCard from '../../components/OptionCard.vue'
 import QuestionStem from '../../components/QuestionStem.vue'
 import TagAccordion from '../../components/TagAccordion.vue'
 import { getPracticeQuestion, getTagCount } from '../../mock/appMock'
+import { getAuthUser } from '../../utils/auth'
 import { confirmFavoriteRemoval } from '../../utils/favorites'
 import {
   flushPendingAnswerSubmissions,
+  releaseAnswerSubmissionSettlement,
   schedulePendingAnswerFlush,
-  submitAnswerWithReliableSync
+  submitAnswerWithReliableSync,
+  waitForAnswerSubmissionSettlement
 } from '../../utils/answerSubmissionQueue'
+import { createAdaptiveNextRequestBroker } from '../../utils/adaptiveNextRequestBroker'
+import {
+  buildAdaptiveComprehensiveSubmissionPayload,
+  isAdaptiveWarmupSession,
+  mapAdaptiveComprehensiveResults,
+  normalizeAdaptiveComprehensiveItems,
+  summarizeAdaptiveReviewResults
+} from '../../utils/adaptiveComprehensivePractice'
+import {
+  createAdaptiveComprehensiveSubmissionQueue,
+  isAdaptiveComprehensiveCompletedResponse,
+  isAdaptiveComprehensiveTerminalSubmissionError
+} from '../../utils/adaptiveComprehensiveSubmissionQueue'
 import { getThemeIconSrc } from '../../utils/iconAssets'
 import { getSubjectTree } from '../../utils/knowledgeTree'
 import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality'
@@ -534,6 +609,7 @@ import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality
 const MOCK_EXAM_TOTAL_SCORE = 105
 const MOCK_EXAM_TOTAL_COUNT = 55
 const CULTURE_SUBJECT = '中华文化'
+const ADAPTIVE_PREFERENCE_STORAGE_KEY = 'adaptivePracticePreference'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const DEFAULT_CULTURE_PROGRESS = {
   total_questions: 0,
@@ -544,7 +620,15 @@ const DEFAULT_CULTURE_PROGRESS = {
 }
 const ADAPTIVE_HISTORY_MIN_COUNT = 10
 const ADAPTIVE_HISTORY_LIMIT = 100
+const ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS = 1200
+const ADAPTIVE_PREFETCH_STILL_RUNNING = Symbol('adaptive-prefetch-still-running')
+const ADAPTIVE_LEGACY_START_STILL_RUNNING = Symbol('adaptive-legacy-start-still-running')
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5]
+const adaptivePreferenceOptions = [
+  { value: 'steady', label: '稳一点', description: '更多巩固题' },
+  { value: 'standard', label: '标准', description: '难度均衡' },
+  { value: 'challenge', label: '更有挑战', description: '适当提高上限' }
+]
 const MOCK_EXAM_DIFFICULTY_PROFILE = [
   { key: 'basic', label: '基础', ratio: 0.35 },
   { key: 'medium', label: '中等', ratio: 0.5 },
@@ -571,6 +655,23 @@ const practiceMode = ref('special')
 const selectedTags = ref([])
 const questionCountOptions = [5, 10, 15, 20, 25, 30]
 const selectedQuestionSize = ref(10)
+const adaptivePreference = ref(readAdaptivePreference())
+const adaptiveSession = ref(null)
+const adaptiveSummary = ref(null)
+const adaptiveInitialPhase = ref('')
+const adaptiveInitialReliableCount = ref(null)
+const adaptiveNextLoading = ref(false)
+const adaptiveNextPrefetching = ref(false)
+const adaptiveAnswerSyncing = ref(false)
+const adaptiveEventSyncing = ref(false)
+const adaptiveFallbackMode = ref(false)
+const adaptiveLegacyFallbackLoading = ref(false)
+const adaptiveNextExhausted = ref(false)
+const adaptiveNextFinishAvailable = ref(false)
+const adaptiveQueuedNavigation = ref(null)
+const questionNavigationPending = ref(false)
+const quizStartInProgress = ref(false)
+const quizStartBackgrounded = ref(false)
 const aiSessionId = ref('')
 const selectedOption = ref('')
 const submitted = ref(false)
@@ -605,6 +706,7 @@ const questionMeta = ref({
   submodule: ''
 })
 const comprehensiveAnswers = ref({})
+const comprehensiveSkippedQuestions = ref({})
 const reviewMode = ref(false)
 const reviewResults = ref([])
 const instantQuestionResults = ref({})
@@ -625,6 +727,35 @@ let timerId = null
 let activeTimerQuestionKey = ''
 let exitConfirmVisible = false
 let exitNavigationPending = false
+let adaptiveRecordedEvents = new Set()
+let adaptivePendingSubmissionPayloads = new Map()
+let adaptiveAnswerSubmissionTasks = new Map()
+let adaptiveLegacyFallbackTasks = new Map()
+let adaptiveComprehensiveSubmissionSnapshot = null
+let adaptiveFlowGeneration = 0
+let adaptiveNextRequestSequence = 0
+let activeAdaptiveNextRequestToken = 0
+let adaptiveNextLoadingSequence = 0
+let activeAdaptiveNextLoadingToken = 0
+let adaptiveNextPrefetchSequence = 0
+let activeAdaptiveNextPrefetchToken = 0
+let adaptiveAnswerRequestSequence = 0
+let activeAdaptiveAnswerRequestToken = 0
+let adaptiveEventRequestSequence = 0
+let activeAdaptiveEventRequestToken = 0
+let unfamiliarRequestSequence = 0
+let activeUnfamiliarRequestToken = 0
+let questionNavigationSequence = 0
+let activeQuestionNavigationToken = 0
+let quizStartRequestSequence = 0
+let activeQuizStartRequestToken = 0
+const adaptiveClosingSessionIds = new Set()
+const adaptiveNextRequestBroker = createAdaptiveNextRequestBroker()
+const adaptiveComprehensiveSubmissionQueue = createAdaptiveComprehensiveSubmissionQueue({
+  storage: uni,
+  getOwnerId: getCurrentAdaptiveSubmissionOwnerId,
+  submit: submitAdaptiveComprehensivePracticeSession
+})
 
 const subjectTree = computed(() => getSubjectTree(subject.value))
 const openMap = ref(buildOpenMap(subjectTree.value))
@@ -652,11 +783,68 @@ const showQuestionAssistant = computed(() => mode.value !== 'tags' && !summaryMo
 const isCurrentMarkedUnfamiliar = computed(() => Boolean(unfamiliarQuestionMap.value[currentQuestionKey.value]))
 const hasPrevQuestion = computed(() => currentQuestionIndex.value > 0)
 const hasNextQuestion = computed(() => currentQuestionIndex.value < questionPool.value.length - 1)
-const correctCount = computed(() => reviewResults.value.filter((item) => item.isCorrect).length)
-const summaryAccuracy = computed(() => {
-  const total = reviewResults.value.length
-  return total ? Math.round((correctCount.value / total) * 100) : 0
+const adaptivePracticeActive = computed(() => Boolean(adaptiveSession.value?.id) && !adaptiveFallbackMode.value)
+const adaptiveComprehensivePracticeActive = computed(() => (
+  adaptivePracticeActive.value &&
+  practiceMode.value === 'comprehensive' &&
+  String(adaptiveSession.value?.practice_mode || '').toLowerCase() === 'comprehensive'
+))
+const adaptiveQuestionTotal = computed(() => {
+  const total = Number(adaptiveSession.value?.question_count || 0)
+  return total > 0 ? total : questionPool.value.length
 })
+const adaptiveSessionEnded = computed(() => {
+  const status = String(adaptiveSession.value?.status || '').trim().toLowerCase()
+  return ['completed', 'abandoned', 'cancelled'].includes(status)
+})
+const adaptiveMayHaveNext = computed(() =>
+  adaptivePracticeActive.value &&
+  !adaptiveSessionEnded.value &&
+  !adaptiveNextExhausted.value &&
+  questionPool.value.length < adaptiveQuestionTotal.value
+)
+const canAdvanceQuestion = computed(() => (
+  hasNextQuestion.value || adaptiveLegacyFallbackLoading.value || (
+    !adaptiveNextFinishAvailable.value &&
+    (adaptiveMayHaveNext.value || adaptiveNextPrefetching.value)
+  )
+))
+const questionNavigationLocked = computed(() => (
+  submitting.value ||
+  markingUnfamiliar.value ||
+  adaptiveAnswerSyncing.value ||
+  adaptiveNextLoading.value ||
+  adaptiveEventSyncing.value ||
+  questionNavigationPending.value
+))
+const adaptiveForwardNavigationQueueable = computed(() => (
+  submitted.value &&
+  !reviewMode.value &&
+  Boolean(currentQuestion.value?.adaptiveSessionItemId) &&
+  adaptiveAnswerSyncing.value &&
+  !submitting.value &&
+  !markingUnfamiliar.value &&
+  !adaptiveNextLoading.value &&
+  !adaptiveEventSyncing.value &&
+  !questionNavigationPending.value
+))
+const adaptiveForwardNavigationLocked = computed(() => (
+  Boolean(adaptiveQueuedNavigation.value) ||
+  (questionNavigationLocked.value && !adaptiveForwardNavigationQueueable.value)
+))
+const adaptiveNavigationQueued = computed(() => Boolean(adaptiveQueuedNavigation.value))
+const practiceMutationLocked = computed(() => (
+  questionNavigationLocked.value || adaptiveNavigationQueued.value
+))
+const practiceFlowLocked = computed(() => (
+  questionNavigationLocked.value ||
+  loading.value ||
+  (quizStartInProgress.value && !quizStartBackgrounded.value)
+))
+const scoredReviewSummary = computed(() => summarizeAdaptiveReviewResults(reviewResults.value))
+const summaryQuestionCount = computed(() => scoredReviewSummary.value.answeredCount)
+const correctCount = computed(() => scoredReviewSummary.value.correctCount)
+const summaryAccuracy = computed(() => scoredReviewSummary.value.accuracy)
 const summaryElapsedSeconds = computed(() => {
   const recordedSeconds = Object.values(questionElapsedByKey.value || {}).reduce(
     (total, value) => total + Math.max(0, Number(value || 0)),
@@ -671,7 +859,48 @@ const firstReviewIndex = computed(() => {
 })
 const summaryKicker = computed(() => {
   if (mockExamMode.value) return mockExamPaperTitle.value ? `${mockExamPaperTitle.value}成绩` : '模拟测试成绩'
+  if (adaptiveWarmupCompleted.value) return '8 题智能热身结果'
+  if (adaptiveComprehensivePracticeActive.value) return '综合刷题结果'
+  if (adaptivePracticeActive.value) return '个性化专项结果'
   return practiceMode.value === 'comprehensive' ? '综合刷题结果' : '专项刷题结果'
+})
+const adaptiveWarmupCompleted = computed(() => {
+  return isAdaptiveWarmupSession({
+    active: adaptivePracticeActive.value,
+    questionCount: adaptiveQuestionTotal.value,
+    diagnosticStatus: adaptiveInitialPhase.value,
+    reliableFirstAttemptCount: adaptiveInitialReliableCount.value
+  })
+})
+const adaptiveSummaryLevel = computed(() => {
+  const level = String(adaptiveSummary.value?.initial_level_range || '').trim()
+  return level || (adaptiveWarmupCompleted.value ? '初步定位校准中' : '能力画像持续更新中')
+})
+const adaptiveSummaryConfidence = computed(() => {
+  const label = String(adaptiveSummary.value?.confidence_label || '').trim()
+  return label || (adaptiveWarmupCompleted.value ? '初步判断' : '持续校准')
+})
+const adaptiveSummaryDescription = computed(() => {
+  const evidence = Number(adaptiveSummary.value?.effective_evidence || 0)
+  const conflicts = Number(adaptiveSummary.value?.pending_conflicts || 0)
+  if (conflicts > 0) {
+    return `发现 ${conflicts} 组需要复验的表现，后续会穿插同类题确认，不会因一道题直接升降难度。`
+  }
+  if (adaptiveWarmupCompleted.value) {
+    return evidence > 0
+      ? `已积累 ${formatEvidenceAmount(evidence)} 条有效证据；继续练习后，定位会逐步稳定。`
+      : '这是初步起点，继续练习后系统会逐步提高判断置信度。'
+  }
+  return '下一轮仍会保留巩固、主训练和挑战题，并根据本学科表现持续校准。'
+})
+const summaryAdviceText = computed(() => {
+  if (adaptiveWarmupCompleted.value) {
+    return '这只是初步定位。建议先回看错题，再继续完成同学科校准。'
+  }
+  if (adaptivePracticeActive.value) {
+    return '系统已记录本学科表现；回看错题后再练一组，题目会继续随你调整。'
+  }
+  return '建议先查看错题解析，弄清错误原因后再练一组。'
 })
 const aiSummaryTotal = computed(() => aiSummary.value?.total_count ?? (aiReviewResults.value.length || questionPool.value.length || 0))
 const aiSummaryCorrect = computed(() => aiSummary.value?.correct_count ?? aiReviewResults.value.filter((item) => item.isCorrect).length)
@@ -697,6 +926,7 @@ const canMarkCurrentUnfamiliar = computed(() =>
 const showUnfamiliarShortcut = computed(() => canMarkCurrentUnfamiliar.value && !submitted.value)
 const showUnfamiliarAfterCorrect = computed(() =>
   canMarkCurrentUnfamiliar.value &&
+  !currentQuestion.value?.adaptiveSessionItemId &&
   submitted.value &&
   selectedOption.value === correctAnswer.value
 )
@@ -709,6 +939,9 @@ const pageTitle = computed(() => {
   if (mockExamMode.value) {
     return mockExamPaperTitle.value || '模拟测试'
   }
+  if (mode.value === 'quiz' && adaptiveWarmupCompleted.value) {
+    return '8 题智能热身'
+  }
   if (mode.value === 'tags' || mode.value === 'quiz') {
     return subject.value || '专题练习'
   }
@@ -719,6 +952,7 @@ const pageTitle = computed(() => {
 })
 const topSubtitle = computed(() => {
   if (mockExamMode.value) return `${examCode.value} / 55题 · 105分`
+  if (mode.value === 'quiz' && adaptiveWarmupCompleted.value) return `${examCode.value} / ${subject.value}`
   if (mode.value === 'tags' || mode.value === 'quiz') return ''
   return `${examCode.value} / ${subject.value}`
 })
@@ -756,7 +990,8 @@ const cultureReviewButtonText = computed(() => {
 })
 const quizProgressText = computed(() => {
   const prefix = reviewMode.value ? '查看解析' : '当前进度'
-  return `${prefix} ${currentQuestionIndex.value + 1} / ${questionPool.value.length}`
+  const total = adaptivePracticeActive.value ? adaptiveQuestionTotal.value : questionPool.value.length
+  return `${prefix} ${currentQuestionIndex.value + 1} / ${total}`
 })
 const questionHelperText = computed(() => {
   if (mockExamMode.value) {
@@ -831,6 +1066,7 @@ watch(subject, () => {
 
 onLoad((options) => {
   syncAccessToken()
+  resumePendingAdaptiveComprehensiveSubmissions()
   if (options?.mock_paper_id) {
     const nextExamCode = decodeRouteValue(options.exam_code, examCode.value || 'Z001')
     const paperId = decodeRouteValue(options.mock_paper_id)
@@ -900,6 +1136,7 @@ onLoad((options) => {
 onShow(() => {
   syncAccessToken()
   void flushPendingAnswerSubmissions()
+  resumePendingAdaptiveComprehensiveSubmissions()
   loadCultureProgress()
   if (
     mode.value === 'quiz'
@@ -907,6 +1144,7 @@ onShow(() => {
     && !summaryMode.value
     && !aiSummaryMode.value
     && !submitted.value
+    && !questionNavigationLocked.value
     && !timerId
   ) {
     startTimer(questionMeta.value.questionId || currentQuestionKey.value)
@@ -922,8 +1160,25 @@ onPageScroll(({ scrollTop }) => {
 })
 
 onUnload(() => {
+  adaptiveFlowGeneration += 1
+  adaptiveNextRequestBroker.invalidate()
+  adaptiveLegacyFallbackTasks.clear()
+  adaptiveLegacyFallbackLoading.value = false
+  activeAdaptiveNextRequestToken = 0
+  activeAdaptiveNextLoadingToken = 0
+  activeAdaptiveNextPrefetchToken = 0
+  activeAdaptiveAnswerRequestToken = 0
+  activeAdaptiveEventRequestToken = 0
+  activeUnfamiliarRequestToken = 0
+  activeQuestionNavigationToken = 0
+  activeQuizStartRequestToken = 0
+  quizStartInProgress.value = false
+  quizStartBackgrounded.value = false
+  clearAdaptiveAnswerSubmissionTasks()
   clearTimer()
   showGradingFeedback.value = false
+  // Page teardown cannot reliably finish an async session-close request. Keep
+  // the durable answer queue replayable and let the server expire orphaned runs.
 })
 
 onBackPress(() => {
@@ -931,6 +1186,10 @@ onBackPress(() => {
     return true
   }
   if (showGradingFeedback.value) {
+    return true
+  }
+  if (practiceFlowLocked.value) {
+    uni.showToast({ title: adaptiveAnswerSyncing.value ? '本题正在保存，请稍候' : '题目正在加载，请稍候', icon: 'none' })
     return true
   }
   if (isAiTrainingMode.value) {
@@ -963,6 +1222,35 @@ function decodeRouteValue(value, fallback = '') {
     }
   }
   return text
+}
+
+function readAdaptivePreference() {
+  try {
+    const stored = String(uni.getStorageSync(ADAPTIVE_PREFERENCE_STORAGE_KEY) || '').trim()
+    return adaptivePreferenceOptions.some((item) => item.value === stored) ? stored : 'standard'
+  } catch (error) {
+    return 'standard'
+  }
+}
+
+function selectAdaptivePreference(value) {
+  if (loading.value || quizStartInProgress.value) return
+  const normalized = String(value || '').trim()
+  if (!adaptivePreferenceOptions.some((item) => item.value === normalized)) {
+    return
+  }
+  adaptivePreference.value = normalized
+  try {
+    uni.setStorageSync(ADAPTIVE_PREFERENCE_STORAGE_KEY, normalized)
+  } catch (error) {
+    // The selection remains valid for this page even when local storage is unavailable.
+  }
+}
+
+function formatEvidenceAmount(value) {
+  const numeric = Math.max(0, Number(value || 0))
+  const rounded = Math.round(numeric * 10) / 10
+  return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(1)
 }
 
 function readAccessToken() {
@@ -1053,6 +1341,625 @@ function buildApiQuestion(apiQuestion, meta) {
     mockSection: meta.mockSection || '',
     mockSectionKey: meta.mockSectionKey || '',
     pointValue: meta.pointValue || 1
+  }
+}
+
+function getCurrentAdaptiveSubmissionOwnerId() {
+  try {
+    const user = getAuthUser() || {}
+    return String(user.id || user.user_id || user.userId || '').trim()
+  } catch (error) {
+    return ''
+  }
+}
+
+function resumePendingAdaptiveComprehensiveSubmissions() {
+  if (!hasAccessToken.value || !getCurrentAdaptiveSubmissionOwnerId()) return
+  void adaptiveComprehensiveSubmissionQueue.resumeAll().catch(() => {
+    // A failed read or replay keeps the owner-scoped task untouched. The next
+    // page show retries the exact same session and immutable payload.
+  })
+}
+
+function isAdaptiveCreateFallbackError(error) {
+  return [404, 503].includes(Number(error?.statusCode || error?.status || 0))
+}
+
+function isAdaptiveCreateImmediateFallbackError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  if (statusCode === 404) return true
+  if (statusCode !== 503) return false
+  return /ADAPTIVE_(?:MIGRATION_PENDING|DIAGNOSTIC_POOL_UNAVAILABLE|COMPREHENSIVE_POOL_UNAVAILABLE)|个性化出题正在灰度开放|个性化出题数据迁移尚未启用/i.test(
+    adaptiveErrorText(error)
+  )
+}
+
+function adaptiveErrorText(error) {
+  if (typeof error === 'string') return error
+  try {
+    return JSON.stringify(error || '')
+  } catch (serializationError) {
+    return String(error?.code || error?.error || error?.detail || error?.message || '')
+  }
+}
+
+function adaptiveErrorMessage(error, fallback) {
+  const detail = error?.detail
+  if (typeof detail === 'string' && detail.trim()) return detail
+  if (detail && typeof detail === 'object') {
+    const message = detail.message || detail.error || detail.code
+    if (typeof message === 'string' && message.trim()) return message
+  }
+  if (typeof error?.message === 'string' && error.message.trim()) return error.message
+  return fallback
+}
+
+function isAdaptiveUpdatePendingError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  return statusCode === 409 && /ADAPTIVE_UPDATE_PENDING/i.test(adaptiveErrorText(error))
+}
+
+function isAdaptiveComprehensiveSubmissionPendingError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  const detailCode = String(error?.detail?.code || '').trim().toUpperCase()
+  return statusCode === 409 && detailCode === 'ADAPTIVE_COMPREHENSIVE_SUBMISSION_PENDING'
+}
+
+function isAdaptiveNextFallbackError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  if (statusCode === 404) return true
+  if (statusCode !== 503) return false
+  return /ADAPTIVE_(?:MIGRATION_PENDING|DIAGNOSTIC_POOL_UNAVAILABLE)/i.test(adaptiveErrorText(error))
+}
+
+function isAdaptiveSafePoolError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  return statusCode === 503 && /ADAPTIVE_SAFE_POOL_UNAVAILABLE/i.test(adaptiveErrorText(error))
+}
+
+function isAdaptiveCreateRetryableError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  if (isAdaptiveCreateImmediateFallbackError(error)) return false
+  return error?.retryable === true || [408, 429, 502, 503, 504].includes(statusCode)
+}
+
+function captureAdaptiveQuestionContext(question = currentQuestion.value) {
+  return {
+    flowGeneration: adaptiveFlowGeneration,
+    sessionId: String(question?.adaptiveSessionId || adaptiveSession.value?.id || ''),
+    itemId: String(question?.adaptiveSessionItemId || ''),
+    questionKey: String(question?.questionId || question?.id || '')
+  }
+}
+
+function isAdaptiveSessionContextCurrent(context) {
+  if (!context) return true
+  return (
+    context.flowGeneration === adaptiveFlowGeneration &&
+    (!context.sessionId || String(adaptiveSession.value?.id || '') === context.sessionId)
+  )
+}
+
+function isAdaptiveQuestionContextCurrent(context) {
+  if (!isAdaptiveSessionContextCurrent(context)) return false
+  return (
+    String(currentQuestionKey.value || '') === context.questionKey &&
+    String(currentQuestion.value?.adaptiveSessionItemId || '') === context.itemId
+  )
+}
+
+function adaptiveContextsMatch(left, right) {
+  return Boolean(
+    left &&
+    right &&
+    left.flowGeneration === right.flowGeneration &&
+    left.sessionId === right.sessionId &&
+    left.itemId === right.itemId &&
+    left.questionKey === right.questionKey
+  )
+}
+
+function adaptiveAnswerSubmissionTaskKey(context) {
+  if (!context) return ''
+  return [
+    context.flowGeneration,
+    context.sessionId,
+    context.itemId,
+    context.questionKey
+  ].join(':')
+}
+
+function clearAdaptiveAnswerSubmissionTasks() {
+  for (const task of adaptiveAnswerSubmissionTasks.values()) {
+    releaseAnswerSubmissionSettlement(task.submissionId)
+  }
+  adaptiveAnswerSubmissionTasks.clear()
+}
+
+function adaptiveSubmissionBarrierSatisfied(result) {
+  const adaptive = getAdaptiveSubmissionOutcome(result)
+  return result?.persisted === true && adaptive?.adaptive_updated === true
+}
+
+function isAdaptiveSubmissionRetryableError(error) {
+  const statusCode = Number(error?.statusCode || error?.status || 0)
+  return (
+    isAdaptiveUpdatePendingError(error) ||
+    isAdaptiveComprehensiveSubmissionPendingError(error) ||
+    error?.retryable === true ||
+    [408, 429, 500, 502, 503, 504].includes(statusCode) ||
+    /NETWORK_(?:TIMEOUT|ERROR)/i.test(String(error?.code || ''))
+  )
+}
+
+function rememberAdaptiveAnswerSubmission(
+  context,
+  payload,
+  question,
+  { initialInFlight = false } = {}
+) {
+  const key = adaptiveAnswerSubmissionTaskKey(context)
+  const submissionId = String(payload?.client_submission_id || '')
+  if (!key || !submissionId) return null
+  const existing = adaptiveAnswerSubmissionTasks.get(key)
+  if (existing) return existing
+
+  let markInitialFlowDone = () => {}
+  const initialFlowDonePromise = initialInFlight
+    ? new Promise((resolve) => {
+        markInitialFlowDone = resolve
+      })
+    : Promise.resolve()
+  const task = {
+    submissionId,
+    context: { ...context },
+    payload: { ...payload },
+    question,
+    initialPromise: null,
+    initialFlowDonePromise,
+    markInitialFlowDone,
+    settlementPromise: waitForAnswerSubmissionSettlement(submissionId),
+    readyPromise: null
+  }
+  adaptiveAnswerSubmissionTasks.set(key, task)
+  task.readyPromise = Promise.all([
+    task.settlementPromise,
+    task.initialFlowDonePromise
+  ]).then(async ([outcome]) => {
+    if (adaptiveAnswerSubmissionTasks.get(key) !== task) {
+      return false
+    }
+    if (!isAdaptiveSessionContextCurrent(task.context)) {
+      adaptiveAnswerSubmissionTasks.delete(key)
+      releaseAnswerSubmissionSettlement(task.submissionId)
+      return false
+    }
+    if (outcome?.status === 'terminal') {
+      if (outcome?.result?.persisted === true) {
+        applyAdaptiveSubmissionResult(outcome.result)
+        await switchAdaptiveSessionToLegacy('cancelled', task.context)
+        if (
+          adaptiveAnswerSubmissionTasks.get(key) !== task ||
+          !isAdaptiveSessionContextCurrent(task.context)
+        ) {
+          return false
+        }
+        adaptivePendingSubmissionPayloads.delete(task.context.itemId)
+        if (isAdaptiveQuestionContextCurrent(task.context)) {
+          drainAdaptiveNavigationIntent(task.context)
+        }
+        adaptiveAnswerSubmissionTasks.delete(key)
+        releaseAnswerSubmissionSettlement(task.submissionId)
+        return true
+      }
+      adaptivePendingSubmissionPayloads.set(task.context.itemId, { ...task.payload })
+      clearAdaptiveNavigationIntent(task.context)
+      if (isAdaptiveQuestionContextCurrent(task.context)) {
+        resultTag.value = '作答已判分，但保存没有完成，请退出本轮后重试。'
+        uni.showToast({ title: '本题保存未完成，不会跳过这道题', icon: 'none' })
+      }
+      return false
+    }
+
+    const result = outcome?.result
+    applyAdaptiveSubmissionResult(result)
+    if (outcome?.status === 'migration') {
+      await switchAdaptiveSessionToLegacy('cancelled', task.context)
+    } else if (!adaptiveSubmissionBarrierSatisfied(result)) {
+      return false
+    }
+    if (
+      adaptiveAnswerSubmissionTasks.get(key) !== task ||
+      !isAdaptiveSessionContextCurrent(task.context)
+    ) {
+      return false
+    }
+
+    adaptivePendingSubmissionPayloads.delete(task.context.itemId)
+    if (result?.correct_answer) {
+      applyResponsiveAnswerFeedback({
+        question: task.question,
+        questionKey: task.context.questionKey,
+        selectedAnswer: task.payload.selected_answer,
+        correctAnswer: result.correct_answer,
+        explanation: result.explanation,
+        isCorrect: result.is_correct,
+        addedToWrongQuestions: result.added_to_wrong_questions,
+        persisted: true,
+        nextAbilityAccuracy: result.ability_accuracy ?? null
+      })
+    }
+    if (isAdaptiveQuestionContextCurrent(task.context)) {
+      void prefetchNextAdaptiveQuestion(task.question, task.context)
+      drainAdaptiveNavigationIntent(task.context)
+    }
+    adaptiveAnswerSubmissionTasks.delete(key)
+    releaseAnswerSubmissionSettlement(task.submissionId)
+    return true
+  })
+  void task.readyPromise.catch(() => {})
+  return task
+}
+
+function queueAdaptiveNavigationIntent(action) {
+  if (!adaptiveForwardNavigationQueueable.value) return false
+  const context = captureAdaptiveQuestionContext()
+  if (adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, context)) return true
+  setAdaptiveNavigationIntent(action, context, { ready: true })
+  return true
+}
+
+function setAdaptiveNavigationIntent(action, context, { ready = false } = {}) {
+  adaptiveQueuedNavigation.value = { action, context: { ...context }, ready }
+}
+
+function clearAdaptiveNavigationIntent(context) {
+  if (!adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, context)) return false
+  adaptiveQueuedNavigation.value = null
+  return true
+}
+
+function drainAdaptiveNavigationIntent(context) {
+  const queued = adaptiveQueuedNavigation.value
+  if (!queued || !adaptiveContextsMatch(queued.context, context)) return false
+  if (!isAdaptiveQuestionContextCurrent(context)) {
+    adaptiveQueuedNavigation.value = null
+    return false
+  }
+  const fallbackTask = getAdaptiveLegacyFallbackTask(context)
+  if (fallbackTask && !fallbackTask.settled) {
+    adaptiveQueuedNavigation.value = { ...queued, ready: false }
+    return false
+  }
+  if (questionNavigationLocked.value) {
+    adaptiveQueuedNavigation.value = { ...queued, ready: true }
+    return false
+  }
+  adaptiveQueuedNavigation.value = null
+  if (queued.action === 'finish') {
+    if (practiceMode.value === 'comprehensive' && !mockExamMode.value && !reviewMode.value) {
+      void submitComprehensiveAnswers()
+    } else {
+      void finishQuiz()
+    }
+    return true
+  }
+  if (hasNextQuestion.value) {
+    void goNextQuestion()
+  } else if (adaptiveNextExhausted.value || adaptiveNextFinishAvailable.value) {
+    // The background observer drains before its prefetch flag is cleared. Give
+    // the terminal result priority so that a stale "prefetching" bit cannot
+    // consume the learner's tap and leave them needing to tap Finish again.
+    void finishQuiz()
+  } else if (canAdvanceQuestion.value) {
+    void goNextQuestion()
+  } else {
+    void finishQuiz()
+  }
+  return true
+}
+
+function resetAdaptivePracticeState() {
+  adaptiveFlowGeneration += 1
+  adaptiveNextRequestBroker.invalidate()
+  adaptiveLegacyFallbackTasks.clear()
+  activeAdaptiveNextRequestToken = 0
+  activeAdaptiveNextLoadingToken = 0
+  activeAdaptiveNextPrefetchToken = 0
+  activeAdaptiveAnswerRequestToken = 0
+  activeAdaptiveEventRequestToken = 0
+  activeUnfamiliarRequestToken = 0
+  activeQuestionNavigationToken = 0
+  adaptiveSession.value = null
+  adaptiveSummary.value = null
+  adaptiveInitialPhase.value = ''
+  adaptiveInitialReliableCount.value = null
+  adaptiveNextLoading.value = false
+  adaptiveNextPrefetching.value = false
+  adaptiveAnswerSyncing.value = false
+  adaptiveEventSyncing.value = false
+  adaptiveFallbackMode.value = false
+  adaptiveLegacyFallbackLoading.value = false
+  adaptiveNextExhausted.value = false
+  adaptiveNextFinishAvailable.value = false
+  adaptiveQueuedNavigation.value = null
+  questionNavigationPending.value = false
+  adaptiveRecordedEvents = new Set()
+  adaptivePendingSubmissionPayloads = new Map()
+  adaptiveComprehensiveSubmissionSnapshot = null
+  clearAdaptiveAnswerSubmissionTasks()
+  adaptiveAnswerSubmissionTasks = new Map()
+}
+
+function buildAdaptiveQuestion(item) {
+  const apiQuestion = item?.question
+  if (!item?.id || !apiQuestion?.id) {
+    return null
+  }
+  return {
+    ...buildApiQuestion(apiQuestion, {
+      module: apiQuestion.module,
+      submodule: apiQuestion.submodule
+    }),
+    adaptiveSessionId: String(item.session_id || adaptiveSession.value?.id || ''),
+    adaptiveSessionItemId: String(item.id),
+    adaptivePosition: Number(item.position || 0),
+    adaptiveTargetZone: String(item.target_zone || ''),
+    adaptiveReasonCodes: Array.isArray(item.reason_codes) ? item.reason_codes : [],
+    adaptivePredictedCorrectProbability: item.predicted_correct_probability ?? null,
+    adaptiveDiagnostic: item.is_diagnostic === true,
+    adaptiveChallenge: item.is_challenge === true
+  }
+}
+
+function mergeAdaptiveState(state) {
+  if (!state || typeof state !== 'object' || Array.isArray(state)) {
+    return
+  }
+  adaptiveSummary.value = {
+    ...(adaptiveSummary.value || {}),
+    ...state
+  }
+}
+
+function applyAdaptiveEnvelope(response, { captureInitialPhase = false } = {}) {
+  if (response?.session?.id) {
+    adaptiveSession.value = {
+      ...(adaptiveSession.value || {}),
+      ...response.session
+    }
+  }
+  if (response?.state) {
+    mergeAdaptiveState(response.state)
+  }
+  if (captureInitialPhase) {
+    if (!adaptiveInitialPhase.value) {
+      adaptiveInitialPhase.value = String(
+        response?.state?.diagnostic_status || response?.session?.diagnostic_status || ''
+      ).trim().toUpperCase()
+    }
+    if (adaptiveInitialReliableCount.value === null) {
+      const reliableCount = Number(response?.state?.reliable_first_attempt_count)
+      adaptiveInitialReliableCount.value = Number.isFinite(reliableCount) ? reliableCount : null
+    }
+  }
+}
+
+function applyAdaptiveSubmissionResult(result) {
+  const adaptive = result?.adaptive || result?.adaptive_state
+  if (!adaptive || typeof adaptive !== 'object') {
+    return
+  }
+  if (adaptive.state && typeof adaptive.state === 'object') {
+    mergeAdaptiveState(adaptive.state)
+    return
+  }
+  if (
+    adaptive.theta !== undefined ||
+    adaptive.effective_evidence !== undefined ||
+    adaptive.diagnostic_status !== undefined
+  ) {
+    mergeAdaptiveState(adaptive)
+  }
+}
+
+function getAdaptiveSubmissionOutcome(result) {
+  const adaptive = result?.adaptive || result?.adaptive_state
+  return adaptive && typeof adaptive === 'object' ? adaptive : null
+}
+
+function adaptiveSubmissionNeedsRetry(result) {
+  const adaptive = getAdaptiveSubmissionOutcome(result)
+  return (
+    adaptive?.adaptive_updated === false &&
+    (adaptive?.retryable === true || /ADAPTIVE_UPDATE_PENDING/i.test(String(adaptive?.error || '')))
+  )
+}
+
+function adaptiveMigrationPending(result) {
+  return (
+    result?.persisted === true &&
+    getAdaptiveSubmissionOutcome(result)?.migration_pending === true
+  )
+}
+
+async function settleAdaptiveSubmission(
+  result,
+  payload,
+  itemId,
+  { retryOnce = true, context = null } = {}
+) {
+  let finalResult = result
+  const canTouchCurrentFlow = () => isAdaptiveSessionContextCurrent(context)
+  if (adaptiveMigrationPending(finalResult)) {
+    if (canTouchCurrentFlow()) {
+      startAdaptiveLegacyFallbackTask('cancelled', context)
+      adaptivePendingSubmissionPayloads.delete(itemId)
+    }
+    return finalResult
+  }
+
+  if (retryOnce && adaptiveSubmissionNeedsRetry(finalResult)) {
+    try {
+      finalResult = await submitAnswerWithReliableSync(payload, {
+        queueScopeKey: context?.sessionId || adaptiveSession.value?.id
+      })
+    } catch (error) {
+      if (canTouchCurrentFlow()) {
+        adaptivePendingSubmissionPayloads.set(itemId, { ...payload })
+        uni.showToast({ title: '本题已保存，个性化进度同步中，请重试', icon: 'none' })
+      }
+      return result
+    }
+  }
+
+  if (adaptiveMigrationPending(finalResult)) {
+    if (canTouchCurrentFlow()) {
+      startAdaptiveLegacyFallbackTask('cancelled', context)
+      adaptivePendingSubmissionPayloads.delete(itemId)
+    }
+  } else if (adaptiveSubmissionNeedsRetry(finalResult)) {
+    if (canTouchCurrentFlow()) {
+      adaptivePendingSubmissionPayloads.set(itemId, { ...payload })
+      uni.showToast({ title: '本题已保存，个性化进度同步中，请重试', icon: 'none' })
+    }
+  } else if (canTouchCurrentFlow()) {
+    adaptivePendingSubmissionPayloads.delete(itemId)
+  }
+  return finalResult
+}
+
+function continueAdaptiveProgressInBackground(progressRequest, context) {
+  void progressRequest
+    .then((ready) => {
+      if (!isAdaptiveQuestionContextCurrent(context)) {
+        clearAdaptiveNavigationIntent(context)
+        return
+      }
+      if (ready) {
+        drainAdaptiveNavigationIntent(context)
+      } else {
+        clearAdaptiveNavigationIntent(context)
+      }
+    })
+    .catch(() => {
+      clearAdaptiveNavigationIntent(context)
+    })
+}
+
+async function ensureAdaptiveProgressBeforeNext(
+  question,
+  { navigationAction = 'next' } = {}
+) {
+  const itemId = String(question?.adaptiveSessionItemId || '')
+  const payload = adaptivePendingSubmissionPayloads.get(itemId)
+  const context = captureAdaptiveQuestionContext(question)
+  const fallbackTask = getAdaptiveLegacyFallbackTask(context)
+  if (!fallbackTask && (!itemId || !payload)) {
+    return true
+  }
+
+  let progressRequest
+  if (fallbackTask) {
+    progressRequest = fallbackTask.promise.then((outcome) => outcome?.ready === true)
+  } else {
+    const task = rememberAdaptiveAnswerSubmission(context, payload, question)
+    if (!task) return false
+    schedulePendingAnswerFlush(0, { queueScopeKey: context.sessionId })
+    progressRequest = task.readyPromise
+  }
+  const loadingToken = ++adaptiveNextLoadingSequence
+  activeAdaptiveNextLoadingToken = loadingToken
+  adaptiveNextLoading.value = true
+
+  try {
+    const outcome = await Promise.race([
+      progressRequest,
+      new Promise((resolve) => {
+        setTimeout(
+          () => resolve(ADAPTIVE_PREFETCH_STILL_RUNNING),
+          ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS
+        )
+      })
+    ])
+    if (outcome === ADAPTIVE_PREFETCH_STILL_RUNNING) {
+      const action = navigationAction === 'finish' ? 'finish' : 'next'
+      setAdaptiveNavigationIntent(action, context, { ready: false })
+      continueAdaptiveProgressInBackground(progressRequest, context)
+      uni.showToast({
+        title: action === 'finish'
+          ? '个性化进度后台同步，完成后自动展示结果'
+          : '个性化进度后台同步，完成后自动继续',
+        icon: 'none'
+      })
+      return false
+    }
+    return outcome === true
+  } finally {
+    if (activeAdaptiveNextLoadingToken === loadingToken) {
+      activeAdaptiveNextLoadingToken = 0
+      adaptiveNextLoading.value = false
+    }
+  }
+}
+
+async function recordAdaptiveEvent(question, eventType) {
+  const sessionId = String(question?.adaptiveSessionId || adaptiveSession.value?.id || '')
+  const itemId = String(question?.adaptiveSessionItemId || '')
+  if (!sessionId || !itemId || adaptiveFallbackMode.value) {
+    return false
+  }
+  const eventKey = `${sessionId}:${itemId}:${eventType}`
+  if (adaptiveRecordedEvents.has(eventKey)) {
+    return true
+  }
+  adaptiveRecordedEvents.add(eventKey)
+  try {
+    await recordAdaptivePracticeItemEvent(sessionId, itemId, eventType)
+    return true
+  } catch (error) {
+    adaptiveRecordedEvents.delete(eventKey)
+    return false
+  }
+}
+
+async function endAdaptiveSession(reason = 'completed') {
+  const session = adaptiveSession.value
+  const sessionId = String(session?.id || '')
+  const flowGeneration = adaptiveFlowGeneration
+  const currentQuestionSnapshot = currentQuestion.value
+  const status = String(session?.status || '').trim().toLowerCase()
+  if (!sessionId || ['completed', 'abandoned', 'cancelled'].includes(status)) {
+    return null
+  }
+  if (adaptiveClosingSessionIds.has(sessionId)) {
+    return null
+  }
+
+  adaptiveClosingSessionIds.add(sessionId)
+  try {
+    if (reason === 'abandoned' && !submitted.value && !reviewMode.value) {
+      await recordAdaptiveEvent(currentQuestionSnapshot, 'abandoned')
+    }
+    const response = await completeAdaptivePracticeSession(sessionId, reason)
+    if (
+      flowGeneration === adaptiveFlowGeneration &&
+      adaptiveSession.value?.id === sessionId
+    ) {
+      adaptiveSession.value = {
+        ...adaptiveSession.value,
+        status: response?.status || reason
+      }
+      mergeAdaptiveState(response?.state)
+    }
+    return response
+  } catch (error) {
+    if (reason === 'completed') {
+      throw error
+    }
+    return null
+  } finally {
+    adaptiveClosingSessionIds.delete(sessionId)
   }
 }
 
@@ -1367,8 +2274,30 @@ function getAllModuleInfos() {
   )
 }
 
-function getTargetModuleInfos() {
-  return practiceMode.value === 'comprehensive' ? getAllModuleInfos() : getSelectedModuleInfos()
+function getTargetModuleInfos(modeValue = practiceMode.value) {
+  return modeValue === 'comprehensive' ? getAllModuleInfos() : getSelectedModuleInfos()
+}
+
+function capturePracticeStartContext() {
+  const practiceModeSnapshot = practiceMode.value
+  return {
+    examCode: String(examCode.value || ''),
+    subject: String(subject.value || ''),
+    practiceMode: practiceModeSnapshot,
+    questionCount: Number(selectedQuestionSize.value || 0),
+    preference: practiceModeSnapshot === 'special' ? adaptivePreference.value : 'standard'
+  }
+}
+
+function isPracticeStartContextCurrent(context) {
+  if (!context) return false
+  return (
+    String(examCode.value || '') === context.examCode &&
+    String(subject.value || '') === context.subject &&
+    practiceMode.value === context.practiceMode &&
+    Number(selectedQuestionSize.value || 0) === context.questionCount &&
+    (context.practiceMode !== 'special' || adaptivePreference.value === context.preference)
+  )
 }
 
 function getCacheKey(moduleInfos) {
@@ -1389,6 +2318,10 @@ function buildQuery(params) {
 }
 
 function goBack() {
+  if (practiceFlowLocked.value) {
+    uni.showToast({ title: adaptiveAnswerSyncing.value ? '本题正在保存，请稍候' : '题目正在处理，请稍候', icon: 'none' })
+    return
+  }
   if (isAiTrainingMode.value) {
     returnToProfilePage()
     return
@@ -1420,6 +2353,10 @@ function returnToProfilePage() {
 
 function confirmExitPractice() {
   if (exitConfirmVisible || exitNavigationPending) return
+  if (practiceFlowLocked.value) {
+    uni.showToast({ title: adaptiveAnswerSyncing.value ? '本题正在保存，请稍候' : '题目正在处理，请稍候', icon: 'none' })
+    return
+  }
 
   exitConfirmVisible = true
   let shouldExit = false
@@ -1440,12 +2377,14 @@ function confirmExitPractice() {
         setTimeout(returnToMockExamList, 30)
         return
       }
+      adaptiveQueuedNavigation.value = null
       resetToTags()
     }
   })
 }
 
 function switchPracticeMode(value) {
+  if (loading.value || quizStartInProgress.value) return
   practiceMode.value = value
   selectedTags.value = []
   resetQuizState()
@@ -1467,10 +2406,12 @@ function getQuestionScalePosition(count) {
 }
 
 function handleQuestionSizeChange(event) {
+  if (loading.value || quizStartInProgress.value) return
   selectedQuestionSize.value = normalizeQuestionSize(event?.detail?.value)
 }
 
 function toggleOpen(module) {
+  if (loading.value || quizStartInProgress.value) return
   openMap.value = {
     ...openMap.value,
     [module]: !openMap.value[module]
@@ -1478,6 +2419,7 @@ function toggleOpen(module) {
 }
 
 function toggleTag(tag) {
+  if (loading.value || quizStartInProgress.value) return
   if (selectedTags.value.includes(tag)) {
     selectedTags.value = selectedTags.value.filter((item) => item !== tag)
     return
@@ -1486,6 +2428,7 @@ function toggleTag(tag) {
 }
 
 function toggleSection(section) {
+  if (loading.value || quizStartInProgress.value) return
   const submodules = section?.submodules || []
   if (!submodules.length) {
     return
@@ -1534,6 +2477,7 @@ async function fetchAdaptiveHistory() {
   if (!hasAccessToken.value) return []
   try {
     const data = await fetchAnswerHistory({
+      exam_code: examCode.value,
       subject: subject.value,
       limit: ADAPTIVE_HISTORY_LIMIT,
       offset: 0
@@ -1682,6 +2626,43 @@ async function fetchSubjectSupplement(existingKeys) {
     )
 }
 
+async function loadLegacyQuestionPool(
+  moduleInfos,
+  { updateShortageTip = true } = {}
+) {
+  const cacheKey = getCacheKey(moduleInfos)
+  let candidateGroups = questionCache.get(cacheKey)
+  let nextPool = []
+  const adaptiveHistory = await fetchAdaptiveHistory()
+
+  if (!candidateGroups) {
+    if (hasAccessToken.value && moduleInfos.length) {
+      candidateGroups = await fetchRealQuestionCandidates(moduleInfos)
+    }
+
+    if (candidateGroups?.length) {
+      questionCache.set(cacheKey, candidateGroups)
+    }
+  }
+
+  if (candidateGroups?.length) {
+    nextPool = buildAdaptiveQuestionPool(candidateGroups, adaptiveHistory)
+  }
+
+  if (nextPool.length < plannedQuestionLimit.value) {
+    const existingKeys = new Set(nextPool.map((item) => getQuestionIdentityKey(item)))
+    const supplement = await fetchSubjectSupplement(existingKeys)
+    if (supplement.length) {
+      nextPool = buildAdaptiveQuestionPool([nextPool, supplement], adaptiveHistory)
+      if (updateShortageTip) {
+        shortageTip.value = '当前题库较少，已为你随机补充同科目题目。'
+      }
+    }
+  }
+
+  return nextPool
+}
+
 async function fetchMockExamSectionPool(section, usedKeys) {
   const query = buildQuery({
     exam_code: examCode.value,
@@ -1718,6 +2699,8 @@ function applyQuestionAt(index) {
   if (!nextQuestion) {
     return
   }
+  // Any explicit question change supersedes a queued intent for the old item.
+  adaptiveQueuedNavigation.value = null
   const nextQuestionKey = nextQuestion.questionId || nextQuestion.id
   const savedInstantResult = practiceMode.value === 'comprehensive' ? null : instantQuestionResults.value[nextQuestionKey]
   questionMeta.value = {
@@ -1746,6 +2729,17 @@ function applyQuestionAt(index) {
     startTimer(nextQuestionKey)
   }
 
+  void recordAdaptiveEvent(nextQuestion, 'presented')
+  if (savedInstantResult && nextQuestion.adaptiveSessionItemId) {
+    // Returning from an earlier item to the answered frontier should restart
+    // one-item look-ahead immediately. A settlement that completed while the
+    // learner viewed the previous item must not turn the following tap into a
+    // cold network request.
+    void prefetchNextAdaptiveQuestion(
+      nextQuestion,
+      captureAdaptiveQuestionContext(nextQuestion)
+    )
+  }
   loadCurrentFavoriteStatus()
   scrollToQuestionTop()
 }
@@ -1992,10 +2986,133 @@ async function startFixedMockExam(paperId) {
   }
 }
 
+function buildAdaptiveComprehensiveQuestionPool(response, startContext) {
+  const sessionId = String(response?.session?.id || '')
+  const expectedCount = Number(response?.session?.question_count || 0)
+  const items = normalizeAdaptiveComprehensiveItems(response?.items, {
+    sessionId,
+    expectedCount
+  })
+
+  return items.map((item, index) => {
+    const question = buildAdaptiveQuestion(item)
+    if (!question) {
+      const error = new Error(`综合刷题第 ${index + 1} 道题数据不完整`)
+      error.statusCode = 503
+      error.detail = {
+        code: 'ADAPTIVE_COMPREHENSIVE_SHEET_INVALID',
+        message: error.message
+      }
+      throw error
+    }
+    const quality = validateQuestion(normalizeQuestion(question, {
+      subject: startContext.subject,
+      examCode: startContext.examCode
+    }))
+    if (!quality.valid) {
+      const error = new Error(`综合刷题第 ${index + 1} 道题数据异常`)
+      error.statusCode = 503
+      error.detail = {
+        code: 'ADAPTIVE_COMPREHENSIVE_SHEET_INVALID',
+        message: error.message
+      }
+      throw error
+    }
+    return question
+  })
+}
+
+async function createAdaptivePractice(
+  moduleInfos,
+  {
+    flowGeneration,
+    clientSessionId,
+    startContext
+  }
+) {
+  const isComprehensive = startContext.practiceMode === 'comprehensive'
+  const payload = {
+    exam_code: startContext.examCode,
+    subject: startContext.subject,
+    practice_mode: startContext.practiceMode,
+    scopes: isComprehensive
+      ? []
+      : moduleInfos.map((item) => ({
+          module: item.module,
+          submodule: item.submodule
+        })),
+    question_count: startContext.questionCount,
+    preference: startContext.preference,
+    accepted_challenge: !isComprehensive && startContext.preference === 'challenge',
+    client_session_id: clientSessionId
+  }
+  let response
+  try {
+    response = await createAdaptivePracticeSession(payload)
+  } catch (error) {
+    if (
+      !isAdaptiveCreateRetryableError(error) ||
+      flowGeneration !== adaptiveFlowGeneration ||
+      !isPracticeStartContextCurrent(startContext)
+    ) {
+      throw error
+    }
+    // Reuse the exact client id so a timed-out first POST resolves to the same
+    // server session instead of creating a second active run.
+    response = await createAdaptivePracticeSession({
+      ...payload,
+      resume_existing_session: true
+    })
+  }
+  if (
+    flowGeneration !== adaptiveFlowGeneration ||
+    !isPracticeStartContextCurrent(startContext)
+  ) {
+    if (response?.session?.id) {
+      void completeAdaptivePracticeSession(response.session.id, 'abandoned').catch(() => {})
+    }
+    return false
+  }
+  applyAdaptiveEnvelope(response, { captureInitialPhase: true })
+  let nextPool
+  try {
+    if (isComprehensive) {
+      nextPool = buildAdaptiveComprehensiveQuestionPool(response, startContext)
+    } else {
+      const firstQuestion = buildAdaptiveQuestion(response?.next_item)
+      if (!firstQuestion) {
+        throw new Error('当前所选考点暂无可用题目，请调整范围后再试')
+      }
+      nextPool = [firstQuestion]
+    }
+  } catch (error) {
+    if (response?.session?.id) {
+      void completeAdaptivePracticeSession(response.session.id, 'abandoned').catch(() => {})
+      if (String(adaptiveSession.value?.id || '') === String(response.session.id)) {
+        adaptiveSession.value = {
+          ...adaptiveSession.value,
+          status: 'abandoned'
+        }
+      }
+    }
+    throw error
+  }
+
+  adaptiveFallbackMode.value = false
+  adaptiveNextExhausted.value = isComprehensive
+  adaptiveNextFinishAvailable.value = false
+  questionPool.value = nextPool
+  mode.value = 'quiz'
+  applyQuestionAt(0)
+  return true
+}
+
 async function startQuiz() {
+  if (loading.value || quizStartInProgress.value) return
   syncAccessToken()
   loadError.value = ''
   shortageTip.value = ''
+  const startContext = capturePracticeStartContext()
 
   if (!hasAccessToken.value) {
     uni.showModal({
@@ -2012,78 +3129,159 @@ async function startQuiz() {
     return
   }
 
-  if (practiceMode.value === 'special' && !selectedTags.value.length) {
+  if (startContext.practiceMode === 'special' && !selectedTags.value.length) {
     uni.showToast({ title: '请先选择至少一个考点', icon: 'none' })
     return
   }
 
+  const startRequestToken = ++quizStartRequestSequence
+  activeQuizStartRequestToken = startRequestToken
+  quizStartInProgress.value = true
+  quizStartBackgrounded.value = false
   loading.value = true
-  resetQuizState()
-  reviewMode.value = false
-  reviewResults.value = []
-  summaryMode.value = false
-  aiSummaryMode.value = false
-  aiSummary.value = null
-  aiReviewResults.value = []
-  comprehensiveAnswers.value = {}
-  uni.showLoading({ title: '正在整理题目...' })
-
+  let startContinuesInBackground = false
   try {
-    const moduleInfos = getTargetModuleInfos()
-    const cacheKey = getCacheKey(moduleInfos)
-    let candidateGroups = questionCache.get(cacheKey)
-    let nextPool = []
-    const adaptiveHistory = await fetchAdaptiveHistory()
+    // The previous run is already superseded by this start intent. Close it in
+    // the background so its 12s event + 15s completion budget cannot delay the
+    // first question of the new run.
+    const previousSessionClose = endAdaptiveSession('abandoned').catch(() => null)
+    void previousSessionClose
+    if (activeQuizStartRequestToken !== startRequestToken) return
 
-    if (!candidateGroups) {
-      if (hasAccessToken.value && moduleInfos.length) {
-        candidateGroups = await fetchRealQuestionCandidates(moduleInfos)
+    resetAdaptivePracticeState()
+    resetQuizState()
+    const flowGeneration = adaptiveFlowGeneration
+    const clientSessionId = ensureSubmissionSession()
+    mode.value = 'tags'
+    reviewMode.value = false
+    reviewResults.value = []
+    summaryMode.value = false
+    aiSummaryMode.value = false
+    aiSummary.value = null
+    aiReviewResults.value = []
+    comprehensiveAnswers.value = {}
+    uni.showLoading({ title: '正在整理题目...' })
+
+    const moduleInfos = getTargetModuleInfos(startContext.practiceMode)
+    const applyLegacyStartPool = (nextPool) => {
+      if (!nextPool.length) {
+        throw new Error('当前题库暂无可用题目，请换一个科目或稍后再试')
       }
 
-      if (candidateGroups?.length) {
-        questionCache.set(cacheKey, candidateGroups)
+      if (
+        activeQuizStartRequestToken !== startRequestToken ||
+        flowGeneration !== adaptiveFlowGeneration ||
+        !isPracticeStartContextCurrent(startContext)
+      ) {
+        return false
       }
-    }
+      questionPool.value = nextPool
+      mode.value = 'quiz'
+      applyQuestionAt(0)
 
-    if (candidateGroups?.length) {
-      nextPool = buildAdaptiveQuestionPool(candidateGroups, adaptiveHistory)
-    }
-
-    if (nextPool.length < plannedQuestionLimit.value) {
-      const existingKeys = new Set(nextPool.map((item) => getQuestionIdentityKey(item)))
-      const supplement = await fetchSubjectSupplement(existingKeys)
-      if (supplement.length) {
-        nextPool = buildAdaptiveQuestionPool([nextPool, supplement], adaptiveHistory)
-        shortageTip.value = '当前题库较少，已为你随机补充同科目题目。'
+      if (shortageTip.value) {
+        uni.showToast({ title: shortageTip.value, icon: 'none' })
+      } else if (questionPool.value.length < plannedQuestionLimit.value) {
+        shortageTip.value = '当前题库较少，本轮先按可用题目练习。'
+        uni.showToast({ title: shortageTip.value, icon: 'none' })
       }
+      return true
     }
 
-    if (!nextPool.length) {
-      throw new Error('当前题库暂无可用题目，请换一个科目或稍后再试')
+    try {
+      const created = await createAdaptivePractice(moduleInfos, {
+        flowGeneration,
+        clientSessionId,
+        startContext
+      })
+      if (!created) return
+      return
+    } catch (error) {
+      if (!isAdaptiveCreateFallbackError(error)) {
+        throw error
+      }
+      adaptiveFallbackMode.value = true
+      adaptiveNextExhausted.value = true
+      shortageTip.value = '智能出题服务正在更新，本轮已切换为普通组题。'
     }
 
-    questionPool.value = nextPool
-    mode.value = 'quiz'
-    applyQuestionAt(0)
-
-    if (shortageTip.value) {
-      uni.showToast({ title: shortageTip.value, icon: 'none' })
-    } else if (questionPool.value.length < plannedQuestionLimit.value) {
-      shortageTip.value = '当前题库较少，本轮先按可用题目练习。'
-      uni.showToast({ title: shortageTip.value, icon: 'none' })
+    const legacyPoolRequest = loadLegacyQuestionPool(moduleInfos, {
+      updateShortageTip: false
+    })
+    const legacyPoolOutcome = await Promise.race([
+      legacyPoolRequest,
+      new Promise((resolve) => {
+        setTimeout(
+          () => resolve(ADAPTIVE_LEGACY_START_STILL_RUNNING),
+          ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS
+        )
+      })
+    ])
+    if (legacyPoolOutcome === ADAPTIVE_LEGACY_START_STILL_RUNNING) {
+      startContinuesInBackground = true
+      quizStartBackgrounded.value = true
+      loading.value = false
+      uni.hideLoading()
+      uni.showToast({ title: '题目正在后台准备，完成后自动开始', icon: 'none' })
+      void legacyPoolRequest
+        .then((nextPool) => {
+          applyLegacyStartPool(nextPool)
+        })
+        .catch((error) => {
+          if (activeQuizStartRequestToken !== startRequestToken) return
+          const failedSessionClose = endAdaptiveSession('abandoned').catch(() => null)
+          void failedSessionClose
+          const detail = adaptiveErrorMessage(error, '加载题目失败')
+          loadError.value = detail
+          uni.showToast({ title: detail, icon: 'none' })
+        })
+        .finally(() => {
+          if (activeQuizStartRequestToken === startRequestToken) {
+            activeQuizStartRequestToken = 0
+            quizStartInProgress.value = false
+            quizStartBackgrounded.value = false
+            loading.value = false
+            uni.hideLoading()
+          }
+        })
+      return
     }
+    applyLegacyStartPool(legacyPoolOutcome)
   } catch (error) {
-    const detail = error?.detail || error?.message || '加载题目失败'
+    if (activeQuizStartRequestToken !== startRequestToken) return
+    const failedSessionClose = endAdaptiveSession('abandoned').catch(() => null)
+    void failedSessionClose
+    const detail = adaptiveErrorMessage(error, '加载题目失败')
     loadError.value = detail
     uni.showToast({ title: detail, icon: 'none' })
   } finally {
-    loading.value = false
-    uni.hideLoading()
+    if (
+      activeQuizStartRequestToken === startRequestToken &&
+      !startContinuesInBackground
+    ) {
+      activeQuizStartRequestToken = 0
+      quizStartInProgress.value = false
+      quizStartBackgrounded.value = false
+      loading.value = false
+      uni.hideLoading()
+    }
   }
 }
 
 function selectOption(key) {
-  if (submitted.value || submitting.value || reviewMode.value || currentQuestionHasBlockingIssue.value) {
+  if (
+    submitted.value ||
+    practiceMutationLocked.value ||
+    reviewMode.value ||
+    currentQuestionHasBlockingIssue.value
+  ) {
+    return
+  }
+  if (
+    adaptiveComprehensivePracticeActive.value &&
+    adaptiveComprehensiveSubmissionSnapshot?.sessionId === String(adaptiveSession.value?.id || '')
+  ) {
+    uni.showToast({ title: '整卷已进入提交流程，请重试交卷', icon: 'none' })
     return
   }
   selectedOption.value = key
@@ -2097,10 +3295,14 @@ function selectOption(key) {
 
 function isQuestionAnswered(question) {
   const key = question?.questionId || question?.id
-  return Boolean(key && comprehensiveAnswers.value[key])
+  return Boolean(
+    key &&
+    (comprehensiveAnswers.value[key] || comprehensiveSkippedQuestions.value[key])
+  )
 }
 
 function openAnswerSheet() {
+  if (practiceMutationLocked.value) return
   showAnswerSheet.value = true
 }
 
@@ -2109,7 +3311,7 @@ function closeAnswerSheet() {
 }
 
 function jumpToQuestion(index) {
-  if (submitting.value) {
+  if (practiceMutationLocked.value) {
     return
   }
   showAnswerSheet.value = false
@@ -2121,7 +3323,7 @@ function jumpToQuestion(index) {
 }
 
 async function handlePrimaryAction() {
-  if (submitting.value || markingUnfamiliar.value) {
+  if (practiceMutationLocked.value) {
     return
   }
   if (currentQuestionHasBlockingIssue.value) {
@@ -2135,19 +3337,86 @@ async function handlePrimaryAction() {
   await submitAnswer()
 }
 
-function handleInvalidQuestionNext() {
+async function handleInvalidQuestionNext() {
+  if (practiceMutationLocked.value) return
+  const question = currentQuestion.value
+  const isComprehensive = practiceMode.value === 'comprehensive' && !mockExamMode.value
   const id = normalizedCurrentQuestion.value.id || normalizedCurrentQuestion.value.questionId || '(no-id)'
   // eslint-disable-next-line no-console
   console.warn('[question-quality-skip]', id, currentQuestionQuality.value.reasons)
-  if (hasNextQuestion.value) {
-    goNextQuestion()
+  if (isComprehensive) {
+    const nextAnswers = { ...comprehensiveAnswers.value }
+    delete nextAnswers[currentQuestionKey.value]
+    comprehensiveAnswers.value = nextAnswers
+    comprehensiveSkippedQuestions.value = {
+      ...comprehensiveSkippedQuestions.value,
+      [currentQuestionKey.value]: true
+    }
+    if (hasNextQuestion.value) {
+      applyQuestionAt(currentQuestionIndex.value + 1)
+    } else {
+      await submitComprehensiveAnswers()
+    }
     return
   }
-  finishQuiz()
+  const context = captureAdaptiveQuestionContext(question)
+  const requiresAdaptiveSkip = Boolean(context.sessionId && context.itemId && !adaptiveFallbackMode.value)
+  const navigationAction = canAdvanceQuestion.value ? 'next' : 'finish'
+  const eventRequestToken = ++adaptiveEventRequestSequence
+  activeAdaptiveEventRequestToken = eventRequestToken
+  adaptiveEventSyncing.value = true
+  const skipRequest = (async () => {
+    try {
+      const recorded = await recordAdaptiveEvent(question, 'skipped')
+      if (
+        activeAdaptiveEventRequestToken !== eventRequestToken ||
+        !isAdaptiveQuestionContextCurrent(context)
+      ) {
+        return false
+      }
+      if (requiresAdaptiveSkip && !recorded) {
+        uni.showToast({ title: '跳过状态保存失败，请重试', icon: 'none' })
+        return false
+      }
+      return true
+    } finally {
+      if (activeAdaptiveEventRequestToken === eventRequestToken) {
+        activeAdaptiveEventRequestToken = 0
+        adaptiveEventSyncing.value = false
+      }
+    }
+  })()
+
+  const outcome = await Promise.race([
+    skipRequest,
+    new Promise((resolve) => {
+      setTimeout(
+        () => resolve(ADAPTIVE_PREFETCH_STILL_RUNNING),
+        ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS
+      )
+    })
+  ])
+  if (outcome === ADAPTIVE_PREFETCH_STILL_RUNNING) {
+    // Keep the server-side item barrier intact, but stop presenting the event
+    // request as a blocking foreground operation.
+    adaptiveEventSyncing.value = false
+    setAdaptiveNavigationIntent(navigationAction, context, { ready: false })
+    continueAdaptiveProgressInBackground(skipRequest, context)
+    uni.showToast({ title: '跳过状态后台保存，完成后自动继续', icon: 'none' })
+    return
+  }
+  if (outcome !== true) return
+  if (navigationAction === 'next') {
+    await goNextQuestion()
+    return
+  }
+  await finishQuiz()
 }
 
 function toggleExplanation() {
+  if (questionNavigationLocked.value) return
   explanationExpanded.value = true
+  void recordAdaptiveEvent(currentQuestion.value, 'answer_viewed')
 }
 
 function closeExplanation() {
@@ -2162,59 +3431,128 @@ async function markCurrentUnfamiliarAndNext() {
     return
   }
 
-  if (!canMarkCurrentUnfamiliar.value || markingUnfamiliar.value || submitting.value) {
+  if (
+    !canMarkCurrentUnfamiliar.value ||
+    practiceMutationLocked.value
+  ) {
     return
   }
 
-  markingUnfamiliar.value = true
   const question = currentQuestion.value
   const questionKey = currentQuestionKey.value
+  const context = captureAdaptiveQuestionContext(question)
+  const adaptiveItemId = String(question.adaptiveSessionItemId || '')
+  const wasAlreadySubmitted = submitted.value
+  const attachAdaptiveItem = Boolean(adaptiveItemId && !wasAlreadySubmitted)
+  const navigationAction = canAdvanceQuestion.value ? 'next' : 'finish'
+  const unfamiliarRequestToken = ++unfamiliarRequestSequence
+  activeUnfamiliarRequestToken = unfamiliarRequestToken
+  markingUnfamiliar.value = true
   clearTimer()
   const usedTime = getSubmissionUsedTime(questionKey, 'unfamiliar')
 
-  try {
-    const result = await markQuestionUnfamiliar({
-      question_id: questionMeta.value.questionId,
-      client_submission_id: getClientSubmissionId(questionKey, 'unfamiliar'),
-      used_time: usedTime,
-      exam_code: examCode.value
+  const unfamiliarRequest = (async () => {
+    try {
+      const clientSubmissionId = getClientSubmissionId(questionKey, 'unfamiliar')
+      let result = await markQuestionUnfamiliar({
+        question_id: question.questionId || question.id,
+        client_submission_id: clientSubmissionId,
+        used_time: usedTime,
+        exam_code: examCode.value,
+        ...(attachAdaptiveItem ? { practice_session_item_id: adaptiveItemId } : {})
+      })
+
+      if (attachAdaptiveItem) {
+        const retryPayload = {
+          question_id: question.questionId || question.id,
+          selected_answer: result.selected_answer,
+          client_submission_id: clientSubmissionId,
+          used_time: usedTime,
+          exam_code: examCode.value,
+          practice_session_item_id: adaptiveItemId
+        }
+        result = await settleAdaptiveSubmission(
+          result,
+          retryPayload,
+          adaptiveItemId,
+          { retryOnce: true, context }
+        )
+      }
+
+      if (
+        activeUnfamiliarRequestToken !== unfamiliarRequestToken ||
+        !isAdaptiveQuestionContextCurrent(context)
+      ) {
+        return false
+      }
+      if (attachAdaptiveItem) {
+        applyAdaptiveSubmissionResult(result)
+      }
+
+      unfamiliarQuestionMap.value = {
+        ...unfamiliarQuestionMap.value,
+        [questionKey]: true
+      }
+
+      resultTag.value = '已标记不熟悉，已加入错题本和复习队列。'
+      abilityAccuracy.value = result.ability_accuracy
+      clearTimer()
+
+      if (!wasAlreadySubmitted) {
+        selectedOption.value = selectedOption.value || result.selected_answer
+        correctAnswer.value = result.correct_answer
+        answerExplanation.value = result.explanation
+        submitted.value = true
+        saveInstantQuestionResult({
+          question,
+          selectedAnswer: selectedOption.value || result.selected_answer,
+          correctAnswer: result.correct_answer,
+          explanation: result.explanation,
+          isCorrect: false,
+          syncFailed: false
+        })
+      }
+
+      uni.showToast({ title: '已加入复习', icon: 'none' })
+      return true
+    } catch (error) {
+      if (
+        activeUnfamiliarRequestToken === unfamiliarRequestToken &&
+        isAdaptiveQuestionContextCurrent(context)
+      ) {
+        uni.showToast({ title: error?.detail || '标记不熟悉失败', icon: 'none' })
+      }
+      return false
+    } finally {
+      if (activeUnfamiliarRequestToken === unfamiliarRequestToken) {
+        activeUnfamiliarRequestToken = 0
+        markingUnfamiliar.value = false
+      }
+    }
+  })()
+
+  const outcome = await Promise.race([
+    unfamiliarRequest,
+    new Promise((resolve) => {
+      setTimeout(
+        () => resolve(ADAPTIVE_PREFETCH_STILL_RUNNING),
+        ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS
+      )
     })
-
-    unfamiliarQuestionMap.value = {
-      ...unfamiliarQuestionMap.value,
-      [questionKey]: true
-    }
-
-    if (!selectedOption.value) {
-      selectedOption.value = result.selected_answer
-    }
-    correctAnswer.value = result.correct_answer
-    answerExplanation.value = result.explanation
-    resultTag.value = '已标记不熟悉，已加入错题本和复习队列。'
-    abilityAccuracy.value = result.ability_accuracy
-    submitted.value = true
-    clearTimer()
-
-    saveInstantQuestionResult({
-      question,
-      selectedAnswer: selectedOption.value || result.selected_answer,
-      correctAnswer: result.correct_answer,
-      explanation: result.explanation,
-      isCorrect: false,
-      syncFailed: false
-    })
-
-    uni.showToast({ title: '已加入复习', icon: 'none' })
-    if (hasNextQuestion.value) {
-      applyQuestionAt(currentQuestionIndex.value + 1)
-    } else {
-      finishQuiz()
-    }
-  } catch (error) {
-    uni.showToast({ title: error?.detail || '标记不熟悉失败', icon: 'none' })
-  } finally {
+  ])
+  if (outcome === ADAPTIVE_PREFETCH_STILL_RUNNING) {
     markingUnfamiliar.value = false
+    setAdaptiveNavigationIntent(navigationAction, context, { ready: false })
+    continueAdaptiveProgressInBackground(unfamiliarRequest, context)
+    uni.showToast({ title: '正在后台加入复习，完成后自动继续', icon: 'none' })
+    return
   }
+  if (outcome !== true) return
+  if (navigationAction === 'next') {
+    await goNextQuestion()
+    return
+  }
+  await finishQuiz()
 }
 
 async function handleComprehensiveAction() {
@@ -2235,6 +3573,109 @@ async function handleComprehensiveAction() {
   await submitComprehensiveAnswers()
 }
 
+function getAdaptiveComprehensiveSubmissionTask() {
+  const sessionId = String(adaptiveSession.value?.id || '')
+  if (!adaptiveComprehensiveSubmissionSnapshot?.sessionId || adaptiveComprehensiveSubmissionSnapshot.sessionId !== sessionId) {
+    const payload = buildAdaptiveComprehensiveSubmissionPayload({
+      sessionId,
+      clientSubmissionId: getClientSubmissionId(sessionId, 'comprehensive-batch'),
+      questions: questionPool.value,
+      answersByQuestion: { ...comprehensiveAnswers.value },
+      getQuestionSubmissionId: (questionKey) => getClientSubmissionId(questionKey, 'comprehensive-answer'),
+      getUsedTime: (questionKey) => getSubmissionUsedTime(questionKey)
+    })
+    adaptiveComprehensiveSubmissionSnapshot = {
+      sessionId,
+      payload
+    }
+  }
+
+  // This synchronous durable write and read-back verification are a hard
+  // barrier before the first submit request can lock the server manifest.
+  const durableTask = adaptiveComprehensiveSubmissionQueue.persist({
+    sessionId,
+    payload: adaptiveComprehensiveSubmissionSnapshot.payload
+  })
+  adaptiveComprehensiveSubmissionSnapshot = durableTask
+  return durableTask
+}
+
+function getAdaptiveComprehensiveSubmissionPayload() {
+  return getAdaptiveComprehensiveSubmissionTask().payload
+}
+
+function removeAdaptiveComprehensiveSubmissionTask(task) {
+  if (!task) return false
+  try {
+    return adaptiveComprehensiveSubmissionQueue.remove(task)
+  } catch (error) {
+    // A confirmed server completion remains idempotently replayable if local
+    // storage is temporarily unavailable, so the durable task is left intact.
+    return false
+  }
+}
+
+function releaseTerminalAdaptiveComprehensiveSubmission(error, task) {
+  if (!isAdaptiveComprehensiveTerminalSubmissionError(error)) return false
+  removeAdaptiveComprehensiveSubmissionTask(task)
+  if (
+    adaptiveComprehensiveSubmissionSnapshot?.sessionId === task?.sessionId &&
+    adaptiveComprehensiveSubmissionSnapshot?.payload?.client_submission_id === task?.payload?.client_submission_id
+  ) {
+    adaptiveComprehensiveSubmissionSnapshot = null
+  }
+  return true
+}
+
+async function submitAdaptiveComprehensiveAnswers(entries) {
+  const task = getAdaptiveComprehensiveSubmissionTask()
+  const sessionId = String(task?.sessionId || '')
+  let response
+  try {
+    response = await adaptiveComprehensiveSubmissionQueue.submit(task)
+  } catch (error) {
+    if (!isAdaptiveSubmissionRetryableError(error)) {
+      releaseTerminalAdaptiveComprehensiveSubmission(error, task)
+      throw error
+    }
+    try {
+      response = await adaptiveComprehensiveSubmissionQueue.submit(task)
+    } catch (retryError) {
+      releaseTerminalAdaptiveComprehensiveSubmission(retryError, task)
+      throw retryError
+    }
+  }
+
+  if (!isAdaptiveComprehensiveCompletedResponse(task, response)) {
+    if (String(response?.session_id || '') !== sessionId) {
+      const error = new Error('综合刷题交卷响应与当前会话不一致')
+      error.code = 'ADAPTIVE_COMPREHENSIVE_CONTRACT_INVALID'
+      throw error
+    }
+    const error = new Error('综合刷题交卷响应与当前会话不一致')
+    error.message = '综合刷题交卷尚未完成，请重试'
+    error.code = 'ADAPTIVE_COMPREHENSIVE_SUBMISSION_PENDING'
+    error.retryable = true
+    throw error
+  }
+
+  const results = mapAdaptiveComprehensiveResults(entries, response?.results)
+  // The matching session and its full result contract are now confirmed.
+  // Clear only this exact owner/session/client-id task; a failed local removal
+  // safely leaves it for an idempotent replay on the next page show.
+  removeAdaptiveComprehensiveSubmissionTask(task)
+  applyAdaptiveEnvelope({
+    session: {
+      id: sessionId,
+      status: response.status
+    },
+    state: response?.state
+  })
+  adaptiveNextExhausted.value = true
+  adaptiveComprehensiveSubmissionSnapshot = null
+  return results
+}
+
 async function submitComprehensiveAnswers() {
   if (submitting.value) {
     return
@@ -2244,14 +3685,16 @@ async function submitComprehensiveAnswers() {
     const key = question.questionId || question.id
     return {
       question,
-      selected: comprehensiveAnswers.value[key]
+      selected: comprehensiveAnswers.value[key],
+      skipped: Boolean(comprehensiveSkippedQuestions.value[key])
     }
   })
-  const firstUnansweredIndex = entries.findIndex((item) => !item.selected)
+  const firstUnansweredIndex = entries.findIndex((item) => !item.selected && !item.skipped)
   if (firstUnansweredIndex >= 0) {
+    const unansweredCount = entries.filter((item) => !item.selected && !item.skipped).length
     uni.showModal({
       title: '还有未作答题目',
-      content: `还有 ${entries.filter((item) => !item.selected).length} 道题未完成，建议先补齐后再交卷。`,
+      content: `还有 ${unansweredCount} 道题未完成，建议先补齐后再交卷。`,
       confirmText: '去补题',
       cancelText: '查看题卡',
       success(result) {
@@ -2270,7 +3713,29 @@ async function submitComprehensiveAnswers() {
 
   try {
     const useRealSubmit = entries.every(({ question }) => isRealSubmitQuestion(question))
-    const results = useRealSubmit ? await submitComprehensiveBatch(entries) : entries.map(buildLocalComprehensiveResult)
+    let results
+    if (adaptiveComprehensivePracticeActive.value) {
+      if (!useRealSubmit) {
+        throw new Error('综合刷题固定题单包含无效题目，请重新开始')
+      }
+      results = await submitAdaptiveComprehensiveAnswers(entries)
+    } else {
+      const gradableEntries = entries.filter((item) => !item.skipped && item.selected)
+      const gradableResults = gradableEntries.length
+        ? (
+            useRealSubmit
+              ? await submitComprehensiveBatch(gradableEntries)
+              : gradableEntries.map(buildLocalComprehensiveResult)
+          )
+        : []
+      const resultMap = new Map(
+        gradableResults.map((item) => [item.question.questionId || item.question.id, item])
+      )
+      results = entries.map((entry) => {
+        const key = entry.question.questionId || entry.question.id
+        return entry.skipped ? buildSkippedComprehensiveResult(entry.question) : resultMap.get(key)
+      }).filter(Boolean)
+    }
 
     reviewResults.value = results
     summaryMode.value = true
@@ -2280,7 +3745,13 @@ async function submitComprehensiveAnswers() {
     await nextTick()
     scrollToQuestionTop()
   } catch (error) {
-    uni.showToast({ title: error?.detail || '提交整卷失败', icon: 'none' })
+    if (
+      adaptiveComprehensivePracticeActive.value &&
+      isAdaptiveComprehensiveTerminalSubmissionError(error)
+    ) {
+      adaptiveComprehensiveSubmissionSnapshot = null
+    }
+    uni.showToast({ title: adaptiveErrorMessage(error, '提交整卷失败'), icon: 'none' })
   } finally {
     showGradingFeedback.value = false
     submitting.value = false
@@ -2322,6 +3793,18 @@ function buildPendingComprehensiveResult(question, selected, error) {
     explanation: `本题做题记录已提交或正在同步，但移动端网络返回异常${reason}。请稍后到练习历史查看完整答案与解析。`,
     isCorrect: false,
     syncFailed: true
+  }
+}
+
+function buildSkippedComprehensiveResult(question) {
+  return {
+    question,
+    selectedAnswer: '',
+    correctAnswer: '',
+    explanation: '本题题面数据异常，本轮已跳过且不计入能力判断。',
+    isCorrect: null,
+    skipped: true,
+    syncFailed: false
   }
 }
 
@@ -2459,7 +3942,7 @@ async function submitComprehensiveSingle({ question, selected }, batchError) {
 
 async function submitAnswer() {
   syncAccessToken()
-  if (!selectedOption.value || submitting.value) {
+  if (!selectedOption.value || practiceMutationLocked.value) {
     return
   }
 
@@ -2468,8 +3951,20 @@ async function submitAnswer() {
   const submittedQuestionKey = currentQuestionKey.value
   const submittedQuestion = currentQuestion.value
   const submittedQuestionId = questionMeta.value.questionId
-  const submittedOption = selectedOption.value
+  let submittedOption = selectedOption.value
   const usesRemoteSubmission = hasAccessToken.value && isRealQuestion()
+  const adaptiveItemId = String(submittedQuestion.adaptiveSessionItemId || '')
+  const adaptiveContext = adaptiveItemId
+    ? captureAdaptiveQuestionContext(submittedQuestion)
+    : null
+  const answerRequestToken = adaptiveItemId ? ++adaptiveAnswerRequestSequence : 0
+  let remotePayload = null
+  let adaptiveSubmissionTask = null
+  let adaptiveSubmissionReady = false
+  if (adaptiveItemId) {
+    activeAdaptiveAnswerRequestToken = answerRequestToken
+    adaptiveAnswerSyncing.value = true
+  }
   clearTimer()
   const usedTime = getSubmissionUsedTime(submittedQuestionKey)
   let earlyGradeReceived = false
@@ -2481,11 +3976,40 @@ async function submitAnswer() {
         selected_answer: submittedOption,
         client_submission_id: getClientSubmissionId(submittedQuestionKey),
         used_time: usedTime,
-        exam_code: examCode.value
+        exam_code: examCode.value,
+        ...(submittedQuestion.adaptiveSessionItemId
+          ? { practice_session_item_id: submittedQuestion.adaptiveSessionItemId }
+          : {})
       }
-      const result = await submitAnswerWithReliableSync(payload, {
+      remotePayload = payload
+      const initialSubmissionPromise = submitAnswerWithReliableSync(payload, {
+        queueScopeKey: adaptiveContext?.sessionId,
+        onPayloadLocked(lockedPayload) {
+          remotePayload = { ...lockedPayload }
+          if (adaptiveContext) {
+            adaptiveSubmissionTask = rememberAdaptiveAnswerSubmission(
+              adaptiveContext,
+              remotePayload,
+              submittedQuestion,
+              { initialInFlight: true }
+            )
+          }
+          const lockedOption = String(lockedPayload?.selected_answer || '').trim().toUpperCase()
+          if (!/^[ABCD]$/.test(lockedOption)) return
+          submittedOption = lockedOption
+          if (currentQuestionKey.value === submittedQuestionKey) {
+            selectedOption.value = lockedOption
+          }
+        },
         onGraded(grade) {
           if (grade.questionId && grade.questionId !== submittedQuestionId) return
+          if (
+            adaptiveContext &&
+            (
+              activeAdaptiveAnswerRequestToken !== answerRequestToken ||
+              !isAdaptiveQuestionContextCurrent(adaptiveContext)
+            )
+          ) return
           earlyGradeReceived = true
           applyResponsiveAnswerFeedback({
             question: submittedQuestion,
@@ -2500,6 +4024,37 @@ async function submitAnswer() {
           })
         }
       })
+      if (adaptiveSubmissionTask) {
+        adaptiveSubmissionTask.initialPromise = initialSubmissionPromise
+      }
+      let result = await initialSubmissionPromise
+      if (adaptiveItemId) {
+        result = await settleAdaptiveSubmission(
+          result,
+          remotePayload || payload,
+          adaptiveItemId,
+          { retryOnce: true, context: adaptiveContext }
+        )
+      }
+      if (
+        adaptiveContext &&
+        (
+          activeAdaptiveAnswerRequestToken !== answerRequestToken ||
+          !isAdaptiveQuestionContextCurrent(adaptiveContext)
+        )
+      ) {
+        return
+      }
+      applyAdaptiveSubmissionResult(result)
+      if (
+        adaptiveItemId &&
+        remotePayload &&
+        !adaptiveSubmissionBarrierSatisfied(result) &&
+        !adaptiveMigrationPending(result) &&
+        isAdaptiveQuestionContextCurrent(adaptiveContext)
+      ) {
+        adaptivePendingSubmissionPayloads.set(adaptiveItemId, { ...remotePayload })
+      }
 
       answerResult = {
         question: submittedQuestion,
@@ -2520,12 +4075,34 @@ async function submitAnswer() {
         persisted: result.persisted,
         nextAbilityAccuracy: result.ability_accuracy ?? null
       })
+      if (adaptivePendingSubmissionPayloads.has(adaptiveItemId)) {
+        resultTag.value = '本题已保存，个性化进度同步中，请重试。'
+      }
       if (result.persisted !== true) {
         if (result.persistence_retryable !== false) {
-          schedulePendingAnswerFlush()
+          schedulePendingAnswerFlush(undefined, { queueScopeKey: adaptiveContext?.sessionId })
         } else {
           uni.showToast({ title: result.persistence_error || '作答记录保存失败，请稍后重试', icon: 'none' })
         }
+      }
+      if (
+        adaptiveItemId &&
+        adaptiveSubmissionBarrierSatisfied(result) &&
+        !adaptivePendingSubmissionPayloads.has(adaptiveItemId) &&
+        activeAdaptiveAnswerRequestToken === answerRequestToken &&
+        isAdaptiveQuestionContextCurrent(adaptiveContext)
+      ) {
+        // Claim while the learner is reading the result. The question is only
+        // presented after an explicit tap, so selection and exposure remain
+        // distinct while the usual next-step network wait is hidden.
+        void prefetchNextAdaptiveQuestion(submittedQuestion, adaptiveContext)
+      }
+      if (
+        adaptiveItemId &&
+        adaptiveSubmissionBarrierSatisfied(result) &&
+        !adaptivePendingSubmissionPayloads.has(adaptiveItemId)
+      ) {
+        adaptiveSubmissionReady = true
       }
     } else {
       correctAnswer.value = submittedQuestion.answer
@@ -2542,9 +4119,34 @@ async function submitAnswer() {
       upsertAiReviewResult(answerResult)
     }
   } catch (error) {
+    const adaptiveRequestStillCurrent = !adaptiveContext || (
+      activeAdaptiveAnswerRequestToken === answerRequestToken &&
+      isAdaptiveQuestionContextCurrent(adaptiveContext)
+    )
     if (earlyGradeReceived) {
-      schedulePendingAnswerFlush()
-      uni.showToast({ title: '答案已显示，作答记录将在网络恢复后同步', icon: 'none' })
+      if (
+        adaptiveItemId &&
+        remotePayload &&
+        adaptiveRequestStillCurrent
+      ) {
+        adaptivePendingSubmissionPayloads.set(adaptiveItemId, { ...remotePayload })
+        resultTag.value = isAdaptiveSubmissionRetryableError(error)
+          ? '本题已判分，作答记录和个性化进度正在后台同步。'
+          : '本题已判分，但保存没有完成，请退出本轮后重试。'
+      }
+      schedulePendingAnswerFlush(undefined, { queueScopeKey: adaptiveContext?.sessionId })
+      if (adaptiveRequestStillCurrent) {
+        uni.showToast({
+          title: adaptiveItemId
+            ? (
+                isAdaptiveSubmissionRetryableError(error)
+                  ? '本题已判分，后台保存完成后会自动继续'
+                  : '本题保存未完成，不会跳过这道题'
+              )
+            : '答案已显示，作答记录将在网络恢复后同步',
+          icon: 'none'
+        })
+      }
       return
     }
     if (isAiTrainingMode.value && usesRemoteSubmission) {
@@ -2560,9 +4162,34 @@ async function submitAnswer() {
       return
     }
     schedulePendingAnswerFlush()
-    uni.showToast({ title: error?.detail || '提交失败', icon: 'none' })
+    if (adaptiveRequestStillCurrent) {
+      uni.showToast({ title: error?.detail || '提交失败', icon: 'none' })
+    }
   } finally {
-    if (currentQuestionKey.value === submittedQuestionKey) {
+    adaptiveSubmissionTask?.markInitialFlowDone()
+    if (adaptiveItemId) {
+      if (activeAdaptiveAnswerRequestToken === answerRequestToken) {
+        activeAdaptiveAnswerRequestToken = 0
+        submitting.value = false
+        adaptiveAnswerSyncing.value = false
+        if (adaptiveSubmissionReady && adaptiveContext) {
+          drainAdaptiveNavigationIntent(adaptiveContext)
+        } else if (
+          adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, adaptiveContext) &&
+          adaptiveFallbackMode.value &&
+          !adaptiveLegacyFallbackLoading.value
+        ) {
+          drainAdaptiveNavigationIntent(adaptiveContext)
+        } else if (
+          adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, adaptiveContext) &&
+          !adaptiveSubmissionTask &&
+          !adaptivePendingSubmissionPayloads.has(adaptiveItemId) &&
+          !adaptiveLegacyFallbackLoading.value
+        ) {
+          clearAdaptiveNavigationIntent(adaptiveContext)
+        }
+      }
+    } else if (currentQuestionKey.value === submittedQuestionKey) {
       submitting.value = false
     }
   }
@@ -2580,7 +4207,13 @@ function applyReviewAt(index) {
   selectedOption.value = result.selectedAnswer
   correctAnswer.value = result.correctAnswer
   answerExplanation.value = result.explanation
-  resultTag.value = result.syncFailed ? '本题记录已提交，答案解析稍后可在练习历史中查看。' : result.isCorrect ? '本题答对。' : '本题答错，已纳入错题统计。'
+  resultTag.value = result.skipped
+    ? '本题已跳过，不计入能力判断。'
+    : result.syncFailed
+      ? '本题记录已提交，答案解析稍后可在练习历史中查看。'
+      : result.isCorrect
+        ? '本题答对。'
+        : '本题答错，已纳入错题统计。'
   submitted.value = true
   explanationExpanded.value = true
   abilityAccuracy.value = null
@@ -2703,8 +4336,376 @@ async function toggleCurrentFavorite() {
   }
 }
 
+function adaptiveLegacyFallbackTaskKey(context) {
+  const sessionId = String(context?.sessionId || '')
+  if (!sessionId) return ''
+  return `${Number(context?.flowGeneration)}:${sessionId}`
+}
+
+function getAdaptiveLegacyFallbackTask(context = captureAdaptiveQuestionContext()) {
+  const key = adaptiveLegacyFallbackTaskKey(context)
+  if (!key || !isAdaptiveSessionContextCurrent(context)) return null
+  return adaptiveLegacyFallbackTasks.get(key) || null
+}
+
+function startAdaptiveLegacyFallbackTask(
+  reason = 'abandoned',
+  context = captureAdaptiveQuestionContext()
+) {
+  if (!isAdaptiveSessionContextCurrent(context)) return null
+  const key = adaptiveLegacyFallbackTaskKey(context)
+  if (!key) return null
+  const existingTask = adaptiveLegacyFallbackTasks.get(key)
+  if (existingTask) return existingTask
+
+  const taskContext = {
+    flowGeneration: context.flowGeneration,
+    sessionId: context.sessionId
+  }
+  const moduleInfos = getTargetModuleInfos()
+  const requestedFallbackLimit = Number(
+    adaptiveSession.value?.question_count || plannedQuestionLimit.value || 0
+  )
+  // Closing the old adaptive run is best-effort once fallback begins. The
+  // question fallback starts immediately and never waits for that request.
+  const closePromise = endAdaptiveSession(reason).catch(() => null)
+  if (adaptiveSession.value?.id) {
+    adaptiveSession.value = {
+      ...adaptiveSession.value,
+      status: reason === 'completed' ? 'completed' : 'abandoned'
+    }
+  }
+  adaptiveFallbackMode.value = true
+  adaptiveLegacyFallbackLoading.value = true
+  adaptiveNextExhausted.value = true
+  adaptiveNextFinishAvailable.value = false
+  void closePromise
+
+  const task = {
+    key,
+    context: taskContext,
+    settled: false,
+    promise: null
+  }
+  adaptiveLegacyFallbackTasks.set(key, task)
+  task.promise = (async () => {
+    try {
+      const legacyPool = await loadLegacyQuestionPool(moduleInfos, {
+        updateShortageTip: false
+      })
+      if (
+        adaptiveLegacyFallbackTasks.get(key) !== task ||
+        !isAdaptiveSessionContextCurrent(taskContext)
+      ) {
+        return { ready: false, stale: true, extended: false }
+      }
+      const existingQuestions = [...questionPool.value]
+      const usedKeys = new Set(existingQuestions.map((item) => getQuestionIdentityKey(item)))
+      const additions = legacyPool.filter((item) => !usedKeys.has(getQuestionIdentityKey(item)))
+      const fallbackLimit = Math.max(requestedFallbackLimit, existingQuestions.length)
+      questionPool.value = [...existingQuestions, ...additions].slice(0, fallbackLimit)
+      shortageTip.value = '智能出题服务正在更新，本轮后续题目已切换为普通组题。'
+      return {
+        ready: true,
+        stale: false,
+        extended: questionPool.value.length > existingQuestions.length
+      }
+    } catch (error) {
+      if (
+        adaptiveLegacyFallbackTasks.get(key) === task &&
+        isAdaptiveSessionContextCurrent(taskContext)
+      ) {
+        shortageTip.value = '个性化进度已安全保存，后续题目暂时加载失败。'
+        return { ready: true, stale: false, extended: false }
+      }
+      return { ready: false, stale: true, extended: false }
+    } finally {
+      task.settled = true
+      if (
+        adaptiveLegacyFallbackTasks.get(key) === task &&
+        isAdaptiveSessionContextCurrent(taskContext)
+      ) {
+        adaptiveLegacyFallbackLoading.value = false
+      }
+    }
+  })()
+  return task
+}
+
+async function switchAdaptiveSessionToLegacy(
+  reason = 'abandoned',
+  context = captureAdaptiveQuestionContext()
+) {
+  const task = startAdaptiveLegacyFallbackTask(reason, context)
+  if (!task) return false
+  const outcome = await task.promise
+  return outcome?.ready === true && outcome?.extended === true
+}
+
+function adaptiveNextRequestKey(context) {
+  return [
+    context?.flowGeneration,
+    context?.sessionId,
+    context?.itemId
+  ].map((value) => String(value ?? '')).join(':')
+}
+
+function requestAdaptiveNextQuestion(context) {
+  const sessionId = String(context?.sessionId || adaptiveSession.value?.id || '')
+  const requestKey = adaptiveNextRequestKey(context)
+  return adaptiveNextRequestBroker.run(requestKey, async ({ isCurrent }) => {
+    if (!isCurrent() || !isAdaptiveSessionContextCurrent(context)) {
+      return { available: false, stale: true }
+    }
+
+    const requestToken = ++adaptiveNextRequestSequence
+    activeAdaptiveNextRequestToken = requestToken
+    const requestIsCurrent = () => (
+      isCurrent() &&
+      activeAdaptiveNextRequestToken === requestToken &&
+      isAdaptiveSessionContextCurrent(context)
+    )
+
+    try {
+      let pendingRetryUsed = false
+      let duplicateRetryUsed = false
+      while (requestIsCurrent()) {
+        let response
+        try {
+          response = await fetchNextAdaptivePracticeItem(sessionId)
+        } catch (error) {
+          if (isAdaptiveUpdatePendingError(error) && !pendingRetryUsed) {
+            pendingRetryUsed = true
+            await flushPendingAnswerSubmissions({ queueScopeKey: sessionId })
+            continue
+          }
+          throw error
+        }
+        if (!requestIsCurrent()) return { available: false, stale: true }
+        if (response?.session?.id && String(response.session.id) !== sessionId) {
+          throw new Error('个性化会话响应不一致，请重试')
+        }
+
+        applyAdaptiveEnvelope(response)
+        const nextQuestion = buildAdaptiveQuestion(response?.next_item)
+        if (!nextQuestion || response?.finished === true) {
+          adaptiveNextExhausted.value = true
+          return { available: false, finished: true }
+        }
+
+        const itemId = String(nextQuestion.adaptiveSessionItemId || '')
+        const existingIndex = questionPool.value.findIndex(
+          (item) => String(item.adaptiveSessionItemId || '') === itemId
+        )
+        if (existingIndex >= 0) {
+          if (itemId !== String(context?.itemId || '')) {
+            return { available: true, index: existingIndex, itemId }
+          }
+          if (!duplicateRetryUsed) {
+            duplicateRetryUsed = true
+            await flushPendingAnswerSubmissions({ queueScopeKey: sessionId })
+            continue
+          }
+          return { available: false, duplicate: true }
+        }
+
+        questionPool.value = [...questionPool.value, nextQuestion]
+        return {
+          available: true,
+          index: questionPool.value.length - 1,
+          itemId
+        }
+      }
+      return { available: false, stale: true }
+    } catch (error) {
+      if (!requestIsCurrent()) return { available: false, stale: true }
+      if (isAdaptiveNextFallbackError(error)) {
+        const previousLength = questionPool.value.length
+        const extended = await switchAdaptiveSessionToLegacy('abandoned', context)
+        if (extended && requestIsCurrent()) {
+          return {
+            available: true,
+            index: Math.min(previousLength, questionPool.value.length - 1),
+            fallback: true
+          }
+        }
+        if (requestIsCurrent()) adaptiveNextExhausted.value = true
+        return { available: false, finished: true, fallback: true }
+      }
+      throw error
+    } finally {
+      if (activeAdaptiveNextRequestToken === requestToken) {
+        activeAdaptiveNextRequestToken = 0
+      }
+    }
+  })
+}
+
+function exposeAdaptiveSafePoolCompletion(requestContext, { notify = false } = {}) {
+  if (!isAdaptiveSessionContextCurrent(requestContext)) return false
+  adaptiveNextExhausted.value = true
+  adaptiveNextFinishAvailable.value = true
+  shortageTip.value = '当前专项暂时没有合适的回稳题，可以先完成本轮。'
+  if (notify) {
+    uni.showToast({ title: shortageTip.value, icon: 'none' })
+  }
+  return true
+}
+
+function continueAdaptiveNextRequestInBackground(nextRequest, requestContext) {
+  const prefetchToken = ++adaptiveNextPrefetchSequence
+  activeAdaptiveNextPrefetchToken = prefetchToken
+  adaptiveNextPrefetching.value = true
+  void nextRequest
+    .then((outcome) => {
+      if (!isAdaptiveSessionContextCurrent(requestContext)) return
+      if (outcome?.available || outcome?.finished) {
+        drainAdaptiveNavigationIntent(requestContext)
+      } else {
+        clearAdaptiveNavigationIntent(requestContext)
+      }
+    })
+    .catch((error) => {
+      if (!isAdaptiveSessionContextCurrent(requestContext)) return
+      if (isAdaptiveSafePoolError(error)) {
+        exposeAdaptiveSafePoolCompletion(requestContext)
+        drainAdaptiveNavigationIntent(requestContext)
+      } else {
+        clearAdaptiveNavigationIntent(requestContext)
+      }
+    })
+    .finally(() => {
+      if (activeAdaptiveNextPrefetchToken === prefetchToken) {
+        activeAdaptiveNextPrefetchToken = 0
+        adaptiveNextPrefetching.value = false
+      }
+    })
+}
+
+async function loadNextAdaptiveQuestion({ prefetchOnly = false, context = null } = {}) {
+  const requestContext = context || captureAdaptiveQuestionContext()
+  const sessionId = String(requestContext?.sessionId || adaptiveSession.value?.id || '')
+  const joinsInFlightPrefetch = adaptiveNextRequestBroker.hasInFlight(
+    adaptiveNextRequestKey(requestContext)
+  )
+  if (
+    !sessionId ||
+    !isAdaptiveSessionContextCurrent(requestContext) ||
+    (!adaptiveMayHaveNext.value && !joinsInFlightPrefetch)
+  ) {
+    return false
+  }
+
+  const loadingToken = prefetchOnly ? 0 : ++adaptiveNextLoadingSequence
+  const prefetchToken = prefetchOnly ? ++adaptiveNextPrefetchSequence : 0
+  if (!prefetchOnly) {
+    activeAdaptiveNextLoadingToken = loadingToken
+    adaptiveNextLoading.value = true
+  } else {
+    activeAdaptiveNextPrefetchToken = prefetchToken
+    adaptiveNextPrefetching.value = true
+  }
+
+  try {
+    const nextRequest = requestAdaptiveNextQuestion(requestContext)
+    const outcome = !prefetchOnly
+      ? await Promise.race([
+          nextRequest,
+          new Promise((resolve) => {
+            setTimeout(
+              () => resolve(ADAPTIVE_PREFETCH_STILL_RUNNING),
+              ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS
+            )
+          })
+        ])
+      : await nextRequest
+    if (!isAdaptiveSessionContextCurrent(requestContext)) return false
+    if (outcome === ADAPTIVE_PREFETCH_STILL_RUNNING) {
+      setAdaptiveNavigationIntent('next', requestContext, { ready: false })
+      if (!joinsInFlightPrefetch) {
+        continueAdaptiveNextRequestInBackground(nextRequest, requestContext)
+      }
+      uni.showToast({ title: '下一题仍在后台匹配，完成后可直接继续', icon: 'none' })
+      return false
+    }
+    if (!outcome?.available) {
+      if (prefetchOnly && outcome?.finished) {
+        drainAdaptiveNavigationIntent(requestContext)
+      } else if (
+        prefetchOnly &&
+        adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, requestContext)
+      ) {
+        adaptiveQueuedNavigation.value = null
+      }
+      if (!prefetchOnly && outcome?.duplicate) {
+        uni.showToast({ title: '作答记录正在同步，请稍后再试', icon: 'none' })
+      }
+      return false
+    }
+    if (prefetchOnly) {
+      drainAdaptiveNavigationIntent(requestContext)
+      return true
+    }
+
+    const nextIndex = currentQuestionIndex.value + 1
+    if (!questionPool.value[nextIndex]) return false
+    clearAdaptiveNavigationIntent(requestContext)
+    applyQuestionAt(nextIndex)
+    return true
+  } catch (error) {
+    if (!isAdaptiveSessionContextCurrent(requestContext)) return false
+    // Transient speculative failures stay quiet and remain retryable. A safe-pool
+    // shortage is terminal for this run, but never falls back to a harder item.
+    if (prefetchOnly) {
+      if (isAdaptiveSafePoolError(error)) {
+        exposeAdaptiveSafePoolCompletion(requestContext)
+        drainAdaptiveNavigationIntent(requestContext)
+      } else if (adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, requestContext)) {
+        adaptiveQueuedNavigation.value = null
+      }
+      return false
+    }
+    if (isAdaptiveSafePoolError(error)) {
+      exposeAdaptiveSafePoolCompletion(requestContext, { notify: true })
+      return false
+    }
+    if (isAdaptiveUpdatePendingError(error)) {
+      uni.showToast({ title: '个性化进度正在同步，请稍后重试', icon: 'none' })
+      return false
+    }
+    uni.showToast({
+      title: adaptiveErrorMessage(error, '下一题匹配失败，请稍后重试'),
+      icon: 'none'
+    })
+    return false
+  } finally {
+    if (!prefetchOnly && activeAdaptiveNextLoadingToken === loadingToken) {
+      activeAdaptiveNextLoadingToken = 0
+      adaptiveNextLoading.value = false
+    }
+    if (prefetchOnly && activeAdaptiveNextPrefetchToken === prefetchToken) {
+      activeAdaptiveNextPrefetchToken = 0
+      adaptiveNextPrefetching.value = false
+    }
+  }
+}
+
+function prefetchNextAdaptiveQuestion(question, context = captureAdaptiveQuestionContext(question)) {
+  const itemId = String(question?.adaptiveSessionItemId || '')
+  if (
+    !itemId ||
+    !isAdaptiveQuestionContextCurrent(context) ||
+    adaptivePendingSubmissionPayloads.has(itemId) ||
+    hasNextQuestion.value ||
+    !adaptiveMayHaveNext.value
+  ) {
+    return Promise.resolve(false)
+  }
+  return loadNextAdaptiveQuestion({ prefetchOnly: true, context })
+}
+
 function goPrevQuestion() {
-  if (!hasPrevQuestion.value || submitting.value) {
+  if (!hasPrevQuestion.value || practiceMutationLocked.value) {
     return
   }
 
@@ -2716,18 +4717,69 @@ function goPrevQuestion() {
   }
 }
 
-function goNextQuestion() {
-  if (!hasNextQuestion.value || submitting.value) {
+async function goNextQuestion() {
+  if (adaptiveForwardNavigationQueueable.value) {
+    queueAdaptiveNavigationIntent('next')
     return
   }
+  if (practiceMutationLocked.value) return
+  adaptiveQueuedNavigation.value = null
+  const navigationToken = ++questionNavigationSequence
+  activeQuestionNavigationToken = navigationToken
+  questionNavigationPending.value = true
+  const context = captureAdaptiveQuestionContext()
+  let finishAfterNavigation = false
+  try {
+    if (reviewMode.value) {
+      applyReviewAt(currentQuestionIndex.value + 1)
+      scrollToQuestionTop()
+      return
+    }
 
-  if (reviewMode.value) {
-    applyReviewAt(currentQuestionIndex.value + 1)
-    scrollToQuestionTop()
-    return
+    const adaptiveProgressReady = await ensureAdaptiveProgressBeforeNext(currentQuestion.value)
+    if (
+      !adaptiveProgressReady ||
+      activeQuestionNavigationToken !== navigationToken ||
+      !isAdaptiveQuestionContextCurrent(context)
+    ) {
+      return
+    }
+
+    if (hasNextQuestion.value) {
+      applyQuestionAt(currentQuestionIndex.value + 1)
+      return
+    }
+
+    if (adaptiveMayHaveNext.value || adaptiveNextPrefetching.value) {
+      const advanced = await loadNextAdaptiveQuestion()
+      if (
+        !advanced &&
+        adaptiveNextExhausted.value &&
+        !adaptiveNextFinishAvailable.value &&
+        !adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, context)
+      ) {
+        finishAfterNavigation = true
+      }
+    } else if (
+      adaptiveFallbackMode.value &&
+      !hasNextQuestion.value &&
+      !adaptiveLegacyFallbackLoading.value
+    ) {
+      finishAfterNavigation = true
+    }
+  } finally {
+    if (activeQuestionNavigationToken === navigationToken) {
+      activeQuestionNavigationToken = 0
+      questionNavigationPending.value = false
+      if (
+        adaptiveQueuedNavigation.value?.ready === true &&
+        adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, context)
+      ) {
+        drainAdaptiveNavigationIntent(context)
+      }
+    }
   }
-
-  applyQuestionAt(currentQuestionIndex.value + 1)
+  if (finishAfterNavigation) await finishQuiz()
 }
 
 function showSummary() {
@@ -2748,6 +4800,7 @@ function openFirstReviewQuestion() {
 }
 
 async function retryPractice() {
+  if (loading.value || quizStartInProgress.value) return
   if (mockExamMode.value) {
     if (mockExamPaperId.value) {
       await startFixedMockExam(mockExamPaperId.value)
@@ -2838,22 +4891,70 @@ async function showAiSummary() {
   })
 }
 
-function finishQuiz() {
-  if (isAiTrainingMode.value) {
-    showAiSummary()
+async function finishQuiz() {
+  if (adaptiveForwardNavigationQueueable.value) {
+    queueAdaptiveNavigationIntent('finish')
     return
   }
+  if (practiceMutationLocked.value) return
+  adaptiveQueuedNavigation.value = null
+  const navigationToken = ++questionNavigationSequence
+  activeQuestionNavigationToken = navigationToken
+  questionNavigationPending.value = true
+  const context = captureAdaptiveQuestionContext()
+  try {
+    if (isAiTrainingMode.value) {
+      await showAiSummary()
+      return
+    }
 
-  const results = buildSpecialPracticeReviewResults()
-  if (!results.length) {
-    resetToTags()
-    return
+    const adaptiveProgressReady = await ensureAdaptiveProgressBeforeNext(currentQuestion.value, {
+      navigationAction: 'finish'
+    })
+    if (
+      !adaptiveProgressReady ||
+      activeQuestionNavigationToken !== navigationToken ||
+      !isAdaptiveQuestionContextCurrent(context)
+    ) {
+      return
+    }
+    if (hasNextQuestion.value) {
+      applyQuestionAt(currentQuestionIndex.value + 1)
+      return
+    }
+
+    const completionPromise = endAdaptiveSession('completed').catch(() => null)
+    const results = buildSpecialPracticeReviewResults()
+    if (!results.length) {
+      if (activeQuestionNavigationToken === navigationToken) resetToTags()
+      void completionPromise
+      return
+    }
+
+    reviewResults.value = results
+    showAnswerSheet.value = false
+    explanationExpanded.value = false
+    showSummary()
+    void completionPromise
+  } catch (error) {
+    if (activeQuestionNavigationToken === navigationToken) {
+      uni.showToast({
+        title: adaptiveErrorMessage(error, '练习结果同步失败，请重试'),
+        icon: 'none'
+      })
+    }
+  } finally {
+    if (activeQuestionNavigationToken === navigationToken) {
+      activeQuestionNavigationToken = 0
+      questionNavigationPending.value = false
+      if (
+        adaptiveQueuedNavigation.value?.ready === true &&
+        adaptiveContextsMatch(adaptiveQueuedNavigation.value?.context, context)
+      ) {
+        drainAdaptiveNavigationIntent(context)
+      }
+    }
   }
-
-  reviewResults.value = results
-  showAnswerSheet.value = false
-  explanationExpanded.value = false
-  showSummary()
 }
 
 function buildSpecialPracticeReviewResults() {
@@ -2894,9 +4995,35 @@ function resetQuizState() {
   resultTag.value = ''
   instantQuestionResults.value = {}
   unfamiliarQuestionMap.value = {}
+  comprehensiveSkippedQuestions.value = {}
+  adaptiveComprehensiveSubmissionSnapshot = null
+}
+
+function hasDurableAdaptiveComprehensiveSubmissionTask() {
+  return Boolean(
+    adaptiveComprehensiveSubmissionSnapshot?.ownerUserId &&
+    adaptiveComprehensiveSubmissionSnapshot?.sessionId &&
+    adaptiveComprehensiveSubmissionSnapshot.sessionId === String(adaptiveSession.value?.id || '') &&
+    adaptiveComprehensiveSubmissionSnapshot?.payload?.client_submission_id
+  )
 }
 
 function resetToTags() {
+  if (adaptiveAnswerSyncing.value || adaptiveNavigationQueued.value) {
+    uni.showToast({ title: '本题正在后台保存，完成后会自动继续', icon: 'none' })
+    return
+  }
+  activeQuizStartRequestToken = 0
+  quizStartInProgress.value = false
+  quizStartBackgrounded.value = false
+  loading.value = false
+  uni.hideLoading()
+  const preserveDurableComprehensiveSubmission = hasDurableAdaptiveComprehensiveSubmissionTask()
+  if (preserveDurableComprehensiveSubmission) {
+    resumePendingAdaptiveComprehensiveSubmissions()
+  } else {
+    void endAdaptiveSession('abandoned')
+  }
   aiSessionId.value = ''
   mockExamMode.value = false
   showAnswerSheet.value = false
@@ -2915,6 +5042,7 @@ function resetToTags() {
   aiSummaryMode.value = false
   aiSummary.value = null
   aiReviewResults.value = []
+  resetAdaptivePracticeState()
   resetQuizState()
   loadCultureProgress()
 }
@@ -3267,7 +5395,8 @@ function scrollToQuestionTop() {
 }
 
 .mode-card,
-.count-card {
+.count-card,
+.adaptive-preference-card {
   margin-bottom: 24rpx;
   padding: 26rpx;
   border-radius: 34rpx;
@@ -3339,6 +5468,94 @@ function scrollToQuestionTop() {
     radial-gradient(circle at 100% 0, var(--gyt-primary-shadow), transparent 42%);
   border: 2rpx solid #e6ebf5;
   box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
+}
+
+.adaptive-preference-head,
+.adaptive-summary-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20rpx;
+}
+
+.adaptive-preference-title {
+  color: #172033;
+  font-size: 29rpx;
+  font-weight: 900;
+}
+
+.adaptive-preference-sub,
+.adaptive-preference-tip,
+.adaptive-summary-copy {
+  color: #667085;
+  font-size: 23rpx;
+  line-height: 1.55;
+}
+
+.adaptive-preference-sub {
+  margin-top: 6rpx;
+}
+
+.adaptive-preference-badge,
+.adaptive-summary-confidence {
+  flex-shrink: 0;
+  padding: 8rpx 15rpx;
+  border-radius: 999rpx;
+  background: var(--gyt-primary-soft);
+  color: var(--gyt-primary);
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.adaptive-preference-options {
+  margin-top: 22rpx;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12rpx;
+}
+
+.adaptive-preference-option {
+  min-width: 0;
+  min-height: 106rpx;
+  padding: 16rpx 10rpx;
+  border: 2rpx solid #e5eaf3;
+  border-radius: 22rpx;
+  background: #f8fafc;
+  color: #344054;
+  line-height: 1.3;
+}
+
+.adaptive-preference-option::after {
+  border: 0;
+}
+
+.adaptive-preference-option.active {
+  border-color: var(--gyt-primary);
+  background: var(--gyt-primary-tint);
+  color: var(--gyt-primary);
+  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
+}
+
+.adaptive-preference-option-title,
+.adaptive-preference-option-sub {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.adaptive-preference-option-title {
+  font-size: 24rpx;
+  font-weight: 850;
+}
+
+.adaptive-preference-option-sub {
+  margin-top: 7rpx;
+  font-size: 20rpx;
+}
+
+.adaptive-preference-tip {
+  margin-top: 18rpx;
 }
 
 .culture-progress-head {
@@ -3897,6 +6114,31 @@ function scrollToQuestionTop() {
 
 .summary-card--with-stats {
   min-height: 0;
+}
+
+.adaptive-summary-card {
+  margin-top: 24rpx;
+  padding: 26rpx 28rpx;
+  border: 1rpx solid var(--gyt-primary-border);
+  border-radius: 36rpx;
+  background: linear-gradient(145deg, #ffffff, var(--gyt-primary-tint));
+}
+
+.adaptive-summary-eyebrow {
+  color: var(--gyt-primary);
+  font-size: 21rpx;
+  font-weight: 800;
+}
+
+.adaptive-summary-level {
+  margin-top: 7rpx;
+  color: #172033;
+  font-size: 34rpx;
+  font-weight: 900;
+}
+
+.adaptive-summary-copy {
+  margin-top: 18rpx;
 }
 
 .result-summary-page .result-overview-card {
