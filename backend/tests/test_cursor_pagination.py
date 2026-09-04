@@ -33,6 +33,10 @@ class _WrongQuestionQuery:
         self.filters.append(("eq", field, value))
         return self
 
+    def in_(self, field, values):
+        self.filters.append(("in", field, list(values)))
+        return self
+
     def or_(self, expression, **kwargs):
         self.filters.append(("or", expression, kwargs))
         return self
@@ -196,6 +200,7 @@ class CursorPaginationTests(unittest.TestCase):
         with patch.object(wrong_questions, "get_supabase_admin", return_value=client):
             response = wrong_questions.list_wrong_questions(
                 user_id="user-1",
+                exam_code="Z001",
                 subject="逻辑推理",
                 module=None,
                 submodule=None,
