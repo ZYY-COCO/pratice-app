@@ -15,7 +15,10 @@ create table if not exists public.circle_community_posts (
     or (post_type = 'experience' and category in ('Z001', 'Z002', '专业课', '复试'))
   ),
   title text not null check (char_length(btrim(title)) between 1 and 80),
-  content text not null check (char_length(btrim(content)) between 1 and 3000),
+  content text not null check (
+    (post_type = 'chat' and char_length(btrim(content)) between 1 and 3000)
+    or (post_type = 'experience' and char_length(btrim(content)) between 1 and 4000)
+  ),
   media jsonb not null default '[]'::jsonb check (jsonb_typeof(media) = 'array'),
   like_count integer not null default 0 check (like_count >= 0),
   comment_count integer not null default 0 check (comment_count >= 0),

@@ -118,17 +118,17 @@
                   />
                 </button>
                 <text class="publish-editor-expanded-title">编辑内容</text>
-                <text class="publish-editor-expanded-counter">{{ content.length }}/3000</text>
+                <text class="publish-editor-expanded-counter">{{ content.length }}/{{ contentMaxLength }}</text>
               </view>
               <view v-else class="publish-field-row publish-content-field-row">
                 <view class="publish-field-label">内容</view>
-                <text class="publish-counter">{{ content.length }}/3000</text>
+                <text class="publish-counter">{{ content.length }}/{{ contentMaxLength }}</text>
               </view>
               <view class="publish-editor-frame">
                 <textarea
                   v-model="content"
                   class="publish-textarea"
-                  maxlength="3000"
+                  :maxlength="contentMaxLength"
                   placeholder="分享你的问题、计划或心得"
                   placeholder-class="publish-placeholder"
                   :auto-height="false"
@@ -223,6 +223,8 @@ const topicSets = {
   experience: communityExperienceExamCodes
 }
 const MAX_IMAGE_COUNT = 9
+const CHAT_CONTENT_MAX_LENGTH = 3000
+const EXPERIENCE_CONTENT_MAX_LENGTH = 4000
 const MAX_UPLOAD_CONCURRENCY = 2
 const DRAFT_SAVE_DELAY_MS = 650
 const DRAFT_STORAGE_VERSION = 2
@@ -231,6 +233,11 @@ const MY_POSTS_REFRESH_REQUIRED_KEY = 'circle-my-posts-refresh-required'
 const mpLayoutStyle = ref(buildMpPageSafeStyle())
 const postType = ref('chat')
 const topics = computed(() => topicSets[postType.value])
+const contentMaxLength = computed(() => (
+  postType.value === 'experience'
+    ? EXPERIENCE_CONTENT_MAX_LENGTH
+    : CHAT_CONTENT_MAX_LENGTH
+))
 const selectedTopic = ref('')
 const selectedExperienceStages = ref([])
 const title = ref('')
@@ -525,7 +532,7 @@ function restoreDraft() {
     ? restoredExperienceSelection.category
     : (allowedTopics.includes(restoredTopic) ? restoredTopic : '')
   title.value = String(draft.title || '').slice(0, 80)
-  content.value = String(draft.content || '').slice(0, 3000)
+  content.value = String(draft.content || '').slice(0, contentMaxLength.value)
   selectedExperienceStages.value = restoredExperienceSelection?.stages || []
   const rawUploadedImages = Array.isArray(draft.uploadedImages)
     ? draft.uploadedImages
@@ -647,7 +654,7 @@ function populateEditingPost(post = {}) {
     : (allowedTopics.includes(remoteCategory) ? remoteCategory : '')
   selectedExperienceStages.value = remoteExperienceSelection?.stages || []
   title.value = String(post.title || '').slice(0, 80)
-  content.value = String(post.content || post.summary || '').slice(0, 3000)
+  content.value = String(post.content || post.summary || '').slice(0, contentMaxLength.value)
   selectedImages.value = media
     .map((item) => ({
       url: String(item?.imageUrl || item?.image_url || '').trim(),

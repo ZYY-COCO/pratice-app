@@ -163,13 +163,17 @@ class CommunityLikeListResponse(BaseModel):
     count: int = 0
 
 
+COMMUNITY_CHAT_CONTENT_MAX_LENGTH = 3000
+COMMUNITY_EXPERIENCE_CONTENT_MAX_LENGTH = 4000
+
+
 class CommunityCreatePostRequest(BaseModel):
     post_type: Literal["chat", "experience"] = "chat"
     category: str = Field(min_length=1, max_length=24)
     experience_stages: list[str] = Field(default_factory=list, max_length=3)
     client_request_id: UUID = Field(default_factory=uuid4)
     title: str = Field(min_length=1, max_length=80)
-    content: str = Field(min_length=1, max_length=3000)
+    content: str = Field(min_length=1, max_length=COMMUNITY_EXPERIENCE_CONTENT_MAX_LENGTH)
     media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
 
     @model_validator(mode="after")
@@ -192,6 +196,8 @@ class CommunityCreatePostRequest(BaseModel):
 
         if self.category not in COMMUNITY_CHAT_CATEGORIES:
             raise ValueError("研友聊分类仅支持备考日常、中华文化、数学基础、英语运用、逻辑推理")
+        if len(self.content) > COMMUNITY_CHAT_CONTENT_MAX_LENGTH:
+            raise ValueError(f"研友聊正文最多 {COMMUNITY_CHAT_CONTENT_MAX_LENGTH} 字")
         self.experience_stages = []
         return self
 
@@ -202,7 +208,7 @@ class CommunityResubmitExperiencePostRequest(BaseModel):
     category: str = Field(min_length=1, max_length=24)
     experience_stages: list[str] = Field(default_factory=list, max_length=3)
     title: str = Field(min_length=1, max_length=80)
-    content: str = Field(min_length=1, max_length=3000)
+    content: str = Field(min_length=1, max_length=COMMUNITY_EXPERIENCE_CONTENT_MAX_LENGTH)
     media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
 
     @model_validator(mode="after")

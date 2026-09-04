@@ -16,7 +16,7 @@ from app.schemas.community import CommunityCreatePostRequest, CommunityResubmitE
 
 
 class CommunityExperienceStageTests(unittest.TestCase):
-    def test_long_posts_and_nine_images_are_valid_for_both_post_types(self):
+    def test_post_content_limits_keep_chat_at_3000_and_expand_experience_to_4000(self):
         media = [
             {"imageUrl": f"https://example.com/community-{index}.jpg"}
             for index in range(9)
@@ -26,7 +26,7 @@ class CommunityExperienceStageTests(unittest.TestCase):
             post_type="chat",
             category="英语运用",
             title="长文研友聊",
-            content="研" * 2999,
+            content="研" * 3000,
             media=media,
         )
         experience = CommunityCreatePostRequest(
@@ -34,15 +34,45 @@ class CommunityExperienceStageTests(unittest.TestCase):
             category="申请制",
             experience_stages=["初试", "复试"],
             title="长文经验贴",
-            content="验" * 2999,
+            content="验" * 4000,
+            media=media,
+        )
+        resubmission = CommunityResubmitExperiencePostRequest(
+            category="申请制",
+            title="修改后的长文经验贴",
+            content="验" * 4000,
             media=media,
         )
 
         self.assertEqual(len(chat.media), 9)
         self.assertEqual(chat.experience_stages, [])
+        self.assertEqual(len(chat.content), 3000)
         self.assertEqual(len(experience.media), 9)
         self.assertEqual(experience.category, "申请制")
         self.assertEqual(experience.experience_stages, ["初试", "复试"])
+        self.assertEqual(len(experience.content), 4000)
+        self.assertEqual(len(resubmission.content), 4000)
+
+        with self.assertRaises(ValidationError):
+            CommunityCreatePostRequest(
+                post_type="chat",
+                category="英语运用",
+                title="超长研友聊",
+                content="研" * 3001,
+            )
+        with self.assertRaises(ValidationError):
+            CommunityCreatePostRequest(
+                post_type="experience",
+                category="申请制",
+                title="超长经验贴",
+                content="验" * 4001,
+            )
+        with self.assertRaises(ValidationError):
+            CommunityResubmitExperiencePostRequest(
+                category="申请制",
+                title="超长经验贴",
+                content="验" * 4001,
+            )
 
     def test_experience_exam_code_is_single_and_stages_are_multi_select(self):
         payload = CommunityCreatePostRequest(
