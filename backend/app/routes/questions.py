@@ -10,6 +10,7 @@ from app.services.answers import warm_submission_questions
 from app.dependencies import get_current_user_id, get_optional_current_user_id
 from app.schemas.questions import Passage, Question, QuestionListResponse, QuestionProgressResponse
 from app.services.question_sources import exclude_ai_generated_questions
+from app.services.supabase_resilience import is_missing_supabase_relation_error
 
 router = APIRouter(tags=["题目"])
 
@@ -26,8 +27,6 @@ def get_question_exam_codes(exam_code: str | None, subject: str | None) -> list[
         return []
     if exam_code == "COMMON":
         return ["COMMON"]
-    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
-        return ["COMMON", "Z001"]
     if subject in PUBLIC_SUBJECTS and exam_code in VERSION_EXAM_CODES:
         return ["COMMON", exam_code]
     return [exam_code]
@@ -119,8 +118,6 @@ def fetch_subject_question_rows(supabase, exam_code: str, subject: str) -> list[
     rows = fetch_subject_question_rows_for_codes(supabase, exam_codes, subject)
     if rows:
         return rows
-    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
-        return fetch_subject_question_rows_for_codes(supabase, [exam_code], subject)
     return rows
 
 
@@ -151,12 +148,19 @@ def fetch_subject_question_count(supabase, exam_code: str, subject: str) -> int:
     total = fetch_subject_question_count_for_codes(supabase, exam_codes, subject)
     if total:
         return total
-    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
-        return fetch_subject_question_count_for_codes(supabase, [exam_code], subject)
     return total
 
 
-def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
+def fetch_user_answer_rows(
+    supabase,
+    user_id: str,
+    *,
+    exam_code: str | None = None,
+    subject: str | None = None,
+) -> list[dict]:
+    if exam_code and subject:
+        return fetch_user_answer_rows_for_subject(supabase, user_id, exam_code, subject)
+
     rows: list[dict] = []
     offset = 0
     while True:
@@ -189,21 +193,27 @@ def fetch_user_answer_rows(supabase, user_id: str) -> list[dict]:
     return rows
 
 
-def fetch_user_question_progress_rows(supabase, user_id: str) -> list[dict]:
+def fetch_user_question_progress_rows(
+    supabase,
+    user_id: str,
+    exam_code: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        response = (
+        query = (
             supabase.table("user_question_progress")
             .select(
-                "question_id,first_attempt_is_correct,attempt_count,correct_count,"
+                "question_id,stats_exam_code,first_attempt_is_correct,attempt_count,correct_count,"
                 "last_is_correct,last_answered_at"
             )
             .eq("user_id", user_id)
-            .order("last_answered_at", desc=False)
-            .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
-            .execute()
         )
+        if exam_code:
+            query = query.eq("stats_exam_code", exam_code)
+        response = query.order("last_answered_at", desc=False).range(
+            offset, offset + SUPABASE_PAGE_SIZE - 1
+        ).execute()
         chunk = response.data or []
         rows.extend(chunk)
         if len(chunk) < SUPABASE_PAGE_SIZE:
@@ -244,13 +254,42 @@ def fetch_user_answer_rows_for_subject_codes(
 
 
 def fetch_user_answer_rows_for_subject(supabase, user_id: str, exam_code: str, subject: str) -> list[dict]:
-    exam_codes = get_question_exam_codes(exam_code, subject)
-    rows = fetch_user_answer_rows_for_subject_codes(supabase, user_id, exam_codes, subject)
-    if rows:
+    rows: list[dict] = []
+    offset = 0
+    try:
+        while True:
+            query = (
+                supabase.table("user_answers")
+                .select(
+                    "question_id,is_correct,created_at,questions!inner(id,subject)"
+                )
+                .eq("user_id", user_id)
+                .eq("stats_exam_code", exam_code)
+                .eq("questions.subject", subject)
+                .eq("questions.status", "active")
+                .order("created_at", desc=False)
+                .order("id", desc=False)
+                .range(offset, offset + SUPABASE_PAGE_SIZE - 1)
+            )
+            query = exclude_ai_generated_questions(query, reference_table="questions")
+            response = query.execute()
+            chunk = response.data or []
+            rows.extend(chunk)
+            if len(chunk) < SUPABASE_PAGE_SIZE:
+                return rows
+            offset += SUPABASE_PAGE_SIZE
+    except Exception as exc:
+        if not is_missing_supabase_relation_error(exc):
+            raise
+        # Rolling-deployment compatibility. Legacy rows cannot distinguish a
+        # COMMON question answered under Z001 from the same question under
+        # Z002, so this path is intentionally used only before the new columns
+        # exist.
+        exam_codes = get_question_exam_codes(exam_code, subject)
+        rows = fetch_user_answer_rows_for_subject_codes(supabase, user_id, exam_codes, subject)
+        if rows:
+            return rows
         return rows
-    if subject == CULTURE_SUBJECT and exam_code in VERSION_EXAM_CODES:
-        return fetch_user_answer_rows_for_subject_codes(supabase, user_id, [exam_code], subject)
-    return rows
 
 
 def build_progress_summary(supabase, user_id: str | None, exam_code: str, subject: str) -> dict:
@@ -269,7 +308,7 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
 
     stats_by_question: dict[str, dict] = {}
     try:
-        progress_rows = fetch_user_question_progress_rows(supabase, user_id)
+        progress_rows = fetch_user_question_progress_rows(supabase, user_id, exam_code)
     except Exception:
         progress_rows = None
 
@@ -287,7 +326,12 @@ def build_progress_summary(supabase, user_id: str | None, exam_code: str, subjec
             }
     else:
         try:
-            user_answer_rows = fetch_user_answer_rows(supabase, user_id)
+            user_answer_rows = fetch_user_answer_rows(
+                supabase,
+                user_id,
+                exam_code=exam_code,
+                subject=subject,
+            )
         except Exception:
             user_answer_rows = []
 

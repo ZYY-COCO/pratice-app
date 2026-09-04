@@ -32,7 +32,6 @@ from app.services.supabase_resilience import call_supabase, is_missing_supabase_
 router = APIRouter(prefix="/report", tags=["能力报告"])
 
 PUBLIC_SUBJECTS = {"中华文化", "英语运用"}
-VERSION_EXAM_CODES = {"Z001", "Z002"}
 EXAM_SUBJECTS = {
     "Z001": ["中华文化", "英语运用", "逻辑推理"],
     "Z002": ["中华文化", "英语运用", "数学基础"],
@@ -55,14 +54,21 @@ def get_app_timezone():
 APP_TIMEZONE = get_app_timezone()
 
 
-def belongs_to_exam(question: dict | None, exam_code: str | None) -> bool:
+def belongs_to_exam(
+    question: dict | None,
+    exam_code: str | None,
+    *,
+    stats_exam_code: str | None = None,
+) -> bool:
     if not exam_code:
         return True
+    if stats_exam_code and stats_exam_code != exam_code:
+        return False
     question = question or {}
     question_exam_code = question.get("exam_code")
     if question_exam_code == exam_code:
         return True
-    return question_exam_code in {"COMMON", *VERSION_EXAM_CODES} and question.get("subject") in PUBLIC_SUBJECTS
+    return question_exam_code == "COMMON" and question.get("subject") in PUBLIC_SUBJECTS
 
 
 def safe_int(value: object) -> int:
@@ -152,21 +158,26 @@ def calculate_study_seconds(rows: list[dict]) -> int:
     return sum(max(0, safe_int(row.get("used_time"))) for row in rows)
 
 
-def fetch_learning_activity_rows(supabase, user_id: str, start_at: datetime) -> list[dict]:
+def fetch_learning_activity_rows(
+    supabase,
+    user_id: str,
+    start_at: datetime,
+    exam_code: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while len(rows) < LEARNING_ACTIVITY_LIMIT:
-        chunk = (
+        query = (
             supabase.table("user_answers")
             .select("is_correct, used_time, created_at, questions(exam_code, subject)")
             .eq("user_id", user_id)
             .gte("created_at", start_at.isoformat())
-            .order("created_at", desc=True)
-            .range(offset, min(offset + PAGE_SIZE - 1, LEARNING_ACTIVITY_LIMIT - 1))
-            .execute()
-            .data
-            or []
         )
+        if exam_code:
+            query = query.eq("stats_exam_code", exam_code)
+        chunk = query.order("created_at", desc=True).range(
+            offset, min(offset + PAGE_SIZE - 1, LEARNING_ACTIVITY_LIMIT - 1)
+        ).execute().data or []
         rows.extend(chunk)
         if len(chunk) < PAGE_SIZE:
             break
@@ -175,16 +186,14 @@ def fetch_learning_activity_rows(supabase, user_id: str, start_at: datetime) -> 
 
 
 def fetch_recent_learning_days(supabase, user_id: str, exam_code: str | None) -> set:
-    rows = (
+    query = (
         supabase.table("user_answers")
         .select("created_at, questions(exam_code, subject)")
         .eq("user_id", user_id)
-        .order("created_at", desc=True)
-        .limit(LEARNING_ACTIVITY_LIMIT)
-        .execute()
-        .data
-        or []
     )
+    if exam_code:
+        query = query.eq("stats_exam_code", exam_code)
+    rows = query.order("created_at", desc=True).limit(LEARNING_ACTIVITY_LIMIT).execute().data or []
     learning_dates = set()
     for row in filter_learning_activity_rows(rows, exam_code):
         local_time = to_local_datetime(row.get("created_at"))
@@ -256,19 +265,22 @@ def fetch_ability_rows(supabase, exam_code: str | None) -> list[dict]:
         offset += PAGE_SIZE
 
 
-def fetch_weekly_answer_rows(supabase, week_start: datetime) -> list[dict]:
+def fetch_weekly_answer_rows(
+    supabase,
+    week_start: datetime,
+    exam_code: str | None = None,
+) -> list[dict]:
     rows: list[dict] = []
     offset = 0
     while True:
-        chunk = (
+        query = (
             supabase.table("user_answers")
-            .select("user_id, questions(exam_code, subject)")
+            .select("user_id, stats_exam_code, questions(exam_code, subject)")
             .gte("created_at", week_start.isoformat())
-            .range(offset, offset + PAGE_SIZE - 1)
-            .execute()
-            .data
-            or []
         )
+        if exam_code:
+            query = query.eq("stats_exam_code", exam_code)
+        chunk = query.range(offset, offset + PAGE_SIZE - 1).execute().data or []
         rows.extend(chunk)
         if len(chunk) < PAGE_SIZE:
             return rows
@@ -508,6 +520,7 @@ def fetch_study_wrong_rows(supabase, user_id: str, exam_code: str, limit: int = 
         supabase.table("wrong_questions")
         .select("wrong_count, last_wrong_at, questions(exam_code, subject, module, submodule, stem, source_type)")
         .eq("user_id", user_id)
+        .eq("stats_exam_code", exam_code)
         .order("last_wrong_at", desc=True)
         .limit(limit)
         .execute()
@@ -849,7 +862,7 @@ def learning_summary(
     trend_start = datetime.combine(trend_start_date, datetime.min.time(), tzinfo=APP_TIMEZONE).astimezone(timezone.utc)
     activity_start = min(previous_week_start, trend_start)
     activity_rows = filter_learning_activity_rows(
-        fetch_learning_activity_rows(supabase, user_id, activity_start),
+        fetch_learning_activity_rows(supabase, user_id, activity_start, exam_code),
         exam_code,
     )
 
@@ -934,9 +947,10 @@ def learning_summary(
         supabase.table("wrong_questions")
         .select("id, questions(exam_code, subject, source_type)")
         .eq("user_id", user_id)
-        .limit(1000)
-        .execute()
     )
+    if exam_code:
+        wrong_response = wrong_response.eq("stats_exam_code", exam_code)
+    wrong_response = wrong_response.limit(1000).execute()
     wrong_rows = wrong_response.data
     if exam_code:
         wrong_rows = [row for row in wrong_rows if belongs_to_exam(row.get("questions"), exam_code)]
@@ -1081,10 +1095,14 @@ def leaderboard(
         datetime.min.time(),
         tzinfo=APP_TIMEZONE,
     ).astimezone(timezone.utc)
-    weekly_rows = fetch_weekly_answer_rows(supabase, week_start)
+    weekly_rows = fetch_weekly_answer_rows(supabase, week_start, exam_code)
     weekly_by_user: dict[str, int] = {}
     for row in weekly_rows:
-        if exam_code and not belongs_to_exam(row.get("questions"), exam_code):
+        if exam_code and not belongs_to_exam(
+            row.get("questions"),
+            exam_code,
+            stats_exam_code=row.get("stats_exam_code"),
+        ):
             continue
         row_user_id = row.get("user_id")
         if not row_user_id:

@@ -23,8 +23,10 @@ from app.services.answers import (
     mark_unfamiliar_answer,
     persist_answer_submission,
     resolve_stats_exam_code,
+    resolve_user_exam_code,
     submit_answer,
 )
+from app.services.adaptive_practice import apply_adaptive_answer_update
 
 router = APIRouter(prefix="/answers", tags=["作答"])
 logger = logging.getLogger(__name__)
@@ -35,47 +37,81 @@ def _persist_graded_answer(
     result: dict,
     payload: SubmitAnswerRequest,
     user_id: str,
+    supabase=None,
 ) -> dict:
+    question = {
+        "id": result["question_id"],
+        "exam_code": result.get("exam_code"),
+        "subject": result.get("subject"),
+        "module": result.get("module"),
+        "submodule": result.get("submodule"),
+        "source_type": result.get("source_type"),
+        "question_type": result.get("question_type"),
+        "difficulty": result.get("difficulty"),
+        "estimated_time_sec": result.get("estimated_time_sec"),
+    }
     persisted = persist_answer_submission(
         user_id=user_id,
-        question={
-            "id": result["question_id"],
-            "exam_code": result.get("exam_code"),
-            "subject": result.get("subject"),
-            "module": result.get("module"),
-            "submodule": result.get("submodule"),
-            "source_type": result.get("source_type"),
-        },
+        question=question,
         selected_answer=payload.selected_answer,
         used_time=payload.used_time,
         is_correct=result["is_correct"],
         client_submission_id=payload.client_submission_id,
+        practice_session_item_id=payload.practice_session_item_id,
     )
     response = {**result, **persisted}
     response["ability_accuracy"] = persisted.get("ability_accuracy")
+    if payload.practice_session_item_id:
+        try:
+            response["adaptive"] = apply_adaptive_answer_update(
+                supabase or get_supabase_admin(),
+                user_id=user_id,
+                question=question,
+                persisted={
+                    **persisted,
+                    "is_correct": persisted.get("is_correct", result["is_correct"]),
+                },
+                used_time=payload.used_time,
+                practice_session_item_id=payload.practice_session_item_id,
+            )
+        except HTTPException as exc:
+            logger.warning(
+                "Adaptive answer link rejected after durable answer "
+                "(question_id=%s status_code=%s)",
+                result["question_id"],
+                exc.status_code,
+            )
+            response["adaptive"] = {
+                "adaptive_updated": False,
+                "retryable": exc.status_code >= 500,
+                "error": "adaptive_item_invalid" if exc.status_code < 500 else "adaptive_state_update_pending",
+            }
+        except Exception as exc:
+            logger.warning(
+                "Adaptive answer update unavailable after durable answer "
+                "(question_id=%s error_type=%s)",
+                result["question_id"],
+                type(exc).__name__,
+            )
+            response["adaptive"] = {
+                "adaptive_updated": False,
+                "retryable": True,
+                "error": "adaptive_state_update_pending",
+            }
     return response
 
 
 def _responsive_grade_headers(result: dict) -> dict[str, str]:
-    """Expose the already computed grade before the durable write finishes.
+    """Configure streaming without exposing feedback before the durable write.
 
-    The response body still completes only after the atomic database RPC. This
-    lets mobile clients paint the answer state immediately without weakening
-    the existing success-means-persisted contract.
+    Mobile clients that cannot wait for the streamed body use the idempotent
+    ``/grade`` fallback, which now persists through the same atomic path.
     """
 
+    del result
     return {
         "Cache-Control": "no-store",
         "X-Accel-Buffering": "no",
-        "X-GYT-Grading-Ready": "1",
-        "X-GYT-Question-Id": str(result["question_id"]),
-        "X-GYT-Correct-Answer": str(result["correct_answer"]),
-        "X-GYT-Is-Correct": "1" if result["is_correct"] else "0",
-        "X-GYT-Added-To-Wrong-Questions": "1" if result["added_to_wrong_questions"] else "0",
-        "Access-Control-Expose-Headers": (
-            "X-GYT-Grading-Ready, X-GYT-Question-Id, X-GYT-Correct-Answer, "
-            "X-GYT-Is-Correct, X-GYT-Added-To-Wrong-Questions"
-        ),
     }
 
 
@@ -102,15 +138,18 @@ def ability_accuracy(
 def history(
     user_id: str = Depends(get_current_user_id),
     status_filter: str = Query(default="all", alias="status", pattern="^(all|correct|wrong)$"),
+    exam_code: str | None = Query(default=None, pattern="^(Z001|Z002)$"),
     subject: str | None = None,
     limit: int = Query(default=30, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ) -> AnswerHistoryResponse:
     supabase = get_supabase_admin()
+    resolved_exam_code = resolve_user_exam_code(supabase, user_id, exam_code)
     result = list_answer_history(
         supabase=supabase,
         user_id=user_id,
         status_filter=status_filter,
+        exam_code=resolved_exam_code,
         subject=subject,
         limit=limit,
         offset=offset,
@@ -132,8 +171,9 @@ def submit(
         used_time=payload.used_time,
         requested_exam_code=payload.exam_code,
         include_ability_accuracy=False,
+        practice_session_item_id=payload.practice_session_item_id,
     )
-    response = _persist_graded_answer(result=result, payload=payload, user_id=user_id)
+    response = _persist_graded_answer(result=result, payload=payload, user_id=user_id, supabase=supabase)
     return SubmitAnswerResponse(**response)
 
 
@@ -142,10 +182,13 @@ def grade(
     payload: SubmitAnswerRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> GradeAnswerResponse:
-    """Return the server-side grade without claiming that persistence finished.
+    """Return feedback only after the same durable submission used by ``/submit``.
 
-    Mobile runtimes that cannot observe streamed response headers use this as a
-    visual-feedback fallback while the separate durable submission continues.
+    Mobile runtimes use this endpoint when streamed response headers are not
+    observable.  Reusing the atomic persistence path keeps that fallback from
+    becoming an answer oracle: a disclosed answer is always tied to the exact
+    submitted choice, and concurrent retries converge through the existing
+    ``client_submission_id`` idempotency key.
     """
 
     supabase = get_supabase_admin()
@@ -157,8 +200,15 @@ def grade(
         used_time=payload.used_time,
         requested_exam_code=payload.exam_code,
         include_ability_accuracy=False,
+        practice_session_item_id=payload.practice_session_item_id,
     )
-    return GradeAnswerResponse(**result)
+    response = _persist_graded_answer(
+        result=result,
+        payload=payload,
+        user_id=user_id,
+        supabase=supabase,
+    )
+    return GradeAnswerResponse(**response)
 
 
 @router.post("/submit-responsive", response_model=SubmitAnswerResponse)
@@ -166,11 +216,11 @@ def submit_responsive(
     payload: SubmitAnswerRequest,
     user_id: str = Depends(get_current_user_id),
 ) -> StreamingResponse:
-    """Stream the grade first, then finish the same durable submission.
+    """Flush transport setup, then return feedback after durable submission.
 
-    A one-byte whitespace chunk flushes the headers immediately. The final body
-    remains ordinary JSON, so clients without header streaming keep the legacy
-    behavior and receive the complete response after persistence.
+    A one-byte whitespace chunk starts the response without any grading data.
+    The final JSON body contains feedback only after persistence succeeds;
+    clients needing faster feedback use the idempotent ``/grade`` path.
     """
 
     supabase = get_supabase_admin()
@@ -182,16 +232,26 @@ def submit_responsive(
         used_time=payload.used_time,
         requested_exam_code=payload.exam_code,
         include_ability_accuracy=False,
+        practice_session_item_id=payload.practice_session_item_id,
     )
 
     def stream_response():
         yield b" "
         response = dict(result)
         try:
-            response = _persist_graded_answer(result=result, payload=payload, user_id=user_id)
+            response = _persist_graded_answer(
+                result=result,
+                payload=payload,
+                user_id=user_id,
+                supabase=supabase,
+            )
         except HTTPException as exc:
             response.update(
                 {
+                    "correct_answer": "",
+                    "is_correct": None,
+                    "explanation": "",
+                    "added_to_wrong_questions": None,
                     "persisted": False,
                     "persistence_error": str(exc.detail),
                     "persistence_retryable": exc.status_code in {
@@ -212,6 +272,10 @@ def submit_responsive(
             )
             response.update(
                 {
+                    "correct_answer": "",
+                    "is_correct": None,
+                    "explanation": "",
+                    "added_to_wrong_questions": None,
                     "persisted": False,
                     "persistence_error": "作答记录暂时无法保存，请稍后重试",
                     "persistence_retryable": True,
@@ -279,22 +343,20 @@ def mark_unfamiliar(
         user_id=user_id,
         question_id=payload.question_id,
         requested_exam_code=payload.exam_code,
+        practice_session_item_id=payload.practice_session_item_id,
     )
-    persisted = persist_answer_submission(
-        user_id=user_id,
-        question={
-            "id": result["question_id"],
-            "exam_code": result.get("exam_code"),
-            "subject": result.get("subject"),
-            "module": result.get("module"),
-            "submodule": result.get("submodule"),
-            "source_type": result.get("source_type"),
-        },
+    submission_payload = SubmitAnswerRequest(
+        question_id=payload.question_id,
+        client_submission_id=payload.client_submission_id,
+        practice_session_item_id=payload.practice_session_item_id,
         selected_answer=result["selected_answer"],
         used_time=payload.used_time,
-        is_correct=False,
-        client_submission_id=payload.client_submission_id,
+        exam_code=payload.exam_code,
     )
-    result.update(persisted)
-    result["ability_accuracy"] = persisted.get("ability_accuracy")
-    return SubmitAnswerResponse(**result)
+    response = _persist_graded_answer(
+        result=result,
+        payload=submission_payload,
+        user_id=user_id,
+        supabase=supabase,
+    )
+    return SubmitAnswerResponse(**response)

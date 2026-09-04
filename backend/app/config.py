@@ -30,6 +30,15 @@ class Settings(BaseSettings):
     user_notification_outbox_interval_seconds: int = 10
     wallet_withdrawal_enabled: bool = False
     wallet_settlement_days: int = 3
+    adaptive_practice_enabled: bool = False
+    # Keep rollout closed by default even when the global switch is enabled.
+    # Operators can first allow internal user IDs, then raise the stable
+    # percentage cohort without changing application code.
+    # Parsed by the rollout gate so a malformed deployment value fails closed
+    # for this feature instead of preventing the whole API from starting.
+    adaptive_practice_rollout_percent: str = "0"
+    adaptive_practice_rollout_user_ids: str = ""
+    adaptive_practice_rollout_salt: str = ""
     mentor_consultation_report_first_response_hours: int = 48
     mentor_consultation_urgent_report_first_response_hours: int = 12
     mentor_consultation_report_appeal_first_response_hours: int = 48

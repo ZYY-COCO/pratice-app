@@ -4,6 +4,7 @@ from pydantic import BaseModel, Field
 class SubmitAnswerRequest(BaseModel):
     question_id: str
     client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
+    practice_session_item_id: str | None = Field(default=None, min_length=1, max_length=120)
     selected_answer: str = Field(pattern="^[ABCD]$")
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
@@ -24,6 +25,7 @@ class SubmitBatchAnswerRequest(BaseModel):
 class MarkUnfamiliarRequest(BaseModel):
     question_id: str
     client_submission_id: str | None = Field(default=None, min_length=1, max_length=120)
+    practice_session_item_id: str | None = Field(default=None, min_length=1, max_length=120)
     used_time: int = Field(default=0, ge=0)
     exam_code: str | None = Field(default=None, pattern="^(Z001|Z002)$")
 
@@ -37,13 +39,28 @@ class GradeAnswerResponse(BaseModel):
     added_to_wrong_questions: bool
 
 
+class AdaptiveAnswerUpdateResponse(BaseModel):
+    adaptive_updated: bool
+    idempotent: bool | None = None
+    migration_pending: bool | None = None
+    retryable: bool | None = None
+    error: str | None = None
+    answer_id: str | None = None
+    practice_session_item_id: str | None = None
+    diagnostic_status: str | None = None
+    theta: float | None = None
+    uncertainty: float | None = None
+    effective_evidence: float | None = None
+    pending_conflicts: int | None = None
+
+
 class SubmitAnswerResponse(BaseModel):
     question_id: str
     selected_answer: str
     correct_answer: str
-    is_correct: bool
+    is_correct: bool | None
     explanation: str
-    added_to_wrong_questions: bool
+    added_to_wrong_questions: bool | None
     ability_accuracy: float | None = None
     submission_id: str | None = None
     client_submission_id: str | None = None
@@ -52,6 +69,9 @@ class SubmitAnswerResponse(BaseModel):
     idempotent: bool = False
     is_first_attempt: bool | None = None
     attempt_number: int | None = None
+    is_first_attempt_in_scope: bool | None = None
+    scope_attempt_number: int | None = None
+    adaptive: AdaptiveAnswerUpdateResponse | None = None
     persistence_error: str | None = None
     persistence_retryable: bool = False
 
@@ -92,6 +112,8 @@ class AnswerHistoryItem(BaseModel):
     stats_exam_code: str | None = None
     attempt_number: int = 1
     is_first_attempt: bool = False
+    scope_attempt_number: int | None = None
+    is_first_attempt_in_scope: bool | None = None
     created_at: str
     question: AnswerHistoryQuestion | None = None
 

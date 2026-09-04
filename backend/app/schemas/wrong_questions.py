@@ -6,6 +6,7 @@ from app.schemas.questions import Question
 class WrongQuestionItem(BaseModel):
     id: str
     question_id: str
+    stats_exam_code: str | None = None
     wrong_count: int
     last_wrong_at: str
     question: Question | None = None
@@ -21,6 +22,7 @@ class WrongQuestionListResponse(BaseModel):
 class WrongQuestionDetailResponse(BaseModel):
     id: str
     question_id: str
+    stats_exam_code: str | None = None
     wrong_count: int
     last_wrong_at: str
     latest_selected_answer: str | None = None

@@ -27,6 +27,9 @@ _SUBMISSION_QUESTION_FIELDS = (
     "module",
     "submodule",
     "source_type",
+    "question_type",
+    "difficulty",
+    "estimated_time_sec",
     "answer",
     "explanation",
 )
@@ -36,31 +39,70 @@ _submission_question_cache: OrderedDict[str, tuple[dict, float]] = OrderedDict()
 _submission_question_cache_lock = Lock()
 
 
-def _cache_submission_question(question: dict) -> None:
+def _submission_question_cache_key(
+    question_id: str,
+    practice_session_item_id: str | None = None,
+    user_id: str | None = None,
+) -> str:
+    if practice_session_item_id:
+        return f"adaptive:{user_id}:{practice_session_item_id}:{question_id}"
+    return f"question:{question_id}"
+
+
+def _cache_submission_question(
+    question: dict,
+    *,
+    practice_session_item_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
     question_id = str(question.get("id") or "")
     if not question_id or not question.get("answer"):
         return
 
+    if practice_session_item_id and not user_id:
+        return
+    cache_key = _submission_question_cache_key(
+        question_id,
+        practice_session_item_id,
+        user_id,
+    )
     cached_question = {field: question.get(field) for field in _SUBMISSION_QUESTION_FIELDS}
     with _submission_question_cache_lock:
-        _submission_question_cache[question_id] = (
+        _submission_question_cache[cache_key] = (
             cached_question,
             monotonic() + _SUBMISSION_QUESTION_CACHE_TTL_SECONDS,
         )
-        _submission_question_cache.move_to_end(question_id)
+        _submission_question_cache.move_to_end(cache_key)
         while len(_submission_question_cache) > _SUBMISSION_QUESTION_CACHE_MAX_ENTRIES:
             _submission_question_cache.popitem(last=False)
 
 
-def warm_submission_questions(questions: list[dict]) -> None:
+def warm_submission_questions(
+    questions: list[dict],
+    *,
+    practice_session_item_id: str | None = None,
+    user_id: str | None = None,
+) -> None:
     """Warm grading data from question-list rows without exposing answers."""
 
     for question in questions:
-        _cache_submission_question(question)
+        _cache_submission_question(
+            question,
+            practice_session_item_id=practice_session_item_id,
+            user_id=user_id,
+        )
 
 
-def _get_cached_submission_question(question_id: str) -> dict | None:
-    key = str(question_id)
+def _get_cached_submission_question(
+    question_id: str,
+    practice_session_item_id: str | None = None,
+    user_id: str | None = None,
+) -> dict | None:
+    key = _submission_question_cache_key(
+        str(question_id),
+        practice_session_item_id,
+        user_id,
+    )
     now = monotonic()
     with _submission_question_cache_lock:
         cached = _submission_question_cache.get(key)
@@ -83,15 +125,136 @@ def get_question_or_404(supabase: Client, question_id: str) -> dict:
     return response.data[0]
 
 
-def get_submission_question_or_404(supabase: Client, question_id: str) -> dict:
+def assert_single_answer_feedback_allowed(
+    supabase: Client,
+    *,
+    user_id: str,
+    question_id: str,
+    practice_session_item_id: str | None = None,
+) -> None:
+    """Keep fixed comprehensive rounds behind their one batch hand-in channel.
+
+    The check deliberately runs before the grading cache is consulted.  Checking
+    only ``practice_session_item_id`` is insufficient because a client already
+    knows the question id and could otherwise omit the item id when calling a
+    legacy grade/submit endpoint.
+    """
+
+    try:
+        response = call_supabase(
+            lambda: supabase.rpc(
+                "assert_single_answer_feedback_allowed",
+                {
+                    "p_user_id": user_id,
+                    "p_question_id": question_id,
+                    "p_practice_session_item_id": practice_session_item_id,
+                },
+            ).execute(),
+            operation_name="check comprehensive answer embargo",
+        )
+    except Exception as exc:
+        if "adaptive_comprehensive_batch_required" in str(exc).lower():
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "ADAPTIVE_COMPREHENSIVE_BATCH_REQUIRED",
+                    "message": "综合刷题须在整轮交卷后统一查看答案与解析",
+                },
+            ) from exc
+        # During a rolling deployment the assertion RPC can be absent before
+        # comprehensive sessions are enabled.  The atomic answer RPC below is
+        # still the authoritative write barrier after the migration lands.
+        if is_missing_supabase_relation_error(exc):
+            return
+        raise
+
+    data = response.data
+    if isinstance(data, list):
+        data = data[0] if data else None
+    if data is not True and not (isinstance(data, dict) and data.get("allowed") is True):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="作答反馈状态暂时未能确认",
+        )
+
+
+def get_submission_question_or_404(
+    supabase: Client,
+    question_id: str,
+    *,
+    practice_session_item_id: str | None = None,
+    user_id: str | None = None,
+) -> dict:
     """Fetch only the fields needed to grade and explain one submitted answer."""
-    cached_question = _get_cached_submission_question(question_id)
+    if practice_session_item_id and not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="个性化题目缺少用户作用域",
+        )
+    if user_id:
+        assert_single_answer_feedback_allowed(
+            supabase,
+            user_id=user_id,
+            question_id=question_id,
+            practice_session_item_id=practice_session_item_id,
+        )
+    cached_question = _get_cached_submission_question(
+        question_id,
+        practice_session_item_id,
+        user_id,
+    )
     if cached_question:
         return cached_question
 
+    if practice_session_item_id:
+        try:
+            response = call_supabase(
+                lambda: supabase.rpc(
+                    "get_adaptive_question_snapshot",
+                    {
+                        "p_user_id": user_id,
+                        "p_practice_session_item_id": practice_session_item_id,
+                        "p_question_id": question_id,
+                    },
+                ).execute(),
+                operation_name="load adaptive grading snapshot",
+            )
+        except Exception as exc:
+            if "adaptive_comprehensive_batch_required" in str(exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail={
+                        "code": "ADAPTIVE_COMPREHENSIVE_BATCH_REQUIRED",
+                        "message": "综合刷题须在整轮交卷后统一查看答案与解析",
+                    },
+                ) from exc
+            if "adaptive_question_snapshot_not_found" in str(exc).lower():
+                raise HTTPException(
+                    status_code=status.HTTP_409_CONFLICT,
+                    detail="个性化题目版本与当前题位不一致",
+                ) from exc
+            raise
+        question = response.data
+        if isinstance(question, list):
+            question = question[0] if question else None
+        if not isinstance(question, dict) or str(question.get("id") or "") != str(question_id):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="个性化题目版本与当前题位不一致",
+            )
+        _cache_submission_question(
+            question,
+            practice_session_item_id=practice_session_item_id,
+            user_id=user_id,
+        )
+        return question
+
     response = (
         supabase.table("questions")
-        .select("id, exam_code, subject, module, submodule, source_type, answer, explanation")
+        .select(
+            "id, exam_code, subject, module, submodule, source_type, question_type, "
+            "difficulty, estimated_time_sec, answer, explanation"
+        )
         .eq("id", question_id)
         .limit(1)
         .execute()
@@ -131,7 +294,17 @@ def resolve_stats_exam_code(
 ) -> str:
     """COMMON 公共题按用户当前版本写入能力统计，避免报告里出现 COMMON 分组。"""
     question_exam_code = question["exam_code"]
-    if question.get("subject") in PUBLIC_SUBJECTS and requested_exam_code in VERSION_EXAM_CODES:
+    if question_exam_code == "COMMON" and question.get("subject") not in PUBLIC_SUBJECTS:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="题目不属于可跨考试版本复用的公共学科",
+        )
+    if requested_exam_code in VERSION_EXAM_CODES:
+        if question_exam_code not in {"COMMON", requested_exam_code}:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="题目不属于当前考试版本",
+            )
         return requested_exam_code
 
     if question_exam_code != "COMMON":
@@ -140,6 +313,16 @@ def resolve_stats_exam_code(
     if requested_exam_code in VERSION_EXAM_CODES:
         return requested_exam_code
 
+    return resolve_user_exam_code(supabase, user_id, requested_exam_code)
+
+
+def resolve_user_exam_code(
+    supabase: Client,
+    user_id: str,
+    requested_exam_code: str | None = None,
+) -> str:
+    if requested_exam_code in VERSION_EXAM_CODES:
+        return requested_exam_code
     response = supabase.table("users").select("exam_target").eq("id", user_id).limit(1).execute()
     profile = response.data[0] if response.data else {}
     exam_target = profile.get("exam_target")
@@ -241,6 +424,10 @@ def persist_answer_submission(
     used_time: int,
     is_correct: bool,
     client_submission_id: str | None = None,
+    practice_session_item_id: str | None = None,
+    comprehensive_session_id: str | None = None,
+    comprehensive_client_submission_id: str | None = None,
+    comprehensive_manifest_hash: str | None = None,
 ) -> dict:
     """Persist one answer synchronously and return its durable submission facts.
 
@@ -266,6 +453,26 @@ def persist_answer_submission(
         "p_submodule": str(question.get("submodule") or ""),
         "p_is_ai_generated": is_ai_generated_question(question),
     }
+    if practice_session_item_id:
+        rpc_payload["p_practice_session_item_id"] = str(practice_session_item_id)
+    if comprehensive_session_id or comprehensive_client_submission_id or comprehensive_manifest_hash:
+        if not (
+            practice_session_item_id
+            and comprehensive_session_id
+            and comprehensive_client_submission_id
+            and comprehensive_manifest_hash
+        ):
+            raise ValueError("comprehensive answer persistence context is incomplete")
+        rpc_payload.update(
+            {
+                "p_submission_kind": "comprehensive_batch",
+                "p_comprehensive_session_id": str(comprehensive_session_id),
+                "p_comprehensive_client_submission_id": str(
+                    comprehensive_client_submission_id
+                ),
+                "p_comprehensive_manifest_hash": str(comprehensive_manifest_hash),
+            }
+        )
 
     try:
         response = call_supabase(
@@ -287,6 +494,25 @@ def persist_answer_submission(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="同一提交标识已用于不同答案，请生成新的提交标识后重试",
             ) from exc
+        if "adaptive_comprehensive_" in error_text or any(
+            marker in error_text
+            for marker in (
+                "answer_submission_scope_mismatch",
+                "adaptive_session_item_scope_mismatch",
+                "adaptive_session_item_answer_conflict",
+                "adaptive_session_item_already_skipped",
+                "adaptive_session_not_active",
+                "adaptive_answer_requires_client_submission_id",
+                "adaptive_answer_already_attached",
+                "adaptive_scope_mismatch",
+                "adaptive_question_snapshot_not_found",
+                "adaptive_question_snapshot_invalid",
+            )
+        ):
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail="作答与当前个性化练习作用域不一致",
+            ) from exc
         if not is_missing_supabase_relation_error(exc):
             logger.warning(
                 "Atomic answer submission failed (question_id=%s error_type=%s)",
@@ -296,6 +522,12 @@ def persist_answer_submission(
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="作答记录暂时无法保存，请稍后重试",
+            ) from exc
+
+        if comprehensive_manifest_hash:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="综合刷题交卷迁移尚未启用",
             ) from exc
 
         logger.warning(
@@ -444,8 +676,14 @@ def submit_answer(
     used_time: int,
     requested_exam_code: str | None = None,
     include_ability_accuracy: bool = True,
+    practice_session_item_id: str | None = None,
 ) -> dict:
-    question = get_submission_question_or_404(supabase, question_id)
+    question = get_submission_question_or_404(
+        supabase,
+        question_id,
+        practice_session_item_id=practice_session_item_id,
+        user_id=user_id,
+    )
     stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
     stats_question = {**question, "exam_code": stats_exam_code}
     is_correct = selected_answer == question["answer"]
@@ -458,6 +696,9 @@ def submit_answer(
         "module": question["module"],
         "submodule": question["submodule"],
         "source_type": question.get("source_type"),
+        "question_type": question.get("question_type"),
+        "difficulty": question.get("difficulty"),
+        "estimated_time_sec": question.get("estimated_time_sec"),
         "selected_answer": selected_answer,
         "correct_answer": question["answer"],
         "is_correct": is_correct,
@@ -472,8 +713,14 @@ def mark_unfamiliar_answer(
     user_id: str,
     question_id: str,
     requested_exam_code: str | None = None,
+    practice_session_item_id: str | None = None,
 ) -> dict:
-    question = get_question_or_404(supabase, question_id)
+    question = get_submission_question_or_404(
+        supabase,
+        question_id,
+        practice_session_item_id=practice_session_item_id,
+        user_id=user_id,
+    )
     stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
     stats_question = {**question, "exam_code": stats_exam_code}
     current_ability = get_current_ability_stats(supabase, user_id, stats_question)
@@ -486,6 +733,9 @@ def mark_unfamiliar_answer(
         "module": question["module"],
         "submodule": question["submodule"],
         "source_type": question.get("source_type"),
+        "question_type": question.get("question_type"),
+        "difficulty": question.get("difficulty"),
+        "estimated_time_sec": question.get("estimated_time_sec"),
         "selected_answer": selected_answer,
         "correct_answer": question["answer"],
         "is_correct": False,
@@ -499,42 +749,54 @@ def list_answer_history(
     supabase: Client,
     user_id: str,
     status_filter: str = "all",
+    exam_code: str | None = None,
     subject: str | None = None,
     limit: int = 30,
     offset: int = 0,
 ) -> dict:
     """Return recent answer records with question details for the practice history page."""
 
-    def build_query(fields: str):
+    normalized_exam_code = str(exam_code or "").strip().upper() or None
+    normalized_subject = str(subject or "").strip() or None
+
+    def build_query(fields: str, *, scoped_columns: bool):
         query = (
             supabase.table("user_answers")
             .select(fields)
             .eq("user_id", user_id)
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
         )
+        if normalized_exam_code:
+            if scoped_columns:
+                query = query.eq("stats_exam_code", normalized_exam_code)
+                query = query.in_("questions.exam_code", [normalized_exam_code, "COMMON"])
+            else:
+                legacy_codes = [normalized_exam_code, "COMMON"]
+                query = query.in_("questions.exam_code", legacy_codes)
+        if normalized_subject:
+            query = query.eq("questions.subject", normalized_subject)
         if status_filter == "correct":
             query = query.eq("is_correct", True)
         elif status_filter == "wrong":
             query = query.eq("is_correct", False)
-        return query
+        return query.order("created_at", desc=True).range(offset, offset + limit - 1)
 
     try:
         response = build_query(
             "id,question_id,client_submission_id,stats_exam_code,attempt_number,is_first_attempt,"
-            "selected_answer,is_correct,used_time,created_at,questions(*)"
+            "scope_attempt_number,is_first_attempt_in_scope,selected_answer,is_correct,used_time,"
+            "created_at,questions!inner(*)",
+            scoped_columns=True,
         ).execute()
     except Exception as exc:
         if not is_missing_supabase_relation_error(exc):
             raise
         response = build_query(
-            "id,question_id,selected_answer,is_correct,used_time,created_at,questions(*)"
+            "id,question_id,selected_answer,is_correct,used_time,created_at,questions!inner(*)",
+            scoped_columns=False,
         ).execute()
     items: list[dict] = []
     for row in response.data or []:
         question = row.get("questions")
-        if subject and question and question.get("subject") != subject:
-            continue
         items.append(
             {
                 "id": row["id"],
@@ -546,6 +808,8 @@ def list_answer_history(
                 "stats_exam_code": row.get("stats_exam_code"),
                 "attempt_number": int(row.get("attempt_number") or 1),
                 "is_first_attempt": bool(row.get("is_first_attempt")),
+                "scope_attempt_number": row.get("scope_attempt_number"),
+                "is_first_attempt_in_scope": row.get("is_first_attempt_in_scope"),
                 "created_at": row["created_at"],
                 "question": question,
             }
