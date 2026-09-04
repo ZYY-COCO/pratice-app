@@ -144,6 +144,53 @@ jobs:
           trap cleanup EXIT
           tar -xzf "${REMOTE_STAGE}/gangyantong-h5.tgz" -C "${tmp_dir}"
           tar -xzf "${REMOTE_STAGE}/gangyantong-backend.tgz" -C "${backend_tmp}"
+
+          # Fail before replacing production files when the server interpreter
+          # cannot parse this release or the effective adaptive rollout is not
+          # closed. Missing adaptive variables intentionally resolve to the
+          # application's fail-closed defaults (false / 0).
+          candidate_python="/opt/gangyantong/app/backend/.venv/bin/python"
+          if [ ! -x "${candidate_python}" ]; then
+            candidate_python="$(command -v python3)"
+          fi
+          "${candidate_python}" - "${backend_tmp}" <<'PY'
+          from decimal import Decimal, InvalidOperation
+          from pathlib import Path
+          import sys
+
+          if sys.version_info < (3, 10):
+              raise SystemExit("Deployment requires Python 3.10 or newer.")
+
+          env_path = Path("/opt/gangyantong/backend.env")
+          values = {}
+          if env_path.is_file():
+              for raw_line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+                  line = raw_line.strip()
+                  if not line or line.startswith("#") or "=" not in line:
+                      continue
+                  if line.startswith("export "):
+                      line = line[7:].lstrip()
+                  key, value = line.split("=", 1)
+                  values[key.strip()] = value.strip().strip("'\"")
+
+          enabled = values.get("ADAPTIVE_PRACTICE_ENABLED", "false").lower()
+          if enabled not in {"false", "0", "no", "off"}:
+              raise SystemExit("Deployment requires adaptive practice to remain disabled.")
+          try:
+              rollout_percent = Decimal(values.get("ADAPTIVE_PRACTICE_ROLLOUT_PERCENT", "0"))
+          except InvalidOperation as exc:
+              raise SystemExit("Adaptive rollout percent is invalid.") from exc
+          if rollout_percent != 0:
+              raise SystemExit("Deployment requires adaptive rollout percent to remain 0.")
+
+          print(
+              "Deployment preflight passed: "
+              f"python={sys.version_info.major}.{sys.version_info.minor}.{sys.version_info.micro}, "
+              "adaptive_enabled=false, adaptive_rollout_percent=0"
+          )
+          PY
+          "${candidate_python}" -m compileall -q "${backend_tmp}/app"
+
           sudo -n mkdir -p /var/www/gangyantong
           timeout 120 sudo -n rsync -a --delete "${tmp_dir}/" /var/www/gangyantong/
           sudo -n mkdir -p /opt/gangyantong/app/backend

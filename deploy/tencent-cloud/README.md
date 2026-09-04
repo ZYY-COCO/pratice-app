@@ -48,7 +48,19 @@ Add these repository secrets:
 - `TENCENT_SSH_KEY`: private SSH key that can log into the server
 - `TENCENT_PORT`: optional, defaults to `22`
 
-Every push to `main` will run `deploy/tencent-cloud/deploy.sh` on the server.
+Every push to `main` runs `.github/workflows/tencent-cloud-deploy.yml`. The
+workflow builds H5 in GitHub Actions, uploads verified frontend/backend archives,
+syncs them into the two production directories, installs backend dependencies,
+restarts `gangyantong-backend`, and checks both the static support page and API
+health endpoint. It does not call the server-side `deploy.sh` and it does not run
+database migrations.
+
+Before replacing production files, the workflow also verifies that the server
+Python is 3.10 or newer, compiles the candidate backend, and checks the effective
+adaptive-practice configuration is closed (`ADAPTIVE_PRACTICE_ENABLED=false`
+and `ADAPTIVE_PRACTICE_ROLLOUT_PERCENT=0`; missing values use the same fail-closed
+application defaults). Keep those values closed for the first deployment and
+ordinary-practice regression.
 
 ## Useful server commands
 
