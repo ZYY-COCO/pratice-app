@@ -185,16 +185,17 @@ def _community_post_type(row: dict) -> str:
     return post_type if post_type in COMMUNITY_POST_TYPES else "chat"
 
 
-def _community_experience_stages(row: dict) -> list[str]:
+def _community_explicit_experience_stages(row: dict) -> list[str]:
     if _community_post_type(row) != "experience":
         return []
 
+    allowed_stages = COMMUNITY_EXPERIENCE_STAGES | {"申请制"}
     stored_stages = row.get("experience_stages")
     if isinstance(stored_stages, list):
         normalized_stages = list(dict.fromkeys(
             stage
             for stage in (str(value or "").strip() for value in stored_stages)
-            if stage in COMMUNITY_EXPERIENCE_STAGES
+            if stage in allowed_stages
         ))
         if normalized_stages:
             return normalized_stages
@@ -210,8 +211,32 @@ def _community_experience_stages(row: dict) -> list[str]:
             return list(dict.fromkeys(
                 stage
                 for stage in (str(value or "").strip() for value in marker)
-                if stage in COMMUNITY_EXPERIENCE_STAGES
+                if stage in allowed_stages
             ))
+
+    return []
+
+
+def _community_experience_category(row: dict) -> str:
+    raw_category = str(row.get("category") or "").strip()
+    if _community_post_type(row) != "experience":
+        return raw_category
+    if raw_category == "申请制" or "申请制" in _community_explicit_experience_stages(row):
+        return "申请制"
+    return raw_category
+
+
+def _community_experience_stages(row: dict) -> list[str]:
+    if _community_post_type(row) != "experience":
+        return []
+
+    normalized_stages = [
+        stage
+        for stage in _community_explicit_experience_stages(row)
+        if stage in COMMUNITY_EXPERIENCE_STAGES
+    ]
+    if normalized_stages:
+        return normalized_stages
 
     legacy_category = str(row.get("category") or "").strip()
     if legacy_category == "复试":
@@ -224,6 +249,24 @@ def _community_experience_stages(row: dict) -> list[str]:
 def _matches_community_experience_stage(row: dict, stage: str) -> bool:
     normalized_stage = str(stage or "").strip()
     return not normalized_stage or normalized_stage in _community_experience_stages(row)
+
+
+def _normalize_community_experience_filters(
+    post_type: str,
+    category: str | None,
+    experience_stage: str | None,
+) -> tuple[str, str]:
+    normalized_category = str(category or "").strip()
+    if normalized_category == "全部":
+        normalized_category = ""
+    if post_type != "experience":
+        return normalized_category, ""
+
+    normalized_stage = str(experience_stage or "").strip()
+    if normalized_stage == "申请制":
+        # 兼容旧客户端：申请制曾作为 experience_stage 传入，现已归入考试类别。
+        return "申请制", ""
+    return normalized_category, normalized_stage
 
 
 def _matches_community_search(row: dict, keyword: str) -> bool:
@@ -252,7 +295,7 @@ def _is_public_verified_experience_post(row: dict, verified_author_ids: set[str]
     return (
         _community_post_type(row) == "experience"
         and str(row.get("author_id") or "") in verified_author_ids
-        and str(row.get("category") or "") in COMMUNITY_EXPERIENCE_CATEGORIES
+        and _community_experience_category(row) in COMMUNITY_EXPERIENCE_CATEGORIES
         and _community_review_status(row) == "approved"
     )
 
@@ -792,7 +835,11 @@ def _post_item(
     return CommunityPostItem(
         id=post_id,
         post_type=_community_post_type(row),
-        category=str(row.get("category") or "备考日常"),
+        category=(
+            _community_experience_category(row)
+            if _community_post_type(row) == "experience"
+            else str(row.get("category") or "备考日常")
+        ),
         experience_stages=_community_experience_stages(row),
         author=author_name,
         avatar=author_avatar,
@@ -2083,10 +2130,11 @@ def list_community_posts(
 ) -> CommunityPostListResponse:
     global _community_feed_view_available, _community_post_type_column_available
 
-    normalized_category = str(category or "").strip()
-    if normalized_category == "全部":
-        normalized_category = ""
-    normalized_experience_stage = str(experience_stage or "").strip() if post_type == "experience" else ""
+    normalized_category, normalized_experience_stage = _normalize_community_experience_filters(
+        post_type,
+        category,
+        experience_stage,
+    )
     normalized_search = str(search or "").strip().replace("%", "").replace("_", "")
     cursor_context = {
         "post_type": post_type,

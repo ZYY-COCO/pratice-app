@@ -150,8 +150,8 @@ class CommunityPostPublishTests(unittest.TestCase):
         store = _FakeSupabase()
         payload = CommunityCreatePostRequest(
             post_type="experience",
-            category="Z001",
-            experience_stages=["申请制", "复试"],
+            category="申请制",
+            experience_stages=["复试"],
             client_request_id=REQUEST_ID,
             title="备考经验",
             content="完整经验内容",
@@ -159,11 +159,13 @@ class CommunityPostPublishTests(unittest.TestCase):
 
         result = self._create(store, payload)
 
-        self.assertEqual(result.experience_stages, ["申请制", "复试"])
+        self.assertEqual(result.category, "申请制")
+        self.assertEqual(result.experience_stages, ["复试"])
         self.assertEqual(len(store.insert_attempts), 1)
         inserted = store.insert_attempts[0]
         self.assertEqual(inserted["client_request_id"], str(REQUEST_ID))
-        self.assertEqual(inserted["experience_stages"], ["申请制", "复试"])
+        self.assertEqual(inserted["category"], "申请制")
+        self.assertEqual(inserted["experience_stages"], ["复试"])
         self.assertEqual(inserted["author_name"], "账号昵称")
         self.assertEqual(inserted["author_avatar"], "账")
         self.assertEqual(inserted["author_tone"], "blue")
@@ -260,8 +262,8 @@ class CommunityPostPublishTests(unittest.TestCase):
         store = _FakeSupabase(rows=[current])
         payload = CommunityCreatePostRequest(
             post_type="experience",
-            category="Z002",
-            experience_stages=["申请制", "复试"],
+            category="申请制",
+            experience_stages=["复试"],
             client_request_id=REQUEST_ID,
             title="修改后的经验",
             content="修改后的经验正文",
@@ -284,7 +286,8 @@ class CommunityPostPublishTests(unittest.TestCase):
         self.assertFalse(updated["is_published"])
         self.assertEqual(updated["review_status"], "pending")
         self.assertEqual(updated["review_version"], 3)
-        self.assertEqual(result.experience_stages, ["申请制", "复试"])
+        self.assertEqual(result.category, "申请制")
+        self.assertEqual(result.experience_stages, ["复试"])
         self.assertTrue(result.is_mine)
 
     def test_reported_post_cannot_be_edited(self):

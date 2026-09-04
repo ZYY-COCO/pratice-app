@@ -3615,8 +3615,8 @@ const circleCommunitySubjectCategories = circleCommunityCategories.slice(1)
 const circleCommunityPosts = ref([])
 const circleFeaturedCommunityPosts = ref([])
 const circleHotCommunityPosts = ref([])
-const circleExperienceExamCodes = ['Z001', 'Z002']
-const circleExperienceStages = ['申请制', '初试', '复试']
+const circleExperienceExamCodes = ['Z001', 'Z002', '申请制']
+const circleExperienceStages = ['初试', '复试']
 const circleExperienceCategories = ['全部', ...circleExperienceExamCodes, ...circleExperienceStages]
 const circleExperienceCommunityPosts = ref([])
 const circleFeaturedExperiencePosts = ref([])
@@ -7486,6 +7486,7 @@ function sortCommunityPosts(posts, sort) {
 
 function getExperienceCategory(post = {}) {
   const category = String(post.category || '').trim()
+  if (getRawExperienceStages(post).includes('申请制')) return '申请制'
   if (circleExperienceExamCodes.includes(category)) return category
 
   const explicitCode = String(post.examCode || post.exam_code || '').toUpperCase()
@@ -7496,15 +7497,19 @@ function getExperienceCategory(post = {}) {
   return 'Z001'
 }
 
-function getExperienceStages(post = {}) {
+function getRawExperienceStages(post = {}) {
   const rawStages = Array.isArray(post.experienceStages)
     ? post.experienceStages
     : Array.isArray(post.experience_stages)
       ? post.experience_stages
       : []
+  return [...new Set(rawStages.map((stage) => String(stage || '').trim()).filter(Boolean))]
+}
+
+function getExperienceStages(post = {}) {
+  const rawStages = getRawExperienceStages(post)
   const stages = [...new Set(
     rawStages
-      .map((stage) => String(stage || '').trim())
       .filter((stage) => circleExperienceStages.includes(stage))
   )]
   if (stages.length) return stages
@@ -7512,7 +7517,6 @@ function getExperienceStages(post = {}) {
   const legacyCategory = String(post.category || '').trim()
   if (legacyCategory === '专业课') return ['初试']
   if (legacyCategory === '复试') return ['复试']
-  if (legacyCategory === '申请制') return ['申请制']
   return []
 }
 

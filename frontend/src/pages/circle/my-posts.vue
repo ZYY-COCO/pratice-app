@@ -443,16 +443,21 @@ function normalizeMyPost(post = {}) {
   const media = Array.isArray(post.media) ? post.media.slice(0, 9) : []
   const cover = media.find((item) => String(item?.imageUrl || item?.image_url || '').trim())
   const postType = post.postType || post.post_type || 'chat'
-  const category = String(post.category || '备考日常')
-  const experienceStages = Array.isArray(post.experienceStages || post.experience_stages)
+  const storedCategory = String(post.category || '备考日常')
+  const storedExperienceStages = Array.isArray(post.experienceStages || post.experience_stages)
     ? [...new Set((post.experienceStages || post.experience_stages).map((stage) => String(stage || '').trim()).filter(Boolean))]
+    : []
+  const hasLegacyApplicationStage = postType === 'experience' && storedExperienceStages.includes('申请制')
+  const category = hasLegacyApplicationStage ? '申请制' : storedCategory
+  const experienceStages = postType === 'experience'
+    ? storedExperienceStages.filter((stage) => stage !== '申请制')
     : []
   return {
     id: String(post.id || ''),
     postType,
     postTypeLabel: postType === 'experience' ? '经验贴' : '研友聊',
     category,
-    tags: postType === 'experience' ? [category, ...experienceStages] : [category],
+    tags: postType === 'experience' ? [...new Set([category, ...experienceStages])] : [category],
     author: String(post.author || '研友'),
     avatar: String(post.avatar || '研'),
     avatarUrl: String(post.avatarUrl || post.avatar_url || '').trim(),

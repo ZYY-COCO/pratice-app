@@ -5,12 +5,14 @@ from pydantic import ValidationError
 
 from app.routes.community import (
     COMMUNITY_EXPERIENCE_STAGES_MARKER_KEY,
+    _community_experience_category,
     _community_experience_stages,
     _create_post_media,
     _matches_community_experience_stage,
+    _normalize_community_experience_filters,
     _normalise_media,
 )
-from app.schemas.community import CommunityCreatePostRequest
+from app.schemas.community import CommunityCreatePostRequest, CommunityResubmitExperiencePostRequest
 
 
 class CommunityExperienceStageTests(unittest.TestCase):
@@ -29,8 +31,8 @@ class CommunityExperienceStageTests(unittest.TestCase):
         )
         experience = CommunityCreatePostRequest(
             post_type="experience",
-            category="Z002",
-            experience_stages=["申请制", "初试", "复试"],
+            category="申请制",
+            experience_stages=["初试", "复试"],
             title="长文经验贴",
             content="验" * 2999,
             media=media,
@@ -39,7 +41,8 @@ class CommunityExperienceStageTests(unittest.TestCase):
         self.assertEqual(len(chat.media), 9)
         self.assertEqual(chat.experience_stages, [])
         self.assertEqual(len(experience.media), 9)
-        self.assertEqual(experience.experience_stages, ["申请制", "初试", "复试"])
+        self.assertEqual(experience.category, "申请制")
+        self.assertEqual(experience.experience_stages, ["初试", "复试"])
 
     def test_experience_exam_code_is_single_and_stages_are_multi_select(self):
         payload = CommunityCreatePostRequest(
@@ -65,12 +68,64 @@ class CommunityExperienceStageTests(unittest.TestCase):
 
         self.assertEqual(payload.experience_stages, [])
 
+    def test_application_exam_category_allows_empty_or_selected_stages(self):
+        without_stage = CommunityCreatePostRequest(
+            post_type="experience",
+            category="申请制",
+            title="申请经验",
+            content="完整申请经验内容",
+        )
+        with_stage = CommunityCreatePostRequest(
+            post_type="experience",
+            category="申请制",
+            experience_stages=["复试"],
+            title="申请与面试经验",
+            content="完整申请与面试经验内容",
+        )
+
+        self.assertEqual(without_stage.experience_stages, [])
+        self.assertEqual(with_stage.experience_stages, ["复试"])
+
+    def test_application_resubmit_allows_empty_stage_but_z001_still_requires_one(self):
+        application = CommunityResubmitExperiencePostRequest(
+            category="申请制",
+            title="申请经验",
+            content="补充后的完整申请经验",
+        )
+
+        self.assertEqual(application.experience_stages, [])
+        with self.assertRaises(ValidationError):
+            CommunityResubmitExperiencePostRequest(
+                category="Z001",
+                title="初试经验",
+                content="补充后的完整初试经验",
+            )
+
+    def test_legacy_application_stage_filter_maps_to_exam_category(self):
+        self.assertEqual(
+            _normalize_community_experience_filters("experience", "", "申请制"),
+            ("申请制", ""),
+        )
+        self.assertEqual(
+            _normalize_community_experience_filters("experience", "Z001", "初试"),
+            ("Z001", "初试"),
+        )
+
     def test_experience_rejects_legacy_category_and_requires_stage(self):
         with self.assertRaises(ValidationError):
             CommunityCreatePostRequest(
                 post_type="experience",
                 category="专业课",
                 experience_stages=["初试"],
+                title="备考经验",
+                content="完整经验内容",
+            )
+
+        with self.assertRaises(ValidationError):
+            CommunityCreatePostRequest(
+                post_type="experience",
+                category="Z001",
+                experience_stages=["申请制"],
                 title="备考经验",
                 content="完整经验内容",
             )
@@ -90,7 +145,8 @@ class CommunityExperienceStageTests(unittest.TestCase):
         ]
         row = {"post_type": "experience", "media": media}
 
-        self.assertEqual(_community_experience_stages(row), ["申请制", "复试"])
+        self.assertEqual(_community_experience_category(row), "申请制")
+        self.assertEqual(_community_experience_stages(row), ["复试"])
         self.assertEqual(_normalise_media(media), [{"imageUrl": "https://example.com/image.jpg"}])
 
     def test_independent_stage_column_has_priority_and_new_media_has_no_marker(self):
@@ -104,7 +160,8 @@ class CommunityExperienceStageTests(unittest.TestCase):
             "media": media,
         }
 
-        self.assertEqual(_community_experience_stages(row), ["初试", "申请制"])
+        self.assertEqual(_community_experience_category(row), "申请制")
+        self.assertEqual(_community_experience_stages(row), ["初试"])
         self.assertEqual(
             _create_post_media(
                 [{"imageUrl": "https://example.com/new.jpg"}],

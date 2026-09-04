@@ -112,7 +112,7 @@
             </view>
             <view class="experience-review-tags">
               <strong>{{ item.category || '未分类' }}</strong>
-              <text>{{ formatStages(item.experience_stages) }}</text>
+              <text>{{ formatStages(item.experience_stages, item.category) }}</text>
             </view>
             <view><text class="experience-review-status" :class="item.review_status">{{ statusText(item.review_status) }}</text></view>
             <view class="experience-review-time">{{ formatDateTime(item.submitted_at || item.created_at) }}</view>
@@ -152,7 +152,7 @@
           <view v-else-if="detail?.post" class="experience-review-dialog-content">
             <view class="experience-review-meta">
               <view><text>发布人（实名）</text><strong>{{ detail.author_legal_name || '未记录实名' }}</strong><small>昵称 {{ detail.post.author_name || '前辈' }} · ID {{ shortId(detail.post.author_id) }}</small></view>
-              <view><text>考试类别</text><strong>{{ detail.post.category }}</strong><small>{{ formatStages(detail.post.experience_stages) }}</small></view>
+              <view><text>考试类别</text><strong>{{ detail.post.category }}</strong><small>{{ formatStages(detail.post.experience_stages, detail.post.category) }}</small></view>
               <view><text>当前状态</text><strong :class="`status-${detail.post.review_status}`">{{ statusText(detail.post.review_status) }}</strong><small>第 {{ detail.post.review_version }} 次提交</small></view>
               <view><text>提交时间</text><strong>{{ formatDateTime(detail.post.submitted_at || detail.post.created_at) }}</strong><small>{{ detail.post.media?.length || 0 }} 张图片</small></view>
             </view>
@@ -289,11 +289,11 @@ const statusOptions = [
 const categoryOptions = [
   { label: '全部考试', value: 'all' },
   { label: 'Z001', value: 'Z001' },
-  { label: 'Z002', value: 'Z002' }
+  { label: 'Z002', value: 'Z002' },
+  { label: '申请制', value: '申请制' }
 ]
 const stageOptions = [
   { label: '全部阶段', value: '' },
-  { label: '申请制', value: '申请制' },
   { label: '初试', value: '初试' },
   { label: '复试', value: '复试' }
 ]
@@ -672,7 +672,7 @@ function buildPreviewDetail(postId) {
 
 function previewReviews() {
   return [
-    { id: 'preview-experience-review-001', author_id: '8fc21c09-1111-4444-8888-111111111111', author_name: '陈学姐', author_legal_name: '陈晓宁', author_avatar: '陈', post_type: 'experience', category: 'Z001', experience_stages: ['申请制', '初试'], title: '从材料准备到初试复盘：我的 Z001 备考方法', content: '我把申请材料、公共课和专业课拆成三个阶段，每周固定复盘一次。这里整理了时间安排、错题归档和复试准备的具体方法。', media: [], review_status: 'pending', review_version: 1, is_published: false, submitted_at: '2026-09-01T02:30:00Z', created_at: '2026-09-01T02:30:00Z' },
+    { id: 'preview-experience-review-001', author_id: '8fc21c09-1111-4444-8888-111111111111', author_name: '陈学姐', author_legal_name: '陈晓宁', author_avatar: '陈', post_type: 'experience', category: '申请制', experience_stages: [], title: '申请材料与准备节奏：我的申请制经验', content: '我把申请材料、院校信息和个人陈述拆成三个部分，每周固定复盘一次。这里整理了材料准备、时间安排和申请节奏的具体方法。', media: [], review_status: 'pending', review_version: 1, is_published: false, submitted_at: '2026-09-01T02:30:00Z', created_at: '2026-09-01T02:30:00Z' },
     { id: 'preview-experience-review-002', author_id: '311b32a6-2222-4444-8888-222222222222', author_name: '林前辈', author_legal_name: '林博文', author_avatar: '林', post_type: 'experience', category: 'Z002', experience_stages: ['初试'], title: '数学基础错题复盘的四步法', content: '按概念、计算、审题和时间分配记录错因，再安排隔日与一周后的二次练习。', media: [], review_status: 'approved', review_version: 1, is_published: true, submitted_at: '2026-08-30T08:15:00Z', reviewed_at: '2026-08-30T09:20:00Z', created_at: '2026-08-30T08:15:00Z' },
     { id: 'preview-experience-review-003', author_id: '7a6123e4-3333-4444-8888-333333333333', author_name: '周学长', author_legal_name: '周凯', author_avatar: '周', post_type: 'experience', category: 'Z001', experience_stages: ['复试'], title: '复试资料分享与交流', content: '正文包含需要进一步核对的外部联系方式和资料说明。', media: [], review_status: 'rejected', review_version: 1, review_reason_code: 'advertising_or_diversion', review_note: '请删除站外付费引流和联系方式，补充本人真实复试经历后重新提交。', is_published: false, submitted_at: '2026-08-28T03:10:00Z', reviewed_at: '2026-08-28T05:00:00Z', created_at: '2026-08-28T03:10:00Z' }
   ]
@@ -686,7 +686,10 @@ function previewMedia(media, index) {
 function initial(value) { return String(value || '前').slice(0, 1) || '前' }
 function shortId(value) { const id = String(value || ''); return id ? `${id.slice(0, 8)}…${id.slice(-4)}` : '—' }
 function formatCount(value) { return new Intl.NumberFormat('zh-CN').format(Math.max(0, Number(value) || 0)) }
-function formatStages(value) { return Array.isArray(value) && value.length ? value.join(' / ') : '阶段未填写' }
+function formatStages(value, category = '') {
+  if (Array.isArray(value) && value.length) return value.join(' / ')
+  return String(category || '').trim() === '申请制' ? '无需选择' : '阶段未填写'
+}
 function tableExcerpt(value) {
   const normalized = String(value || '').replace(/\s+/g, ' ').trim()
   if (!normalized) return '未填写正文'

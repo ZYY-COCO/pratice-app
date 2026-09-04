@@ -57,16 +57,23 @@ class _RpcSupabase:
 
 
 class _ExperienceReviewListQuery:
+    def __init__(self):
+        self.eq_filters = []
+
     def select(self, *_args, **_kwargs):
         return self
 
-    def eq(self, *_args, **_kwargs):
+    def eq(self, field, value):
+        self.eq_filters.append((field, value))
         return self
 
 
 class _ExperienceReviewListSupabase:
+    def __init__(self):
+        self.query = _ExperienceReviewListQuery()
+
     def table(self, _name):
-        return _ExperienceReviewListQuery()
+        return self.query
 
 
 class CommunityExperienceReviewTests(unittest.TestCase):
@@ -90,6 +97,37 @@ class CommunityExperienceReviewTests(unittest.TestCase):
 
         self.assertEqual(result.count, 0)
         self.assertEqual(result.items, [])
+
+    def test_review_list_maps_legacy_application_stage_filter_to_category(self):
+        supabase = _ExperienceReviewListSupabase()
+        with (
+            patch.object(admin, "get_supabase_admin", return_value=supabase),
+            patch.object(admin, "call_supabase", return_value=SimpleNamespace(data=[], count=0)),
+        ):
+            result = admin.question_admin_community_experience_reviews(
+                review_status="all",
+                category="all",
+                experience_stage="申请制",
+                search=None,
+                date_from=None,
+                date_to=None,
+                sort_by="newest",
+                limit=20,
+                offset=0,
+                _={},
+            )
+
+        self.assertEqual(result.items, [])
+        self.assertIn(("category", "申请制"), supabase.query.eq_filters)
+
+    def test_admin_read_compatibility_promotes_legacy_application_stage(self):
+        item = admin._build_admin_community_post_item(_experience_row(
+            category="Z001",
+            experience_stages=["申请制", "复试"],
+        ))
+
+        self.assertEqual(item.category, "申请制")
+        self.assertEqual(item.experience_stages, ["复试"])
 
     def test_admin_review_detail_includes_verified_author_legal_name(self):
         supabase = object()
@@ -241,6 +279,39 @@ class CommunityExperienceReviewTests(unittest.TestCase):
         self.assertEqual(result.review_status, "pending")
         self.assertEqual(result.review_version, 2)
         self.assertFalse(result.is_published)
+
+    def test_rejected_application_post_can_be_resubmitted_without_stage(self):
+        resubmitted = _experience_row(
+            category="申请制",
+            experience_stages=[],
+            title="修改后的申请经验",
+            review_status="pending",
+            review_version=2,
+        )
+        supabase = _RpcSupabase(resubmitted)
+        payload = CommunityResubmitExperiencePostRequest(
+            category="申请制",
+            experience_stages=[],
+            title="修改后的申请经验",
+            content="已经补充完整申请流程。",
+        )
+
+        with (
+            patch.object(community, "get_supabase_admin", return_value=supabase),
+            patch.object(
+                community,
+                "_get_owned_post_row",
+                return_value=_experience_row(review_status="rejected", review_version=1),
+            ),
+            patch.object(community, "_current_verified_mentor_author", return_value={"display_name": "认证前辈"}),
+            patch.object(community, "_fetch_community_profiles", return_value={}),
+        ):
+            result = community.resubmit_my_community_experience_post(POST_ID, payload, AUTHOR_ID)
+
+        self.assertEqual(supabase.rpc_args["p_category"], "申请制")
+        self.assertEqual(supabase.rpc_args["p_experience_stages"], [])
+        self.assertEqual(result.category, "申请制")
+        self.assertEqual(result.experience_stages, [])
 
 
 if __name__ == "__main__":

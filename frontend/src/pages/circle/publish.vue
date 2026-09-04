@@ -3,7 +3,8 @@
     class="publish-page"
     :class="{
       'is-leaving': isLeaving,
-      'is-editor-expanded': contentEditorExpanded
+      'is-editor-expanded': contentEditorExpanded,
+      'is-experience': postType === 'experience'
     }"
     :style="mpLayoutStyle"
     @touchstart="beginPublishEdgeSwipe"
@@ -41,7 +42,7 @@
           <view v-show="!contentEditorExpanded" class="publish-form-before-editor">
             <view class="publish-field-label">{{ postType === 'experience' ? '考试类别' : '话题分类' }}</view>
             <template v-if="postType === 'experience'">
-              <view class="publish-topic-grid">
+              <view class="publish-topic-grid publish-exam-grid">
                 <button
                   v-for="topic in communityExperienceExamCodes"
                   :key="topic"
@@ -215,8 +216,8 @@ import AppPageHeader from '../../components/ui/AppPageHeader.vue'
 import CloseIcon from '../../components/CloseIcon.vue'
 
 const communityChatTopics = ['备考日常', '中华文化', '数学基础', '英语运用', '逻辑推理']
-const communityExperienceExamCodes = Object.freeze(['Z001', 'Z002'])
-const communityExperienceStages = Object.freeze(['申请制', '初试', '复试'])
+const communityExperienceExamCodes = Object.freeze(['Z001', 'Z002', '申请制'])
+const communityExperienceStages = Object.freeze(['初试', '复试'])
 const topicSets = {
   chat: communityChatTopics,
   experience: communityExperienceExamCodes
@@ -264,7 +265,11 @@ const canPublish = computed(() => Boolean(
   !accessChecking.value
   && !accessError.value
   && selectedTopic.value
-  && (postType.value !== 'experience' || selectedExperienceStages.value.length)
+  && (
+    postType.value !== 'experience'
+    || selectedTopic.value === '申请制'
+    || selectedExperienceStages.value.length
+  )
   && title.value.trim()
   && content.value.trim()
 ))
@@ -278,6 +283,7 @@ const publishStatusText = computed(() => {
 })
 
 const headerIdleText = computed(() => {
+  if (postType.value === 'experience') return '提交审核'
   if (editingPostId.value) return '保存'
   return '发布'
 })
@@ -424,6 +430,19 @@ function normalizeExperienceStages(stages) {
   return communityExperienceStages.filter((stage) => selected.has(stage))
 }
 
+function normalizeExperienceSelection(category, stages) {
+  const rawStages = Array.isArray(stages)
+    ? stages.map((stage) => String(stage || '').trim()).filter(Boolean)
+    : []
+  const normalizedCategory = rawStages.includes('申请制')
+    ? '申请制'
+    : String(category || '').trim()
+  return {
+    category: communityExperienceExamCodes.includes(normalizedCategory) ? normalizedCategory : '',
+    stages: normalizeExperienceStages(rawStages)
+  }
+}
+
 function createClientRequestId() {
   if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
     return crypto.randomUUID()
@@ -499,12 +518,15 @@ function restoreDraft() {
   }
 
   const restoredTopic = String(draft.category || '').trim()
-  selectedTopic.value = allowedTopics.includes(restoredTopic) ? restoredTopic : ''
+  const restoredExperienceSelection = postType.value === 'experience'
+    ? normalizeExperienceSelection(restoredTopic, draft.experienceStages)
+    : null
+  selectedTopic.value = restoredExperienceSelection
+    ? restoredExperienceSelection.category
+    : (allowedTopics.includes(restoredTopic) ? restoredTopic : '')
   title.value = String(draft.title || '').slice(0, 80)
   content.value = String(draft.content || '').slice(0, 3000)
-  selectedExperienceStages.value = postType.value === 'experience'
-    ? normalizeExperienceStages(draft.experienceStages)
-    : []
+  selectedExperienceStages.value = restoredExperienceSelection?.stages || []
   const rawUploadedImages = Array.isArray(draft.uploadedImages)
     ? draft.uploadedImages
     : (Array.isArray(draft.uploadedImageUrls) ? draft.uploadedImageUrls : []).map((url) => ({ url }))
@@ -615,10 +637,15 @@ function populateEditingPost(post = {}) {
   draftReady = false
   const media = Array.isArray(post.media) ? post.media.slice(0, MAX_IMAGE_COUNT) : []
   const allowedTopics = topicSets[postType.value]
-  selectedTopic.value = allowedTopics.includes(String(post.category || '')) ? String(post.category) : ''
-  selectedExperienceStages.value = normalizeExperienceStages(
-    post.experience_stages || post.experienceStages
-  )
+  const remoteCategory = String(post.category || '').trim()
+  const remoteExperienceStages = post.experience_stages || post.experienceStages
+  const remoteExperienceSelection = postType.value === 'experience'
+    ? normalizeExperienceSelection(remoteCategory, remoteExperienceStages)
+    : null
+  selectedTopic.value = remoteExperienceSelection
+    ? remoteExperienceSelection.category
+    : (allowedTopics.includes(remoteCategory) ? remoteCategory : '')
+  selectedExperienceStages.value = remoteExperienceSelection?.stages || []
   title.value = String(post.title || '').slice(0, 80)
   content.value = String(post.content || post.summary || '').slice(0, 3000)
   selectedImages.value = media
@@ -983,6 +1010,17 @@ function getSafeError(error, fallback) {
   align-items: center;
   justify-content: center;
   text-align: center;
+  white-space: nowrap;
+}
+
+.publish-page.is-experience :deep(.app-page-header) {
+  grid-template-columns: 120rpx minmax(0, 1fr) 120rpx;
+}
+
+.publish-page.is-experience :deep(.app-page-header-side.is-right),
+.publish-page.is-experience .publish-header-submit {
+  width: 120rpx;
+  min-width: 120rpx;
 }
 
 .publish-header-submit[disabled] {
@@ -1064,10 +1102,14 @@ function getSafeError(error, fallback) {
   gap: 12rpx;
 }
 
+.publish-exam-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .publish-stage-grid {
   margin-top: 12rpx;
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 12rpx;
 }
 

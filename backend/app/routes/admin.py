@@ -156,8 +156,8 @@ COMMUNITY_ADMIN_TRASH_SORTS = {
     "expiring_soon": ("admin_purge_after", False),
 }
 COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STATUSES = {"all", "pending", "approved", "rejected"}
-COMMUNITY_ADMIN_EXPERIENCE_REVIEW_CATEGORIES = {"all", "Z001", "Z002"}
-COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES = {"申请制", "初试", "复试"}
+COMMUNITY_ADMIN_EXPERIENCE_REVIEW_CATEGORIES = {"all", "Z001", "Z002", "申请制"}
+COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES = {"初试", "复试"}
 COMMUNITY_EXPERIENCE_REVIEW_REASON_LABELS = {
     "advertising_or_diversion": "广告营销或站外引流",
     "false_or_misleading": "虚假、夸大或误导性信息",
@@ -581,15 +581,16 @@ def _community_admin_post_type(row: dict) -> str:
     return "chat"
 
 
-def _community_admin_experience_stages(row: dict) -> list[str]:
+def _community_admin_explicit_experience_stages(row: dict) -> list[str]:
     if _community_admin_post_type(row) != "experience":
         return []
+    allowed_stages = COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES | {"申请制"}
     stored_stages = row.get("experience_stages")
     if isinstance(stored_stages, list):
         normalized = list(dict.fromkeys(
             stage
             for stage in (str(value or "").strip() for value in stored_stages)
-            if stage in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES
+            if stage in allowed_stages
         ))
         if normalized:
             return normalized
@@ -603,8 +604,30 @@ def _community_admin_experience_stages(row: dict) -> list[str]:
                 return list(dict.fromkeys(
                     stage
                     for stage in (str(value or "").strip() for value in marker)
-                    if stage in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES
+                    if stage in allowed_stages
                 ))
+    return []
+
+
+def _community_admin_experience_category(row: dict) -> str:
+    raw_category = str(row.get("category") or "").strip()
+    if _community_admin_post_type(row) != "experience":
+        return raw_category
+    if raw_category == "申请制" or "申请制" in _community_admin_explicit_experience_stages(row):
+        return "申请制"
+    return raw_category
+
+
+def _community_admin_experience_stages(row: dict) -> list[str]:
+    if _community_admin_post_type(row) != "experience":
+        return []
+    normalized = [
+        stage
+        for stage in _community_admin_explicit_experience_stages(row)
+        if stage in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STAGES
+    ]
+    if normalized:
+        return normalized
     legacy_category = str(row.get("category") or "").strip()
     return {"专业课": ["初试"], "复试": ["复试"]}.get(legacy_category, [])
 
@@ -652,7 +675,11 @@ def _build_admin_community_post_item(row: dict) -> AdminCommunityPostItem:
         author_id=str(row.get("author_id")) if row.get("author_id") else None,
         author_name=author_name,
         author_avatar=str(row.get("author_avatar") or author_name[:1] or "研"),
-        category=str(row.get("category") or "备考日常"),
+        category=(
+            _community_admin_experience_category(row)
+            if _community_admin_post_type(row) == "experience"
+            else str(row.get("category") or "备考日常")
+        ),
         post_type=_community_admin_post_type(row),
         experience_stages=_community_admin_experience_stages(row),
         title=str(row.get("title") or ""),
@@ -4396,6 +4423,10 @@ def question_admin_community_experience_reviews(
     raw_category = category.strip()
     normalized_category = "all" if not raw_category or raw_category.lower() == "all" else raw_category.upper()
     normalized_stage = str(experience_stage or "").strip()
+    if normalized_stage == "申请制":
+        # 兼容旧版后台筛选参数；申请制现属于考试类别。
+        normalized_category = "申请制"
+        normalized_stage = ""
     normalized_sort = sort_by.strip().lower() or "newest"
     if normalized_status not in COMMUNITY_ADMIN_EXPERIENCE_REVIEW_STATUSES:
         raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="不支持的审核状态")

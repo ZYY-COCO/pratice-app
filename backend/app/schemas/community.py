@@ -5,8 +5,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 
 COMMUNITY_CHAT_CATEGORIES = {"备考日常", "中华文化", "数学基础", "英语运用", "逻辑推理"}
-COMMUNITY_EXPERIENCE_EXAM_CODES = {"Z001", "Z002"}
-COMMUNITY_EXPERIENCE_STAGES = {"申请制", "初试", "复试"}
+COMMUNITY_EXPERIENCE_EXAM_CODES = {"Z001", "Z002", "申请制"}
+COMMUNITY_EXPERIENCE_STAGES = {"初试", "复试"}
 COMMUNITY_LEGACY_EXPERIENCE_CATEGORIES = {"专业课", "复试"}
 COMMUNITY_EXPERIENCE_CATEGORIES = COMMUNITY_EXPERIENCE_EXAM_CODES | COMMUNITY_LEGACY_EXPERIENCE_CATEGORIES
 COMMUNITY_EXPERIENCE_REVIEW_REASON_CODES = {
@@ -182,11 +182,11 @@ class CommunityCreatePostRequest(BaseModel):
         ))
         if self.post_type == "experience":
             if self.category not in COMMUNITY_EXPERIENCE_EXAM_CODES:
-                raise ValueError("经验贴考试类别仅支持 Z001、Z002")
-            if not normalized_stages:
+                raise ValueError("经验贴考试类别仅支持 Z001、Z002、申请制")
+            if self.category != "申请制" and not normalized_stages:
                 raise ValueError("经验贴至少选择一个备考阶段")
             if any(stage not in COMMUNITY_EXPERIENCE_STAGES for stage in normalized_stages):
-                raise ValueError("经验贴阶段仅支持申请制、初试、复试")
+                raise ValueError("经验贴阶段仅支持初试、复试")
             self.experience_stages = normalized_stages
             return self
 
@@ -200,7 +200,7 @@ class CommunityResubmitExperiencePostRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     category: str = Field(min_length=1, max_length=24)
-    experience_stages: list[str] = Field(min_length=1, max_length=3)
+    experience_stages: list[str] = Field(default_factory=list, max_length=3)
     title: str = Field(min_length=1, max_length=80)
     content: str = Field(min_length=1, max_length=3000)
     media: list[CommunityMediaItem] = Field(default_factory=list, max_length=9)
@@ -209,16 +209,16 @@ class CommunityResubmitExperiencePostRequest(BaseModel):
     def validate_experience_fields(self) -> "CommunityResubmitExperiencePostRequest":
         self.category = self.category.strip()
         if self.category not in COMMUNITY_EXPERIENCE_EXAM_CODES:
-            raise ValueError("经验贴考试类别仅支持 Z001、Z002")
+            raise ValueError("经验贴考试类别仅支持 Z001、Z002、申请制")
         normalized_stages = list(dict.fromkeys(
             str(stage or "").strip()
             for stage in self.experience_stages
             if str(stage or "").strip()
         ))
-        if not normalized_stages:
+        if self.category != "申请制" and not normalized_stages:
             raise ValueError("经验贴至少选择一个备考阶段")
         if any(stage not in COMMUNITY_EXPERIENCE_STAGES for stage in normalized_stages):
-            raise ValueError("经验贴阶段仅支持申请制、初试、复试")
+            raise ValueError("经验贴阶段仅支持初试、复试")
         self.experience_stages = normalized_stages
         self.title = self.title.strip()
         self.content = self.content.strip()
