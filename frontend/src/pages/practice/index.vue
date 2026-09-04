@@ -751,8 +751,19 @@ let quizStartRequestSequence = 0
 let activeQuizStartRequestToken = 0
 const adaptiveClosingSessionIds = new Set()
 const adaptiveNextRequestBroker = createAdaptiveNextRequestBroker()
+const adaptiveComprehensiveSubmissionStorage = Object.freeze({
+  getStorageSync(key) {
+    return uni.getStorageSync(key)
+  },
+  setStorageSync(key, value) {
+    return uni.setStorageSync(key, value)
+  },
+  removeStorageSync(key) {
+    return uni.removeStorageSync(key)
+  }
+})
 const adaptiveComprehensiveSubmissionQueue = createAdaptiveComprehensiveSubmissionQueue({
-  storage: uni,
+  storage: adaptiveComprehensiveSubmissionStorage,
   getOwnerId: getCurrentAdaptiveSubmissionOwnerId,
   submit: submitAdaptiveComprehensivePracticeSession
 })

@@ -507,8 +507,18 @@ assert.match(practiceSource, /nextPool\s*=\s*buildAdaptiveComprehensiveQuestionP
 assert.match(practiceSource, /questionPool\.value\s*=\s*nextPool/)
 assert.match(
   practiceSource,
-  /createAdaptiveComprehensiveSubmissionQueue\(\{[\s\S]*?submit:\s*submitAdaptiveComprehensivePracticeSession/,
+  /const adaptiveComprehensiveSubmissionStorage\s*=\s*Object\.freeze\(\{[\s\S]*?uni\.getStorageSync\(key\)[\s\S]*?uni\.setStorageSync\(key, value\)[\s\S]*?uni\.removeStorageSync\(key\)[\s\S]*?\}\)/,
+  'H5 必须通过显式 uni 存储调用构造待续交存储适配器'
+)
+assert.match(
+  practiceSource,
+  /createAdaptiveComprehensiveSubmissionQueue\(\{[\s\S]*?storage:\s*adaptiveComprehensiveSubmissionStorage,[\s\S]*?submit:\s*submitAdaptiveComprehensivePracticeSession/,
   '待续交队列必须使用综合整卷提交接口'
+)
+assert.doesNotMatch(
+  practiceSource,
+  /createAdaptiveComprehensiveSubmissionQueue\(\{[\s\S]*?storage:\s*uni\s*,/,
+  '不得把裸 uni 对象作为待续交存储实现传入'
 )
 assert.ok(
   (practiceSource.match(/resumePendingAdaptiveComprehensiveSubmissions\(\)/g) || []).length >= 3,
