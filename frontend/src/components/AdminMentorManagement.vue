@@ -11,12 +11,12 @@
       <view class="toolbar"><view class="search"><text>⌕</text><input v-model.trim="filters.keyword" placeholder="搜索申请人、院校或专业" @input="handleSearch" /><button v-if="filters.keyword" @tap="clearSearch">×</button></view><AdminSelect class="status-select" :options="statusOptions.map((item) => item.label)" :value-index="statusIndex" aria-label="申请状态" @change="selectStatus" /><button class="refresh-button" :disabled="loading || archiving" @tap="refresh">{{ loading ? '刷新中…' : '刷新' }}</button><button v-if="showMailboxSwitch" class="mailbox-button" @tap="openReportMailbox">举报信箱</button><view v-if="selectedApplicationIds.length" class="mentor-selection-actions"><text>已选 <strong>{{ selectedApplicationIds.length }}</strong> 条</text><button class="mentor-selection-delete" :disabled="archiving" @tap="openArchiveDialog">删除所选</button><button class="mentor-selection-clear" :disabled="archiving" @tap="clearApplicationSelection">取消选择</button></view></view>
 
       <view class="table-wrap"><view class="table">
-        <view class="grid table-head" :class="{ selecting: selectedApplicationIds.length }"><view class="check-cell"><button class="check-box" :class="{ checked: allRevokedApplicationsSelected, partial: someRevokedApplicationsSelected }" :disabled="!revokedApplicationsOnPage.length || loading || archiving" aria-label="选择本页已取消资格记录" @tap="toggleSelectRevokedApplicationPage">{{ allRevokedApplicationsSelected ? '✓' : someRevokedApplicationsSelected ? '−' : '' }}</button></view><view>申请人</view><view>申请信息</view><view>申请留言</view><view>证明材料</view><view>提交时间</view><view>状态</view><view>操作</view></view>
+        <view class="grid table-head" :class="{ selecting: selectedApplicationIds.length }"><view class="check-cell"><button class="check-box" :class="{ checked: allArchivableApplicationsSelected, partial: someArchivableApplicationsSelected }" :disabled="!archivableApplicationsOnPage.length || loading || archiving" aria-label="选择本页可删除记录" @tap="toggleSelectArchivableApplicationPage">{{ allArchivableApplicationsSelected ? '✓' : someArchivableApplicationsSelected ? '−' : '' }}</button></view><view>申请人</view><view>申请信息</view><view>申请留言</view><view>证明材料</view><view>提交时间</view><view>状态</view><view>操作</view></view>
         <view v-if="loading" class="table-state">正在加载前辈申请…</view>
         <view v-else-if="loadError" class="table-state error"><text>前辈申请加载失败，请检查网络和后台权限。</text><button @tap="refresh">重新加载</button></view>
         <view v-else-if="applications.length === 0" class="table-state">当前筛选下没有前辈申请</view>
         <view v-for="item in applications" v-else :key="item.id" class="grid row" :class="{ selected: isApplicationSelected(item.id) }" @tap="openApplication(item)">
-          <view class="check-cell"><button class="check-box" :class="{ checked: isApplicationSelected(item.id) }" :disabled="item.application_status !== 'revoked' || archiving" :aria-label="item.application_status === 'revoked' ? `选择 ${item.legal_name || '该申请人'}` : '仅已取消资格记录可删除'" @tap.stop="toggleApplicationSelection(item)">{{ isApplicationSelected(item.id) ? '✓' : '' }}</button></view>
+          <view class="check-cell"><button class="check-box" :class="{ checked: isApplicationSelected(item.id) }" :disabled="!isApplicationArchivable(item) || archiving" :aria-label="isApplicationArchivable(item) ? `选择 ${item.legal_name || '该申请人'}` : '仅“未通过”或“已取消资格”记录可删除'" @tap.stop="toggleApplicationSelection(item)">{{ isApplicationSelected(item.id) ? '✓' : '' }}</button></view>
           <view class="applicant"><view class="avatar">{{ item.legal_name?.slice(0, 1) || '前' }}</view><view><strong>{{ item.legal_name || '未填写姓名' }}</strong><text>申请成为前辈</text></view></view>
           <view><strong>{{ item.school }}</strong><text>{{ item.major }} · {{ item.admission_year }}级</text><text class="consultation-request" :class="{ 'is-verification-only': !isConsultationEnabled(item) }">{{ consultationServiceText(item) }}</text></view>
           <view class="message">{{ item.bio || (isConsultationEnabled(item) ? '未填写申请留言' : '仅申请前辈认证，暂无咨询服务说明') }}</view>
@@ -129,9 +129,9 @@
     </view>
 
     <view v-if="archiveDialogVisible" class="approval-dialog-backdrop" @tap="closeArchiveDialog">
-      <view class="approval-dialog" role="dialog" aria-modal="true" aria-label="删除已取消资格记录" @tap.stop>
+      <view class="approval-dialog" role="dialog" aria-modal="true" aria-label="删除前辈申请记录" @tap.stop>
         <strong>删除所选记录？</strong>
-        <text>将从前辈审核列表移除 {{ selectedApplicationIds.length }} 条“已取消资格”记录。登录账号、前辈档案、咨询订单和历次审核记录都会保留。</text>
+        <text>将从前辈审核列表移除 {{ selectedApplicationIds.length }} 条“未通过/已取消资格”记录。登录账号、前辈档案、咨询订单和历次审核记录都会保留。</text>
         <view v-if="archiveError" class="approval-dialog-error" role="alert">{{ archiveError }}</view>
         <view class="approval-dialog-actions">
           <button class="approval-dialog-cancel" :disabled="archiving" @tap="closeArchiveDialog">取消</button>
@@ -263,6 +263,7 @@ const reportFilters = reactive({ keyword: '', status: '', target_role: '', prior
 let searchTimer = null
 
 const statusOptions = [{ label: '全部申请状态', value: '' }, { label: '待审核', value: 'pending' }, { label: '已通过', value: 'approved' }, { label: '未通过', value: 'rejected' }, { label: '已取消资格', value: 'revoked' }]
+const ARCHIVABLE_APPLICATION_STATUSES = new Set(['rejected', 'revoked'])
 const reportStatusOptions = [{ label: '全部处理状态', value: '' }, { label: '待处理', value: 'pending' }, { label: '处理中', value: 'reviewing' }, { label: '已处理', value: 'resolved' }, { label: '已驳回', value: 'dismissed' }]
 const reportSlaOptions = [{ label: '全部首响时限', value: '' }, { label: '已超时', value: 'overdue' }, { label: '临近超时', value: 'due_soon' }, { label: '已升级', value: 'escalated' }]
 const reportPriorityFilterOptions = [{ label: '全部优先级', value: '' }, { label: '普通', value: 'normal' }, { label: '高', value: 'high' }, { label: '紧急', value: 'urgent' }]
@@ -280,14 +281,14 @@ const reportDetailResolutionIndex = computed(() => Math.max(0, reportResolutionO
 const applicationTotalPages = computed(() => Math.max(1, Math.ceil(applicationCount.value / applicationPageSize)))
 const reportTotalPages = computed(() => Math.max(1, Math.ceil(reportCount.value / reportPageSize)))
 const selectedApplicationSet = computed(() => new Set(selectedApplicationIds.value))
-const revokedApplicationsOnPage = computed(() => applications.value.filter((item) => item.application_status === 'revoked'))
-const allRevokedApplicationsSelected = computed(() => (
-  revokedApplicationsOnPage.value.length > 0
-  && revokedApplicationsOnPage.value.every((item) => selectedApplicationSet.value.has(item.id))
+const archivableApplicationsOnPage = computed(() => applications.value.filter(isApplicationArchivable))
+const allArchivableApplicationsSelected = computed(() => (
+  archivableApplicationsOnPage.value.length > 0
+  && archivableApplicationsOnPage.value.every((item) => selectedApplicationSet.value.has(item.id))
 ))
-const someRevokedApplicationsSelected = computed(() => (
-  !allRevokedApplicationsSelected.value
-  && revokedApplicationsOnPage.value.some((item) => selectedApplicationSet.value.has(item.id))
+const someArchivableApplicationsSelected = computed(() => (
+  !allArchivableApplicationsSelected.value
+  && archivableApplicationsOnPage.value.some((item) => selectedApplicationSet.value.has(item.id))
 ))
 const pendingCount = computed(() => applications.value.filter((item) => item.application_status === 'pending').length)
 const approvedCount = computed(() => applications.value.filter((item) => item.application_status === 'approved').length)
@@ -325,7 +326,7 @@ async function refreshApplications() {
     })
     applications.value = response?.items || []
     applicationCount.value = Number(response?.count || 0)
-    const selectableIds = new Set(revokedApplicationsOnPage.value.map((item) => item.id))
+    const selectableIds = new Set(archivableApplicationsOnPage.value.map((item) => item.id))
     selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => selectableIds.has(id))
     if (applicationCount.value > 0 && applications.value.length === 0 && applicationPage.value > applicationTotalPages.value) {
       applicationPage.value = applicationTotalPages.value
@@ -533,17 +534,21 @@ function isApplicationSelected(applicationId) {
   return selectedApplicationSet.value.has(applicationId)
 }
 
+function isApplicationArchivable(application) {
+  return ARCHIVABLE_APPLICATION_STATUSES.has(application?.application_status)
+}
+
 function toggleApplicationSelection(application) {
-  if (!application?.id || application.application_status !== 'revoked' || archiving.value) return
+  if (!application?.id || !isApplicationArchivable(application) || archiving.value) return
   selectedApplicationIds.value = isApplicationSelected(application.id)
     ? selectedApplicationIds.value.filter((id) => id !== application.id)
     : [...selectedApplicationIds.value, application.id]
 }
 
-function toggleSelectRevokedApplicationPage() {
-  if (!revokedApplicationsOnPage.value.length || archiving.value) return
-  const pageIds = new Set(revokedApplicationsOnPage.value.map((item) => item.id))
-  if (allRevokedApplicationsSelected.value) {
+function toggleSelectArchivableApplicationPage() {
+  if (!archivableApplicationsOnPage.value.length || archiving.value) return
+  const pageIds = new Set(archivableApplicationsOnPage.value.map((item) => item.id))
+  if (allArchivableApplicationsSelected.value) {
     selectedApplicationIds.value = selectedApplicationIds.value.filter((id) => !pageIds.has(id))
     return
   }
@@ -592,7 +597,7 @@ async function archiveSelectedApplications() {
     uni.showToast({ title: affectedCount ? `已删除 ${affectedCount} 条记录` : '所选记录已被处理', icon: affectedCount ? 'success' : 'none' })
     await refreshApplications()
   } catch (error) {
-    archiveError.value = error?.detail || '已取消资格记录删除失败，请稍后重试'
+    archiveError.value = error?.detail || '前辈申请记录删除失败，请稍后重试'
   } finally {
     archiving.value = false
   }

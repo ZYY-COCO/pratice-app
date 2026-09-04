@@ -324,7 +324,7 @@ def _normalize_mentor_application_ids(application_ids: list[object]) -> list[str
         if str(application_id).strip()
     ))
     if not normalized:
-        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="至少选择一条已取消资格记录")
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail="至少选择一条可删除记录")
     return normalized
 
 
@@ -2152,13 +2152,13 @@ def archive_admin_revoked_mentor_applications(
                     "p_admin_user_id": admin_profile.get("id"),
                 },
             ).execute(),
-            operation_name="admin revoked mentor application archive",
+            operation_name="admin mentor application archive",
         )
         affected_ids = _mentor_application_archive_affected_ids(response)
         if len(affected_ids) != len(application_ids):
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="所选记录中包含尚未取消资格或已删除的申请，请刷新后重试",
+                detail="所选记录中包含不支持删除的状态或已删除的申请，请刷新后重试",
             )
         _log_application_action(
             supabase,
@@ -2174,12 +2174,12 @@ def archive_admin_revoked_mentor_applications(
         if "MENTOR_APPLICATION_ARCHIVE_INELIGIBLE" in str(exc).upper():
             raise HTTPException(
                 status_code=status.HTTP_409_CONFLICT,
-                detail="所选记录中包含尚未取消资格或已删除的申请，请刷新后重试",
+                detail="所选记录中包含不支持删除的状态或已删除的申请，请刷新后重试",
             ) from exc
-        logger.warning("Admin revoked mentor application archive failed (error_type=%s)", type(exc).__name__)
+        logger.warning("Admin mentor application archive failed (error_type=%s)", type(exc).__name__)
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="已取消资格记录删除失败，请确认已执行前辈申请归档数据库迁移",
+            detail="前辈申请记录删除失败，请确认已执行前辈申请归档数据库迁移",
         ) from exc
 
 

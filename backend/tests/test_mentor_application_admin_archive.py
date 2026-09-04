@@ -103,7 +103,7 @@ def _revoked_application_row():
 
 
 class MentorApplicationAdminArchiveTests(unittest.TestCase):
-    def test_archive_revoked_applications_uses_atomic_rpc_and_deduplicates_ids(self):
+    def test_archive_eligible_applications_uses_atomic_rpc_and_deduplicates_ids(self):
         client = _RpcClient([{"application_id": APPLICATION_ID}])
         payload = AdminMentorVerificationArchiveRequest(ids=[APPLICATION_ID, APPLICATION_ID])
 
@@ -124,7 +124,7 @@ class MentorApplicationAdminArchiveTests(unittest.TestCase):
             {"application_ids": [APPLICATION_ID], "affected_count": 1},
         ))
 
-    def test_archive_rejects_non_revoked_or_stale_selection_atomically(self):
+    def test_archive_rejects_ineligible_or_stale_selection_atomically(self):
         client = _RpcClient(error=RuntimeError("MENTOR_APPLICATION_ARCHIVE_INELIGIBLE"))
         payload = AdminMentorVerificationArchiveRequest(ids=[APPLICATION_ID])
 
@@ -135,7 +135,7 @@ class MentorApplicationAdminArchiveTests(unittest.TestCase):
             mentor_admin.archive_admin_revoked_mentor_applications(payload, {"id": ADMIN_ID})
 
         self.assertEqual(raised.exception.status_code, 409)
-        self.assertIn("尚未取消资格", raised.exception.detail)
+        self.assertIn("不支持删除", raised.exception.detail)
 
     def test_archive_rejects_partial_rpc_result(self):
         first_id = str(uuid4())
@@ -180,7 +180,10 @@ class MentorApplicationAdminArchiveTests(unittest.TestCase):
         ).read_text(encoding="utf-8")
         normalized = migration.lower()
 
-        self.assertIn("application.application_status = 'revoked'", normalized)
+        self.assertIn(
+            "application.application_status in ('rejected', 'revoked')",
+            normalized,
+        )
         self.assertIn("application.admin_archived_at is null", normalized)
         self.assertIn("mentor_application_archive_ineligible", normalized)
         self.assertIn("update public.mentor_verification_applications", normalized)

@@ -1,4 +1,4 @@
--- 已取消前辈资格申请的后台归档。
+-- 未通过及已取消资格前辈申请的后台归档。
 -- 执行位置：Supabase SQL Editor。
 -- 前置依赖：database/mentor_qualification_revocation.sql。
 --
@@ -61,7 +61,7 @@ begin
       admin_archived_by = p_admin_user_id,
       updated_at = v_now
     where application.id = any(v_requested_ids)
-      and application.application_status = 'revoked'
+      and application.application_status in ('rejected', 'revoked')
       and application.admin_archived_at is null
     returning application.id
   )
@@ -80,9 +80,9 @@ end;
 $$;
 
 comment on column public.mentor_verification_applications.admin_archived_at is
-  '管理员将已取消资格申请从前辈审核列表移除的时间。';
+  '管理员将未通过或已取消资格申请从前辈审核列表移除的时间。';
 comment on function public.archive_revoked_mentor_applications(uuid[], uuid) is
-  '原子归档已取消资格的前辈申请，不删除用户账号或任何历史业务数据。';
+  '原子归档未通过或已取消资格的前辈申请，不删除用户账号或任何历史业务数据。';
 
 revoke all on function public.archive_revoked_mentor_applications(uuid[], uuid)
   from public, anon, authenticated;
