@@ -248,11 +248,12 @@ create policy "authenticated users can read passages"
   to authenticated
   using (true);
 
+-- Questions contain the grading answer and explanation. Product clients read
+-- safe projections through FastAPI; direct PostgREST access stays server-only.
 drop policy if exists "authenticated users can read questions" on public.questions;
-create policy "authenticated users can read questions"
-  on public.questions for select
-  to authenticated
-  using (true);
+revoke all privileges on table public.questions from public, anon, authenticated;
+revoke select (answer, explanation) on table public.questions from public, anon, authenticated;
+grant select, insert, update, delete on table public.questions to service_role;
 
 drop policy if exists "users can read own answers" on public.user_answers;
 create policy "users can read own answers"
