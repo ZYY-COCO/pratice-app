@@ -138,29 +138,6 @@
         </view>
       </view>
 
-      <view v-if="practiceMode === 'special'" class="adaptive-preference-card">
-        <view class="adaptive-preference-head">
-          <view>
-            <view class="adaptive-preference-title">练习节奏</view>
-            <view class="adaptive-preference-sub">只影响本轮题目节奏，不会改变系统对你能力的判断。</view>
-          </view>
-          <view class="adaptive-preference-badge">智能出题</view>
-        </view>
-        <view class="adaptive-preference-options">
-          <button
-            v-for="item in adaptivePreferenceOptions"
-            :key="item.value"
-            class="adaptive-preference-option"
-            :class="{ active: adaptivePreference === item.value }"
-            hover-class="none"
-            @tap="selectAdaptivePreference(item.value)"
-          >
-            <text class="adaptive-preference-option-title">{{ item.label }}</text>
-            <text class="adaptive-preference-option-sub">{{ item.description }}</text>
-          </button>
-        </view>
-        <view class="adaptive-preference-tip">能力按 {{ examCode }} / {{ subject }} 独立计算；首次练习会自动进入 8 题智能热身。</view>
-      </view>
     </template>
 
     <template v-else>
@@ -609,7 +586,7 @@ import { normalizeQuestion, validateQuestion } from '../../utils/questionQuality
 const MOCK_EXAM_TOTAL_SCORE = 105
 const MOCK_EXAM_TOTAL_COUNT = 55
 const CULTURE_SUBJECT = '中华文化'
-const ADAPTIVE_PREFERENCE_STORAGE_KEY = 'adaptivePracticePreference'
+const SYSTEM_ADAPTIVE_PREFERENCE = 'standard'
 const themeInlineStyle = buildThemeStyle(getStoredThemeKey())
 const DEFAULT_CULTURE_PROGRESS = {
   total_questions: 0,
@@ -624,11 +601,6 @@ const ADAPTIVE_FOREGROUND_PREFETCH_WAIT_MS = 1200
 const ADAPTIVE_PREFETCH_STILL_RUNNING = Symbol('adaptive-prefetch-still-running')
 const ADAPTIVE_LEGACY_START_STILL_RUNNING = Symbol('adaptive-legacy-start-still-running')
 const DIFFICULTY_LEVELS = [1, 2, 3, 4, 5]
-const adaptivePreferenceOptions = [
-  { value: 'steady', label: '稳一点', description: '更多巩固题' },
-  { value: 'standard', label: '标准', description: '难度均衡' },
-  { value: 'challenge', label: '更有挑战', description: '适当提高上限' }
-]
 const MOCK_EXAM_DIFFICULTY_PROFILE = [
   { key: 'basic', label: '基础', ratio: 0.35 },
   { key: 'medium', label: '中等', ratio: 0.5 },
@@ -655,7 +627,6 @@ const practiceMode = ref('special')
 const selectedTags = ref([])
 const questionCountOptions = [5, 10, 15, 20, 25, 30]
 const selectedQuestionSize = ref(10)
-const adaptivePreference = ref(readAdaptivePreference())
 const adaptiveSession = ref(null)
 const adaptiveSummary = ref(null)
 const adaptiveInitialPhase = ref('')
@@ -1237,29 +1208,6 @@ function decodeRouteValue(value, fallback = '') {
     }
   }
   return text
-}
-
-function readAdaptivePreference() {
-  try {
-    const stored = String(uni.getStorageSync(ADAPTIVE_PREFERENCE_STORAGE_KEY) || '').trim()
-    return adaptivePreferenceOptions.some((item) => item.value === stored) ? stored : 'standard'
-  } catch (error) {
-    return 'standard'
-  }
-}
-
-function selectAdaptivePreference(value) {
-  if (loading.value || quizStartInProgress.value) return
-  const normalized = String(value || '').trim()
-  if (!adaptivePreferenceOptions.some((item) => item.value === normalized)) {
-    return
-  }
-  adaptivePreference.value = normalized
-  try {
-    uni.setStorageSync(ADAPTIVE_PREFERENCE_STORAGE_KEY, normalized)
-  } catch (error) {
-    // The selection remains valid for this page even when local storage is unavailable.
-  }
 }
 
 function formatEvidenceAmount(value) {
@@ -2320,13 +2268,12 @@ function getTargetModuleInfos(modeValue = practiceMode.value) {
 }
 
 function capturePracticeStartContext() {
-  const practiceModeSnapshot = practiceMode.value
   return {
     examCode: String(examCode.value || ''),
     subject: String(subject.value || ''),
-    practiceMode: practiceModeSnapshot,
+    practiceMode: practiceMode.value,
     questionCount: Number(selectedQuestionSize.value || 0),
-    preference: practiceModeSnapshot === 'special' ? adaptivePreference.value : 'standard'
+    preference: SYSTEM_ADAPTIVE_PREFERENCE
   }
 }
 
@@ -2336,8 +2283,7 @@ function isPracticeStartContextCurrent(context) {
     String(examCode.value || '') === context.examCode &&
     String(subject.value || '') === context.subject &&
     practiceMode.value === context.practiceMode &&
-    Number(selectedQuestionSize.value || 0) === context.questionCount &&
-    (context.practiceMode !== 'special' || adaptivePreference.value === context.preference)
+    Number(selectedQuestionSize.value || 0) === context.questionCount
   )
 }
 
@@ -3084,7 +3030,7 @@ async function createAdaptivePractice(
         })),
     question_count: startContext.questionCount,
     preference: startContext.preference,
-    accepted_challenge: !isComprehensive && startContext.preference === 'challenge',
+    accepted_challenge: false,
     client_session_id: clientSessionId
   }
   let response
@@ -3263,7 +3209,6 @@ async function startQuiz() {
       quizStartBackgrounded.value = true
       loading.value = false
       uni.hideLoading()
-      uni.showToast({ title: '题目正在后台准备，完成后自动开始', icon: 'none' })
       void legacyPoolRequest
         .then((nextPool) => {
           applyLegacyStartPool(nextPool)
@@ -5587,8 +5532,7 @@ function scrollToQuestionTop() {
 }
 
 .mode-card,
-.count-card,
-.adaptive-preference-card {
+.count-card {
   margin-bottom: 24rpx;
   padding: 26rpx;
   border-radius: 34rpx;
@@ -5662,7 +5606,6 @@ function scrollToQuestionTop() {
   box-shadow: 0 16rpx 36rpx rgba(20, 31, 66, 0.06);
 }
 
-.adaptive-preference-head,
 .adaptive-summary-head {
   display: flex;
   align-items: flex-start;
@@ -5670,25 +5613,12 @@ function scrollToQuestionTop() {
   gap: 20rpx;
 }
 
-.adaptive-preference-title {
-  color: #172033;
-  font-size: 29rpx;
-  font-weight: 900;
-}
-
-.adaptive-preference-sub,
-.adaptive-preference-tip,
 .adaptive-summary-copy {
   color: #667085;
   font-size: 23rpx;
   line-height: 1.55;
 }
 
-.adaptive-preference-sub {
-  margin-top: 6rpx;
-}
-
-.adaptive-preference-badge,
 .adaptive-summary-confidence {
   flex-shrink: 0;
   padding: 8rpx 15rpx;
@@ -5697,57 +5627,6 @@ function scrollToQuestionTop() {
   color: var(--gyt-primary);
   font-size: 21rpx;
   font-weight: 800;
-}
-
-.adaptive-preference-options {
-  margin-top: 22rpx;
-  display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-  gap: 12rpx;
-}
-
-.adaptive-preference-option {
-  min-width: 0;
-  min-height: 106rpx;
-  padding: 16rpx 10rpx;
-  border: 2rpx solid #e5eaf3;
-  border-radius: 22rpx;
-  background: #f8fafc;
-  color: #344054;
-  line-height: 1.3;
-}
-
-.adaptive-preference-option::after {
-  border: 0;
-}
-
-.adaptive-preference-option.active {
-  border-color: var(--gyt-primary);
-  background: var(--gyt-primary-tint);
-  color: var(--gyt-primary);
-  box-shadow: 0 8rpx 18rpx var(--gyt-primary-shadow);
-}
-
-.adaptive-preference-option-title,
-.adaptive-preference-option-sub {
-  display: block;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.adaptive-preference-option-title {
-  font-size: 24rpx;
-  font-weight: 850;
-}
-
-.adaptive-preference-option-sub {
-  margin-top: 7rpx;
-  font-size: 20rpx;
-}
-
-.adaptive-preference-tip {
-  margin-top: 18rpx;
 }
 
 .culture-progress-head {
