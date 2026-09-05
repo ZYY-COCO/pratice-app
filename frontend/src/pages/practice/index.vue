@@ -3189,7 +3189,6 @@ async function startQuiz() {
       }
       adaptiveFallbackMode.value = true
       adaptiveNextExhausted.value = true
-      shortageTip.value = '智能出题服务正在更新，本轮已切换为普通组题。'
     }
 
     const legacyPoolRequest = loadLegacyQuestionPool(moduleInfos, {
@@ -4533,7 +4532,6 @@ function startAdaptiveLegacyFallbackTask(
       const additions = legacyPool.filter((item) => !usedKeys.has(getQuestionIdentityKey(item)))
       const fallbackLimit = Math.max(requestedFallbackLimit, existingQuestions.length)
       questionPool.value = [...existingQuestions, ...additions].slice(0, fallbackLimit)
-      shortageTip.value = '智能出题服务正在更新，本轮后续题目已切换为普通组题。'
       return {
         ready: true,
         stale: false,
