@@ -7,8 +7,9 @@ from datetime import datetime, timedelta, timezone
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from fastapi import HTTPException
+from fastapi import BackgroundTasks, HTTPException
 
+from app.main import create_app
 from app.routes import admin, answers, questions, reports
 from app.schemas.answers import (
     MarkUnfamiliarRequest,
@@ -142,6 +143,31 @@ class _WeeklyAnswerClient:
 
 
 class AnswerReliabilityTests(unittest.TestCase):
+    def test_cors_exposes_responsive_grade_headers(self):
+        app = create_app()
+        cors = next(
+            middleware
+            for middleware in app.user_middleware
+            if middleware.cls.__name__ == "CORSMiddleware"
+        )
+
+        self.assertEqual(
+            cors.kwargs["expose_headers"],
+            list(answers.RESPONSIVE_GRADE_HEADER_NAMES),
+        )
+
+    def test_responsive_grade_headers_reject_non_durable_feedback(self):
+        with self.assertRaises(RuntimeError):
+            answers._responsive_grade_headers(
+                {
+                    "persisted": False,
+                    "question_id": "question-1",
+                    "correct_answer": "B",
+                    "is_correct": True,
+                    "added_to_wrong_questions": False,
+                }
+            )
+
     def test_adaptive_grading_snapshot_cache_is_user_scoped(self):
         question_id = "snapshot-question-user-scope"
         item_id = "snapshot-item-user-scope"
@@ -266,7 +292,7 @@ class AnswerReliabilityTests(unittest.TestCase):
             user_id="user-1",
         )
 
-        for routed_name in ("grade", "submit", "submit_responsive", "mark_unfamiliar"):
+        for routed_name in ("grade", "submit", "mark_unfamiliar"):
             for routed_item_id in (item_id, None):
                 with self.subTest(route=routed_name, item_id=routed_item_id):
                     client = _ComprehensiveEmbargoClient()
@@ -308,6 +334,37 @@ class AnswerReliabilityTests(unittest.TestCase):
                         client.calls[0][1]["p_practice_session_item_id"],
                         routed_item_id,
                     )
+
+    def test_responsive_grading_hot_path_skips_independent_embargo_precheck(self):
+        question_id = "responsive-hot-path-question"
+        snapshot = {
+            "id": question_id,
+            "exam_code": "Z001",
+            "subject": "逻辑推理",
+            "module": "演绎推理",
+            "submodule": "充分条件",
+            "question_type": "single_choice",
+            "difficulty": 2,
+            "estimated_time_sec": 60,
+            "source_type": "official",
+            "answer": "B",
+            "explanation": "热路径缓存解析",
+        }
+        answer_service.warm_submission_questions([snapshot])
+
+        result = answer_service.submit_answer(
+            object(),
+            user_id="user-1",
+            question_id=question_id,
+            selected_answer="B",
+            used_time=5,
+            requested_exam_code="Z001",
+            include_ability_accuracy=False,
+            precheck_feedback_embargo=False,
+        )
+
+        self.assertTrue(result["is_correct"])
+        self.assertEqual(result["correct_answer"], "B")
 
     def test_public_batch_submit_enforces_question_id_embargo_before_warm_cache(self):
         question_id = "comprehensive-batch-embargo-question"
@@ -438,6 +495,31 @@ class AnswerReliabilityTests(unittest.TestCase):
         self.assertEqual(result["attempt_number"], 1)
         self.assertTrue(result["is_first_attempt"])
 
+    def test_atomic_required_submission_rejects_missing_rpc_without_compatibility_write(self):
+        client = _RpcClient(
+            error=RuntimeError("PGRST202 Could not find the function in the schema cache")
+        )
+        with patch.object(answer_service, "get_supabase_admin", return_value=client):
+            with self.assertRaises(HTTPException) as raised:
+                answer_service.persist_answer_submission(
+                    user_id="user-1",
+                    question={
+                        "id": "question-1",
+                        "exam_code": "Z001",
+                        "subject": "逻辑推理",
+                        "module": "演绎推理",
+                        "submodule": "充分条件",
+                    },
+                    selected_answer="B",
+                    used_time=18,
+                    is_correct=True,
+                    client_submission_id="client-1",
+                    allow_compatibility_fallback=False,
+                )
+
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertEqual(raised.exception.detail, "作答原子持久化服务暂时不可用")
+
     def test_stats_exam_code_accepts_common_but_rejects_physical_cross_version_question(self):
         self.assertEqual(
             answer_service.resolve_stats_exam_code(
@@ -485,6 +567,31 @@ class AnswerReliabilityTests(unittest.TestCase):
                 )
         self.assertEqual(raised.exception.status_code, 409)
 
+    def test_atomic_submission_maps_comprehensive_embargo_to_public_error(self):
+        client = _RpcClient(error=RuntimeError("adaptive_comprehensive_batch_required"))
+        with patch.object(answer_service, "get_supabase_admin", return_value=client):
+            with self.assertRaises(HTTPException) as raised:
+                answer_service.persist_answer_submission(
+                    user_id="user-1",
+                    question={
+                        "id": "question-1",
+                        "exam_code": "Z001",
+                        "subject": "逻辑推理",
+                        "module": "演绎推理",
+                        "submodule": "充分条件",
+                    },
+                    selected_answer="A",
+                    used_time=18,
+                    is_correct=False,
+                    client_submission_id="client-1",
+                )
+
+        self.assertEqual(raised.exception.status_code, 409)
+        self.assertEqual(
+            raised.exception.detail["code"],
+            "ADAPTIVE_COMPREHENSIVE_BATCH_REQUIRED",
+        )
+
     def test_submit_route_waits_for_persistence_and_exposes_submission_id(self):
         grade_result = {
             "question_id": "question-1",
@@ -506,6 +613,11 @@ class AnswerReliabilityTests(unittest.TestCase):
             "stats_exam_code": "Z001",
             "idempotent": False,
             "persisted": True,
+            "selected_answer": "B",
+            "correct_answer": "C",
+            "is_correct": False,
+            "explanation": "数据库权威解析",
+            "added_to_wrong_questions": True,
             "is_first_attempt": True,
             "attempt_number": 1,
             "ability_accuracy": 100,
@@ -532,8 +644,11 @@ class AnswerReliabilityTests(unittest.TestCase):
         self.assertEqual(response.stats_exam_code, "Z001")
         self.assertEqual(response.attempt_number, 1)
         self.assertEqual(response.ability_accuracy, 100)
+        self.assertEqual(response.correct_answer, "C")
+        self.assertFalse(response.is_correct)
+        self.assertEqual(response.explanation, "数据库权威解析")
 
-    def test_responsive_submit_withholds_grade_until_persistence_finishes(self):
+    def test_responsive_submit_persists_before_feedback_and_defers_adaptive_update(self):
         grade_result = {
             "question_id": "question-1",
             "exam_code": "Z001",
@@ -548,51 +663,72 @@ class AnswerReliabilityTests(unittest.TestCase):
             "added_to_wrong_questions": False,
             "ability_accuracy": None,
         }
+        payload = SubmitAnswerRequest(
+            question_id="question-1",
+            client_submission_id="client-1",
+            practice_session_item_id="practice-item-1",
+            selected_answer="B",
+            used_time=18,
+            exam_code="Z001",
+        )
         durable_result = {
             "submission_id": "submission-1",
             "client_submission_id": "client-1",
             "stats_exam_code": "Z001",
             "idempotent": False,
             "persisted": True,
+            "selected_answer": "B",
+            "correct_answer": "C",
+            "is_correct": False,
+            "explanation": "数据库权威解析",
+            "added_to_wrong_questions": True,
             "is_first_attempt": True,
             "attempt_number": 1,
             "ability_accuracy": 100,
         }
-        payload = SubmitAnswerRequest(
-            question_id="question-1",
-            client_submission_id="client-1",
-            selected_answer="B",
-            used_time=18,
-            exam_code="Z001",
-        )
+        background_tasks = BackgroundTasks()
         with (
             patch.object(answers, "get_supabase_admin", return_value=object()),
-            patch.object(answers, "submit_answer", return_value=grade_result),
-            patch.object(answers, "persist_answer_submission", return_value=durable_result) as persist,
+            patch.object(answers, "submit_answer", return_value=grade_result) as grade_answer,
+            patch.object(
+                answers,
+                "persist_answer_submission",
+                return_value=durable_result,
+            ) as persist,
+            patch.object(
+                answers,
+                "apply_adaptive_answer_update",
+                return_value={"adaptive_updated": True, "idempotent": False},
+            ) as adaptive_update,
         ):
-            response = answers.submit_responsive(payload=payload, user_id="user-1")
+            response = answers.submit_responsive(
+                payload=payload,
+                background_tasks=background_tasks,
+                user_id="user-1",
+            )
 
-            self.assertNotIn("x-gyt-grading-ready", response.headers)
-            self.assertNotIn("x-gyt-correct-answer", response.headers)
-            self.assertNotIn("x-gyt-is-correct", response.headers)
-            self.assertFalse(persist.called)
-
-            async def consume_stream():
-                iterator = response.body_iterator.__aiter__()
-                first_chunk = await iterator.__anext__()
-                self.assertEqual(first_chunk, b" ")
-                self.assertFalse(persist.called)
-                chunks = [first_chunk]
-                async for chunk in iterator:
-                    chunks.append(chunk)
-                return b"".join(chunks)
-
-            body = json.loads(asyncio.run(consume_stream()))
+            self.assertEqual(response.headers["x-gyt-grading-ready"], "1")
+            self.assertEqual(response.headers["x-gyt-question-id"], "question-1")
+            self.assertEqual(response.headers["x-gyt-correct-answer"], "C")
+            self.assertEqual(response.headers["x-gyt-is-correct"], "0")
+            self.assertEqual(response.headers["x-gyt-added-to-wrong-questions"], "1")
+            body = json.loads(response.body.decode("utf-8"))
+            adaptive_update.assert_not_called()
+            asyncio.run(response.background())
 
         persist.assert_called_once()
+        self.assertFalse(persist.call_args.kwargs["allow_compatibility_fallback"])
+        self.assertFalse(grade_answer.call_args.kwargs["precheck_feedback_embargo"])
         self.assertTrue(body["persisted"])
-        self.assertEqual(body["submission_id"], "submission-1")
-        self.assertEqual(body["correct_answer"], "B")
+        self.assertFalse(body["persistence_retryable"])
+        self.assertIsNone(body["persistence_error"])
+        self.assertEqual(body["correct_answer"], "C")
+        self.assertFalse(body["is_correct"])
+        self.assertEqual(body["explanation"], "数据库权威解析")
+        self.assertFalse(body["adaptive"]["adaptive_updated"])
+        self.assertTrue(body["adaptive"]["retryable"])
+        self.assertEqual(body["adaptive"]["error"], "adaptive_state_update_pending")
+        adaptive_update.assert_called_once()
 
     def test_grade_fallback_persists_before_returning_feedback(self):
         grade_result = {
@@ -806,7 +942,7 @@ class AnswerReliabilityTests(unittest.TestCase):
         self.assertFalse(first.is_correct)
         self.assertFalse(retry.is_correct)
 
-    def test_responsive_submit_keeps_grade_and_reports_retryable_persistence_failure(self):
+    def test_responsive_submit_does_not_disclose_grade_when_core_persistence_fails(self):
         grade_result = {
             "question_id": "question-1",
             "exam_code": "Z001",
@@ -828,6 +964,7 @@ class AnswerReliabilityTests(unittest.TestCase):
             used_time=18,
             exam_code="Z001",
         )
+        background_tasks = BackgroundTasks()
         with (
             patch.object(answers, "get_supabase_admin", return_value=object()),
             patch.object(answers, "submit_answer", return_value=grade_result),
@@ -836,26 +973,18 @@ class AnswerReliabilityTests(unittest.TestCase):
                 "persist_answer_submission",
                 side_effect=HTTPException(status_code=503, detail="暂时不可用"),
             ),
+            patch.object(answers, "_responsive_grade_headers") as grade_headers,
         ):
-            response = answers.submit_responsive(payload=payload, user_id="user-1")
+            with self.assertRaises(HTTPException) as raised:
+                answers.submit_responsive(
+                    payload=payload,
+                    background_tasks=background_tasks,
+                    user_id="user-1",
+                )
 
-            async def consume_stream():
-                chunks = []
-                async for chunk in response.body_iterator:
-                    chunks.append(chunk)
-                return b"".join(chunks)
-
-            body = json.loads(asyncio.run(consume_stream()))
-
-        self.assertNotIn("x-gyt-correct-answer", response.headers)
-        self.assertNotIn("x-gyt-is-correct", response.headers)
-        self.assertFalse(body["persisted"])
-        self.assertEqual(body["correct_answer"], "")
-        self.assertEqual(body["explanation"], "")
-        self.assertIsNone(body["is_correct"])
-        self.assertIsNone(body["added_to_wrong_questions"])
-        self.assertTrue(body["persistence_retryable"])
-        self.assertEqual(body["persistence_error"], "暂时不可用")
+        self.assertEqual(raised.exception.status_code, 503)
+        grade_headers.assert_not_called()
+        self.assertEqual(background_tasks.tasks, [])
 
     def test_learning_progress_uses_first_attempt_correctness(self):
         active_questions = [{"id": "question-1"}]

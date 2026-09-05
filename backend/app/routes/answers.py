@@ -1,8 +1,7 @@
-import json
 import logging
 
-from fastapi import APIRouter, Depends, HTTPException, Query, status
-from fastapi.responses import StreamingResponse
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Query, status
+from fastapi.responses import JSONResponse
 
 from app.db import get_supabase_admin
 from app.dependencies import get_current_user_id
@@ -31,15 +30,17 @@ from app.services.adaptive_practice import apply_adaptive_answer_update
 router = APIRouter(prefix="/answers", tags=["作答"])
 logger = logging.getLogger(__name__)
 
+RESPONSIVE_GRADE_HEADER_NAMES = (
+    "X-GYT-Grading-Ready",
+    "X-GYT-Question-Id",
+    "X-GYT-Correct-Answer",
+    "X-GYT-Is-Correct",
+    "X-GYT-Added-To-Wrong-Questions",
+)
 
-def _persist_graded_answer(
-    *,
-    result: dict,
-    payload: SubmitAnswerRequest,
-    user_id: str,
-    supabase=None,
-) -> dict:
-    question = {
+
+def _submission_question(result: dict) -> dict:
+    return {
         "id": result["question_id"],
         "exam_code": result.get("exam_code"),
         "subject": result.get("subject"),
@@ -50,6 +51,18 @@ def _persist_graded_answer(
         "difficulty": result.get("difficulty"),
         "estimated_time_sec": result.get("estimated_time_sec"),
     }
+
+
+def _persist_graded_answer_core(
+    *,
+    result: dict,
+    payload: SubmitAnswerRequest,
+    user_id: str,
+    require_atomic_persistence: bool = False,
+) -> tuple[dict, dict, dict]:
+    """Persist the minimum authoritative answer state before grade disclosure."""
+
+    question = _submission_question(result)
     persisted = persist_answer_submission(
         user_id=user_id,
         question=question,
@@ -58,9 +71,27 @@ def _persist_graded_answer(
         is_correct=result["is_correct"],
         client_submission_id=payload.client_submission_id,
         practice_session_item_id=payload.practice_session_item_id,
+        allow_compatibility_fallback=not require_atomic_persistence,
     )
+    if persisted.get("persisted") is not True:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="作答记录暂时无法保存，请稍后重试",
+        )
     response = {**result, **persisted}
     response["ability_accuracy"] = persisted.get("ability_accuracy")
+    return response, question, persisted
+
+
+def _apply_adaptive_update_to_answer(
+    *,
+    response: dict,
+    question: dict,
+    persisted: dict,
+    payload: SubmitAnswerRequest,
+    user_id: str,
+    supabase=None,
+) -> dict:
     if payload.practice_session_item_id:
         try:
             response["adaptive"] = apply_adaptive_answer_update(
@@ -69,7 +100,7 @@ def _persist_graded_answer(
                 question=question,
                 persisted={
                     **persisted,
-                    "is_correct": persisted.get("is_correct", result["is_correct"]),
+                    "is_correct": persisted.get("is_correct", response["is_correct"]),
                 },
                 used_time=payload.used_time,
                 practice_session_item_id=payload.practice_session_item_id,
@@ -78,7 +109,7 @@ def _persist_graded_answer(
             logger.warning(
                 "Adaptive answer link rejected after durable answer "
                 "(question_id=%s status_code=%s)",
-                result["question_id"],
+                response["question_id"],
                 exc.status_code,
             )
             response["adaptive"] = {
@@ -90,7 +121,7 @@ def _persist_graded_answer(
             logger.warning(
                 "Adaptive answer update unavailable after durable answer "
                 "(question_id=%s error_type=%s)",
-                result["question_id"],
+                response["question_id"],
                 type(exc).__name__,
             )
             response["adaptive"] = {
@@ -101,18 +132,95 @@ def _persist_graded_answer(
     return response
 
 
-def _responsive_grade_headers(result: dict) -> dict[str, str]:
-    """Configure streaming without exposing feedback before the durable write.
+def _persist_graded_answer(
+    *,
+    result: dict,
+    payload: SubmitAnswerRequest,
+    user_id: str,
+    supabase=None,
+) -> dict:
+    response, question, persisted = _persist_graded_answer_core(
+        result=result,
+        payload=payload,
+        user_id=user_id,
+    )
+    return _apply_adaptive_update_to_answer(
+        response=response,
+        question=question,
+        persisted=persisted,
+        payload=payload,
+        user_id=user_id,
+        supabase=supabase,
+    )
 
-    Mobile clients that cannot wait for the streamed body use the idempotent
-    ``/grade`` fallback, which now persists through the same atomic path.
+
+def _responsive_grade_headers(result: dict) -> dict[str, str]:
+    """Expose grading metadata for instant feedback.
+
+    The payload can be handled entirely from the short headers even when runtime
+    cannot keep a long-lived stream open.
     """
 
-    del result
+    if result.get("persisted") is not True:
+        raise RuntimeError("responsive grade headers require a durable answer")
     return {
         "Cache-Control": "no-store",
         "X-Accel-Buffering": "no",
+        "X-GYT-Grading-Ready": "1",
+        "X-GYT-Question-Id": str(result["question_id"]),
+        "X-GYT-Correct-Answer": str(result["correct_answer"]),
+        "X-GYT-Is-Correct": "1" if result["is_correct"] else "0",
+        "X-GYT-Added-To-Wrong-Questions": (
+            "1" if result["added_to_wrong_questions"] else "0"
+        ),
     }
+
+
+def _adaptive_update_pending(
+    *,
+    payload: SubmitAnswerRequest,
+    persisted: dict,
+) -> dict:
+    return {
+        "adaptive_updated": False,
+        "retryable": True,
+        "error": "adaptive_state_update_pending",
+        "answer_id": persisted.get("submission_id"),
+        "practice_session_item_id": payload.practice_session_item_id,
+    }
+
+
+def _apply_adaptive_update_in_background(
+    *,
+    response: dict,
+    question: dict,
+    persisted: dict,
+    payload: SubmitAnswerRequest,
+    user_id: str,
+) -> None:
+    """Best-effort fast follow; the client queue remains the durable retry owner."""
+
+    completed = _apply_adaptive_update_to_answer(
+        response=dict(response),
+        question=dict(question),
+        persisted=dict(persisted),
+        payload=payload,
+        user_id=user_id,
+    )
+    adaptive = completed.get("adaptive") or {}
+    if adaptive.get("adaptive_updated") is True:
+        logger.info(
+            "Responsive adaptive update completed in background (question_id=%s)",
+            response["question_id"],
+        )
+        return
+    logger.warning(
+        "Responsive adaptive update remains pending after background attempt "
+        "(question_id=%s retryable=%s error=%s)",
+        response["question_id"],
+        adaptive.get("retryable"),
+        adaptive.get("error"),
+    )
 
 
 @router.get("/ability-accuracy", response_model=AbilityAccuracyResponse)
@@ -214,13 +322,14 @@ def grade(
 @router.post("/submit-responsive", response_model=SubmitAnswerResponse)
 def submit_responsive(
     payload: SubmitAnswerRequest,
+    background_tasks: BackgroundTasks,
     user_id: str = Depends(get_current_user_id),
-) -> StreamingResponse:
-    """Flush transport setup, then return feedback after durable submission.
+) -> JSONResponse:
+    """Persist the authoritative answer, then return grading immediately.
 
-    A one-byte whitespace chunk starts the response without any grading data.
-    The final JSON body contains feedback only after persistence succeeds;
-    clients needing faster feedback use the idempotent ``/grade`` path.
+    The atomic persistence RPC is also the final comprehensive-practice embargo
+    gate. Adaptive model work is a best-effort fast follow; the client keeps the
+    same idempotency key queued until that second phase settles.
     """
 
     supabase = get_supabase_admin()
@@ -233,62 +342,32 @@ def submit_responsive(
         requested_exam_code=payload.exam_code,
         include_ability_accuracy=False,
         practice_session_item_id=payload.practice_session_item_id,
+        precheck_feedback_embargo=False,
     )
-
-    def stream_response():
-        yield b" "
-        response = dict(result)
-        try:
-            response = _persist_graded_answer(
-                result=result,
-                payload=payload,
-                user_id=user_id,
-                supabase=supabase,
-            )
-        except HTTPException as exc:
-            response.update(
-                {
-                    "correct_answer": "",
-                    "is_correct": None,
-                    "explanation": "",
-                    "added_to_wrong_questions": None,
-                    "persisted": False,
-                    "persistence_error": str(exc.detail),
-                    "persistence_retryable": exc.status_code in {
-                        status.HTTP_408_REQUEST_TIMEOUT,
-                        status.HTTP_429_TOO_MANY_REQUESTS,
-                        status.HTTP_500_INTERNAL_SERVER_ERROR,
-                        status.HTTP_502_BAD_GATEWAY,
-                        status.HTTP_503_SERVICE_UNAVAILABLE,
-                        status.HTTP_504_GATEWAY_TIMEOUT,
-                    },
-                }
-            )
-        except Exception as exc:
-            logger.warning(
-                "Responsive answer persistence failed (question_id=%s error_type=%s)",
-                payload.question_id,
-                type(exc).__name__,
-            )
-            response.update(
-                {
-                    "correct_answer": "",
-                    "is_correct": None,
-                    "explanation": "",
-                    "added_to_wrong_questions": None,
-                    "persisted": False,
-                    "persistence_error": "作答记录暂时无法保存，请稍后重试",
-                    "persistence_retryable": True,
-                }
-            )
-
-        body = SubmitAnswerResponse(**response).model_dump(mode="json")
-        yield json.dumps(body, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
-
-    return StreamingResponse(
-        stream_response(),
-        media_type="application/json",
-        headers=_responsive_grade_headers(result),
+    response, question, persisted = _persist_graded_answer_core(
+        result=result,
+        payload=payload,
+        user_id=user_id,
+        require_atomic_persistence=True,
+    )
+    if payload.practice_session_item_id:
+        response["adaptive"] = _adaptive_update_pending(
+            payload=payload,
+            persisted=persisted,
+        )
+        background_tasks.add_task(
+            _apply_adaptive_update_in_background,
+            response=dict(response),
+            question=dict(question),
+            persisted=dict(persisted),
+            payload=payload.model_copy(deep=True),
+            user_id=user_id,
+        )
+    return JSONResponse(
+        status_code=200,
+        content=SubmitAnswerResponse(**response).model_dump(mode="json"),
+        headers=_responsive_grade_headers(response),
+        background=background_tasks,
     )
 
 

@@ -86,6 +86,7 @@ def create_app() -> FastAPI:
         allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
+        expose_headers=list(answers.RESPONSIVE_GRADE_HEADER_NAMES),
     )
 
     app.include_router(auth.router)

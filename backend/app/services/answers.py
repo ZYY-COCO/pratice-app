@@ -184,14 +184,20 @@ def get_submission_question_or_404(
     *,
     practice_session_item_id: str | None = None,
     user_id: str | None = None,
+    precheck_feedback_embargo: bool = True,
 ) -> dict:
-    """Fetch only the fields needed to grade and explain one submitted answer."""
+    """Fetch only the fields needed to grade and explain one submitted answer.
+
+    ``precheck_feedback_embargo`` may be disabled only by a path that withholds
+    all grading output until ``record_answer_submission`` succeeds. That atomic
+    RPC repeats the comprehensive-practice embargo under its transaction lock.
+    """
     if practice_session_item_id and not user_id:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
             detail="个性化题目缺少用户作用域",
         )
-    if user_id:
+    if user_id and precheck_feedback_embargo:
         assert_single_answer_feedback_allowed(
             supabase,
             user_id=user_id,
@@ -428,6 +434,7 @@ def persist_answer_submission(
     comprehensive_session_id: str | None = None,
     comprehensive_client_submission_id: str | None = None,
     comprehensive_manifest_hash: str | None = None,
+    allow_compatibility_fallback: bool = True,
 ) -> dict:
     """Persist one answer synchronously and return its durable submission facts.
 
@@ -494,6 +501,14 @@ def persist_answer_submission(
                 status_code=status.HTTP_409_CONFLICT,
                 detail="同一提交标识已用于不同答案，请生成新的提交标识后重试",
             ) from exc
+        if "adaptive_comprehensive_batch_required" in error_text:
+            raise HTTPException(
+                status_code=status.HTTP_409_CONFLICT,
+                detail={
+                    "code": "ADAPTIVE_COMPREHENSIVE_BATCH_REQUIRED",
+                    "message": "综合刷题须在整轮交卷后统一查看答案与解析",
+                },
+            ) from exc
         if "adaptive_comprehensive_" in error_text or any(
             marker in error_text
             for marker in (
@@ -528,6 +543,12 @@ def persist_answer_submission(
             raise HTTPException(
                 status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
                 detail="综合刷题交卷迁移尚未启用",
+            ) from exc
+
+        if not allow_compatibility_fallback:
+            raise HTTPException(
+                status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail="作答原子持久化服务暂时不可用",
             ) from exc
 
         logger.warning(
@@ -677,12 +698,14 @@ def submit_answer(
     requested_exam_code: str | None = None,
     include_ability_accuracy: bool = True,
     practice_session_item_id: str | None = None,
+    precheck_feedback_embargo: bool = True,
 ) -> dict:
     question = get_submission_question_or_404(
         supabase,
         question_id,
         practice_session_item_id=practice_session_item_id,
         user_id=user_id,
+        precheck_feedback_embargo=precheck_feedback_embargo,
     )
     stats_exam_code = resolve_stats_exam_code(supabase, user_id, question, requested_exam_code)
     stats_question = {**question, "exam_code": stats_exam_code}

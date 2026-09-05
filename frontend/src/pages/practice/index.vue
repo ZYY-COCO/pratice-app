@@ -187,7 +187,7 @@
             v-for="(item, index) in aiReviewResults"
             :key="item.question.questionId || item.question.id"
             class="summary-dot"
-            :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
+            :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false, pending: !hasResolvedAnswerGrade(item.isCorrect) }"
             @tap="openAiReviewQuestion(index)"
           >
             {{ index + 1 }}
@@ -280,7 +280,7 @@
               v-for="(item, index) in reviewResults"
               :key="item.question.questionId || item.question.id"
               class="summary-dot"
-              :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false && !item.syncFailed, pending: item.syncFailed }"
+              :class="{ correct: item.isCorrect === true, wrong: item.isCorrect === false, pending: !hasResolvedAnswerGrade(item.isCorrect) }"
               @tap="openReviewQuestion(index)"
             >
               {{ index + 1 }}
@@ -388,7 +388,7 @@
           :hover-stay-time="80"
           @tap="handlePrimaryAction"
         >
-          {{ submitting ? '正在提交...' : primaryButtonText }}
+          {{ primaryButtonText }}
         </button>
       </view>
       <button
@@ -730,6 +730,7 @@ let exitNavigationPending = false
 let adaptiveRecordedEvents = new Set()
 let adaptivePendingSubmissionPayloads = new Map()
 let adaptiveAnswerSubmissionTasks = new Map()
+let ordinaryAnswerSubmissionTasks = new Map()
 let adaptiveLegacyFallbackTasks = new Map()
 let adaptiveComprehensiveSubmissionSnapshot = null
 let adaptiveFlowGeneration = 0
@@ -865,8 +866,10 @@ const summaryElapsedSeconds = computed(() => {
 })
 const summaryElapsedTime = computed(() => formatDuration(summaryElapsedSeconds.value))
 const firstReviewIndex = computed(() => {
-  const index = reviewResults.value.findIndex((item) => item.syncFailed || item.isCorrect === false)
-  return index >= 0 ? index : 0
+  const wrongIndex = reviewResults.value.findIndex((item) => item.isCorrect === false)
+  if (wrongIndex >= 0) return wrongIndex
+  const ungradedIndex = reviewResults.value.findIndex((item) => !hasResolvedAnswerGrade(item.isCorrect))
+  return ungradedIndex >= 0 ? ungradedIndex : 0
 })
 const summaryKicker = computed(() => {
   if (mockExamMode.value) return mockExamPaperTitle.value ? `${mockExamPaperTitle.value}成绩` : '模拟测试成绩'
@@ -1186,6 +1189,7 @@ onUnload(() => {
   quizStartInProgress.value = false
   quizStartBackgrounded.value = false
   clearAdaptiveAnswerSubmissionTasks()
+  clearOrdinaryAnswerSubmissionTasks()
   clearTimer()
   showGradingFeedback.value = false
   // Page teardown cannot reliably finish an async session-close request. Keep
@@ -1487,6 +1491,13 @@ function clearAdaptiveAnswerSubmissionTasks() {
   adaptiveAnswerSubmissionTasks.clear()
 }
 
+function clearOrdinaryAnswerSubmissionTasks() {
+  for (const task of ordinaryAnswerSubmissionTasks.values()) {
+    releaseAnswerSubmissionSettlement(task.submissionId)
+  }
+  ordinaryAnswerSubmissionTasks.clear()
+}
+
 function adaptiveSubmissionBarrierSatisfied(result) {
   const adaptive = getAdaptiveSubmissionOutcome(result)
   return result?.persisted === true && adaptive?.adaptive_updated === true
@@ -1556,6 +1567,22 @@ function rememberAdaptiveAnswerSubmission(
           return false
         }
         adaptivePendingSubmissionPayloads.delete(task.context.itemId)
+        if (outcome.result?.correct_answer && hasResolvedAnswerGrade(outcome.result?.is_correct)) {
+          applyResponsiveAnswerFeedback({
+            question: task.question,
+            questionKey: task.context.questionKey,
+            selectedAnswer: task.payload.selected_answer,
+            correctAnswer: outcome.result.correct_answer,
+            explanation: outcome.result.explanation,
+            isCorrect: outcome.result.is_correct,
+            addedToWrongQuestions: outcome.result.added_to_wrong_questions,
+            persisted: true,
+            syncState: 'synced',
+            nextAbilityAccuracy: outcome.result.ability_accuracy ?? null
+          })
+        } else {
+          updateSavedAnswerSyncState(task.context.questionKey, 'synced')
+        }
         if (isAdaptiveQuestionContextCurrent(task.context)) {
           drainAdaptiveNavigationIntent(task.context)
         }
@@ -1569,6 +1596,8 @@ function rememberAdaptiveAnswerSubmission(
         resultTag.value = '作答已判分，但保存没有完成，请退出本轮后重试。'
         uni.showToast({ title: '本题保存未完成，不会跳过这道题', icon: 'none' })
       }
+      adaptiveAnswerSubmissionTasks.delete(key)
+      releaseAnswerSubmissionSettlement(task.submissionId)
       return false
     }
 
@@ -1597,6 +1626,7 @@ function rememberAdaptiveAnswerSubmission(
         isCorrect: result.is_correct,
         addedToWrongQuestions: result.added_to_wrong_questions,
         persisted: true,
+        syncState: 'synced',
         nextAbilityAccuracy: result.ability_accuracy ?? null
       })
     }
@@ -3520,6 +3550,8 @@ async function markCurrentUnfamiliarAndNext() {
           correctAnswer: result.correct_answer,
           explanation: result.explanation,
           isCorrect: false,
+          syncState: 'synced',
+          syncPending: false,
           syncFailed: false
         })
       }
@@ -3780,6 +3812,8 @@ function buildRemoteComprehensiveResult(question, selected, result) {
     correctAnswer: result.correct_answer,
     explanation: result.explanation,
     isCorrect: result.is_correct,
+    syncState: 'synced',
+    syncPending: false,
     syncFailed: false
   }
 }
@@ -3791,6 +3825,8 @@ function buildLocalComprehensiveResult({ question, selected }) {
     correctAnswer: question.answer,
     explanation: question.explanation,
     isCorrect: selected === question.answer,
+    syncState: 'synced',
+    syncPending: false,
     syncFailed: false
   }
 }
@@ -3802,8 +3838,10 @@ function buildPendingComprehensiveResult(question, selected, error) {
     selectedAnswer: selected,
     correctAnswer: '待同步',
     explanation: `本题做题记录已提交或正在同步，但移动端网络返回异常${reason}。请稍后到练习历史查看完整答案与解析。`,
-    isCorrect: false,
-    syncFailed: true
+    isCorrect: null,
+    syncState: 'pending',
+    syncPending: true,
+    syncFailed: false
   }
 }
 
@@ -3815,8 +3853,105 @@ function buildSkippedComprehensiveResult(question) {
     explanation: '本题题面数据异常，本轮已跳过且不计入能力判断。',
     isCorrect: null,
     skipped: true,
+    syncState: 'synced',
+    syncPending: false,
     syncFailed: false
   }
+}
+
+function hasResolvedAnswerGrade(value) {
+  return value === true || value === false
+}
+
+function normalizeAnswerSyncState(value, fallback = 'synced') {
+  const normalized = String(value || '').trim().toLowerCase()
+  return ['pending', 'synced', 'failed'].includes(normalized) ? normalized : fallback
+}
+
+function getAnswerSubmissionSyncState(result, adaptiveItemId = '') {
+  if (result?.persisted !== true) {
+    return result?.persistence_retryable === false ? 'failed' : 'pending'
+  }
+  if (!adaptiveItemId) return 'synced'
+
+  const adaptive = getAdaptiveSubmissionOutcome(result)
+  if (adaptive?.adaptive_updated === true) return 'synced'
+  if (adaptive?.adaptive_updated === false && adaptive?.retryable === false) return 'failed'
+  return 'pending'
+}
+
+function withAnswerSyncState(result, syncState) {
+  const normalized = normalizeAnswerSyncState(syncState)
+  return {
+    ...result,
+    syncState: normalized,
+    syncPending: normalized === 'pending',
+    syncFailed: normalized === 'failed'
+  }
+}
+
+function updateSavedAnswerSyncState(questionKey, syncState) {
+  const key = String(questionKey || '')
+  if (!key) return
+  const normalized = normalizeAnswerSyncState(syncState)
+  const saved = instantQuestionResults.value[key]
+  if (saved) {
+    instantQuestionResults.value = {
+      ...instantQuestionResults.value,
+      [key]: withAnswerSyncState(saved, normalized)
+    }
+  }
+  if (reviewResults.value.length) {
+    reviewResults.value = reviewResults.value.map((item) => {
+      const itemKey = String(item.question?.questionId || item.question?.id || '')
+      return itemKey === key ? withAnswerSyncState(item, normalized) : item
+    })
+  }
+}
+
+function rememberOrdinaryAnswerSubmission({ payload, question, questionKey, selectedAnswer, sessionId }) {
+  const submissionId = String(payload?.client_submission_id || '')
+  if (!submissionId || ordinaryAnswerSubmissionTasks.has(submissionId)) return
+
+  const task = { submissionId, sessionId: String(sessionId || ''), promise: null }
+  ordinaryAnswerSubmissionTasks.set(submissionId, task)
+  task.promise = waitForAnswerSubmissionSettlement(submissionId)
+    .then((outcome) => {
+      if (ordinaryAnswerSubmissionTasks.get(submissionId) !== task) return false
+      if (String(submissionSessionId.value || '') !== task.sessionId) return false
+
+      const result = outcome?.result
+      const nextSyncState = result?.persisted === true ? 'synced' : 'failed'
+      if (result && hasResolvedAnswerGrade(result.is_correct)) {
+        applyResponsiveAnswerFeedback({
+          question,
+          questionKey,
+          selectedAnswer,
+          correctAnswer: result.correct_answer,
+          explanation: result.explanation,
+          isCorrect: result.is_correct,
+          addedToWrongQuestions: result.added_to_wrong_questions,
+          persisted: result.persisted,
+          syncState: nextSyncState,
+          nextAbilityAccuracy: result.ability_accuracy ?? null
+        })
+      } else {
+        updateSavedAnswerSyncState(questionKey, nextSyncState)
+      }
+      return nextSyncState === 'synced'
+    })
+    .catch(() => {
+      if (String(submissionSessionId.value || '') === task.sessionId) {
+        updateSavedAnswerSyncState(questionKey, 'failed')
+      }
+      return false
+    })
+    .finally(() => {
+      if (ordinaryAnswerSubmissionTasks.get(submissionId) === task) {
+        ordinaryAnswerSubmissionTasks.delete(submissionId)
+        releaseAnswerSubmissionSettlement(submissionId)
+      }
+    })
 }
 
 function saveInstantQuestionResult(answerResult, metadata = {}) {
@@ -3829,17 +3964,26 @@ function saveInstantQuestionResult(answerResult, metadata = {}) {
     return
   }
 
-  instantQuestionResults.value = {
-    ...instantQuestionResults.value,
-    [key]: {
+  const savedResult = withAnswerSyncState(
+    {
       selectedAnswer: answerResult.selectedAnswer,
       correctAnswer: answerResult.correctAnswer,
       explanation: answerResult.explanation,
       isCorrect: answerResult.isCorrect,
-      syncFailed: Boolean(answerResult.syncFailed),
       resultTag: metadata.resultTag ?? resultTag.value,
       abilityAccuracy: metadata.abilityAccuracy ?? abilityAccuracy.value
-    }
+    },
+    answerResult.syncState || (answerResult.syncFailed ? 'failed' : (answerResult.syncPending ? 'pending' : 'synced'))
+  )
+  instantQuestionResults.value = {
+    ...instantQuestionResults.value,
+    [key]: savedResult
+  }
+  if (reviewResults.value.length) {
+    reviewResults.value = reviewResults.value.map((item) => {
+      const itemKey = item.question?.questionId || item.question?.id
+      return itemKey === key ? { ...item, ...savedResult } : item
+    })
   }
 }
 
@@ -3852,22 +3996,30 @@ function applyResponsiveAnswerFeedback({
   isCorrect,
   addedToWrongQuestions,
   persisted,
+  syncState: requestedSyncState,
   nextAbilityAccuracy
 }) {
-  const syncPending = persisted !== true
-  const nextResultTag = syncPending
-    ? '答案已显示，作答记录正在同步。'
-    : addedToWrongQuestions
-      ? `已写入错题本：${subject.value} / ${question.module || ''} / ${question.submodule || ''}`
-      : '本题答对，当前知识点继续保持。'
-  const answerResult = {
+  const syncState = normalizeAnswerSyncState(
+    requestedSyncState,
+    persisted === true ? 'synced' : 'pending'
+  )
+  const graded = hasResolvedAnswerGrade(isCorrect)
+  const nextResultTag = !graded
+    ? '判题结果正在同步，请稍候。'
+    : syncState === 'pending'
+      ? `本题${isCorrect ? '答对' : '答错'}，作答进度正在同步。`
+      : syncState === 'failed'
+        ? `本题已判分，但作答进度同步未完成。`
+        : addedToWrongQuestions
+          ? `已写入错题本：${subject.value} / ${question.module || ''} / ${question.submodule || ''}`
+          : '本题答对，当前知识点继续保持。'
+  const answerResult = withAnswerSyncState({
     question,
     selectedAnswer,
     correctAnswer: nextCorrectAnswer,
     explanation: explanation || '解析正在同步中，请稍候。',
-    isCorrect,
-    syncFailed: syncPending
-  }
+    isCorrect
+  }, syncState)
 
   saveInstantQuestionResult(answerResult, {
     resultTag: nextResultTag,
@@ -3881,6 +4033,7 @@ function applyResponsiveAnswerFeedback({
     return
   }
 
+  showGradingFeedback.value = false
   correctAnswer.value = nextCorrectAnswer
   if (explanation) {
     answerExplanation.value = explanation
@@ -4008,6 +4161,15 @@ async function submitAnswer() {
           const lockedOption = String(lockedPayload?.selected_answer || '').trim().toUpperCase()
           if (!/^[ABCD]$/.test(lockedOption)) return
           submittedOption = lockedOption
+          if (!adaptiveContext) {
+            rememberOrdinaryAnswerSubmission({
+              payload: remotePayload,
+              question: submittedQuestion,
+              questionKey: submittedQuestionKey,
+              selectedAnswer: lockedOption,
+              sessionId: submissionSessionId.value
+            })
+          }
           if (currentQuestionKey.value === submittedQuestionKey) {
             selectedOption.value = lockedOption
           }
@@ -4030,7 +4192,8 @@ async function submitAnswer() {
             explanation: '',
             isCorrect: grade.isCorrect,
             addedToWrongQuestions: grade.addedToWrongQuestions,
-            persisted: false,
+            persisted: true,
+            syncState: adaptiveItemId ? 'pending' : 'synced',
             nextAbilityAccuracy: null
           })
         }
@@ -4044,7 +4207,7 @@ async function submitAnswer() {
           result,
           remotePayload || payload,
           adaptiveItemId,
-          { retryOnce: true, context: adaptiveContext }
+          { retryOnce: false, context: adaptiveContext }
         )
       }
       if (
@@ -4067,14 +4230,14 @@ async function submitAnswer() {
         adaptivePendingSubmissionPayloads.set(adaptiveItemId, { ...remotePayload })
       }
 
-      answerResult = {
+      const answerSyncState = getAnswerSubmissionSyncState(result, adaptiveItemId)
+      answerResult = withAnswerSyncState({
         question: submittedQuestion,
         selectedAnswer: submittedOption,
         correctAnswer: result.correct_answer,
         explanation: result.explanation,
-        isCorrect: result.is_correct,
-        syncFailed: result.persisted !== true
-      }
+        isCorrect: result.is_correct
+      }, answerSyncState)
       applyResponsiveAnswerFeedback({
         question: submittedQuestion,
         questionKey: submittedQuestionKey,
@@ -4084,6 +4247,7 @@ async function submitAnswer() {
         isCorrect: result.is_correct,
         addedToWrongQuestions: result.added_to_wrong_questions,
         persisted: result.persisted,
+        syncState: answerSyncState,
         nextAbilityAccuracy: result.ability_accuracy ?? null
       })
       if (adaptivePendingSubmissionPayloads.has(adaptiveItemId)) {
@@ -4142,8 +4306,8 @@ async function submitAnswer() {
       ) {
         adaptivePendingSubmissionPayloads.set(adaptiveItemId, { ...remotePayload })
         resultTag.value = isAdaptiveSubmissionRetryableError(error)
-          ? '本题已判分，作答记录和个性化进度正在后台同步。'
-          : '本题已判分，但保存没有完成，请退出本轮后重试。'
+          ? '本题已判分并保存，个性化进度正在后台同步。'
+          : '本题已判分并保存，个性化进度暂未更新。'
       }
       schedulePendingAnswerFlush(undefined, { queueScopeKey: adaptiveContext?.sessionId })
       if (adaptiveRequestStillCurrent) {
@@ -4151,10 +4315,10 @@ async function submitAnswer() {
           title: adaptiveItemId
             ? (
                 isAdaptiveSubmissionRetryableError(error)
-                  ? '本题已判分，后台保存完成后会自动继续'
-                  : '本题保存未完成，不会跳过这道题'
+                  ? '本题已保存，个性化进度同步后会自动继续'
+                  : '本题已保存，个性化进度暂未更新'
               )
-            : '答案已显示，作答记录将在网络恢复后同步',
+            : '答案已显示，作答记录已保存',
           icon: 'none'
         })
       }
@@ -4218,13 +4382,22 @@ function applyReviewAt(index) {
   selectedOption.value = result.selectedAnswer
   correctAnswer.value = result.correctAnswer
   answerExplanation.value = result.explanation
+  const graded = hasResolvedAnswerGrade(result.isCorrect)
+  const syncState = normalizeAnswerSyncState(
+    result.syncState,
+    result.syncFailed ? 'failed' : (result.syncPending ? 'pending' : 'synced')
+  )
   resultTag.value = result.skipped
     ? '本题已跳过，不计入能力判断。'
-    : result.syncFailed
-      ? '本题记录已提交，答案解析稍后可在练习历史中查看。'
-      : result.isCorrect
-        ? '本题答对。'
-        : '本题答错，已纳入错题统计。'
+    : !graded
+      ? '本题判题结果仍在同步，请稍后查看。'
+      : syncState === 'pending'
+        ? `本题${result.isCorrect ? '答对' : '答错'}，作答进度正在同步。`
+        : syncState === 'failed'
+          ? `本题${result.isCorrect ? '答对' : '答错'}，但作答进度同步未完成。`
+          : result.isCorrect
+            ? '本题答对。'
+            : '本题答错，已纳入错题统计。'
   submitted.value = true
   explanationExpanded.value = true
   abilityAccuracy.value = null
@@ -4862,7 +5035,9 @@ function buildAiReviewResultFromSummaryItem(item) {
     correctAnswer: item.correct_answer || '待同步',
     explanation: item.explanation || '解析正在同步中，请稍后再试。',
     isCorrect: item.is_correct,
-    syncFailed: item.is_correct === null || item.is_correct === undefined
+    syncState: hasResolvedAnswerGrade(item.is_correct) ? 'synced' : 'pending',
+    syncPending: !hasResolvedAnswerGrade(item.is_correct),
+    syncFailed: false
   }
 }
 
@@ -4975,14 +5150,20 @@ function buildSpecialPracticeReviewResults() {
       const saved = instantQuestionResults.value[key]
       if (!saved) return null
 
-      return {
+      const savedCorrectness = hasResolvedAnswerGrade(saved.isCorrect)
+        ? saved.isCorrect
+        : null
+      const savedSyncState = normalizeAnswerSyncState(
+        saved.syncState,
+        saved.syncFailed ? 'failed' : (saved.syncPending ? 'pending' : 'synced')
+      )
+      return withAnswerSyncState({
         question,
         selectedAnswer: saved.selectedAnswer || '',
         correctAnswer: saved.correctAnswer || question.answer || '',
         explanation: saved.explanation || question.explanation || '',
-        isCorrect: saved.isCorrect ?? (saved.selectedAnswer === saved.correctAnswer),
-        syncFailed: Boolean(saved.syncFailed)
-      }
+        isCorrect: savedCorrectness
+      }, savedSyncState)
     })
     .filter(Boolean)
 }

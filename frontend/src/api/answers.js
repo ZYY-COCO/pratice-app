@@ -37,20 +37,6 @@ export function submitAnswerResponsive(payload, onGraded) {
     gradeDelivered = true
     onGraded(grade)
   }
-  const fallbackTimer = typeof onGraded === 'function'
-    ? setTimeout(() => {
-        if (gradeDelivered) return
-        void request({
-          url: '/answers/grade',
-          method: 'POST',
-          timeout: 6000,
-          authRedirect: false,
-          data: payload
-        }).then((result) => {
-          deliverGrade(parseResponsiveGradeResult(result))
-        }).catch(() => {})
-      }, 80)
-    : null
 
   return request({
     url: '/answers/submit-responsive',
@@ -63,11 +49,24 @@ export function submitAnswerResponsive(payload, onGraded) {
     },
     data: payload
   }).then((result) => {
+    assertResponsiveSubmissionPersisted(result)
     deliverGrade(parseResponsiveGradeResult(result))
     return result
-  }).finally(() => {
-    if (fallbackTimer) clearTimeout(fallbackTimer)
   })
+}
+
+function assertResponsiveSubmissionPersisted(result) {
+  if (result?.persisted === true) return
+
+  throw Object.assign(
+    new Error(result?.persistence_error || 'answer submission was not persisted'),
+    {
+      code: 'ANSWER_SUBMISSION_NOT_PERSISTED',
+      statusCode: 503,
+      retryable: result?.persistence_retryable !== false,
+      result
+    }
+  )
 }
 
 function parseResponsiveGradeResult(result) {
